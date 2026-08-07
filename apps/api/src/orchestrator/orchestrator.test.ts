@@ -14,6 +14,7 @@ const setup = (
     greetingAudio?: readonly AudioChunk[] | null;
     fillers?: readonly (readonly AudioChunk[])[];
     fillerAfterMs?: number;
+    transcriptWatchdogMs?: number;
   } = {},
 ) => {
   const stream = fakeStream();
@@ -494,6 +495,34 @@ describe("runConversation", () => {
       h.tts.last().fail("elevenlabs returned 500");
 
       expect(h.stream.hungUp).toBe(true);
+    });
+
+    // Seen on a live call: the caller stopped speaking, two fillers played, and then
+    // ten seconds of silence, because no transcript ever arrived and the only watchdog
+    // was armed inside respondTo - which never runs without one.
+    it("says something when the caller finishes but no transcript arrives", async () => {
+      const h = setup({ transcriptWatchdogMs: 20 });
+      h.tts.last().done();
+      h.stream.ackAll();
+
+      h.listen.endOfTurn(1000);
+      await new Promise((r) => setTimeout(r, 60));
+
+      expect(h.tts.texts().at(-1)).toContain("Sorry");
+      assertInvariants(h);
+    });
+
+    it("does not fire that watchdog when the transcript does arrive", async () => {
+      const h = setup({ transcriptWatchdogMs: 40 });
+      h.tts.last().done();
+      h.stream.ackAll();
+
+      h.listen.endOfTurn(1000);
+      h.listen.final("When does my policy renew?");
+      h.llm.last().emit("It renews in May. ");
+      await new Promise((r) => setTimeout(r, 80));
+
+      expect(h.tts.texts().some((t) => t.includes("Sorry"))).toBe(false);
     });
 
     it("apologises before hanging up when the listen connection dies", () => {

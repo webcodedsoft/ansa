@@ -40,6 +40,8 @@ export interface OrchestratorDeps {
   readonly fillers?: readonly (readonly AudioChunk[])[];
   /** Play the first filler if no reply audio has gone out this long after end-of-turn. */
   readonly fillerAfterMs?: number;
+  /** Speak a recovery line if the caller finishes and no transcript arrives in time. */
+  readonly transcriptWatchdogMs?: number;
 }
 
 /** A sentence that has been handed to TTS, and where its audio sits in the turn. */
@@ -108,6 +110,16 @@ const RECOVERY_LINE = "Sorry, I did not catch that. Could you say it again?";
  * the caller is mid-thought, which is worse than the gap it was closing.
  */
 const TURN_WATCHDOG_MS = 4_000;
+
+/**
+ * The caller stopped speaking and no transcript ever arrived.
+ *
+ * Seen on a live call: speech produced an end-of-turn, two fillers played, and then ten
+ * seconds of nothing, because the watchdog was armed inside respondTo — which only runs
+ * once a transcript exists. The case that most needs a safety net was the one case
+ * without one. Longer than the turn watchdog because a slow transcript is still coming.
+ */
+const TRANSCRIPT_WATCHDOG_MS = 5_000;
 
 /**
  * R6.3, enforced where it cannot be argued with. The prompt asks for two sentences and
@@ -460,6 +472,18 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     // Fires 480-1200ms before the transcript does, so it is the earliest point at which
     // we know the caller has stopped and is waiting.
     armFiller();
+
+    // The caller has finished and is owed a reply. If no transcript ever arrives — the
+    // audio was unclear, or the vendor simply dropped it — nothing downstream will ever
+    // run, and the filler buys two seconds before the line goes dead. respondTo
+    // replaces this with its own watchdog the moment a transcript does arrive.
+    cancelWatchdog();
+    watchdog = setTimeout(() => {
+      if (turn !== null) return;
+      log.error("caller finished but no transcript arrived");
+      sayRecovery("no transcript");
+    }, deps.transcriptWatchdogMs ?? TRANSCRIPT_WATCHDOG_MS);
+    watchdog.unref();
   });
 
   // Recoverable. The vendor emits these for conditions that do not end a session, and
