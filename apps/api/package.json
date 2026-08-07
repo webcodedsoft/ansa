@@ -11,19 +11,20 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@ansa/llm": "workspace:*",
+    "@ansa/openai-listen": "workspace:*",
     "@ansa/shared": "workspace:*",
     "@ansa/telephony": "workspace:*",
+    "@ansa/transcriber": "workspace:*",
     "@ansa/tts": "workspace:*",
+    "@ansa/turn-detector": "workspace:*",
     "@nestjs/common": "^11.1.0",
     "@nestjs/core": "^11.1.0",
     "@nestjs/platform-express": "^11.1.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "ws": "^8.21.2",
-    "@ansa/llm": "workspace:*",
-    "@ansa/openai-listen": "workspace:*",
-    "@ansa/transcriber": "workspace:*",
-    "@ansa/turn-detector": "workspace:*"
+    "undici": "^8.10.0",
+    "ws": "^8.21.2"
   },
   "devDependencies": {
     "@ansa/config": "workspace:*",

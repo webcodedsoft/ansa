@@ -4,11 +4,26 @@ import type { Server } from "node:http";
 
 import { createLogger, type Logger } from "@ansa/shared";
 import { NestFactory } from "@nestjs/core";
+import { Agent, setGlobalDispatcher } from "undici";
 
 import { AppModule } from "./app.module";
 import type { AppConfig } from "./config/env";
 import { MediaGateway } from "./telephony/media.gateway";
 import { APP_CONFIG, LOGGER } from "./telephony/tokens";
+
+/**
+ * Node's default connection pool closes idle sockets after four seconds. A caller who
+ * talks for five costs a fresh TCP and TLS handshake on both the LLM and the TTS
+ * request, and every barge-in destroys a socket outright. From Nigeria to US-hosted
+ * APIs that handshake is a real fraction of the turn: consecutive live calls measured
+ * 959ms cold against 468ms warm for the same TTS request.
+ *
+ * Deliberately not HTTP/2: it changes the wire protocol for every outbound request in a
+ * system whose only working cancellation path is an HTTP/1.1 abort.
+ */
+setGlobalDispatcher(
+  new Agent({ keepAliveTimeout: 60_000, keepAliveMaxTimeout: 600_000, connections: 16 }),
+);
 
 const bootstrap = async (): Promise<void> => {
   // Nest's own logger is off: every line this process writes is structured JSON from

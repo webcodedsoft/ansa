@@ -38,3 +38,21 @@ describe("forSpeech", () => {
     expect(forSpeech("Your policy renews in May.")).toBe("Your policy renews in May.");
   });
 });
+
+describe("forSpeech markdown stripping", () => {
+  // The model emits markdown despite the prompt. A caller must never hear punctuation
+  // read as words, and CLAUDE.md is explicit that nothing reaches TTS unnormalized.
+  it("strips emphasis rather than speaking it", () => {
+    expect(forSpeech("Your premium is **unchanged**.")).toBe("Your premium is unchanged.");
+  });
+
+  it("strips list markers", () => {
+    expect(forSpeech("- Your policy renews in May")).toBe("Your policy renews in May");
+  });
+
+  it("leaves ordinary punctuation alone", () => {
+    expect(forSpeech("It's 1.5 million naira, isn't it?")).toBe(
+      "It's 1.5 million naira, isn't it?",
+    );
+  });
+});

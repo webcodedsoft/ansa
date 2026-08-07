@@ -24,4 +24,14 @@ export const GREETING_TEXT = "Thank you for calling Ansa. How can I help you?";
  * in Slice 4 it moves there and applies to every utterance — CLAUDE.md: nothing reaches
  * TTS unnormalized. The orchestrator already routes every utterance through it.
  */
-export const forSpeech = (text: string): string => text.replace(/\bAnsa\b/g, "An-Sah");
+export const forSpeech = (text: string): string =>
+  text
+    // The model emits markdown despite being told not to, and a caller should never
+    // hear "asterisk asterisk". Strips leading list and quote markers, emphasis and
+    // code ticks. This belongs in packages/normalizer in Slice 4 along with the
+    // respelling below.
+    .replace(/^[ \t]*[#>*-]+[ \t]+/gm, "")
+    .replace(/\*\*|__|[*_`]/g, "")
+    .replace(/\bAnsa\b/g, "An-Sah")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();

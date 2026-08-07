@@ -109,6 +109,13 @@ const RECOVERY_LINE = "Sorry, I did not catch that. Could you say it again?";
  */
 const TURN_WATCHDOG_MS = 4_000;
 
+/**
+ * R6.3, enforced where it cannot be argued with. The prompt asks for two sentences and
+ * the model will drift past it; this caps the turn regardless, and caps worst-case tail
+ * latency at the same time.
+ */
+const MAX_SENTENCES_PER_TURN = 2;
+
 export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps): void => {
   const log = deps.log.child({ callId: stream.callId });
   const conversation = createConversation();
@@ -181,7 +188,12 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   };
   const measure = (stage: string, extra: Record<string, unknown> = {}): void => {
     const started = stageStart.get(stage);
-    if (started === undefined) return;
+    if (started === undefined) {
+      // Silently returning here is how "tts_first_byte measured against a mark that was
+      // never set" reached a live call and stayed invisible for hours.
+      log.warn("latency mark missing", { stage });
+      return;
+    }
     stageStart.delete(stage);
     // Slice 2's `latencies` table is where these land once the event log is wired.
     log.info("latency", { stage, ms: Date.now() - started, ...extra });
@@ -272,6 +284,9 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         cancelFiller();
         cancelWatchdog();
         measure("tts_first_byte", { seq: current.seq });
+        // Once per turn: the first byte of the first sentence is when the caller stops
+        // waiting. Later sentences are already covered by the earlier audio.
+        if (startByte === 0) measure("turn_to_audio", { seq: current.seq });
       }
       stream.send(chunk);
       current.bytesSent += chunk.data.length;
@@ -423,6 +438,9 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
 
   deps.listen.turns.onEndOfTurn(() => {
     mark("stt_final");
+    // The number R5.5 is actually written against: caller stops speaking -> agent
+    // starts speaking. Everything else is a component of it.
+    mark("turn_to_audio");
     // Fires 480-1200ms before the transcript does, so it is the earliest point at which
     // we know the caller has stopped and is waiting.
     armFiller();
@@ -521,26 +539,44 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     const completion = deps.llm.complete({
       system: SYSTEM_PROMPT,
       messages: conversation.messages,
+      // 80 rather than 60: below that the flushed tail is regularly a truncated
+      // fragment and the caller hears a cut-off word.
+      maxTokens: 80,
     });
     current.cancelLlm = () => {
       completion.cancel();
     };
 
     let firstToken = true;
+    let sentencesSpoken = 0;
     completion.onDelta((token) => {
       if (turn?.seq !== seq) return;
       if (firstToken) {
         firstToken = false;
         measure("llm_first_token", { seq });
       }
-      for (const sentence of sentences.push(token)) enqueue(current, sentence);
+      for (const sentence of sentences.push(token)) {
+        if (sentencesSpoken >= MAX_SENTENCES_PER_TURN) {
+          log.info("capped an over-long turn", { seq, sentences: sentencesSpoken });
+          current.llmDone = true;
+          current.cancelLlm?.();
+          return;
+        }
+        sentencesSpoken += 1;
+        enqueue(current, sentence);
+      }
     });
 
     completion.onDone((full) => {
       if (turn?.seq !== seq) return;
       current.llmDone = true;
       const tail = sentences.flush();
-      if (tail.length > 0) enqueue(current, tail);
+      // A tail with no terminal punctuation is a truncated fragment, not a sentence.
+      // Speaking it means the caller hears the reply stop mid-word.
+      const isFragment = tail.length < 15 && !/[.!?]$/.test(tail);
+      if (tail.length > 0 && !isFragment && sentencesSpoken < MAX_SENTENCES_PER_TURN) {
+        enqueue(current, tail);
+      }
       log.info("agent turn", { seq, chars: full.length });
       // Nothing to say and nothing queued: without this a turn with no audio at all
       // would never close.
