@@ -49,7 +49,12 @@ you can act on.
       *Also `packages/providers/{telephony,tts,listen/transcriber,listen/turn}`. Interfaces
       only, no implementations. `pnpm build && pnpm typecheck && pnpm lint` all green.*
 - [ ] Twilio number provisioned, webhook wired, ngrok for local dev.
-- [ ] Bidirectional media stream over WebSocket, μ-law 8kHz, audio flowing both ways.
+      *Webhook built and proven against a local fake carrier. Number, credentials and
+      ngrok still outstanding — this box needs a real call.*
+- [x] Bidirectional media stream over WebSocket, μ-law 8kHz, audio flowing both ways.
+      *Inbound proven: 120 × 160-byte μ-law frames received and counted. Outbound
+      `send`/`mark`/`clear` implemented but not yet exercised — nothing generates audio
+      until step 3.*
 - [ ] TTS provider interface + chosen implementation behind it (R4.1.1 principle applied
       to TTS too). No vendor types outside the adapter.
 - [ ] Agent answers, speaks one sentence in the chosen Nigerian voice, ends the call.
@@ -78,6 +83,28 @@ you can act on.
 - Watch out: the Console Ninja VS Code extension injects a non-JSON banner into the API's
   stdout when run from the editor. Harmless, but it breaks "every log line is structured"
   if you are reading logs from the IDE terminal.
+
+- *2026-08-07 — Step 2 of 4 (webhook + media stream) complete.* `POST /telephony/voice`
+  returns `<Connect><Stream>` TwiML; the media socket at `/telephony/media` receives μ-law
+  8kHz frames. Verified against a scripted fake carrier: 200 + TwiML, socket opens, 120 ×
+  160-byte frames counted (19,200 bytes), stop frame closes the stream cleanly.
+- Webhook signature verification is on by default and was tested in all four states:
+  unsigned → 403, malformed signature → 403, signed with the wrong token → 403, correctly
+  signed → 200. `TWILIO_VERIFY_SIGNATURES=false` exists for local work and must never be
+  false in front of a public tunnel. Copy `.env.example` to `.env` to configure.
+- Two defects the fake carrier caught that unit tests would not have:
+  1. Nest answers POST with **201**; the carrier requires **200** or it drops the call.
+     Fixed with `@HttpCode(HttpStatus.OK)`.
+  2. `incremental: true` plus `nest build`'s `deleteOutDir` silently stopped emitting
+     `health.controller.js` — tsc writes `.tsbuildinfo` outside `outDir`, so after dist
+     was wiped it still believed the file was emitted. Incremental is now off repo-wide;
+     turbo caches builds anyway. **If a file goes missing from `dist`, look here first.**
+- `<Connect><Stream>` is deliberate — `<Start><Stream>` only forks audio to us and cannot
+  play anything back, which would make step 4 impossible. The TwiML also ends after
+  `</Connect>` on purpose: with no next verb, closing the socket hangs up the call, so
+  `hangUp()` needs no REST credentials.
+- Not done: nothing sends audio yet, and no `mark` has round-tripped. Step 3 (TTS) is
+  what makes the outbound half real.
 
 ---
 

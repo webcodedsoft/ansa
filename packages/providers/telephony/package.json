@@ -11,7 +11,8 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@ansa/shared": "workspace:*"
+    "@ansa/shared": "workspace:*",
+    "twilio": "^6.0.2"
   },
   "devDependencies": {
     "@ansa/config": "workspace:*",

@@ -1,22 +1,40 @@
 import "reflect-metadata";
 
-import { createLogger } from "@ansa/shared";
+import type { Server } from "node:http";
+
+import { createLogger, type Logger } from "@ansa/shared";
 import { NestFactory } from "@nestjs/core";
 
 import { AppModule } from "./app.module";
-
-const log = createLogger({ component: "api" });
+import type { AppConfig } from "./config/env";
+import { MediaGateway } from "./telephony/media.gateway";
+import { APP_CONFIG, LOGGER } from "./telephony/tokens";
 
 async function bootstrap(): Promise<void> {
   // Nest's own logger is off: every line this process writes is structured JSON from
   // @ansa/shared, so a call can be reconstructed from logs alone.
   const app = await NestFactory.create(AppModule, { logger: false });
-  const port = Number(process.env.PORT ?? 3000);
-  await app.listen(port);
-  log.info("api listening", { port });
+  app.enableShutdownHooks();
+
+  const config = app.get<AppConfig>(APP_CONFIG);
+  const log = app.get<Logger>(LOGGER);
+
+  await app.listen(config.port);
+
+  // ws attaches to a listening server, so this comes after listen() rather than in a
+  // Nest lifecycle hook.
+  app.get(MediaGateway).attachTo(app.getHttpServer() as Server);
+
+  log.info("api listening", {
+    port: config.port,
+    publicBaseUrl: config.publicBaseUrl,
+    verifySignatures: config.verifySignatures,
+  });
 }
 
 bootstrap().catch((error: unknown) => {
-  log.error("api failed to start", { error: String(error) });
+  createLogger({ component: "api" }).error("api failed to start", {
+    error: error instanceof Error ? error.message : String(error),
+  });
   process.exitCode = 1;
 });

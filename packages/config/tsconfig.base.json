@@ -9,7 +9,10 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "incremental": true,
+
+    // Deliberately NOT incremental. tsc writes .tsbuildinfo beside the tsconfig, outside
+    // outDir, so a build that wipes dist (nest build --deleteOutDir) leaves tsc convinced
+    // the files are already emitted and silently skips them. Turbo caches builds anyway.
 
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
