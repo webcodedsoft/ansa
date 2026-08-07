@@ -240,10 +240,13 @@ you can act on.
 **Goal:** Before the pipeline gets complicated, make it observable. Building this now is
 the difference between debugging in an hour and debugging in a week.
 
-- [ ] Supabase/Postgres schema v1 with `tenant_id` on **every** table from the start (R7.1).
-- [ ] Postgres RLS policies enforcing isolation at the data layer (R7.2). Write the
+- [x] Supabase/Postgres schema v1 with `tenant_id` on **every** table from the start (R7.1).
+      *8 tables, applied to Supabase (Postgres 17.6). `tenants` isolates on its own PK.*
+- [x] Postgres RLS policies enforcing isolation at the data layer (R7.2). Write the
       adversarial test that proves tenant A cannot read tenant B's calls — this test
       lives forever and runs in CI.
+      *11 adversarial tests in `packages/db/src/rls.test.ts`, all passing. **Not yet
+      wired into CI** — there is no CI pipeline yet.*
 - [ ] Call event log tables: calls, turns, transcripts, tool_invocations, latencies,
       audio_segments (R8).
 - [ ] Audio segment storage with per-tenant retention config.
@@ -252,6 +255,35 @@ the difference between debugging in an hour and debugging in a week.
       mandatory.
 
 **Done when:** the Slice 1 call is fully reconstructable in the viewer.
+
+**Session log**
+
+- *2026-08-07 — Schema v1 and RLS applied to Supabase.* 8 tables, `tenant_id` on all seven
+  that are not the tenant itself. No `direction` column anywhere; `audio_segments.source`
+  is the audio track, a different concept. `carrier_call_id` is named for the concept, not
+  the vendor.
+- **The adversarial test immediately caught a real isolation failure, and it is one that
+  is invisible to inspection.** Supabase's default `postgres` role has **`rolbypassrls =
+  true`** — an attribute *separate from superuser* that defeats `FORCE ROW LEVEL SECURITY`
+  entirely. Every policy existed, `pg_policies` listed them, `relforcerowsecurity` read
+  true, and tenant A read tenant B's calls anyway. **Had the app shipped on Supabase's
+  default connection string, every tenant would have seen every other tenant's data.**
+- Fix: the app connects as **`ansa_app`** (`rolbypassrls = false`); `postgres` is used only
+  for migrations. `.env` now carries `DATABASE_URL`/`DIRECT_URL` for the app and
+  `MIGRATION_DIRECT_URL` for schema changes. **Never point `DATABASE_URL` at `postgres`.**
+- Migration `0002` now *asserts* `ansa_app` lacks BYPASSRLS and raises if it does, so the
+  regression cannot land silently a second time.
+- Lesson worth generalising: checking that a policy *exists* proves nothing. The only
+  evidence that counts is trying to cross the boundary and failing. That is why R7.2 asks
+  for an adversarial test rather than a schema review.
+- On TypeORM (Vera's call, overriding my Kysely recommendation): every tenant-scoped query
+  must run inside a transaction that has done `set_config('app.tenant_id', …, true)`. A
+  bare `dataSource.getRepository()` has no tenant context and — because
+  `app.current_tenant()` returns NULL when unset — sees **zero rows**. It fails closed,
+  which is the safe direction, but it will look like "the database is empty" rather than
+  like a bug. A `withTenant()` helper is the next thing to build.
+- Timeouts: `packages/db` uses a 60s vitest timeout. These are network round trips to
+  us-east-2 from Nigeria and the 5s default fails on latency, not correctness.
 
 ---
 

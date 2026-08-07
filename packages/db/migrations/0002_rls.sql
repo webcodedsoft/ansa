@@ -18,9 +18,29 @@
 do $$
 begin
   if not exists (select 1 from pg_roles where rolname = 'ansa_app') then
-    -- No password: this role is reached by SET ROLE / GRANT from the connecting user.
-    -- A password is added by the operator if it is ever connected to directly.
-    create role ansa_app nologin;
+    -- LOGIN, but no password here: secrets do not belong in migrations. The operator
+    -- sets it once with `alter role ansa_app with password '...'` and puts the result
+    -- in DATABASE_URL.
+    create role ansa_app login;
+  end if;
+end
+$$;
+
+-- The trap this whole file depends on avoiding.
+--
+-- BYPASSRLS is a role attribute *separate from superuser*, and it defeats FORCE ROW
+-- LEVEL SECURITY completely. Supabase's default `postgres` role has it. Connect the
+-- application as that role and every policy below is inert: pg_policies still lists
+-- them, relforcerowsecurity still reads true, and every tenant sees every other
+-- tenant's calls. It is invisible to inspection and was caught only by an adversarial
+-- test that tried to cross the boundary and succeeded.
+--
+-- So: assert it, at migration time, every time.
+do $$
+begin
+  if (select rolbypassrls from pg_roles where rolname = 'ansa_app') then
+    raise exception
+      'ansa_app has BYPASSRLS; every policy in this migration would be silently inert';
   end if;
 end
 $$;

@@ -1,0 +1,27 @@
+{
+  "name": "@ansa/db",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@ansa/shared": "workspace:*",
+    "pg": "^8.13.1",
+    "reflect-metadata": "^0.2.2",
+    "typeorm": "^0.3.20"
+  },
+  "devDependencies": {
+    "@ansa/config": "workspace:*",
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.11.10",
+    "eslint": "10.8.0",
+    "typescript": "5.9.3",
+    "vitest": "^4.1.10"
+  }
+}
