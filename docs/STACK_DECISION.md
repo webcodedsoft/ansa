@@ -211,6 +211,51 @@ direction: the remaining errors are vocabulary, and **no model size fixes a word
 model has never been told to expect**. That is R4.1.3's job and this provider cannot do
 it.
 
+### Deepgram Flux — protocol PROVEN against the live API, 2026-08-08
+
+Probe A, every assertion passed. Full script and reasoning in `docs/DEEPGRAM_PLAN.md`.
+
+```
+wss://api.deepgram.com/v2/listen?model=flux-general-en&encoding=mulaw&sample_rate=8000
+  &eot_threshold=0.8&eot_timeout_ms=3000&keyterm=policy&keyterm=policy%20number&…
+Authorization: Token <key>          # NOT Bearer — Bearer returns 401
+```
+
+| assertion | result |
+|---|---|
+| `Token` auth required, `Bearer` rejected | ✅ Bearer → 401 |
+| composed URL connects (μ-law + 8000 + keyterms on Flux) | ✅ 101, `Connected` |
+| μ-law 8kHz actually **decodes**, not merely accepted | ✅ "I would like to know about my policy." |
+| per-word `confidence` varies (R4.1.5) | ✅ min 0.491, mean 0.993, max 1.000 |
+| `end_of_turn_confidence` present and varies | ✅ n=22, 20 distinct, 0.002–0.860 |
+| EU endpoint `api.eu.deepgram.com` usable with `flux-general-en` | ✅ same transcript |
+
+**This clears the risk that stopped Intron.** μ-law at 8000 on Flux is documented-legal but
+appears in no Deepgram example anywhere; it works.
+
+**Two capabilities we have never had.** Per-word confidence that genuinely varies makes
+R4.1.5 actionable — a 0.491 word is the signal to ask rather than answer. And
+`end_of_turn_confidence` turns the false-EOT problem, which has been anecdotal all
+session, into something measurable.
+
+**Three corrections to the plan, found by running it:**
+
+1. **The audio clock does not align.** `audio_window_end` runs ~270–300ms behind our byte
+   counter, consistently — outside the ±150ms tolerance. Use our own counter for
+   `TurnEvent.offsetMs`; log theirs as a diagnostic only. R4.1.7 correlation and the
+   echo-suppression exact match both depend on this.
+2. **No chunk coalescing needed.** 160-byte/20ms Twilio passthrough produced an identical
+   transcript to 640-byte/80ms. Forward the carrier's frames untouched; 80ms is a
+   recommendation, not a requirement.
+3. **Malformed keyterms fail silently, confirmed empirically.** `keyterm=policy,premium`
+   connected and returned a transcript identical to the no-keyterm arm. A typo disables
+   boosting forever and nothing complains — this needs a unit test, not a comment.
+
+**Still unproven, and it is the only thing that matters:** whether keyterm boosting
+rescues "policy" on *real* Nigerian-accented caller audio. The probe used TTS, which
+STACK_DECISION already records as unable to reproduce the failure. **Probe B needs
+recorded caller audio — `audio_segments`, Slice 2 — and remains the deciding measurement.**
+
 ### Intron Sahara v2 — attempted and DROPPED 2026-08-07
 
 **Not pursued.** Kept here so nobody spends another evening on it without knowing what
