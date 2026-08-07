@@ -48,9 +48,9 @@ you can act on.
 - [x] Turborepo + pnpm monorepo. `apps/api` (NestJS), `packages/shared`, `packages/config`.
       *Also `packages/providers/{telephony,tts,listen/transcriber,listen/turn}`. Interfaces
       only, no implementations. `pnpm build && pnpm typecheck && pnpm lint` all green.*
-- [ ] Twilio number provisioned, webhook wired, ngrok for local dev.
-      *Webhook built and proven against a local fake carrier. Number, credentials and
-      ngrok still outstanding — this box needs a real call.*
+- [x] Twilio number provisioned, webhook wired, ngrok for local dev.
+      *`+18148592625` (US). Two real calls answered on 2026-08-07 from `+2348138178550`.
+      Twilio sells no Nigerian numbers — see the session log below.*
 - [x] Bidirectional media stream over WebSocket, μ-law 8kHz, audio flowing both ways.
       *Inbound proven: 120 × 160-byte μ-law frames received and counted. Outbound
       `send`/`mark`/`clear` implemented but not yet exercised — nothing generates audio
@@ -63,8 +63,9 @@ you can act on.
 - [ ] Agent answers, speaks one sentence in the chosen Nigerian voice, ends the call.
       Make it the real greeting — "Thank you for calling Ansa" — so the phone-line name
       test (PRD §1.0) happens on day one rather than after the logo is designed.
-      *Wired and proven against a stub: synthesis → media frames → mark → hangup. No real
-      voice, no real call. Needs `ELEVENLABS_API_KEY` and a voice id.*
+      *Answers, speaks and ends the call — proven on two real phone calls. But the voice
+      is a premade American one, because the free ElevenLabs plan cannot use library voices
+      via the API. **This box stays open until Olabisi speaks down a real line.***
 - [ ] Add "Ansa" to the default keyterm vocabulary. Callers will say the brand name back
       and the STT must not mangle it. *Waiting on Slice 3 — there is no STT to configure.*
 - [x] Structured logging with `call_id` on every line.
@@ -172,6 +173,28 @@ you can act on.
   256–277ms hitting ElevenLabs directly, against a <300ms target. ngrok inflates it, so this
   is not the production number — but latency has now looked tight from every angle measured,
   and R9.1.8's Lagos measurement is looking like the decisive Gate A test rather than WER.
+
+- *2026-08-07 — **First real phone calls.*** Two inbound calls from `+2348138178550` to
+  `+18148592625`, both answered, both spoke the greeting, both hung up cleanly. Slice 1's
+  pipeline half is proven end to end on real telephony.
+- **The mark round-tripped on a real carrier**, which no stub could establish. Call 1:
+  synthesis done at 982ms, mark back at 2740ms — a 1.76s gap that is the audio genuinely
+  playing out to the caller. Call 2: 562ms → 2385ms, a 1.82s gap. Both match the ~1.6s
+  greeting. This is the direct evidence that hanging up on `onDone` would have truncated
+  the greeting, and that waiting for the mark is what prevents it.
+- Inbound audio arrived as expected: μ-law 8kHz, 143–158 frames of 160 bytes per call.
+- **Latency, with real numbers at last: TTS time-to-first-byte was 959ms on the first call
+  and 468ms on the second, against a <300ms target (R4.2.3).** Three to one over budget on
+  the cold call. The path was contorted — Nigerian mobile → international → Twilio US →
+  ngrok → laptop in Nigeria → ElevenLabs — so this is not the production number. But every
+  measurement taken from every angle has now come in over budget, and R9.1.8 should be
+  treated as a live risk to the provider choice rather than a formality.
+- The first call being roughly twice the second suggests a cold-start cost worth isolating:
+  TLS handshake to ElevenLabs, ngrok tunnel warm-up, or model load. Connection reuse across
+  calls is worth measuring in Slice 3.
+- **Slice 1 remains open.** "Done when: you call the number and hear a Nigerian voice." The
+  voice was American. Two things are still needed: a paid ElevenLabs plan for Olabisi, and
+  eventually a Nigerian number that Nigerian callers can actually dial.
 
 - *2026-08-07 — ElevenLabs verified against the live API.* `output_format=ulaw_8000`
   returns genuine raw μ-law 8kHz: `content-type: audio/ulaw`, no container, and a decoded
