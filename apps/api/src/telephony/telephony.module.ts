@@ -1,10 +1,11 @@
 import { createLogger, type Logger } from "@ansa/shared";
 import { createTwilioTelephonyProvider } from "@ansa/telephony";
+import { createElevenLabsTts } from "@ansa/tts";
 import { Module } from "@nestjs/common";
 
 import { type AppConfig, loadConfig } from "../config/env";
 import { MediaGateway } from "./media.gateway";
-import { APP_CONFIG, LOGGER, TELEPHONY_PROVIDER } from "./tokens";
+import { APP_CONFIG, LOGGER, TELEPHONY_PROVIDER, TTS_PROVIDER } from "./tokens";
 import { VoiceController } from "./voice.controller";
 
 /**
@@ -23,6 +24,17 @@ import { VoiceController } from "./voice.controller";
         createTwilioTelephonyProvider({
           authToken: config.twilioAuthToken,
           verifySignatures: config.verifySignatures,
+        }),
+    },
+    {
+      provide: TTS_PROVIDER,
+      inject: [APP_CONFIG],
+      useFactory: (config: AppConfig) =>
+        createElevenLabsTts({
+          apiKey: config.elevenLabsApiKey,
+          ...(config.elevenLabsBaseUrl === undefined
+            ? {}
+            : { baseUrl: config.elevenLabsBaseUrl }),
         }),
     },
     MediaGateway,

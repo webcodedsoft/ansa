@@ -7,6 +7,10 @@ export interface AppConfig {
   readonly publicBaseUrl: string;
   readonly twilioAuthToken: string;
   readonly verifySignatures: boolean;
+  readonly elevenLabsApiKey: string;
+  readonly elevenLabsVoiceId: string;
+  /** Overridden in local testing to point at a stub. Defaults to the real API. */
+  readonly elevenLabsBaseUrl: string | undefined;
 }
 
 const required = (env: NodeJS.ProcessEnv, key: string): string => {
@@ -15,6 +19,11 @@ const required = (env: NodeJS.ProcessEnv, key: string): string => {
     throw new Error(`Missing required environment variable: ${key}`);
   }
   return value.trim();
+};
+
+const optional = (env: NodeJS.ProcessEnv, key: string): string | undefined => {
+  const value = env[key];
+  return value === undefined || value.trim().length === 0 ? undefined : value.trim();
 };
 
 export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
@@ -26,5 +35,10 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
     publicBaseUrl: required(env, "PUBLIC_BASE_URL").replace(/\/+$/, ""),
     twilioAuthToken: verifySignatures ? required(env, "TWILIO_AUTH_TOKEN") : "",
     verifySignatures,
+    // Required rather than optional: an agent that cannot speak has nothing to offer a
+    // caller, so failing at boot beats failing mid-call.
+    elevenLabsApiKey: required(env, "ELEVENLABS_API_KEY"),
+    elevenLabsVoiceId: required(env, "ELEVENLABS_VOICE_ID"),
+    elevenLabsBaseUrl: optional(env, "ELEVENLABS_BASE_URL"),
   };
 };

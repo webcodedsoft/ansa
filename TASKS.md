@@ -63,9 +63,13 @@ you can act on.
 - [ ] Agent answers, speaks one sentence in the chosen Nigerian voice, ends the call.
       Make it the real greeting — "Thank you for calling Ansa" — so the phone-line name
       test (PRD §1.0) happens on day one rather than after the logo is designed.
+      *Wired and proven against a stub: synthesis → media frames → mark → hangup. No real
+      voice, no real call. Needs `ELEVENLABS_API_KEY` and a voice id.*
 - [ ] Add "Ansa" to the default keyterm vocabulary. Callers will say the brand name back
-      and the STT must not mangle it.
-- [ ] Structured logging with `call_id` on every line.
+      and the STT must not mangle it. *Waiting on Slice 3 — there is no STT to configure.*
+- [x] Structured logging with `call_id` on every line.
+      *JSON to stdout, `child({ callId })` bound at stream start. Every call-scoped line
+      in the runs above carries it.*
 
 **Done when:** you call the number from your phone and hear a Nigerian voice.
 
@@ -130,6 +134,31 @@ you can act on.
   so it could not be checked from docs. One authenticated request settles it and that is
   the first thing to run when the key lands. If μ-law is not native, the provider choice
   is wrong and should be revisited rather than papered over with a transcoder.
+
+- *2026-08-07 — Functions are expressions, not declarations.* 35 conversions across 13
+  files, enforced by `func-style: expression` + `prefer-arrow-callback` in `@ansa/config`.
+  Class methods exempt (NestJS needs classes). Consequence: `const` does not hoist, so
+  helpers must sit above their first use.
+- *2026-08-07 — Step 4 of 4 (greeting) wired, proven against a stub, not against a phone.*
+  `speakGreeting` synthesises "Thank you for calling Ansa.", streams chunks to the carrier,
+  places a mark, and hangs up **when the mark comes back** — not when synthesis finishes,
+  because queued audio has not been heard and hanging up early truncates the greeting.
+- Failure paths, all covered by tests: synthesis error → hang up (never an open silent
+  line); mark never returned → 15s timeout → hang up; caller hung up first → do not hang
+  up again; hang up at most once. 9 tests on the greeting, 46 in the repo.
+- **`ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` are now required at boot** — an agent
+  that cannot speak has nothing to offer a caller, so it fails at startup rather than
+  mid-call. `ELEVENLABS_BASE_URL` overrides the host to point at a stub.
+- The fake carrier now **echoes marks back** the way the real one does. Without that the
+  agent can never learn the caller heard anything, and every call would hit the timeout.
+- Proven end to end against a stub ElevenLabs: `output_format=ulaw_8000` requested, correct
+  text and voice sent, 8,000 bytes of μ-law returned as 20 media frames, mark echoed,
+  hangup on mark at 273ms. **The real API has still never been called.**
+- Open: the adapter forwards TTS chunks at whatever size the provider emits (400 bytes in
+  the stub). Real Twilio prefers ~160-byte/20ms frames. It accepts larger and buffers, but
+  chunk size affects how fast `clear()` can cut audio off, so revisit at barge-in.
+- Slice 1's remaining work is not code: a number, credentials, ngrok, a Nigerian voice,
+  and a phone call.
 
 ---
 

@@ -2,10 +2,13 @@ import type { Server } from "node:http";
 
 import type { Logger } from "@ansa/shared";
 import type { CallMediaStream, TelephonyProvider } from "@ansa/telephony";
+import type { TtsProvider } from "@ansa/tts";
 import { Inject, Injectable, type OnApplicationShutdown } from "@nestjs/common";
 import { WebSocketServer, type WebSocket } from "ws";
 
-import { LOGGER, MEDIA_STREAM_PATH, TELEPHONY_PROVIDER } from "./tokens";
+import type { AppConfig } from "../config/env";
+import { speakGreeting } from "./greeting";
+import { APP_CONFIG, LOGGER, MEDIA_STREAM_PATH, TELEPHONY_PROVIDER, TTS_PROVIDER } from "./tokens";
 import { fromWebSocket } from "./ws-media-socket";
 
 /**
@@ -18,6 +21,8 @@ export class MediaGateway implements OnApplicationShutdown {
 
   constructor(
     @Inject(TELEPHONY_PROVIDER) private readonly telephony: TelephonyProvider,
+    @Inject(TTS_PROVIDER) private readonly tts: TtsProvider,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(LOGGER) private readonly log: Logger,
   ) {}
 
@@ -50,7 +55,7 @@ export class MediaGateway implements OnApplicationShutdown {
   }
 
   /**
-   * Slice 1 step 2 proves audio is arriving and nothing more. The transcriber and turn
+   * Slice 1 counts inbound audio and speaks one sentence. The transcriber and turn
    * detector subscribe to this same stream in Slice 3.
    */
   private observe(stream: CallMediaStream): void {
@@ -90,6 +95,12 @@ export class MediaGateway implements OnApplicationShutdown {
         bytes,
         durationMs: Date.now() - openedAt,
       });
+    });
+
+    speakGreeting(stream, {
+      tts: this.tts,
+      voiceId: this.config.elevenLabsVoiceId,
+      log: this.log,
     });
   }
 }

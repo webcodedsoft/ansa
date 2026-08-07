@@ -69,6 +69,9 @@ const CALL_PARAMS: Readonly<Record<string, string>> = {
 
 const STREAM_SID = "MZfaketeststream0000000000000001";
 
+/** Stands in for the time the carrier takes to play queued audio before echoing a mark. */
+const MARK_PLAYBACK_MS = 150;
+
 const buildHeaders = (mode: Mode, url: string): Record<string, string> => {
   const headers: Record<string, string> = {
     "Content-Type": "application/x-www-form-urlencoded",
@@ -94,7 +97,11 @@ interface OutboundTally {
   clears: number;
 }
 
-const tallyOutbound = (raw: string, tally: OutboundTally): void => {
+const tallyOutbound = (
+  raw: string,
+  tally: OutboundTally,
+  onMark: (name: string) => void,
+): void => {
   let frame: unknown;
   try {
     frame = JSON.parse(raw);
@@ -128,6 +135,7 @@ const tallyOutbound = (raw: string, tally: OutboundTally): void => {
         : undefined;
     tally.marks.push(typeof name === "string" ? name : "(unnamed)");
     console.log(`[carrier] <- mark ${String(name)}`);
+    if (typeof name === "string") onMark(name);
     return;
   }
 
@@ -157,7 +165,13 @@ const streamMedia = async (streamUrl: string, options: Options): Promise<number>
   });
 
   socket.on("message", (data: Buffer) => {
-    tallyOutbound(data.toString("utf8"), tally);
+    tallyOutbound(data.toString("utf8"), tally, (name) => {
+      // The real carrier echoes a mark back once playback reaches it. Without this the
+      // agent can never learn that the caller actually heard the audio.
+      setTimeout(() => {
+        socket.send(JSON.stringify({ event: "mark", streamSid: STREAM_SID, mark: { name } }));
+      }, MARK_PLAYBACK_MS);
+    });
   });
 
   await new Promise<void>((resolve, reject) => {
