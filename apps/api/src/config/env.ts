@@ -61,7 +61,7 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
     elevenLabsVoiceId: required(env, "ELEVENLABS_VOICE_ID"),
     elevenLabsBaseUrl: optional(env, "ELEVENLABS_BASE_URL"),
     openAiApiKey: required(env, "OPENAI_API_KEY"),
-    transcriptionModel: optional(env, "TRANSCRIPTION_MODEL") ?? "gpt-live-transcribe",
+    transcriptionModel: optional(env, "TRANSCRIPTION_MODEL") ?? "gpt-4o-mini-transcribe",
     turnDetectionMode: optional(env, "TURN_DETECTION") ?? "semantic_vad",
     vadEagerness: optional(env, "VAD_EAGERNESS") ?? "auto",
     vadSilenceMs: Number(env["VAD_SILENCE_MS"] ?? 900),

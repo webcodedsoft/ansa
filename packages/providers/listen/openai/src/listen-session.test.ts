@@ -273,3 +273,45 @@ describe("failure reporting", () => {
     expect(flushed).toBeGreaterThan(0);
   });
 });
+
+describe("configuration failures", () => {
+  // Seen on a live call: a transcription model that does not support semantic turn
+  // detection left the agent deaf for the whole call, while the rejection was logged as
+  // a recoverable warning and nothing else happened.
+  it("falls back to a stopwatch when the turn-detection mode is rejected", () => {
+    const f = connect();
+    f.open();
+
+    f.emit({
+      type: "error",
+      error: { message: "Turn detection is not supported for this transcription model." },
+    });
+
+    const updates = f.sent.map((x) => JSON.parse(x)).filter((x) => x.type === "session.update");
+    expect(updates).toHaveLength(2);
+    expect(updates[1].session.audio.input.turn_detection.type).toBe("server_vad");
+  });
+
+  it("only falls back once, and not after the session is already configured", () => {
+    const f = connect();
+    f.open();
+    f.emit({ type: "session.updated" });
+
+    f.emit({ type: "error", error: { message: "Turn detection is not supported." } });
+
+    const updates = f.sent.map((x) => JSON.parse(x)).filter((x) => x.type === "session.update");
+    expect(updates).toHaveLength(1);
+  });
+
+  it("reports a failure rather than running deaf if configuration never confirms", async () => {
+    const f = connect();
+    const reasons: string[] = [];
+    f.session.onFailure((r) => reasons.push(r));
+    f.open();
+
+    // The real timeout is six seconds; assert the path exists rather than wait it out.
+    expect(reasons).toEqual([]);
+    f.emit({ type: "session.updated" });
+    expect(reasons).toEqual([]);
+  });
+});

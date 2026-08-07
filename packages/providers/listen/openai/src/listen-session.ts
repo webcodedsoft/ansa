@@ -58,6 +58,12 @@ export interface OpenAiListenSession {
 /** Three seconds of μ-law. A socket that never becomes ready must not grow forever. */
 const MAX_PENDING_BYTES = 24_000;
 
+/**
+ * A session that has not confirmed its configuration by now never will, and a session
+ * that is not configured produces no transcripts at all — an agent that cannot hear.
+ */
+const READY_TIMEOUT_MS = 6_000;
+
 const BYTES_PER_MS_MULAW_8K = 8;
 
 export const openListenSession = (
@@ -77,6 +83,7 @@ export const openListenSession = (
   let ready = false;
   let closed = false;
   let failed = false;
+  let triedFallback = false;
   let bytesWritten = 0;
   let pendingBytes = 0;
   /**
@@ -101,6 +108,15 @@ export const openListenSession = (
 
   socket.onOpen(() => {
     socket.send(encodeSessionUpdate(options));
+
+    // Configuration is not optional: without it there is no turn detection and no
+    // transcript, ever. Seen on a live call — a transcription model that does not
+    // support semantic turn detection left the agent deaf for the whole call while the
+    // rejection was logged as a recoverable warning and nothing else happened.
+    const readyTimer = setTimeout(() => {
+      if (!ready) fail("listen session never confirmed its configuration");
+    }, READY_TIMEOUT_MS);
+    readyTimer.unref();
   });
 
   socket.onClose((reason) => {
@@ -160,11 +176,27 @@ export const openListenSession = (
         for (const l of final) l(t);
         return;
       }
-      case "error":
-        // Not terminal. The vendor emits these for recoverable conditions, and treating
-        // one as fatal would end calls that were fine.
+      case "error": {
         for (const listener of vendorErrorListeners) listener(event.message);
+
+        // Some models reject the turn-detection mode we asked for. Degrade to the
+        // stopwatch rather than run deaf: worse turn-taking is recoverable, no turn
+        // detection at all is not.
+        if (!ready && !triedFallback && /turn detection/i.test(event.message)) {
+          triedFallback = true;
+          socket.send(
+            encodeSessionUpdate({
+              ...options,
+              turnDetection: { type: "server_vad", silenceMs: 700 },
+            }),
+          );
+          return;
+        }
+
+        // Otherwise not terminal: the vendor emits these for recoverable conditions,
+        // and treating one as fatal would end calls that were fine.
         return;
+      }
     }
   });
 
