@@ -26,15 +26,24 @@ importers:
       '@ansa/llm':
         specifier: workspace:*
         version: link:../../packages/providers/llm
+      '@ansa/openai-listen':
+        specifier: workspace:*
+        version: link:../../packages/providers/listen/openai
       '@ansa/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@ansa/telephony':
         specifier: workspace:*
         version: link:../../packages/providers/telephony
+      '@ansa/transcriber':
+        specifier: workspace:*
+        version: link:../../packages/providers/listen/transcriber
       '@ansa/tts':
         specifier: workspace:*
         version: link:../../packages/providers/tts
+      '@ansa/turn-detector':
+        specifier: workspace:*
+        version: link:../../packages/providers/listen/turn
       '@nestjs/common':
         specifier: ^11.1.0
         version: 11.1.28(reflect-metadata@0.2.2)(rxjs@7.8.2)

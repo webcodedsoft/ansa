@@ -11,6 +11,15 @@ export interface AppConfig {
   readonly elevenLabsVoiceId: string;
   /** Overridden in local testing to point at a stub. Defaults to the real API. */
   readonly elevenLabsBaseUrl: string | undefined;
+  readonly openAiApiKey: string;
+  readonly transcriptionModel: string;
+  /**
+   * How long the caller must be silent before the turn is committed. Measured tradeoff:
+   * at 500ms a 10s utterance was split at a natural thinking pause (a false end-of-turn),
+   * and roughly half the 1.0s end-of-speech-to-transcript latency is this floor. Lower
+   * is faster and interrupts more.
+   */
+  readonly vadSilenceMs: number;
 }
 
 const required = (env: NodeJS.ProcessEnv, key: string): string => {
@@ -40,5 +49,8 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
     elevenLabsApiKey: required(env, "ELEVENLABS_API_KEY"),
     elevenLabsVoiceId: required(env, "ELEVENLABS_VOICE_ID"),
     elevenLabsBaseUrl: optional(env, "ELEVENLABS_BASE_URL"),
+    openAiApiKey: required(env, "OPENAI_API_KEY"),
+    transcriptionModel: optional(env, "TRANSCRIPTION_MODEL") ?? "gpt-4o-mini-transcribe",
+    vadSilenceMs: Number(env["VAD_SILENCE_MS"] ?? 500),
   };
 };

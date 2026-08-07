@@ -1,205 +1,36 @@
-import { Buffer } from "node:buffer";
+import { describe, expect, it } from "vitest";
 
-import { TELEPHONY_AUDIO, asCallId, type AudioChunk, type Logger } from "@ansa/shared";
-import type { CallMediaStream } from "@ansa/telephony";
-import type { SynthesisRequest, SynthesisStream, TtsProvider } from "@ansa/tts";
-import { describe, expect, it, vi } from "vitest";
+import { forSpeech, GREETING_TEXT } from "./greeting";
 
-import { GREETING_TEXT, speakGreeting } from "./greeting";
-
-const silentLog: Logger = {
-  debug: () => undefined,
-  info: () => undefined,
-  warn: () => undefined,
-  error: () => undefined,
-  child: () => silentLog,
-};
-
-/** A CallMediaStream the test drives by hand. */
-const stubStream = () => {
-  const markListeners: ((name: string) => void)[] = [];
-  const closedListeners: ((reason: string) => void)[] = [];
-  const sent: AudioChunk[] = [];
-  const marks: string[] = [];
-  const hangUp = vi.fn();
-
-  const stream: CallMediaStream = {
-    callId: asCallId("CA-greeting-test"),
-    format: TELEPHONY_AUDIO,
-    onAudio: () => undefined,
-    send: (chunk) => sent.push(chunk),
-    mark: (name) => marks.push(name),
-    onMark: (listener) => markListeners.push(listener),
-    clear: () => undefined,
-    onClosed: (listener) => closedListeners.push(listener),
-    hangUp,
-  };
-
-  return {
-    stream,
-    sent,
-    marks,
-    hangUp,
-    fireMark: (name: string) => markListeners.forEach((l) => l(name)),
-    fireClosed: (reason: string) => closedListeners.forEach((l) => l(reason)),
-  };
-};
-
-/** A TtsProvider the test drives by hand. */
-const stubTts = () => {
-  const requests: SynthesisRequest[] = [];
-  let audio: ((chunk: AudioChunk) => void) | undefined;
-  let done: (() => void) | undefined;
-  let failed: ((error: Error) => void) | undefined;
-  const cancel = vi.fn();
-
-  const provider: TtsProvider = {
-    name: "stub",
-    synthesize: (request) => {
-      requests.push(request);
-      const stream: SynthesisStream = {
-        onAudio: (l) => {
-          audio = l;
-        },
-        onDone: (l) => {
-          done = l;
-        },
-        onError: (l) => {
-          failed = l;
-        },
-        cancel,
-      };
-      return stream;
-    },
-  };
-
-  return {
-    provider,
-    requests,
-    cancel,
-    emitAudio: (bytes: number[]) => audio?.({ data: Buffer.from(bytes), offsetMs: 0 }),
-    emitDone: () => done?.(),
-    emitError: (message: string) => failed?.(new Error(message)),
-  };
-};
-
-const setup = () => {
-  const call = stubStream();
-  const tts = stubTts();
-  speakGreeting(call.stream, {
-    tts: tts.provider,
-    voiceId: "voice-ng-1",
-    log: silentLog,
-    markTimeoutMs: 50,
-  });
-  return { call, tts };
-};
-
-describe("speakGreeting", () => {
-  it("asks for the real greeting, in the stream's format, in the configured voice", () => {
-    const { tts } = setup();
-
-    expect(tts.requests).toHaveLength(1);
-    expect(tts.requests[0]).toMatchObject({
-      voiceId: "voice-ng-1",
-      format: TELEPHONY_AUDIO,
-    });
-    // The brand name is the point of speaking it at all (PRD §1.0).
+describe("the greeting", () => {
+  it("says the brand name, which is the point of speaking it at all (PRD §1.0)", () => {
     expect(GREETING_TEXT).toBe("Thank you for calling Ansa.");
   });
+});
 
+describe("forSpeech", () => {
   // Confirmed on a real call: at 8kHz μ-law "Ansa" is heard as "Anza", because /s/ lives
   // above the telephony passband. The respelling is what makes it survive.
-  it("hands TTS the respelled brand name, not the written one", () => {
-    const { tts } = setup();
-
-    expect(tts.requests[0]?.text).toBe("Thank you for calling An-Sah.");
-    expect(tts.requests[0]?.text).not.toContain("Ansa.");
+  it("respells the brand name for the telephone channel", () => {
+    expect(forSpeech(GREETING_TEXT)).toBe("Thank you for calling An-Sah.");
   });
 
-  it("leaves the written brand name untouched for logs and transcripts", () => {
-    // Whatever we do to make the channel behave must not leak into what we record as
-    // having been said, or every transcript and eval entry inherits the workaround.
+  it("leaves the written brand name untouched, so transcripts stay honest", () => {
+    // If the workaround leaked into what we record as having been said, every
+    // transcript, eval corpus entry and WER score would inherit it.
     expect(GREETING_TEXT).toContain("Ansa");
     expect(GREETING_TEXT).not.toContain("An-Sah");
   });
 
-  it("forwards each synthesised chunk to the caller", () => {
-    const { call, tts } = setup();
-
-    tts.emitAudio([1, 2, 3]);
-    tts.emitAudio([4, 5]);
-
-    expect(Buffer.concat(call.sent.map((c) => c.data))).toEqual(Buffer.from([1, 2, 3, 4, 5]));
+  it("respells every occurrence, not just the first", () => {
+    expect(forSpeech("Ansa here. This is Ansa.")).toBe("An-Sah here. This is An-Sah.");
   });
 
-  // The defect this guards: audio queued at the carrier has not been heard yet, so
-  // hanging up when synthesis finishes cuts off the end of the greeting.
-  it("marks when synthesis finishes but does not hang up yet", () => {
-    const { call, tts } = setup();
-
-    tts.emitAudio([1]);
-    tts.emitDone();
-
-    expect(call.marks).toHaveLength(1);
-    expect(call.hangUp).not.toHaveBeenCalled();
+  it("leaves words that merely contain the letters alone", () => {
+    expect(forSpeech("The answer is Ansa.")).toBe("The answer is An-Sah.");
   });
 
-  it("hangs up once the carrier returns the mark", () => {
-    const { call, tts } = setup();
-
-    tts.emitAudio([1]);
-    tts.emitDone();
-    call.fireMark(call.marks[0] as string);
-
-    expect(call.hangUp).toHaveBeenCalledTimes(1);
-  });
-
-  it("ignores marks it did not place", () => {
-    const { call, tts } = setup();
-
-    tts.emitDone();
-    call.fireMark("some-other-mark");
-
-    expect(call.hangUp).not.toHaveBeenCalled();
-  });
-
-  // Never silence: a failed synthesis has to end the call, not hold an open line.
-  it("hangs up when synthesis fails", () => {
-    const { call, tts } = setup();
-
-    tts.emitError("elevenlabs returned 401");
-
-    expect(call.hangUp).toHaveBeenCalledTimes(1);
-  });
-
-  it("hangs up if the mark never comes back", async () => {
-    const { call, tts } = setup();
-
-    tts.emitDone();
-    await new Promise((resolve) => setTimeout(resolve, 80));
-
-    expect(call.hangUp).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not hang up a stream the caller already closed", async () => {
-    const { call } = setup();
-
-    call.fireClosed("caller hung up");
-    await new Promise((resolve) => setTimeout(resolve, 80));
-
-    expect(call.hangUp).not.toHaveBeenCalled();
-  });
-
-  it("hangs up at most once", async () => {
-    const { call, tts } = setup();
-
-    tts.emitDone();
-    call.fireMark(call.marks[0] as string);
-    call.fireMark(call.marks[0] as string);
-    tts.emitError("late failure");
-    await new Promise((resolve) => setTimeout(resolve, 80));
-
-    expect(call.hangUp).toHaveBeenCalledTimes(1);
+  it("passes through text without the brand name", () => {
+    expect(forSpeech("Your policy renews in May.")).toBe("Your policy renews in May.");
   });
 });

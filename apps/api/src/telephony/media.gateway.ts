@@ -2,13 +2,24 @@ import type { Server } from "node:http";
 
 import type { Logger } from "@ansa/shared";
 import type { CallMediaStream, TelephonyProvider } from "@ansa/telephony";
+import type { LlmProvider } from "@ansa/llm";
+import { openListenSession } from "@ansa/openai-listen";
 import type { TtsProvider } from "@ansa/tts";
 import { Inject, Injectable, type OnApplicationShutdown } from "@nestjs/common";
 import { WebSocketServer, type WebSocket } from "ws";
 
 import type { AppConfig } from "../config/env";
-import { speakGreeting } from "./greeting";
-import { APP_CONFIG, LOGGER, MEDIA_STREAM_PATH, TELEPHONY_PROVIDER, TTS_PROVIDER } from "./tokens";
+import { forSpeech, GREETING_TEXT } from "./greeting";
+import { runConversation } from "../orchestrator/orchestrator";
+import { openListenSocket } from "./ws-listen-socket";
+import {
+  APP_CONFIG,
+  LLM_PROVIDER,
+  LOGGER,
+  MEDIA_STREAM_PATH,
+  TELEPHONY_PROVIDER,
+  TTS_PROVIDER,
+} from "./tokens";
 import { fromWebSocket } from "./ws-media-socket";
 
 /**
@@ -22,6 +33,7 @@ export class MediaGateway implements OnApplicationShutdown {
   constructor(
     @Inject(TELEPHONY_PROVIDER) private readonly telephony: TelephonyProvider,
     @Inject(TTS_PROVIDER) private readonly tts: TtsProvider,
+    @Inject(LLM_PROVIDER) private readonly llm: LlmProvider,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(LOGGER) private readonly log: Logger,
   ) {}
@@ -97,10 +109,23 @@ export class MediaGateway implements OnApplicationShutdown {
       });
     });
 
-    speakGreeting(stream, {
+    // One realtime connection per call, serving both listen interfaces.
+    const listen = openListenSession(openListenSocket(this.config.openAiApiKey), {
+      format: stream.format,
+      model: this.config.transcriptionModel,
+      silenceMs: this.config.vadSilenceMs,
+      // Callers say the brand name back, and it must not be mangled (R4.1.3).
+      keyterms: ["Ansa", "policy", "premium", "naira"],
+    });
+
+    runConversation(stream, {
+      listen,
+      llm: this.llm,
       tts: this.tts,
       voiceId: this.config.elevenLabsVoiceId,
       log: this.log,
+      greeting: GREETING_TEXT,
+      forSpeech,
     });
   }
 }

@@ -1,11 +1,12 @@
 import { createLogger, type Logger } from "@ansa/shared";
 import { createTwilioTelephonyProvider } from "@ansa/telephony";
+import { createOpenAiLlm } from "@ansa/llm";
 import { createElevenLabsTts } from "@ansa/tts";
 import { Module } from "@nestjs/common";
 
 import { type AppConfig, loadConfig } from "../config/env";
 import { MediaGateway } from "./media.gateway";
-import { APP_CONFIG, LOGGER, TELEPHONY_PROVIDER, TTS_PROVIDER } from "./tokens";
+import { APP_CONFIG, LLM_PROVIDER, LOGGER, TELEPHONY_PROVIDER, TTS_PROVIDER } from "./tokens";
 import { VoiceController } from "./voice.controller";
 
 /**
@@ -36,6 +37,11 @@ import { VoiceController } from "./voice.controller";
             ? {}
             : { baseUrl: config.elevenLabsBaseUrl }),
         }),
+    },
+    {
+      provide: LLM_PROVIDER,
+      inject: [APP_CONFIG],
+      useFactory: (config: AppConfig) => createOpenAiLlm({ apiKey: config.openAiApiKey }),
     },
     MediaGateway,
   ],
