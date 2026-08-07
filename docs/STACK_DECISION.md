@@ -128,6 +128,47 @@ transcriber that mangles the developer's own accent is a bad position to build f
       noise. PRD §9.1 warns a stack chosen on clean audio looks 10–20 points better than
       it performs.
 
+### Turn detection: measured on live calls, 2026-08-07
+
+Three configurations, same caller, same phone:
+
+| | `server_vad` 500ms | `semantic_vad` low | `semantic_vad` auto |
+|---|---|---|---|
+| agent turns fully played | 0 | 1 | **3 of 4** |
+| barge-ins (mostly spurious) | 5 | 2 | **1** |
+| worst wait before committing | — | **7.6s** | 1.5s |
+| caller transcripts | all fragments | fragments | mostly complete |
+
+**`semantic_vad` with `eagerness: auto` is the setting.** It decides from what was said
+rather than from a stopwatch, so it commits promptly on a finished sentence and holds
+through a trailing clause. `server_vad` at any fixed value was wrong for someone.
+
+**`eagerness: low` was a mistake worth remembering.** The reasoning — interrupting is
+worse than waiting — sounded right and was wrong: it waited 7.6 seconds on a plain
+greeting and the caller repeated themselves to check the line was alive. Lower is not
+safer, it is differently wrong.
+
+### Latency: the finding that outranks provider choice
+
+Per-turn, measured on live calls from Nigeria:
+
+| stage | avg |
+|---|---|
+| `stt_final` | 481–639ms |
+| **`llm_first_token`** | **1038–1186ms** |
+| `tts_first_byte` | 362–444ms |
+| **caller stops → agent speaks** | **~2.0–2.2s** (target 800ms p50) |
+
+`gpt-4o-mini` does not need 1.2s to produce a first token. **Most of every stage is
+network round-trip from Nigeria to US-hosted APIs, paid three times, serially.**
+
+This reframes Gate A. Swapping any one provider for another US-hosted one moves this
+very little. What would move it: providers with African or European points of presence,
+fewer serial hops (a speech-to-speech model collapses three round trips into one), or
+hosting our own inference closer to callers. **R9.1.8 — measure round-trip from Lagos —
+is not a formality; on this evidence it is the criterion most likely to decide the
+stack, ahead of accuracy.**
+
 **Note for any test harness:** VAD closes a turn only when it *hears* silence. Stopping
 the audio stream is not the same thing and yields no transcript at all. Carriers stream
 silence continuously; harnesses must too.

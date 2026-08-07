@@ -304,6 +304,27 @@ the difference between debugging in an hour and debugging in a week.
       request, tool dispatch, TTS synthesis (R4.1.8). Speculation without reliable
       cancellation is worse than none.
 - [ ] Per-provider cost tracking on the listen layer (R4.1.9).
+
+**Session log — 2026-08-07**
+
+- The conversation loop works on real calls: greeting, listen, transcribe, think, speak,
+  barge-in, repeat. Four live calls drove four rounds of fixes.
+- **Bugs the first live call found that no test would have.** Keyterms passed as a
+  transcription `prompt` came back as phantom caller turns ("Expect these terms: Ansa,
+  policy, premium, naira." ×5) and the agent answered its own configuration. Every agent
+  turn was barged-in at `charsHeard: 0` by its own audio echoing through the caller's
+  handset. Each sentence overwrote the previous synthesis so two audio streams
+  interleaved. `tts_first_byte` measured against a mark that was never set.
+- **Turn detection is `semantic_vad` / `eagerness: auto`**, chosen on measurements — see
+  the table in `docs/STACK_DECISION.md`. `server_vad` at any fixed silence value was
+  wrong for someone, and `eagerness: low` waited 7.6s on a greeting.
+- **The dominant latency is distance, not the stack.** ~2.0s per turn against 800ms,
+  with `llm_first_token` the largest stage at ~1.1s. All three stages pay a Nigeria→US
+  round trip, serially. No configuration fixes this and swapping to another US-hosted
+  provider barely will.
+- Still open in this slice: latencies are logged but not yet written to the `latencies`
+  table; no fallback VAD behind `TurnDetector`; no per-provider cost tracking; the
+  echo guard is a fixed 400ms floor rather than real echo cancellation.
 - [ ] Fallback path: our own VAD/endpointing behind the same `TurnDetector` interface, so
       a vendor outage degrades rather than stops the service.
 - [ ] LLM provider interface + Claude implementation.

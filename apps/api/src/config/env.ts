@@ -21,7 +21,13 @@ export interface AppConfig {
    * adds latency for everyone else. semantic_vad decides from what was said.
    */
   readonly turnDetectionMode: string;
-  /** semantic_vad only. "low" waits longer and interrupts less. */
+  /**
+   * semantic_vad only: "auto" (default), "low", "medium", "high".
+   *
+   * Measured on live calls: "low" waited 7.6 seconds before committing a plain
+   * greeting, so the caller repeated themselves to check the line was alive. That is a
+   * worse failure than being chopped. Lower is not safer, it is just differently wrong.
+   */
   readonly vadEagerness: string;
   /** server_vad only. Ignored under semantic_vad. */
   readonly vadSilenceMs: number;
@@ -57,7 +63,7 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
     openAiApiKey: required(env, "OPENAI_API_KEY"),
     transcriptionModel: optional(env, "TRANSCRIPTION_MODEL") ?? "gpt-4o-mini-transcribe",
     turnDetectionMode: optional(env, "TURN_DETECTION") ?? "semantic_vad",
-    vadEagerness: optional(env, "VAD_EAGERNESS") ?? "low",
+    vadEagerness: optional(env, "VAD_EAGERNESS") ?? "auto",
     vadSilenceMs: Number(env["VAD_SILENCE_MS"] ?? 900),
   };
 };
