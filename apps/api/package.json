@@ -7,7 +7,8 @@
     "dev": "nest start --watch",
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@ansa/shared": "workspace:*",
@@ -24,6 +25,7 @@
     "@nestjs/cli": "^11.0.0",
     "@types/node": "^24.0.0",
     "eslint": "10.8.0",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vitest": "^4.1.10"
   }
 }
