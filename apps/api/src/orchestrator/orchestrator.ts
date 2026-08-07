@@ -1,5 +1,6 @@
 import type { LlmProvider } from "@ansa/llm";
-import type { OpenAiListenSession } from "@ansa/openai-listen";
+import type { TranscriberSession } from "@ansa/transcriber";
+import type { TurnSession } from "@ansa/turn-detector";
 import type { AudioChunk, Logger } from "@ansa/shared";
 import type { CallMediaStream } from "@ansa/telephony";
 import { durationMs, type SynthesisStream, type TtsProvider } from "@ansa/tts";
@@ -10,8 +11,29 @@ import { interpret, normalise } from "./hearing";
 import { createSentenceBuffer } from "./sentences";
 import { SYSTEM_PROMPT } from "./system-prompt";
 
+/**
+ * Everything the orchestrator needs in order to listen, and nothing about who is
+ * providing it.
+ *
+ * Declared here rather than imported from a vendor package, because the orchestrator
+ * previously imported `OpenAiListenSession` by name — a vendor word in orchestration
+ * code, which is precisely what CLAUDE.md rule 2 exists to prevent. Both adapters
+ * satisfy this structurally, so swapping providers is a config value.
+ *
+ * The two streams stay separate: they are correlated by offsetMs and nothing here lets
+ * the orchestrator assume they share a connection (R4.1.7), even though today they do.
+ */
+export interface ListenSession {
+  readonly transcripts: TranscriberSession;
+  readonly turns: TurnSession;
+  write(chunk: AudioChunk): void;
+  onFailure(listener: (reason: string) => void): void;
+  onVendorError(listener: (message: string) => void): void;
+  close(): void;
+}
+
 export interface OrchestratorDeps {
-  readonly listen: OpenAiListenSession;
+  readonly listen: ListenSession;
   readonly llm: LlmProvider;
   readonly tts: TtsProvider;
   readonly voiceId: string;

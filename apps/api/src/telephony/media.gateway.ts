@@ -1,8 +1,9 @@
 import type { Server } from "node:http";
 
-import { TELEPHONY_AUDIO, type AudioChunk, type Logger } from "@ansa/shared";
+import { TELEPHONY_AUDIO, type AudioChunk, type AudioFormat, type Logger } from "@ansa/shared";
 import type { CallMediaStream, TelephonyProvider } from "@ansa/telephony";
 import type { LlmProvider } from "@ansa/llm";
+import { buildUrl, openDeepgramSession } from "@ansa/deepgram-listen";
 import { openListenSession } from "@ansa/openai-listen";
 import type { TtsProvider } from "@ansa/tts";
 import { Inject, Injectable, type OnApplicationShutdown } from "@nestjs/common";
@@ -12,7 +13,8 @@ import type { AppConfig } from "../config/env";
 import { ACKNOWLEDGEMENTS, ALL_FILLERS, PROGRESS, STILL_WORKING } from "./filler";
 import { forSpeech, GREETING_TEXT } from "./greeting";
 import { createAudioCache } from "./prerender";
-import { runConversation } from "../orchestrator/orchestrator";
+import { runConversation, type ListenSession } from "../orchestrator/orchestrator";
+import { openDeepgramSocket } from "./ws-deepgram-socket";
 import { openListenSocket } from "./ws-listen-socket";
 import {
   APP_CONFIG,
@@ -106,6 +108,60 @@ export class MediaGateway implements OnApplicationShutdown {
     });
   }
 
+  /**
+   * Vocabulary the transcriber should expect (R4.1.3). Every one of these has been
+   * misheard on a live call — "policy" alone has come back as apology, penalty, polling,
+   * course and puppy. Per-tenant terms join this list in Slice 7.
+   *
+   * Only Deepgram can act on it. OpenAI's realtime API offers no boosting, and the one
+   * mechanism it does offer recited its contents back as phantom caller turns.
+   */
+  private static readonly KEYTERMS: readonly string[] = [
+    "Ansa",
+    "policy",
+    "policy number",
+    "premium",
+    "naira",
+    "claim",
+    "renewal",
+    "cover",
+    "excess",
+  ];
+
+  private openListen(format: AudioFormat): ListenSession {
+    if (this.config.listenProvider === "deepgram") {
+      const url = buildUrl({
+        format,
+        model: this.config.deepgramModel,
+        keyterms: MediaGateway.KEYTERMS,
+        eotThreshold: this.config.deepgramEotThreshold,
+        eotTimeoutMs: this.config.deepgramEotTimeoutMs,
+        host: this.config.deepgramHost,
+      });
+      this.log.info("listening via deepgram", {
+        model: this.config.deepgramModel,
+        host: this.config.deepgramHost,
+        keyterms: MediaGateway.KEYTERMS.length,
+      });
+      return openDeepgramSession(openDeepgramSocket(url, this.config.deepgramApiKey));
+    }
+
+    this.log.info("listening via openai", { model: this.config.transcriptionModel });
+    return openListenSession(openListenSocket(this.config.openAiApiKey), {
+      format,
+      model: this.config.transcriptionModel,
+      turnDetection:
+        this.config.turnDetectionMode === "server_vad"
+          ? { type: "server_vad", silenceMs: this.config.vadSilenceMs }
+          : {
+              type: "semantic_vad",
+              eagerness: this.config.vadEagerness as "auto" | "low" | "medium" | "high",
+            },
+      // Carried for interface parity; this provider cannot act on them.
+      keyterms: MediaGateway.KEYTERMS,
+    });
+  }
+
   onApplicationShutdown(): void {
     this.server?.close();
     this.server = null;
@@ -154,20 +210,9 @@ export class MediaGateway implements OnApplicationShutdown {
       });
     });
 
-    // One realtime connection per call, serving both listen interfaces.
-    const listen = openListenSession(openListenSocket(this.config.openAiApiKey), {
-      format: stream.format,
-      model: this.config.transcriptionModel,
-      turnDetection:
-        this.config.turnDetectionMode === "server_vad"
-          ? { type: "server_vad", silenceMs: this.config.vadSilenceMs }
-          : {
-              type: "semantic_vad",
-              eagerness: this.config.vadEagerness as "auto" | "low" | "medium" | "high",
-            },
-      // Callers say the brand name back, and it must not be mangled (R4.1.3).
-      keyterms: ["Ansa", "policy", "premium", "naira"],
-    });
+    // One connection per call, serving both listen interfaces. Which vendor is behind
+    // it is a config value: both stay available so they can be compared on real calls.
+    const listen = this.openListen(stream.format);
 
     runConversation(stream, {
       listen,

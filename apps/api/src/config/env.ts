@@ -31,6 +31,21 @@ export interface AppConfig {
   readonly vadEagerness: string;
   /** server_vad only. Ignored under semantic_vad. */
   readonly vadSilenceMs: number;
+
+  /**
+   * "openai" or "deepgram". Both stay available so they can be compared on real calls;
+   * Gate A decides. Deepgram is the only one of the two that offers keyterm boosting
+   * (R4.1.3) or per-word confidence (R4.1.5).
+   */
+  readonly listenProvider: string;
+  readonly deepgramApiKey: string;
+  readonly deepgramModel: string;
+  /** `api.deepgram.com`, or `api.eu.deepgram.com` — nearer to Lagos, and worth measuring. */
+  readonly deepgramHost: string;
+  /** How sure Flux must be the caller finished. 0.5-0.9; higher interrupts less. */
+  readonly deepgramEotThreshold: number;
+  /** Silence backstop regardless of confidence. Below the 5000 default deliberately. */
+  readonly deepgramEotTimeoutMs: number;
 }
 
 const required = (env: NodeJS.ProcessEnv, key: string): string => {
@@ -70,5 +85,16 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
     turnDetectionMode: optional(env, "TURN_DETECTION") ?? "semantic_vad",
     vadEagerness: optional(env, "VAD_EAGERNESS") ?? "auto",
     vadSilenceMs: Number(env["VAD_SILENCE_MS"] ?? 900),
+
+    listenProvider: optional(env, "LISTEN_PROVIDER") ?? "openai",
+    // Only required when actually selected, so an OpenAI-only deployment needs no key.
+    deepgramApiKey:
+      (optional(env, "LISTEN_PROVIDER") ?? "openai") === "deepgram"
+        ? required(env, "DEEPGRAM_API_KEY")
+        : (optional(env, "DEEPGRAM_API_KEY") ?? ""),
+    deepgramModel: optional(env, "DEEPGRAM_MODEL") ?? "flux-general-en",
+    deepgramHost: optional(env, "DEEPGRAM_HOST") ?? "api.deepgram.com",
+    deepgramEotThreshold: Number(env["DEEPGRAM_EOT_THRESHOLD"] ?? 0.8),
+    deepgramEotTimeoutMs: Number(env["DEEPGRAM_EOT_TIMEOUT_MS"] ?? 3000),
   };
 };
