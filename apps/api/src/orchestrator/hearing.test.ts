@@ -80,7 +80,7 @@ describe("interpret — is it speech at all", () => {
 
   it("still rejects an utterance that is nothing but one repeated word", () => {
     expect(noise("you you you you you").reason).toBe("repeated token");
-    expect(noise("the the the the").reason).toBe("known hallucination");
+    expect(noise("the the the the").reason).toBe("repeated token");
   });
 });
 
