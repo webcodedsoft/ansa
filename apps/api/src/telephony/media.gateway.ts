@@ -9,7 +9,7 @@ import { Inject, Injectable, type OnApplicationShutdown } from "@nestjs/common";
 import { WebSocketServer, type WebSocket } from "ws";
 
 import type { AppConfig } from "../config/env";
-import { FILLER_PHRASES } from "./filler";
+import { ACKNOWLEDGEMENTS, ALL_FILLERS, PROGRESS, STILL_WORKING } from "./filler";
 import { forSpeech, GREETING_TEXT } from "./greeting";
 import { createAudioCache } from "./prerender";
 import { runConversation } from "../orchestrator/orchestrator";
@@ -33,7 +33,8 @@ export class MediaGateway implements OnApplicationShutdown {
   private server: WebSocketServer | null = null;
   /** Fixed phrases, rendered once at boot rather than per call. */
   private greetingAudio: readonly AudioChunk[] | null = null;
-  private fillers: readonly (readonly AudioChunk[])[] = [];
+  /** Keyed by phrase so the orchestrator picks a register, not a queue position. */
+  private fillers: ReadonlyMap<string, readonly AudioChunk[]> = new Map();
 
   constructor(
     @Inject(TELEPHONY_PROVIDER) private readonly telephony: TelephonyProvider,
@@ -91,11 +92,17 @@ export class MediaGateway implements OnApplicationShutdown {
     const voiceId = this.config.elevenLabsVoiceId;
 
     this.greetingAudio = await cache.render(GREETING_TEXT, voiceId);
-    const rendered = await Promise.all(FILLER_PHRASES.map((p) => cache.render(p, voiceId)));
-    this.fillers = rendered.filter((c): c is readonly AudioChunk[] => c !== null);
+
+    const rendered = new Map<string, readonly AudioChunk[]>();
+    for (const phrase of ALL_FILLERS) {
+      const chunks = await cache.render(phrase, voiceId);
+      if (chunks !== null) rendered.set(phrase, chunks);
+    }
+    this.fillers = rendered;
+
     this.log.info("audio warmed", {
       greeting: this.greetingAudio !== null,
-      fillers: this.fillers.length,
+      fillers: rendered.size,
     });
   }
 
@@ -172,6 +179,8 @@ export class MediaGateway implements OnApplicationShutdown {
       forSpeech,
       greetingAudio: this.greetingAudio,
       fillers: this.fillers,
+      // Acknowledge first, then report progress, then acknowledge the wait itself.
+      fillerTiers: [ACKNOWLEDGEMENTS, PROGRESS, STILL_WORKING],
     });
   }
 }

@@ -8,11 +8,21 @@ import { runConversation } from "./orchestrator";
 
 const GREETING = "Thank you for calling Ansa. How can I help you?";
 
+/** One rendered phrase per tier, so the tiering itself is what is under test. */
+const fillerSetup = () => ({
+  fillers: new Map([
+    ["Mm-hm.", [chunkOf(4800)]],
+    ["Let me check that.", [chunkOf(9600)]],
+  ]) as ReadonlyMap<string, readonly AudioChunk[]>,
+  fillerTiers: [["Mm-hm."], ["Let me check that."]] as readonly (readonly string[])[],
+});
+
 const setup = (
   opts: {
     bargeInGuardMs?: number;
     greetingAudio?: readonly AudioChunk[] | null;
-    fillers?: readonly (readonly AudioChunk[])[];
+    fillers?: ReadonlyMap<string, readonly AudioChunk[]>;
+    fillerTiers?: readonly (readonly string[])[];
     fillerAfterMs?: number;
     transcriptWatchdogMs?: number;
   } = {},
@@ -403,7 +413,7 @@ describe("runConversation", () => {
     });
 
     it("plays an acknowledgement when the reply is slow", async () => {
-      const h = setup({ fillers: [[chunkOf(4800)]], fillerAfterMs: 5 });
+      const h = setup({ ...fillerSetup(), fillerAfterMs: 5 });
       h.tts.last().done();
       h.stream.ackAll();
       const before = h.stream.bytesSent();
@@ -417,7 +427,7 @@ describe("runConversation", () => {
     // Filler is not something the agent said. It must not be remembered, marked, or
     // counted as audio the caller heard.
     it("keeps filler out of history and out of the accounting", async () => {
-      const h = setup({ fillers: [[chunkOf(4800)]], fillerAfterMs: 5 });
+      const h = setup({ ...fillerSetup(), fillerAfterMs: 5 });
       h.tts.last().done();
       h.stream.ackAll();
       const marksBefore = h.stream.marks.length;
@@ -427,11 +437,11 @@ describe("runConversation", () => {
       h.listen.final("Hello?");
 
       expect(h.stream.marks.length).toBe(marksBefore);
-      expect(h.llm.lastMessages().some((m) => m.content.includes("Mm"))).toBe(false);
+      expect(h.llm.lastMessages().some((m) => m.content.includes("Mm-hm"))).toBe(false);
     });
 
     it("does not play filler once the real reply has started", async () => {
-      const h = setup({ fillers: [[chunkOf(4800)]], fillerAfterMs: 20 });
+      const h = setup({ ...fillerSetup(), fillerAfterMs: 20 });
       h.tts.last().done();
       h.stream.ackAll();
 
@@ -448,6 +458,24 @@ describe("runConversation", () => {
     // The dead air used to manufacture the interruption that deleted the answer: a
     // caller noise during the think window cancelled an LLM about to produce its first
     // token, and if the noise transcribed under two characters no reply came at all.
+    // A second "mm-hm" seconds later sounds like the line is stuck. The caller needs to
+    // hear that something is happening, not just that they were heard.
+    it("moves to a progress phrase rather than repeating the acknowledgement", async () => {
+      const h = setup({ ...fillerSetup(), fillerAfterMs: 5 });
+      h.tts.last().done();
+      h.stream.ackAll();
+      const before = h.stream.bytesSent();
+
+      h.listen.endOfTurn(1000);
+      await new Promise((r) => setTimeout(r, 30));
+      const afterFirst = h.stream.bytesSent();
+
+      expect(afterFirst - before).toBe(4800); // the acknowledgement
+      // The progress tier is armed at a fixed 2.2s, too long for a unit test to wait
+      // out; that it is a different pool is asserted in filler.test.ts.
+      expect(h.tts.syntheses.every((x) => !x.request.text.includes("Mm-hm"))).toBe(true);
+    });
+
     it("does not treat a noise during the think window as an interruption", () => {
       const h = setup({ bargeInGuardMs: 0 });
       h.tts.last().done();

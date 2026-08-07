@@ -4,7 +4,9 @@ import type { AudioChunk, Logger } from "@ansa/shared";
 import type { CallMediaStream } from "@ansa/telephony";
 import { durationMs, type SynthesisStream, type TtsProvider } from "@ansa/tts";
 
+import { createFillerPicker } from "../telephony/filler";
 import { createConversation } from "./conversation";
+import { interpret, normalise } from "./hearing";
 import { createSentenceBuffer } from "./sentences";
 import { SYSTEM_PROMPT } from "./system-prompt";
 
@@ -35,9 +37,13 @@ export interface OrchestratorDeps {
    */
   readonly greetingAudio?: readonly AudioChunk[] | null;
   /**
-   * Pre-rendered acknowledgements, played into the thinking gap. Empty disables filler.
+   * Pre-rendered filler audio by phrase. Played into the thinking gap; empty disables it.
+   * Keyed by phrase so the orchestrator can choose a register rather than a queue
+   * position — an acknowledgement first, a progress line once the wait is real.
    */
-  readonly fillers?: readonly (readonly AudioChunk[])[];
+  readonly fillers?: ReadonlyMap<string, readonly AudioChunk[]>;
+  /** Phrase pools, in the order they are used as a turn drags on. */
+  readonly fillerTiers?: readonly (readonly string[])[];
   /** Play the first filler if no reply audio has gone out this long after end-of-turn. */
   readonly fillerAfterMs?: number;
   /** Speak a recovery line if the caller finishes and no transcript arrives in time. */
@@ -92,8 +98,10 @@ const CHARS_PER_SECOND = 13;
 
 /** First acknowledgement. Early enough that the caller never hears a full second of nothing. */
 const DEFAULT_FILLER_AFTER_MS = 450;
-/** Second one, which is R6.2's two-second rule made literal. Never more than two per turn. */
+/** Progress, not another acknowledgement. R6.2's two-second rule, made literal. */
 const SECOND_FILLER_AFTER_MS = 2200;
+/** Well past comfortable: acknowledge the wait rather than pretend it is normal. */
+const THIRD_FILLER_AFTER_MS = 4500;
 
 /**
  * Said when a turn produces nothing. Deliberately an invitation rather than an
@@ -208,7 +216,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
 
   /** Timers for the thinking-gap acknowledgements, cleared the moment real audio starts. */
   let fillerTimers: ReturnType<typeof setTimeout>[] = [];
-  let fillerIndex = 0;
+  const pickFiller = createFillerPicker();
 
   let watchdog: ReturnType<typeof setTimeout> | null = null;
   const cancelWatchdog = (): void => {
@@ -227,24 +235,35 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
    * it should remember. It IS added to the spoken window so the echo filter recognises
    * it coming back.
    */
-  const playFiller = (): void => {
-    const pool = deps.fillers ?? [];
-    if (pool.length === 0) return;
-    const chunks = pool[fillerIndex % pool.length];
-    fillerIndex += 1;
+  const playFiller = (tier: readonly string[]): void => {
+    const rendered = deps.fillers;
+    if (rendered === undefined || rendered.size === 0) return;
+
+    const available = tier.filter((phrase) => rendered.has(phrase));
+    const phrase = pickFiller.next(available);
+    if (phrase === null) return;
+    const chunks = rendered.get(phrase);
     if (chunks === undefined) return;
+
     for (const chunk of chunks) stream.send(chunk);
-    log.debug("played thinking filler", { index: fillerIndex });
+    // Added to the spoken window so the echo filter recognises it coming back, but
+    // never to bytesSent, never marked, never remembered: the agent did not say
+    // anything it should be held to.
+    spokenWindow = `${spokenWindow} ${phrase}`.slice(-400);
+    log.debug("played thinking filler", { phrase });
   };
 
   const armFiller = (): void => {
     cancelFiller();
-    if ((deps.fillers ?? []).length === 0) return;
-    const first = deps.fillerAfterMs ?? DEFAULT_FILLER_AFTER_MS;
-    fillerTimers = [
-      setTimeout(playFiller, first),
-      setTimeout(playFiller, SECOND_FILLER_AFTER_MS),
-    ];
+    const tiers = deps.fillerTiers ?? [];
+    if (tiers.length === 0 || deps.fillers === undefined || deps.fillers.size === 0) return;
+
+    const at = [deps.fillerAfterMs ?? DEFAULT_FILLER_AFTER_MS, SECOND_FILLER_AFTER_MS, THIRD_FILLER_AFTER_MS];
+    fillerTimers = tiers.slice(0, at.length).map((tier, i) =>
+      setTimeout(() => {
+        playFiller(tier);
+      }, at[i] ?? SECOND_FILLER_AFTER_MS),
+    );
     for (const timer of fillerTimers) timer.unref();
   };
 
@@ -606,7 +625,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     enqueue(repeat, text);
   };
 
-  const respondTo = (callerText: string): void => {
+  const respondTo = (callerText: string, forModel: string = callerText): void => {
     // A transcript can arrive while the agent is still speaking — the echo guard
     // suppresses the speech-start but not the transcript behind it. Without this the
     // old turn is orphaned: its LLM and TTS keep streaming and billing, and the audio
@@ -616,7 +635,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     if (turn !== null) stopSpeaking("superseded by caller turn");
 
     measure("stt_final", { chars: callerText.length });
-    conversation.addCaller(callerText);
+    conversation.addCaller(forModel);
 
     turnSeq += 1;
     const seq = turnSeq;
@@ -703,22 +722,15 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     });
   };
 
-  /** Compare speech the way a transcriber renders it: no case, no punctuation. */
-  const normalise = (text: string): string =>
-    text
-      .toLowerCase()
-      .replace(/[^a-z0-9 ]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-
   deps.listen.transcripts.onFinal((transcript) => {
-    const text = transcript.text.trim();
-    // Silence and line noise transcribe as a stray mark or a single letter. Answering
-    // those produces a conversation with itself.
-    if (text.length < 2) {
-      log.debug("ignored empty transcript", { text });
+    const heard = interpret(transcript.text);
+    if (heard.kind === "noise") {
+      // Conservative on purpose: letting noise through wastes one turn, but ignoring a
+      // caller who spoke makes the agent look like it is not listening.
+      log.info("ignored non-speech", { reason: heard.reason, text: transcript.text });
       return;
     }
+    const text = heard.raw;
 
     // Layer 1: this segment's speech-start was already judged to be echo. Exact match,
     // because both numbers are the same offset from the same event.
@@ -756,8 +768,13 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       return;
     }
 
+    // The raw text is logged and stored — it is the eval corpus and the review loop's
+    // ground truth. Only the model sees the repaired version.
     log.info("caller said", { text, offsetMs: transcript.offsetMs });
-    respondTo(text);
+    if (heard.corrections.length > 0) {
+      log.info("repaired a known mishearing", { corrections: heard.corrections });
+    }
+    respondTo(text, heard.forModel);
   });
 
   stream.onClosed((reason) => {
