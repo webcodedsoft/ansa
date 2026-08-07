@@ -630,6 +630,41 @@ describe("runConversation", () => {
     });
 
     // Anchoring is what stops this hijacking real turns.
+    // The first version of this only matched the WHOLE utterance, so it caught bare
+    // "Sorry?" and nothing else. Real repair requests arrive inside longer turns,
+    // especially now the transcriber returns multi-sentence turns.
+    it.each([
+      "Sorry, I didn't hear you. Can you say that again?",
+      "What did you say?",
+      "Sorry, can you repeat that please?",
+      "Hmm, come again?",
+      "I missed that, one more time?",
+      "Sorry. What was that?",
+    ])("treats %j as a request to repeat", (utterance) => {
+      const h = askAndAnswer(setup());
+      const before = h.llm.completions.length;
+
+      h.listen.final(utterance);
+
+      expect(h.tts.texts().at(-1)).toBe("Your policy renews in May.");
+      expect(h.llm.completions).toHaveLength(before);
+    });
+
+    // A substring match must not hijack an ordinary question.
+    it.each([
+      "What can you do for me?",
+      "What is my premium this year?",
+      "Can you repeat customers get a discount?",
+      "I did not get that discount you mentioned last year on my policy.",
+    ])("does not treat %j as a repeat request", (utterance) => {
+      const h = askAndAnswer(setup());
+      const before = h.llm.completions.length;
+
+      h.listen.final(utterance);
+
+      expect(h.llm.completions.length).toBe(before + 1);
+    });
+
     it("does not mistake a real question containing 'what' for a repeat request", () => {
       const h = askAndAnswer(setup());
       const before = h.llm.completions.length;

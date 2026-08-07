@@ -173,29 +173,63 @@ const MAX_SENTENCES_PER_TURN = 2;
  * "Sorry, what?", "come again", "I didn't catch that" — the caller did not hear, and
  * wants the same thing again rather than a new answer.
  *
- * Split into a politeness prefix and a core, because real repair requests are compound:
- * matching whole fixed phrases missed "sorry, what?", which is the commonest form of it.
- * Both parts are anchored — "what can you do for me" is a question, not a request to
- * repeat, and a substring match would hijack it.
+ * Two tiers, because the first version of this only matched the WHOLE utterance and so
+ * caught almost nothing in practice. Real repair requests arrive inside longer turns —
+ * "Sorry, I didn't hear you. Can you say that again?" — especially now the transcriber
+ * returns multi-sentence turns rather than fragments.
  */
-const POLITE_PREFIX = /^(sorry|pardon( me)?|excuse me)[, ]*/;
 
-const REPAIR_CORE = new RegExp(
-  "^(" +
-    "what( was that| did you say| again)?|huh|eh|" +
-    "come again|say (that |it )?again|repeat( that| it)?|one more time|" +
-    "(i )?(didn t|didnt|did not|couldn t|couldnt|could not|can t|cant|cannot) " +
-    "(hear|catch|get) (that|you|it)( again)?|" +
-    "can you (say that again|repeat( that| it)?)" +
-    ")$",
-);
+/**
+ * Distinctive enough to match anywhere in a turn. None of these appear in an ordinary
+ * question, so a substring match cannot hijack a real request.
+ */
+const REPAIR_PHRASES: readonly string[] = [
+  "repeat that",
+  "repeat it",
+  "say that again",
+  "say it again",
+  "said that again",
+  "come again",
+  "one more time",
+  "what did you say",
+  "what did you just say",
+  "what was that",
+  "didn t hear",
+  "did not hear",
+  "didn t catch",
+  "did not catch",
+  // Deliberately absent: "did not get that". It means "did not receive" at least as
+  // often as "did not hear" — "I did not get that discount you mentioned" is a real
+  // question, and a caught test proved the substring hijacks it. "catch" and "hear" are
+  // unambiguous; the prompt covers the phrasings this list misses.
+  "couldn t hear",
+  "could not hear",
+  "can t hear you",
+  "cant hear you",
+  "i missed that",
+];
+
+/**
+ * Ambiguous on their own, so these must BE the whole utterance. "What can you do for
+ * me" is a question; "what?" is a request to repeat.
+ */
+const REPAIR_ALONE = new Set([
+  "sorry",
+  "sorry what",
+  "pardon",
+  "pardon me",
+  "excuse me",
+  "what",
+  "huh",
+  "eh",
+  "again",
+  "come again",
+]);
 
 /** `text` must already be normalised: lower case, punctuation stripped. */
 const isRepairRequest = (text: string): boolean => {
-  const withoutPolite = text.replace(POLITE_PREFIX, "");
-  // A bare "sorry?" or "pardon?" on a phone call means "say that again".
-  if (withoutPolite.length === 0) return true;
-  return REPAIR_CORE.test(withoutPolite);
+  if (REPAIR_ALONE.has(text)) return true;
+  return REPAIR_PHRASES.some((phrase) => text.includes(phrase));
 };
 
 const BACKCHANNEL = new Set([
