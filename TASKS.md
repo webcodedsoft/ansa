@@ -325,6 +325,46 @@ the difference between debugging in an hour and debugging in a week.
 - Still open in this slice: latencies are logged but not yet written to the `latencies`
   table; no fallback VAD behind `TurnDetector`; no per-provider cost tracking; the
   echo guard is a fixed 400ms floor rather than real echo cancellation.
+
+**2026-08-07 — conversation quality pass (36 verified findings, 9 commits)**
+
+Measured on a live call after the pass, against the same caller and phone as before:
+
+| | before | after |
+|---|---|---|
+| `turn_to_audio` (the R5.5 number) | ~2500ms | **1578ms** avg, 1189 best |
+| `llm_first_token` | 1038–1305ms | **763ms** |
+| `tts_first_byte` | 362–510ms | **250–282ms** warm |
+| spurious barge-ins | 5 → 2 → 1 | **0** |
+| turns fully played | 0 → 1 → 3 of 4 | **6 of 6** |
+
+- The greeting logs no `tts_first_byte` at all: it is rendered at boot and played from
+  memory. Keep-alive shows up exactly where predicted — TTS 472ms on the first turn of a
+  call, 250–282ms once the socket is warm.
+- **The remaining problem is transcription accuracy, not the pipeline.** On that call the
+  transcriber returned "So I would like to move to a closing, and now I am prospective
+  assistance." and rendered "policy" as "course", and the caller had to repeat themselves.
+  Everything downstream behaved correctly on nonsense input. `gpt-4o-mini-transcribe` was
+  chosen for integration speed and explicitly not accuracy; **this is the case Gate A and
+  Intron Sahara v2 exist for**, and it is now the single largest quality gap.
+- Bugs fixed in the pass, each one confirmed against the code rather than guessed at: an
+  unhandled WebSocket `error` would have killed the process and dropped every concurrent
+  call; a lost listen socket left the agent permanently deaf; the agent answered its own
+  echoed voice because the barge-in guard covered speech-start but not the transcript
+  behind it; `respondTo` replaced a live turn with no teardown, so abandoned audio played
+  over the new reply; marks existed only at sentence boundaries so a mid-sentence
+  interruption erased a reply the caller had heard; history was written by the LLM
+  finishing rather than by audio playing, so an interrupted turn vanished entirely;
+  neither vendor request had a deadline, so a hung connection could never be recovered
+  from; a caller noise during the think window cancelled the answer they were waiting for.
+- Corrected an earlier conclusion of mine: the `llm_first_token` climb from 1081→1978ms was
+  **not** history growth. n=7 on one call with no mechanism behind it. History windowing
+  would have been effort aimed at a phantom. The real win was Node closing idle sockets
+  after 4s.
+- **Unmeasured and flagged:** the system prompt was rewritten (contractions, duration
+  bound). CLAUDE.md requires an eval-harness rerun on any prompt change with number
+  accuracy blocking merge, and `eval/` does not exist. The contraction instruction is the
+  one most likely to interact with the naira and policy-number rules. Gate A must re-check.
 - [ ] Fallback path: our own VAD/endpointing behind the same `TurnDetector` interface, so
       a vendor outage degrades rather than stops the service.
 - [ ] LLM provider interface + Claude implementation.
