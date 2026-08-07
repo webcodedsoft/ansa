@@ -214,10 +214,35 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     });
 
     synthesis.onError((error) => {
+      // A stale turn must stop walking its queue, the same guard onAudio and onDone have.
+      if (turn?.seq !== current.seq) return;
       log.error("tts failed", { seq: current.seq, error: error.message });
       current.synthesis = null;
+      current.inFlight = null;
       speakNext(current);
+      // If the queue is now empty no mark will ever arrive, and without this the turn
+      // stays open forever and the agent never speaks again.
+      finishIfComplete(current);
     });
+  };
+
+  /**
+   * A turn is over only when the model has stopped writing, nothing is queued, nothing
+   * is synthesising, and the caller has heard all of it. Called from every path that
+   * could satisfy that — a mark arriving, the model finishing, a synthesis failing —
+   * because whichever happens last is the one that closes the turn.
+   */
+  const finishIfComplete = (current: AgentTurn): void => {
+    if (turn?.seq !== current.seq) return;
+    if (!current.llmDone) return;
+    if (current.queue.length > 0 || current.synthesis !== null) return;
+    if (current.bytesHeard < current.bytesSent) return;
+
+    log.info("agent turn played", {
+      seq: current.seq,
+      ms: Math.round(durationMs(current.bytesHeard, stream.format)),
+    });
+    turn = null;
   };
 
   const enqueue = (current: AgentTurn, sentence: string): void => {
@@ -261,21 +286,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
 
     current.bytesHeard = Math.max(current.bytesHeard, Number(chars) || 0);
     commitHeard(current);
-
-    // The turn is over only when the model has stopped writing, nothing is queued,
-    // nothing is synthesising, and the caller has heard all of it.
-    if (
-      current.llmDone &&
-      current.queue.length === 0 &&
-      current.synthesis === null &&
-      current.bytesHeard >= current.bytesSent
-    ) {
-      log.info("agent turn played", {
-        seq: current.seq,
-        ms: Math.round(durationMs(current.bytesHeard, stream.format)),
-      });
-      turn = null;
-    }
+    finishIfComplete(current);
   });
 
   deps.listen.turns.onSpeechStart((event) => {
@@ -319,6 +330,14 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
 
   // ---- one caller turn -----------------------------------------------------
   const respondTo = (callerText: string): void => {
+    // A transcript can arrive while the agent is still speaking — the echo guard
+    // suppresses the speech-start but not the transcript behind it. Without this the
+    // old turn is orphaned: its LLM and TTS keep streaming and billing, and the audio
+    // already queued at the carrier (measured at ~1.8s on real calls) plays over the
+    // new reply. Ordering matters: the heard text must be committed against the
+    // assistant turn before the new caller message lands.
+    if (turn !== null) stopSpeaking("superseded by caller turn");
+
     measure("stt_final", { chars: callerText.length });
     conversation.addCaller(callerText);
 
@@ -364,11 +383,17 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       const tail = sentences.flush();
       if (tail.length > 0) enqueue(current, tail);
       log.info("agent turn", { seq, chars: full.length });
+      // Nothing to say and nothing queued: without this a turn with no audio at all
+      // would never close.
+      finishIfComplete(current);
     });
 
     completion.onError((error) => {
+      if (turn?.seq !== seq) return;
       log.error("llm failed", { seq, error: error.message });
-      if (turn?.seq === seq) turn = null;
+      // Cancels the in-flight synthesis rather than letting it stop mid-word behind a
+      // guard, and clears whatever is queued at the carrier.
+      stopSpeaking("llm failed");
     });
   };
 

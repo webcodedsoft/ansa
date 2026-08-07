@@ -28,18 +28,20 @@ const setup = (opts: { bargeInGuardMs?: number } = {}) => {
 
 /**
  * Invariants that must hold at the end of every scenario, whatever route it took.
- * Each one corresponds to a bug that reached a live call.
+ *
+ * Note what is deliberately NOT asserted: two adjacent caller messages. That used to
+ * signal a lost agent reply, but with playback-driven history it legitimately means the
+ * agent was interrupted before a word reached the caller — so as far as the
+ * conversation is concerned it never spoke, and the record is accurate.
  */
 const assertInvariants = (h: ReturnType<typeof setup>): void => {
   const messages: readonly Message[] =
     h.llm.completions.length > 0 ? h.llm.lastMessages() : [];
 
-  // Two adjacent messages from the same speaker means a turn was lost or duplicated.
-  for (let i = 1; i < messages.length; i += 1) {
-    expect(
-      `${String(messages[i - 1]?.role)}->${String(messages[i]?.role)}`,
-      `adjacent same-role messages at ${i}: ${JSON.stringify(messages)}`,
-    ).not.toBe(`${String(messages[i]?.role)}->${String(messages[i]?.role)}`);
+  // An empty message is a recording bug: the turn should have been removed instead.
+  for (const message of messages) {
+    expect(message.content.trim().length, `empty message: ${JSON.stringify(messages)}`)
+      .toBeGreaterThan(0);
   }
 
   // Two concurrent syntheses interleave at the carrier and are heard as garbled speech.
@@ -264,6 +266,72 @@ describe("runConversation", () => {
     // ~200ms per mark, so a second of audio should produce several.
     expect(h.stream.marks.length).toBeGreaterThanOrEqual(4);
     expect(h.stream.marks.every((m) => m.startsWith("1:"))).toBe(true);
+  });
+
+  // respondTo used to replace the live turn with no teardown: the old LLM and TTS kept
+  // streaming, and audio already queued at the carrier played over the new reply.
+  it("tears down the previous turn when a transcript arrives mid-reply", () => {
+    const h = setup({ bargeInGuardMs: 10_000 });
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("Tell me about my policy.");
+    h.llm.last().emit("It renews in May. ");
+    const firstReply = h.tts.last();
+    for (let i = 0; i < 10; i += 1) firstReply.audio(400); // 500ms, heard by the caller
+    h.stream.ackAll();
+
+    const clearsBefore = h.stream.clears;
+    h.listen.final("Actually, cancel it.", 12_345);
+
+    expect(h.stream.clears).toBe(clearsBefore + 1);
+    expect(firstReply.cancelled).toBe(true);
+    expect(h.llm.completions[0]?.cancelled ?? h.llm.completions[1]?.cancelled).toBe(true);
+    assertInvariants(h);
+  });
+
+  it("leaves exactly one completion live when two transcripts arrive in quick succession", () => {
+    const h = setup({ bargeInGuardMs: 10_000 });
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("First question.");
+    h.listen.final("Second question.", 500);
+
+    const live = h.llm.completions.filter((c) => !c.cancelled);
+    expect(live).toHaveLength(1);
+    assertInvariants(h);
+  });
+
+  it("cancels the in-flight synthesis when the model fails mid-turn", () => {
+    const h = setup();
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("Tell me about my policy.");
+    h.llm.last().emit("It renews in ");
+    h.llm.last().emit("May. ");
+    const speech = h.tts.last();
+    speech.audio(400);
+
+    h.llm.last().fail("openai returned 429");
+
+    expect(speech.cancelled).toBe(true);
+    expect(h.stream.clears).toBeGreaterThan(0);
+    assertInvariants(h);
+  });
+
+  // Without finishIfComplete on the TTS error path, no mark ever arrives, the turn stays
+  // open forever and the agent never speaks again.
+  it("does not wedge the turn when synthesis fails and nothing is queued", () => {
+    const h = setup();
+    h.tts.last().fail("elevenlabs returned 500");
+
+    h.listen.final("Hello?");
+
+    // A new turn was accepted, which only happens if the previous one closed.
+    expect(h.llm.completions).toHaveLength(1);
+    assertInvariants(h);
   });
 
   it("closes the listen session when the call ends", () => {
