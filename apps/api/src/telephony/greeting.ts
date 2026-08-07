@@ -9,6 +9,23 @@ import type { TtsProvider } from "@ansa/tts";
  */
 export const GREETING_TEXT = "Thank you for calling Ansa.";
 
+/**
+ * The brand is "Ansa" everywhere a human reads it. TTS is handed "An-Sah" instead,
+ * because the telephone channel destroys the name otherwise.
+ *
+ * /s/ carries most of its energy above 4kHz. The telephony passband ends near 3.4kHz and
+ * μ-law discards the rest, so between a nasal and a vowel the stripped fricative is heard
+ * as its voiced neighbour and callers hear "Anza". Confirmed by A/B on a real call: the
+ * same sentence at pcm_24000 is a correct "Ansa", at ulaw_8000 it is not — the model is
+ * right and the channel is wrong. The respelling makes the model produce a longer, harder
+ * fricative, so enough survives the band-pass to be heard correctly.
+ *
+ * This is a normalizer rule wearing a temporary disguise. When packages/normalizer lands
+ * in Slice 4 it moves there and applies to every utterance containing the name, not just
+ * this greeting — CLAUDE.md: nothing reaches TTS unnormalized.
+ */
+const forSpeech = (text: string): string => text.replace(/\bAnsa\b/g, "An-Sah");
+
 const GREETING_MARK = "greeting-end";
 
 /**
@@ -49,7 +66,7 @@ export const speakGreeting = (stream: CallMediaStream, deps: GreetingDeps): void
   // Slice 4 inserts packages/normalizer here. Nothing reaches TTS unnormalized — this
   // greeting is only safe today because it contains no numbers, currency or dates.
   const synthesis = deps.tts.synthesize({
-    text: GREETING_TEXT,
+    text: forSpeech(GREETING_TEXT),
     voiceId: deps.voiceId,
     // Whatever the carrier opened the stream in, so there is no transcoding hop.
     format: stream.format,

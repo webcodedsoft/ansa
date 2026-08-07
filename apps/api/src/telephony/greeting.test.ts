@@ -100,13 +100,28 @@ describe("speakGreeting", () => {
     const { tts } = setup();
 
     expect(tts.requests).toHaveLength(1);
-    expect(tts.requests[0]).toEqual({
-      text: GREETING_TEXT,
+    expect(tts.requests[0]).toMatchObject({
       voiceId: "voice-ng-1",
       format: TELEPHONY_AUDIO,
     });
     // The brand name is the point of speaking it at all (PRD §1.0).
+    expect(GREETING_TEXT).toBe("Thank you for calling Ansa.");
+  });
+
+  // Confirmed on a real call: at 8kHz μ-law "Ansa" is heard as "Anza", because /s/ lives
+  // above the telephony passband. The respelling is what makes it survive.
+  it("hands TTS the respelled brand name, not the written one", () => {
+    const { tts } = setup();
+
+    expect(tts.requests[0]?.text).toBe("Thank you for calling An-Sah.");
+    expect(tts.requests[0]?.text).not.toContain("Ansa.");
+  });
+
+  it("leaves the written brand name untouched for logs and transcripts", () => {
+    // Whatever we do to make the channel behave must not leak into what we record as
+    // having been said, or every transcript and eval entry inherits the workaround.
     expect(GREETING_TEXT).toContain("Ansa");
+    expect(GREETING_TEXT).not.toContain("An-Sah");
   });
 
   it("forwards each synthesised chunk to the caller", () => {
