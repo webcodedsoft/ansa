@@ -13,6 +13,7 @@ const fakeSocket = () => {
   const sent: string[] = [];
   let closed = false;
 
+  let close: ((r: string) => void) | undefined;
   const socket: ListenSocket = {
     onOpen: (l) => {
       open = l;
@@ -20,7 +21,9 @@ const fakeSocket = () => {
     onMessage: (l) => {
       message = l;
     },
-    onClose: () => undefined,
+    onClose: (l) => {
+      close = l;
+    },
     onError: () => undefined,
     send: (d) => sent.push(d),
     close: () => {
@@ -33,6 +36,7 @@ const fakeSocket = () => {
     sent,
     isClosed: () => closed,
     open: () => open?.(),
+    closeWith: (reason: string) => close?.(reason),
     emit: (e: unknown) => message?.(JSON.stringify(e)),
     appends: () => sent.map((s) => JSON.parse(s)).filter((f) => f.type === "input_audio_buffer.append"),
   };
@@ -211,5 +215,61 @@ describe("openListenSession", () => {
 
     // Writes after close are dropped rather than throwing on a dead socket.
     expect(() => f.session.write(chunk(160))).not.toThrow();
+  });
+});
+
+describe("failure reporting", () => {
+  it("reports a socket close as a failure, exactly once", () => {
+    const f = connect();
+    const reasons: string[] = [];
+    f.session.onFailure((r) => reasons.push(r));
+    f.open();
+    f.emit({ type: "session.updated" });
+
+    f.closeWith("code 1006");
+    f.closeWith("code 1006");
+
+    expect(reasons).toEqual(["code 1006"]);
+  });
+
+  it("does not report a failure for a close we asked for", () => {
+    const f = connect();
+    const reasons: string[] = [];
+    f.session.onFailure((r) => reasons.push(r));
+    f.open();
+    f.emit({ type: "session.updated" });
+
+    f.session.close();
+    f.closeWith("code 1000");
+
+    expect(reasons).toEqual([]);
+  });
+
+  // These are recoverable. Treating one as terminal would end healthy calls.
+  it("routes vendor error events to onVendorError, not onFailure", () => {
+    const f = connect();
+    const failures: string[] = [];
+    const vendor: string[] = [];
+    f.session.onFailure((r) => failures.push(r));
+    f.session.onVendorError((m) => vendor.push(m));
+    f.open();
+    f.emit({ type: "session.updated" });
+
+    f.emit({ type: "error", error: { message: "buffer too small" } });
+
+    expect(vendor).toEqual(["buffer too small"]);
+    expect(failures).toEqual([]);
+  });
+
+  it("caps buffered audio instead of growing without bound before readiness", () => {
+    const f = connect();
+    f.open();
+    // 40 x 1000 bytes = 40kB queued against a 24kB cap, with no session.updated.
+    for (let i = 0; i < 40; i += 1) f.session.write(chunk(1000));
+    f.emit({ type: "session.updated" });
+
+    const flushed = f.appends().length;
+    expect(flushed).toBeLessThanOrEqual(24);
+    expect(flushed).toBeGreaterThan(0);
   });
 });

@@ -133,6 +133,31 @@ describe("runConversation", () => {
     expect(h.llm.completions).toHaveLength(0);
   });
 
+  // A dropped realtime socket used to leave the agent permanently deaf: the caller
+  // keeps talking to a line that will never answer. Silence is the one outcome
+  // CLAUDE.md rules out.
+  it("ends the call when the listen connection dies", () => {
+    const h = setup();
+    h.tts.last().audio(800);
+
+    h.listen.failWith("socket closed with code 1006");
+
+    expect(h.stream.hungUp).toBe(true);
+    expect(h.tts.syntheses[0]?.cancelled).toBe(true);
+    assertInvariants(h);
+  });
+
+  // Realtime `error` events are routinely recoverable. Ending a call on one would drop
+  // conversations that were fine.
+  it("does not end the call on a recoverable vendor error", () => {
+    const h = setup();
+
+    h.listen.vendorError("input_audio_buffer_commit_empty");
+
+    expect(h.stream.hungUp).toBe(false);
+    expect(h.listen.closed).toBe(false);
+  });
+
   it("closes the listen session when the call ends", () => {
     const h = setup();
 

@@ -91,6 +91,10 @@ export interface FakeListen {
   endOfTurn(offsetMs: number): void;
   final(text: string, offsetMs?: number): void;
   interim(text: string, offsetMs?: number): void;
+  /** The connection died. The agent is now deaf. */
+  failWith(reason: string): void;
+  /** A recoverable vendor complaint. Must not end the call. */
+  vendorError(message: string): void;
 }
 
 export const fakeListen = (): FakeListen => {
@@ -101,6 +105,8 @@ export const fakeListen = (): FakeListen => {
   const eotL: typeof startL = [];
   const eagerL: typeof startL = [];
   const resumedL: typeof startL = [];
+  const failureL: ((reason: string) => void)[] = [];
+  const vendorErrorL: ((message: string) => void)[] = [];
 
   const self: FakeListen = {
     written,
@@ -111,6 +117,8 @@ export const fakeListen = (): FakeListen => {
       finalL.forEach((l) => l({ text, words: [], confidence: null, offsetMs })),
     interim: (text, offsetMs = 0) =>
       interimL.forEach((l) => l({ text, words: [], confidence: null, offsetMs })),
+    failWith: (reason) => failureL.forEach((l) => l(reason)),
+    vendorError: (message) => vendorErrorL.forEach((l) => l(message)),
     session: {
       transcripts: {
         write: (c) => written.push(c),
@@ -131,6 +139,8 @@ export const fakeListen = (): FakeListen => {
         },
       },
       write: (c) => written.push(c),
+      onFailure: (l) => failureL.push(l),
+      onVendorError: (l) => vendorErrorL.push(l),
       close: () => {
         self.closed = true;
       },

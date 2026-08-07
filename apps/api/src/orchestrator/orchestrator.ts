@@ -183,6 +183,21 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     mark("stt_final");
   });
 
+  // Recoverable. The vendor emits these for conditions that do not end a session, and
+  // ending the call on one would drop conversations that were fine.
+  deps.listen.onVendorError((message) => {
+    log.warn("listen vendor error", { message });
+  });
+
+  // Not recoverable: no further transcript will ever arrive. An open line the agent
+  // cannot hear is worse than a clean ending, so say nothing clever and hang up.
+  // Commit 6 upgrades this to apologise first.
+  deps.listen.onFailure((reason) => {
+    log.error("listen connection lost, ending the call", { reason });
+    stopSpeaking("listen connection lost");
+    stream.hangUp();
+  });
+
   // ---- one caller turn -----------------------------------------------------
   const respondTo = (callerText: string): void => {
     measure("stt_final", { chars: callerText.length });

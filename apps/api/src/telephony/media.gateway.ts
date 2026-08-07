@@ -46,6 +46,12 @@ export class MediaGateway implements OnApplicationShutdown {
     const server = new WebSocketServer({ server: httpServer, path: MEDIA_STREAM_PATH });
     this.server = server;
 
+    // Same hazard as the per-call sockets: an unhandled 'error' here would take the
+    // process down and with it every call in progress.
+    server.on("error", (error: Error) => {
+      this.log.error("media ws server error", { error: error.message });
+    });
+
     server.on("connection", (socket: WebSocket) => {
       this.log.debug("media socket opened");
       this.telephony.attachMediaStream(fromWebSocket(socket), {

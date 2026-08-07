@@ -38,8 +38,25 @@ export interface OpenAiListenSession {
   readonly transcripts: TranscriberSession;
   readonly turns: TurnSession;
   write(chunk: AudioChunk): void;
+  /**
+   * The connection is gone and this session will never produce another transcript.
+   * Fires at most once, and never for a close the caller asked for.
+   *
+   * Without this the agent goes silently deaf: the caller keeps talking to a line that
+   * will never answer, which is the failure CLAUDE.md forbids above all others.
+   */
+  onFailure(listener: (reason: string) => void): void;
+  /**
+   * A non-fatal complaint from the vendor. Realtime `error` events are routinely
+   * recoverable (a buffer too small to commit, say), so these must NOT end the call —
+   * they are worth logging and nothing more.
+   */
+  onVendorError(listener: (message: string) => void): void;
   close(): void;
 }
+
+/** Three seconds of μ-law. A socket that never becomes ready must not grow forever. */
+const MAX_PENDING_BYTES = 24_000;
 
 const BYTES_PER_MS_MULAW_8K = 8;
 
@@ -54,17 +71,37 @@ export const openListenSession = (
   const turnResumed: ((e: TurnEvent) => void)[] = [];
   const eagerEndOfTurn: ((e: TurnEvent) => void)[] = [];
 
+  const failureListeners: ((reason: string) => void)[] = [];
+  const vendorErrorListeners: ((message: string) => void)[] = [];
+
   let ready = false;
   let closed = false;
+  let failed = false;
   let bytesWritten = 0;
+  let pendingBytes = 0;
   // Frames that arrive before the session is configured would be discarded by the
   // vendor, taking the first word of the call with them.
   const pending: Buffer[] = [];
 
   const streamOffsetMs = (): number => Math.round(bytesWritten / BYTES_PER_MS_MULAW_8K);
 
+  const fail = (reason: string): void => {
+    // A close we asked for is not a failure, and a failure is reported once.
+    if (failed || closed) return;
+    failed = true;
+    for (const listener of failureListeners) listener(reason);
+  };
+
   socket.onOpen(() => {
     socket.send(encodeSessionUpdate(options));
+  });
+
+  socket.onClose((reason) => {
+    fail(reason);
+  });
+
+  socket.onError((error) => {
+    fail(error.message);
   });
 
   socket.onMessage((raw) => {
@@ -77,6 +114,7 @@ export const openListenSession = (
         ready = true;
         for (const buffered of pending) socket.send(encodeAudioAppend(buffered));
         pending.length = 0;
+        pendingBytes = 0;
         return;
       }
       case "speechStart": {
@@ -113,6 +151,9 @@ export const openListenSession = (
         return;
       }
       case "error":
+        // Not terminal. The vendor emits these for recoverable conditions, and treating
+        // one as fatal would end calls that were fine.
+        for (const listener of vendorErrorListeners) listener(event.message);
         return;
     }
   });
@@ -122,6 +163,13 @@ export const openListenSession = (
     bytesWritten += chunk.data.length;
     if (!ready) {
       pending.push(chunk.data);
+      pendingBytes += chunk.data.length;
+      // Drop the oldest audio rather than grow without bound if readiness never comes.
+      while (pendingBytes > MAX_PENDING_BYTES) {
+        const dropped = pending.shift();
+        if (dropped === undefined) break;
+        pendingBytes -= dropped.length;
+      }
       return;
     }
     socket.send(encodeAudioAppend(chunk.data));
@@ -153,6 +201,8 @@ export const openListenSession = (
       close,
     },
     write,
+    onFailure: (listener) => failureListeners.push(listener),
+    onVendorError: (listener) => vendorErrorListeners.push(listener),
     close,
   };
 };

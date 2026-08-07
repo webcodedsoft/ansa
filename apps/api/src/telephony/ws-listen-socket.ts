@@ -13,6 +13,15 @@ export const openListenSocket = (apiKey: string): ListenSocket => {
     headers: { Authorization: `Bearer ${apiKey}` },
   });
 
+  // Registered immediately. An unhandled 'error' event throws and kills the process,
+  // and a Lagos-to-US socket dropping is ordinary weather rather than an exceptional
+  // event. The reason is carried into the close handler so the orchestrator can say
+  // something to the caller instead of going quietly deaf.
+  let failure: string | null = null;
+  socket.on("error", (error: Error) => {
+    failure = error.message;
+  });
+
   return {
     onOpen: (listener) => {
       socket.on("open", listener);
@@ -23,7 +32,9 @@ export const openListenSocket = (apiKey: string): ListenSocket => {
       });
     },
     onClose: (listener) => {
-      socket.on("close", (code: number) => listener(`listen socket closed with code ${code}`));
+      socket.on("close", (code: number) =>
+        listener(failure ?? `listen socket closed with code ${code}`),
+      );
     },
     onError: (listener) => {
       socket.on("error", listener);

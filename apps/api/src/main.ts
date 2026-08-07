@@ -32,6 +32,19 @@ const bootstrap = async (): Promise<void> => {
   });
 };
 
+// Last line of defence. Deliberately does NOT exit: there is no supervisor here, and
+// exiting drops every call in progress to save one. A logged anomaly on a live call is
+// recoverable; a dead process is not.
+const fatal = createLogger({ component: "api" });
+process.on("unhandledRejection", (reason: unknown) => {
+  fatal.error("unhandled rejection", {
+    error: reason instanceof Error ? reason.message : String(reason),
+  });
+});
+process.on("uncaughtException", (error: Error) => {
+  fatal.error("uncaught exception", { error: error.message, stack: error.stack });
+});
+
 bootstrap().catch((error: unknown) => {
   createLogger({ component: "api" }).error("api failed to start", {
     error: error instanceof Error ? error.message : String(error),
