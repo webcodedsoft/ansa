@@ -196,6 +196,25 @@ you can act on.
   voice was American. Two things are still needed: a paid ElevenLabs plan for Olabisi, and
   eventually a Nigerian number that Nigerian callers can actually dial.
 
+- *2026-08-07 — **Olabisi heard on a real call. Nigerian, unclipped — and "Ansa" arrives as
+  "Anza".*** Vera called and confirmed all three: the voice reads as Nigerian through the
+  band-pass, nothing is clipped at either end, and the brand name is altered.
+- **Diagnosed by A/B: the model is right, the channel is wrong.** The same utterance at
+  `pcm_24000` is a correct "Ansa"; at `ulaw_8000` it is "Anza". /s/ carries its energy above
+  4kHz, the telephone passband ends near 3.4kHz, and between a nasal and a vowel the ear
+  fills the stripped fricative with the voiced neighbour. **No respelling can fix this** —
+  respelling changes what the model says, and the model was already correct.
+- This is PRD §1.0's phone-line test half-failing, and §1.0 calls a name our own pipeline
+  mishears disqualifying. The name is not yet cleared (CAC, trademark, domains all still
+  open), so changing it is still nearly free — cheaper now than after a logo exists.
+- Whatever is decided, **the keyterm vocabulary needs both "Ansa" and "Anza"** (R4.1.3).
+  The agent introduces itself down the same degraded channel, so callers will say back what
+  they heard. That is a Slice 3 action, and the second half of §1.0's test — does the STT
+  transcribe it correctly — cannot be run until then.
+- Pronunciation belongs in `packages/normalizer` when it lands in Slice 4, not in a prompt
+  and not in the greeting constant. CLAUDE.md: nothing reaches TTS unnormalized, static
+  greetings included.
+
 - *2026-08-07 — ElevenLabs verified against the live API.* `output_format=ulaw_8000`
   returns genuine raw μ-law 8kHz: `content-type: audio/ulaw`, no container, and a decoded
   waveform that is speech rather than noise. **R4.2.4 satisfied, no transcoding hop.**
