@@ -68,6 +68,20 @@ describe("interpret — is it speech at all", () => {
   it("allows repetition short enough to be emphasis", () => {
     expect(speech("no no no").raw).toBe("no no no");
   });
+
+  // The regression this replaces: a hundred characters of real speech were thrown away
+  // because the turn OPENED with four emphatic "No"s, and the caller got eighteen
+  // seconds of stalling followed by "sorry, I didn't catch that".
+  it("keeps a real sentence that merely begins with emphatic repetition", () => {
+    const text =
+      "No. No. No. No. But if you, I want to get the details of my policy, no dispute.";
+    expect(speech(text).raw).toBe(text);
+  });
+
+  it("still rejects an utterance that is nothing but one repeated word", () => {
+    expect(noise("you you you you you").reason).toBe("repeated token");
+    expect(noise("the the the the").reason).toBe("known hallucination");
+  });
 });
 
 describe("interpret — repairing known mishearings", () => {

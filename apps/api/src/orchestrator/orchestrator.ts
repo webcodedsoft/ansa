@@ -723,9 +723,11 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     const completion = deps.llm.complete({
       system: SYSTEM_PROMPT,
       messages: conversation.messages,
-      // 80 rather than 60: below that the flushed tail is regularly a truncated
-      // fragment and the caller hears a cut-off word.
-      maxTokens: 80,
+      // Measured on a live call: replies ran a 4.6s median and 7.4s at worst, against
+      // the 1-3s a person actually holds the floor for on the phone. At ~17 characters
+      // per second of speech, 80 tokens buys seven seconds of monologue. 45 lands a
+      // one-to-two sentence reply near three seconds, which is the target.
+      maxTokens: 45,
     });
     current.cancelLlm = () => {
       completion.cancel();
@@ -762,7 +764,9 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         enqueue(current, tail);
       }
       lastUtterance = full.trim().length > 0 ? full.trim() : lastUtterance;
-      log.info("agent turn", { seq, chars: full.length });
+      // The text, not just its length. Judging whether a call felt human is impossible
+      // from a character count, and Slice 4a's review loop needs the words anyway.
+      log.info("agent turn", { seq, chars: full.length, text: full.trim() });
       // Nothing to say and nothing queued: without this a turn with no audio at all
       // would never close.
       finishIfComplete(current);

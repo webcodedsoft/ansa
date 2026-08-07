@@ -51,23 +51,29 @@ const HALLUCINATIONS = new Set([
   "the the",
 ]);
 
-/** Runs of the same word. Four, because "no no no" is emphasis and people do say it. */
-const REPEATED_TOKEN_LIMIT = 4;
+/**
+ * A hallucinated run is the WHOLE utterance; emphasis is the start of one.
+ *
+ * The first version counted consecutive repeats and rejected at four — while its own
+ * comment said "no no no is emphasis and people do say it". On a live call it threw away
+ * "No. No. No. No. But if you... I want to get the details of my policy…", a hundred
+ * characters of real speech, and the caller got eighteen seconds of stalling followed by
+ * "sorry, I didn't catch that".
+ *
+ * So the test is now about the whole utterance, not a prefix of it: a transcript is
+ * noise when it is several words long and made of almost nothing but one repeated word.
+ * "you you you you" fails it; anything with real content after the emphasis does not.
+ */
+const isJustRepetition = (words: readonly string[]): boolean => {
+  if (words.length < 4) return false;
+  return new Set(words).size <= 2;
+};
 
 const isMostlyNonLatin = (text: string): boolean => {
   const letters = [...text].filter((c) => /\p{L}/u.test(c));
   if (letters.length === 0) return false;
   const latin = letters.filter((c) => /\p{Script=Latin}/u.test(c)).length;
   return latin / letters.length < 0.5;
-};
-
-const hasRepeatedToken = (words: readonly string[]): boolean => {
-  let run = 1;
-  for (let i = 1; i < words.length; i += 1) {
-    run = words[i] === words[i - 1] ? run + 1 : 1;
-    if (run >= REPEATED_TOKEN_LIMIT) return true;
-  }
-  return false;
 };
 
 /**
@@ -108,7 +114,7 @@ export const interpret = (text: string): Hearing => {
   // A single letter or digit is a click, a breath, or the tail of a word.
   if (flat.length < 2) return { kind: "noise", reason: "too short" };
   if (HALLUCINATIONS.has(flat)) return { kind: "noise", reason: "known hallucination" };
-  if (hasRepeatedToken(flat.split(" "))) return { kind: "noise", reason: "repeated token" };
+  if (isJustRepetition(flat.split(" "))) return { kind: "noise", reason: "repeated token" };
 
   let forModel = raw;
   const corrections: string[] = [];
