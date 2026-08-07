@@ -37,7 +37,16 @@ best-trodden Twilio media-streams path.
       verified: elevenlabs.io/docs now 308-redirects to app.buildwithfern.com, which 404s
       on every path tried. One authenticated request settles it. **If it fails, the choice
       is wrong** — a transcoding hop is real work and would change the comparison.
-- [ ] Pick the actual Nigerian voice and confirm it survives 8kHz compression.
+- [x] Pick a Nigerian voice — `eOHsvebhdtt0XFeHVMQY`, from the Voice Library, chosen by
+      Vera on 2026-08-07. Provisional, and set per-environment rather than in code, so
+      swapping it is one variable.
+- [ ] Confirm that voice survives 8kHz μ-law on a real line. It was chosen on browser
+      playback, which flatters a voice: the telephony band-pass is roughly 300–3400Hz, so
+      bass thins and sibilance hardens. Judge it on the phone before trusting it.
+- [ ] Source a second voice. R4.2.2 wants male and female Nigerian options from day one of
+      tenant onboarding, and a second voice gives the first something to be compared with.
+- [ ] Check the library voice's commercial-use terms and whether its creator can withdraw
+      it. A default voice that can vanish is a production risk, not a Slice 1 one.
 - [ ] Measure time-to-first-byte against the <300ms target (R4.2.3), from Lagos (R9.1.8).
 
 **Transport:** HTTP streaming with `AbortController` for cancellation. ElevenLabs also
