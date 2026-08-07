@@ -211,7 +211,11 @@ direction: the remaining errors are vocabulary, and **no model size fixes a word
 model has never been told to expect**. That is R4.1.3's job and this provider cannot do
 it.
 
-### Intron Sahara v2 — attempted 2026-08-07, blocked on their API
+### Intron Sahara v2 — attempted and DROPPED 2026-08-07
+
+**Not pursued.** Kept here so nobody spends another evening on it without knowing what
+happened. Revisit only if their support answers the payload question below, or if
+Deepgram fails on Nigerian accents badly enough to make a blocked API worth unblocking.
 
 Streaming exists, so R4.1.4 is satisfied and TASKS' main worry is answered. Connection,
 auth and session creation all work: `wss://infer.voice.intron.io/stt/v1/stream`, Bearer
