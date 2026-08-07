@@ -192,6 +192,25 @@ vocabulary boosting may beat one with better raw WER. It is also a second mark a
 prompt/keyterm handling on this provider (the first being the hallucinated keyterm
 prompt), so R4.1.3 vocabulary boosting remains unavailable here.
 
+### Transcription model A/B, same voice and line (2026-08-07)
+
+| | `gpt-4o-mini-transcribe` | `gpt-4o-transcribe` |
+|---|---|---|
+| "policy" | apology / penalty / course | **correct, twice in one sentence** |
+| "policy number" | — | still "polling number" |
+| `stt_final` | 443ms | 557ms (+114) |
+| `turn_to_audio` | 1578ms | **1552ms** |
+
+**`gpt-4o-transcribe` is now the default.** The mini variant was chosen on a synthetic
+latency probe before any domain vocabulary was in play; mishearing "policy" is close to
+fatal for an insurance agent, and the +114ms it costs on the STT stage disappears into
+the variance of the other two. Latency was the wrong axis to optimise on here.
+
+The compound "policy number" still fails, which is the same conclusion from a different
+direction: the remaining errors are vocabulary, and **no model size fixes a word the
+model has never been told to expect**. That is R4.1.3's job and this provider cannot do
+it.
+
 ### Latency: the finding that outranks provider choice
 
 Per-turn, measured on live calls from Nigeria:
