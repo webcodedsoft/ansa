@@ -160,6 +160,19 @@ you can act on.
 - Slice 1's remaining work is not code: a number, credentials, ngrok, a paid ElevenLabs
   plan, and a phone call.
 
+- *2026-08-07 — **Twilio has no Nigerian numbers.*** `AvailablePhoneNumbers/NG/*` returns
+  404 (the "country not sold" response, not "out of stock"). Of 54 purchasable countries on
+  the account, the only African ones are **South Africa, Tunisia, Namibia**. See
+  `docs/STACK_DECISION.md` for routes out. **Blocks Slice 7**, not Slices 2–6.
+- The account's one number is `+18148592625`, a **US** number, webhook now pointed at
+  `<ngrok>/telephony/voice` (was a dead tunnel from the lost build). It closes Slice 1's
+  pipeline half. The Nigerian-line half — real carriers, real line quality, real latency —
+  stays open and cannot be closed with Twilio alone.
+- Latency watch, third sighting: TTS time-to-first-byte was **629ms through ngrok** versus
+  256–277ms hitting ElevenLabs directly, against a <300ms target. ngrok inflates it, so this
+  is not the production number — but latency has now looked tight from every angle measured,
+  and R9.1.8's Lagos measurement is looking like the decisive Gate A test rather than WER.
+
 - *2026-08-07 — ElevenLabs verified against the live API.* `output_format=ulaw_8000`
   returns genuine raw μ-law 8kHz: `content-type: audio/ulaw`, no container, and a decoded
   waveform that is speech rather than noise. **R4.2.4 satisfied, no transcoding hop.**

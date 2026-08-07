@@ -74,5 +74,34 @@ different vendors (R4.1.6).
 ## Telephony — Twilio (provisional, Slice 1)
 
 Media Streams over WebSocket, μ-law 8kHz, `<Connect><Stream>` for bidirectional audio.
-Not seriously compared against alternatives; Nigerian number availability is the open
-question, not the API.
+The API is not the problem. Numbers are.
+
+### Twilio cannot give us a Nigerian number
+
+Checked against the live account on 2026-08-07: `AvailablePhoneNumbers/NG/{Local,Mobile,
+TollFree}` all return **404** — the response Twilio gives for a country it does not sell,
+not for one that is out of stock. Of the **54 countries purchasable on this account, the
+only African ones are South Africa, Tunisia and Namibia.** Nigeria is absent.
+
+**Why this is a product problem, not a logistics one.** PRD §1 puts the moat on being
+Nigeria-first, and §1.1 argues we win because incumbents are indifferent to local
+realities. A Nigerian company cannot publish a US number as its customer service line, and
+its customers will not dial one. Inbound telephony in Nigeria is therefore not a detail to
+sort out during onboarding — it is a precondition for having a product at all.
+
+**What this does not block.** Slice 1's pipeline half closes fine on the US number
+`+18148592625`: telephony, media streaming and TTS end to end. What stays open is the
+Nigerian-line half — real Nigerian carriers, real line conditions, real latency.
+
+**Routes worth investigating, none chosen:**
+
+1. A Nigerian SIP trunk from a local carrier, reached over Twilio SIP interconnect. Keeps
+   the Twilio adapter and changes only where calls originate.
+2. A Nigerian CPaaS with inbound voice (Africa's Talking and similar). Means a second
+   `TelephonyProvider` implementation — which is the work the adapter boundary exists to
+   make cheap, and the first real test of whether that boundary holds.
+3. NCC regulatory route: a Nigerian entity, local presence, numbers assigned directly.
+   Slowest, and probably where this ends up for production.
+
+**This must close before Slice 7** (first real design-partner tenant). It does not block
+Slices 2–6, all of which are exercised over any working number.
