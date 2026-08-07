@@ -93,11 +93,37 @@ transcriber that mangles the developer's own accent is a bad position to build f
 
 **Outstanding:**
 
-- [ ] **Time from `speech_stopped` to final transcript looks far too slow.** All deltas
-      arrived in a burst *after* the turn closed, roughly 4s later on a 9.4s utterance —
-      against an 800ms end-to-end budget. It may scale down with realistic 2–3s turns.
-      **Measure this with short utterances first thing in Slice 3; if it holds, it
-      changes the architecture, not just the provider.**
+- [x] **Measured 2026-08-07: STT alone exceeds the entire end-to-end budget.**
+      End of speech to usable transcript, over three realistic turns (1.8–3.2s audio):
+
+      | model | avg | worst |
+      |---|---|---|
+      | `gpt-4o-transcribe` | 1131ms | 1146ms |
+      | `gpt-4o-mini-transcribe` | 1009ms | 1061ms |
+
+      R5.5 allows **800ms p50 for the whole hop** — STT *plus* LLM first token *plus*
+      TTS first byte. STT alone is 1.3× that. A realistic turn lands near 1.8–2.1s once
+      the other stages are added.
+
+      It does **not** scale with utterance length: the portion after the VAD closes the
+      turn is flat at 400–780ms from 1.8s to 10.3s of audio. Roughly half the total is
+      the `silence_duration_ms: 500` VAD floor, which is tunable — but see below.
+- [x] **False end-of-turn observed on the first test.** At `silence_duration_ms: 500` the
+      VAD split a 10.3s utterance mid-sentence, committing a turn at a natural thinking
+      pause. That is R9.1.6's false-EOT failure — the agent interrupting a caller who had
+      not finished. **Lowering the threshold to buy back latency makes this worse.** The
+      tradeoff is now measured rather than assumed, and it is the same tradeoff whichever
+      provider wins Gate A.
+- [ ] **Architectural consequence, to decide before tuning anything.** 800ms p50 is not
+      reachable by waiting for a final transcript. The options, in rough order of
+      appeal: start the LLM on the *interim* transcript at speech-stop rather than the
+      final; lower `silence_duration_ms` and accept a measured false-EOT rate; use a
+      provider with model-native eager end-of-turn (Deepgram Flux has one, this does
+      not); or accept a slower turn. Instrument first — every stage now writes to the
+      `latencies` table — then decide against real numbers.
+- [x] **`gpt-live-transcribe` is unusable for telephony.** It rejects μ-law outright:
+      *"Expected mono PCM16 at 24kHz"*. Would require a transcoding hop, which R4.2.4
+      treats as a cost. Dropped.
 - [ ] Re-test on real human speech. This was TTS audio: no disfluency, no restarts, no
       noise. PRD §9.1 warns a stack chosen on clean audio looks 10–20 points better than
       it performs.
