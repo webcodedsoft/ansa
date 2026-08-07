@@ -211,6 +211,30 @@ direction: the remaining errors are vocabulary, and **no model size fixes a word
 model has never been told to expect**. That is R4.1.3's job and this provider cannot do
 it.
 
+### Correcting mishearings after the fact does not converge
+
+Tried, measured, and reported as a partial dead end so nobody rebuilds it.
+
+Across live calls "policy" has been transcribed as **apology, penalty, polling, course**
+and **puppy**. A correction map was built for the unambiguous multi-word cases
+("polling number" → "policy number") and it is worth keeping, but on the very next call
+it fired zero times because the new mistake was not in it. Every call invents another.
+
+The list is open-ended, so enumerating it cannot converge. Worse, single-word entries are
+actively unsafe: "apology", "penalty" and "police" are real words a caller may mean, and
+rewriting them on sight is worse than the mishearing. And nothing may be written back
+into the raw transcript, which is the eval corpus and the review loop's ground truth
+(R9.2.3–4).
+
+What is left in our control is a prompt hint — the model has context and disambiguates
+better than a regex — but that repairs meaning after decoding, not the decoding itself.
+
+**This is the argument for R4.1.3 as a provider requirement rather than a feature.**
+Keyterm boosting changes what the transcriber is listening for; correction only edits
+what it already got wrong. A provider that accepts a vocabulary list containing "policy",
+"premium", "naira" and a tenant's product names is worth more here than one with better
+raw WER, and this provider offers no mechanism for it.
+
 ### Latency: the finding that outranks provider choice
 
 Per-turn, measured on live calls from Nigeria:
