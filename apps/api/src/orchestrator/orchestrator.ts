@@ -2,7 +2,7 @@ import type { LlmProvider } from "@ansa/llm";
 import type { OpenAiListenSession } from "@ansa/openai-listen";
 import type { Logger } from "@ansa/shared";
 import type { CallMediaStream } from "@ansa/telephony";
-import type { SynthesisStream, TtsProvider } from "@ansa/tts";
+import { durationMs, type SynthesisStream, type TtsProvider } from "@ansa/tts";
 
 import { createConversation } from "./conversation";
 import { createSentenceBuffer } from "./sentences";
@@ -30,21 +30,51 @@ export interface OrchestratorDeps {
   readonly bargeInGuardMs?: number;
 }
 
+/** A sentence that has been handed to TTS, and where its audio sits in the turn. */
+interface SpokenSentence {
+  readonly text: string;
+  readonly startByte: number;
+  readonly endByte: number;
+}
+
 interface AgentTurn {
   readonly seq: number;
   /** Sentences waiting to be synthesised, in order. */
   readonly queue: string[];
   synthesis: SynthesisStream | null;
   cancelLlm: (() => void) | null;
-  /** Characters handed to TTS so far. */
-  sent: number;
-  /** Characters the carrier has confirmed played, via marks. */
-  heard: number;
+  /**
+   * Audio accounting is in BYTES, not characters.
+   *
+   * Characters only advanced when a whole sentence finished synthesising, so for the
+   * entire duration of a sentence both counters read zero — and a mid-sentence
+   * interruption reported that the caller had heard nothing, erasing a reply they had
+   * in fact heard most of. Bytes advance continuously and convert to milliseconds of
+   * audio exactly.
+   */
+  bytesSent: number;
+  bytesHeard: number;
+  /** Completed sentences, in order. Used to reconstruct what was heard. */
+  readonly spoken: SpokenSentence[];
+  /**
+   * The sentence currently being synthesised. Its total audio length is not yet known,
+   * so what the caller has heard of it is estimated from duration rather than measured.
+   */
+  inFlight: { readonly text: string; readonly startByte: number } | null;
   llmDone: boolean;
-  audioStartedAt: number | null;
+  /** When audio for the sentence currently playing began. Anchors the echo guard. */
+  sentenceAudioAt: number | null;
 }
 
 const DEFAULT_BARGE_IN_GUARD_MS = 400;
+
+/**
+ * Deliberately below a real speaking rate (~15). Used only to estimate how far into a
+ * still-synthesising sentence the caller has got, where the sentence's full audio
+ * length is not yet known. Under-crediting is the safe direction: the agent referring
+ * to something the caller did not hear is the failure CLAUDE.md names.
+ */
+const CHARS_PER_SECOND = 13;
 
 export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps): void => {
   const log = deps.log.child({ callId: stream.callId });
@@ -88,12 +118,62 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   });
 
   // ---- speaking ------------------------------------------------------------
+  /**
+   * What the caller has actually heard of this turn, reconstructed from byte position.
+   *
+   * A sentence still being synthesised credits nothing: those bytes belong to text that
+   * may not have been fully produced. Under-remembering is the safe direction — the
+   * agent must never reference something the caller did not hear.
+   */
+  /** Half a word is not something a caller heard. */
+  const toWordBoundary = (text: string, upTo: number): string => {
+    const slice = text.slice(0, Math.max(0, upTo));
+    if (slice.length === text.length) return slice;
+    const lastSpace = slice.lastIndexOf(" ");
+    return lastSpace > 0 ? slice.slice(0, lastSpace) : "";
+  };
+
+  const heardText = (current: AgentTurn): string => {
+    const parts: string[] = [];
+    for (const sentence of current.spoken) {
+      if (current.bytesHeard >= sentence.endByte) {
+        parts.push(sentence.text);
+        continue;
+      }
+      const span = sentence.endByte - sentence.startByte;
+      if (span <= 0 || current.bytesHeard <= sentence.startByte) break;
+      const ratio = (current.bytesHeard - sentence.startByte) / span;
+      parts.push(toWordBoundary(sentence.text, Math.floor(sentence.text.length * ratio)));
+      return parts.join(" ").trim();
+    }
+
+    // Nothing complete is outstanding, so the caller may be partway through the
+    // sentence still being synthesised. Its length is unknown, so estimate from audio
+    // duration at a rate chosen to under-credit.
+    const live = current.inFlight;
+    if (live !== null && current.bytesHeard > live.startByte) {
+      const msHeard = durationMs(current.bytesHeard - live.startByte, stream.format);
+      const chars = Math.floor((msHeard / 1000) * CHARS_PER_SECOND);
+      const prefix = toWordBoundary(live.text, Math.min(chars, live.text.length));
+      if (prefix.length > 0) parts.push(prefix);
+    }
+    return parts.join(" ").trim();
+  };
+
+  const commitHeard = (current: AgentTurn): void => {
+    conversation.recordAgentTurn(current.seq, heardText(current));
+  };
+
   const speakNext = (current: AgentTurn): void => {
     // One synthesis at a time. Starting the next sentence before the previous finishes
     // interleaves two audio streams at the carrier, which is heard as garbled speech.
     if (current.synthesis !== null) return;
     const sentence = current.queue.shift();
     if (sentence === undefined) return;
+
+    const startByte = current.bytesSent;
+    let markedAt = current.bytesSent;
+    current.inFlight = { text: sentence, startByte };
 
     mark("tts_first_byte");
     const synthesis = deps.tts.synthesize({
@@ -108,19 +188,28 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       if (turn?.seq !== current.seq) return;
       if (first) {
         first = false;
-        current.audioStartedAt ??= Date.now();
+        current.sentenceAudioAt = Date.now();
         measure("tts_first_byte", { seq: current.seq });
       }
       stream.send(chunk);
+      current.bytesSent += chunk.data.length;
+
+      // Sub-sentence marks, roughly every 200ms of audio. Without them a mid-sentence
+      // interruption has no evidence the caller heard anything at all.
+      if (durationMs(current.bytesSent - markedAt, stream.format) >= 200) {
+        markedAt = current.bytesSent;
+        stream.mark(`${current.seq}:${current.bytesSent}`);
+      }
     });
 
     synthesis.onDone(() => {
       if (turn?.seq !== current.seq) return;
       current.synthesis = null;
-      current.sent += sentence.length;
-      // The mark carries how much text precedes it, so when the carrier echoes it back
-      // we know how much the caller heard rather than how much we sent.
-      stream.mark(`${current.seq}:${current.sent}`);
+      current.inFlight = null;
+      current.spoken.push({ text: sentence, startByte, endByte: current.bytesSent });
+      // The mark carries a byte position, so when the carrier echoes it back we know
+      // how much audio the caller actually heard rather than how much we sent.
+      stream.mark(`${current.seq}:${current.bytesSent}`);
       speakNext(current);
     });
 
@@ -153,13 +242,14 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     current.queue.length = 0;
     stream.clear();
 
-    conversation.truncateLastAgent(current.heard);
+    commitHeard(current);
     log.info("barge-in", {
       reason,
       seq: current.seq,
-      charsSent: current.sent,
-      charsHeard: current.heard,
-      discarded: Math.max(0, current.sent - current.heard),
+      msHeard: Math.round(durationMs(current.bytesHeard, stream.format)),
+      msDiscarded: Math.round(
+        durationMs(Math.max(0, current.bytesSent - current.bytesHeard), stream.format),
+      ),
     });
   };
 
@@ -169,24 +259,29 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     const [seq, chars] = name.split(":");
     if (Number(seq) !== current.seq) return;
 
-    current.heard = Math.max(current.heard, Number(chars) || 0);
+    current.bytesHeard = Math.max(current.bytesHeard, Number(chars) || 0);
+    commitHeard(current);
+
     // The turn is over only when the model has stopped writing, nothing is queued,
     // nothing is synthesising, and the caller has heard all of it.
     if (
       current.llmDone &&
       current.queue.length === 0 &&
       current.synthesis === null &&
-      current.heard >= current.sent
+      current.bytesHeard >= current.bytesSent
     ) {
-      log.info("agent turn played", { seq: current.seq, chars: current.heard });
+      log.info("agent turn played", {
+        seq: current.seq,
+        ms: Math.round(durationMs(current.bytesHeard, stream.format)),
+      });
       turn = null;
     }
   });
 
   deps.listen.turns.onSpeechStart((event) => {
     const current = turn;
-    if (current !== null && current.audioStartedAt !== null) {
-      const speakingFor = Date.now() - current.audioStartedAt;
+    if (current !== null && current.sentenceAudioAt !== null) {
+      const speakingFor = Date.now() - current.sentenceAudioAt;
       if (speakingFor < guardMs) {
         // Almost certainly our own audio returning through the caller's handset. A
         // caller cannot react to speech they have not finished hearing.
@@ -234,10 +329,12 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       queue: [],
       synthesis: null,
       cancelLlm: null,
-      sent: 0,
-      heard: 0,
+      bytesSent: 0,
+      bytesHeard: 0,
+      spoken: [],
+      inFlight: null,
       llmDone: false,
-      audioStartedAt: null,
+      sentenceAudioAt: null,
     };
     turn = current;
 
@@ -266,7 +363,6 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       current.llmDone = true;
       const tail = sentences.flush();
       if (tail.length > 0) enqueue(current, tail);
-      conversation.addAgent(full);
       log.info("agent turn", { seq, chars: full.length });
     });
 
@@ -332,13 +428,16 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     queue: [],
     synthesis: null,
     cancelLlm: null,
-    sent: 0,
-    heard: 0,
+    bytesSent: 0,
+    bytesHeard: 0,
+    spoken: [],
+    inFlight: null,
     llmDone: true,
-    audioStartedAt: null,
+    sentenceAudioAt: null,
   };
   turn = greetingTurn;
-  conversation.addAgent(deps.greeting);
+  // The greeting commits through the same recorder as every other turn. That asymmetry
+  // is what hid the history bug: it was the one utterance added before it was spoken.
   enqueue(greetingTurn, deps.greeting);
   log.info("conversation started");
 };

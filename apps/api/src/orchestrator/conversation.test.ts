@@ -5,9 +5,9 @@ import { createConversation } from "./conversation";
 describe("createConversation", () => {
   it("records caller and agent turns in order", () => {
     const c = createConversation();
-    c.addAgent("Thank you for calling Ansa.");
+    c.recordAgentTurn(1, "Thank you for calling Ansa.");
     c.addCaller("When does my policy renew?");
-    c.addAgent("It renews in May.");
+    c.recordAgentTurn(2, "It renews in May.");
 
     expect(c.messages).toEqual([
       { role: "assistant", content: "Thank you for calling Ansa." },
@@ -16,58 +16,77 @@ describe("createConversation", () => {
     ]);
   });
 
-  it("ignores empty turns", () => {
+  it("ignores empty caller turns", () => {
     const c = createConversation();
     c.addCaller("   ");
-    c.addAgent("");
 
     expect(c.messages).toEqual([]);
   });
 
-  // The property barge-in exists to protect. If the unheard remainder stays, the agent
-  // refers back to things the caller never heard: "as I mentioned, it renews in May".
-  it("keeps only what the caller heard when interrupted mid-sentence", () => {
+  // Playback progresses, so the same turn is recorded several times as more is heard.
+  it("replaces rather than appends when the same turn reports more heard", () => {
     const c = createConversation();
     c.addCaller("hello");
-    c.addAgent("Your policy renews in May and your premium has not changed.");
+    c.recordAgentTurn(2, "Your policy");
+    c.recordAgentTurn(2, "Your policy renews in May");
+    c.recordAgentTurn(2, "Your policy renews in May and the premium is unchanged.");
 
-    c.truncateLastAgent(26);
+    expect(c.messages).toEqual([
+      { role: "user", content: "hello" },
+      { role: "assistant", content: "Your policy renews in May and the premium is unchanged." },
+    ]);
+  });
+
+  it("keeps only what the caller heard when interrupted mid-turn", () => {
+    const c = createConversation();
+    c.addCaller("hello");
+    c.recordAgentTurn(2, "Your policy renews in May and the premium is unchanged.");
+
+    c.recordAgentTurn(2, "Your policy renews in May");
 
     expect(c.messages[1]).toEqual({ role: "assistant", content: "Your policy renews in May" });
   });
 
-  it("drops the turn entirely when interrupted before anything was heard", () => {
+  it("drops the turn entirely when nothing was heard", () => {
     const c = createConversation();
     c.addCaller("hello");
-    c.addAgent("Your policy renews in May.");
+    c.recordAgentTurn(2, "Your policy renews in May.");
 
-    c.truncateLastAgent(0);
+    c.recordAgentTurn(2, "");
 
     expect(c.messages).toEqual([{ role: "user", content: "hello" }]);
   });
 
-  it("leaves the turn intact when everything was heard", () => {
+  it("never records an agent turn that was never heard at all", () => {
     const c = createConversation();
-    c.addAgent("It renews in May.");
+    c.addCaller("hello");
 
-    c.truncateLastAgent(500);
+    c.recordAgentTurn(2, "");
 
-    expect(c.messages[0]?.content).toBe("It renews in May.");
+    expect(c.messages).toEqual([{ role: "user", content: "hello" }]);
   });
 
-  it("never truncates a caller turn", () => {
+  // A greeting followed by a recovery line, with no caller turn between them. Without
+  // keying on seq the second would overwrite the first.
+  it("appends a second agent turn rather than overwriting the first", () => {
     const c = createConversation();
-    c.addAgent("Hello.");
+    c.recordAgentTurn(1, "Thank you for calling Ansa.");
+    c.recordAgentTurn(2, "Sorry, I did not catch that.");
+
+    expect(c.messages).toEqual([
+      { role: "assistant", content: "Thank you for calling Ansa." },
+      { role: "assistant", content: "Sorry, I did not catch that." },
+    ]);
+  });
+
+  it("does not disturb a caller turn recorded after the agent's", () => {
+    const c = createConversation();
+    c.recordAgentTurn(1, "Thank you for calling Ansa.");
     c.addCaller("My policy number is AB417.");
 
-    c.truncateLastAgent(3);
+    c.recordAgentTurn(1, "Thank you");
 
-    expect(c.messages[1]?.content).toBe("My policy number is AB417.");
-  });
-
-  it("does nothing on an empty conversation", () => {
-    const c = createConversation();
-    expect(() => c.truncateLastAgent(5)).not.toThrow();
-    expect(c.messages).toEqual([]);
+    expect(c.messages[1]).toEqual({ role: "user", content: "My policy number is AB417." });
+    expect(c.messages).toHaveLength(3);
   });
 });

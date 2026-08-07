@@ -202,6 +202,70 @@ describe("runConversation", () => {
     expect(h.listen.closed).toBe(false);
   });
 
+  // The defect this replaces: marks existed only at sentence boundaries, so an
+  // interruption partway through a sentence reported zero heard and deleted a reply the
+  // caller had mostly heard. The agent then repeated itself.
+  it("keeps a prefix of what was heard when interrupted mid-sentence", () => {
+    const h = setup({ bargeInGuardMs: 0 });
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("Tell me about my policy.");
+    h.llm.last().emit("Your policy renews in May and the premium is unchanged. ");
+
+    const speech = h.tts.last();
+    for (let i = 0; i < 20; i += 1) speech.audio(400); // 20 x 50ms = 1s, as TTS streams
+    h.stream.ackAll();
+    h.listen.speechStart(9999);
+
+    const messages = h.llm.completions[0]?.request.messages ?? [];
+    void messages;
+    h.listen.final("Actually, hold on.");
+    const history = h.llm.lastMessages();
+    const agentTurn = history.find((m) => m.role === "assistant" && m.content.includes("policy"));
+
+    expect(agentTurn, "the heard prefix was erased entirely").toBeDefined();
+    expect(agentTurn?.content.length ?? 0).toBeGreaterThan(0);
+    expect(agentTurn?.content).not.toContain("premium is unchanged");
+    assertInvariants(h);
+  });
+
+  it("records the full turn once the caller has heard all of it", () => {
+    const h = setup();
+    h.tts.last().audio(4000);
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("Hello?");
+
+    expect(h.llm.lastMessages()[0]).toEqual({
+      role: "assistant",
+      content: "Thank you for calling Ansa.",
+    });
+    assertInvariants(h);
+  });
+
+  // Interrupted before a single byte reached the caller: as far as the conversation is
+  // concerned that turn never happened.
+  it("records nothing for a turn cut off before any audio played", () => {
+    const h = setup({ bargeInGuardMs: 0 });
+
+    h.listen.speechStart(100);
+    h.listen.final("Hello?");
+
+    expect(h.llm.lastMessages()).toEqual([{ role: "user", content: "Hello?" }]);
+    assertInvariants(h);
+  });
+
+  it("emits sub-sentence marks so a mid-sentence interruption has evidence", () => {
+    const h = setup();
+    for (let i = 0; i < 20; i += 1) h.tts.last().audio(400); // 1s in 50ms chunks
+
+    // ~200ms per mark, so a second of audio should produce several.
+    expect(h.stream.marks.length).toBeGreaterThanOrEqual(4);
+    expect(h.stream.marks.every((m) => m.startsWith("1:"))).toBe(true);
+  });
+
   it("closes the listen session when the call ends", () => {
     const h = setup();
 
