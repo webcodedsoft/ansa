@@ -256,6 +256,38 @@ rescues "policy" on *real* Nigerian-accented caller audio. The probe used TTS, w
 STACK_DECISION already records as unable to reproduce the failure. **Probe B needs
 recorded caller audio — `audio_segments`, Slice 2 — and remains the deciding measurement.**
 
+### Deepgram Flux on a live call — it hears "policy" (2026-08-08)
+
+First real call with `LISTEN_PROVIDER=deepgram`, keyterm boosting on, same voice and line
+as every OpenAI call today.
+
+| | OpenAI `gpt-4o-transcribe` | Deepgram Flux |
+|---|---|---|
+| "I'd like to know about my policy" | *"I'd like to move one apology."* | **correct** |
+| "when it will expire" | *"why my policy was fired"* | **correct** |
+| "my policy" (later turn) | *"my puppy"* | **correct** |
+| `turn_to_audio` | 1551–1911ms | **1153ms avg, 813ms best** |
+| noise/hallucination filtered | Malayalam, Māori, phantom turns | none needed |
+
+Eight turns, complex disfluent sentences held together intact:
+*"Okay. Can you do that for me? But, like, you had... you do not have this number."*
+
+**Keyterm boosting is the difference.** Every failure this provider fixes is a term on the
+list, and it is the capability neither of the other two candidates could offer — OpenAI
+has none, and Intron's docs say none.
+
+**It is also faster**, which was not expected. Flux returns the transcript in the same
+frame as end-of-turn, so there is no post-turn transcription wait at all. `turn_to_audio`
+touching 813ms is the first time the R5.5 target has been in reach this session.
+
+**One bug this exposed, ours:** the adapter emitted the transcript before the turn event,
+so `stt_final` measured each turn against the previous one and reported 12.7s for a stage
+that takes none. Order corrected — turn event first.
+
+**Still to measure:** the EU endpoint (`api.eu.deepgram.com`), which is a one-variable
+experiment on the Nigeria round-trip and currently untested; and per-word confidence in
+production, now that it is available for the first time (R4.1.5).
+
 ### Intron Sahara v2 — attempted and DROPPED 2026-08-07
 
 **Not pursued.** Kept here so nobody spends another evening on it without knowing what

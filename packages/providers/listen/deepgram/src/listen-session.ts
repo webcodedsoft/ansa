@@ -139,10 +139,19 @@ export const openDeepgramSession = (socket: DeepgramSocket): DeepgramListenSessi
           confidence: meanConfidence(event.words),
           offsetMs: streamOffsetMs(),
         };
-        // Order matters: the transcript must exist before the turn is declared over, or
-        // the orchestrator opens a reply with nothing to reply to.
-        if (event.text.length > 0) for (const l of final) l(t);
+        // Turn event first, then the transcript.
+        //
+        // Flux delivers both in the same frame, so the order is ours to choose — and the
+        // orchestrator starts its stt_final timer on the turn event and stops it on the
+        // transcript. Emitting the transcript first measured each turn against the
+        // previous one: a live call reported 12.7s for a stage that actually takes none.
+        // It also arms the thinking-filler at the wrong moment.
+        //
+        // Getting the transcript at end-of-turn with no wait is this provider's real
+        // advantage over one that transcribes afterwards; the ordering should show that
+        // as ~0ms rather than hide it.
         for (const l of endOfTurn) l({ offsetMs: streamOffsetMs() });
+        if (event.text.length > 0) for (const l of final) l(t);
         return;
       }
       case "error":
