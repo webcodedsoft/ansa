@@ -17,8 +17,18 @@ export interface Word {
 
 export interface Transcript {
   readonly text: string;
+  /**
+   * Empty when the provider does not report word-level detail. That is a real gap
+   * against R4.1.5 and a mark against the provider at Gate A — not something to paper
+   * over by inventing timings.
+   */
   readonly words: readonly Word[];
-  readonly confidence: number;
+  /**
+   * 0..1, or null when the provider does not report confidence at all. Null is not the
+   * same as low: the orchestrator must not treat an absent number as a reason to ask a
+   * clarifying question, nor as permission to skip one.
+   */
+  readonly confidence: number | null;
   /** Milliseconds since the media stream opened. */
   readonly offsetMs: number;
 }
