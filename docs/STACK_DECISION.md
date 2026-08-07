@@ -211,6 +211,29 @@ direction: the remaining errors are vocabulary, and **no model size fixes a word
 model has never been told to expect**. That is R4.1.3's job and this provider cannot do
 it.
 
+### The transcriber leaves the language, and it cannot be filtered out
+
+Twice on live calls, from ordinary Nigerian-accented English with `language: "en"` set
+explicitly:
+
+- `"പലനി പിടിച്ച്"` — Malayalam
+- `"Iwi arotakehia e te kāwanatanga."` — Māori
+
+The first is caught by a non-Latin script check. **The second is not, and deliberately
+is not.** The heuristic that would catch it — reject text containing no common English
+function words — also rejects Nigerian Pidgin ("Abeg, wetin dey happen?"), which this
+product exists to serve and which is a named Gate A criterion. Trading a real
+requirement for a cosmetic one is the wrong trade, and the asymmetry stands: nonsense
+costs one turn, ignoring a Nigerian caller is the premise failing.
+
+Left unfiltered, it reaches the LLM, which says it did not catch that and asks the
+caller to repeat. That is the correct behaviour and it is what happens today.
+
+**For Gate A this is a scoring category, not a bug to fix downstream.** A transcriber
+that abandons the requested language on accented input is failing at something WER does
+not measure — the output is not a wrong word, it is not the language. Ask each candidate
+for it directly.
+
 ### Correcting mishearings after the fact does not converge
 
 Tried, measured, and reported as a partial dead end so nobody rebuilds it.
