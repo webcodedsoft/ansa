@@ -22,7 +22,12 @@ export interface SessionOptions {
    * both rates, and they trade directly against each other.
    */
   readonly silenceMs: number;
-  /** Domain vocabulary. Nigerian names, place names, product names — and "Ansa" (R4.1.3). */
+  /**
+   * Domain vocabulary (R4.1.3). Currently unused: this provider offers no vocabulary
+   * boosting, and the prompt field it does offer hallucinates its contents back as
+   * transcripts. Kept on the interface because the requirement is real and the next
+   * provider may honour it.
+   */
   readonly keyterms: readonly string[];
 }
 
@@ -34,13 +39,15 @@ export const encodeSessionUpdate = (options: SessionOptions): string =>
       audio: {
         input: {
           format: toInputFormat(options.format),
-          transcription: {
-            model: options.model,
-            language: "en",
-            ...(options.keyterms.length > 0
-              ? { prompt: `Expect these terms: ${options.keyterms.join(", ")}.` }
-              : {}),
-          },
+          // NOTE: no `prompt` here, deliberately.
+          //
+          // Whisper-family models regurgitate their prompt when fed silence or noise.
+          // Passing keyterms that way produced phantom caller turns reading "Expect
+          // these terms: Ansa, policy, premium, naira." on a live call, which the agent
+          // then answered. Keyterm biasing needs a provider that supports it as real
+          // vocabulary boosting (R4.1.3), not as prompt text — another thing for Gate A
+          // to weigh.
+          transcription: { model: options.model, language: "en" },
           turn_detection: { type: "server_vad", silence_duration_ms: options.silenceMs },
         },
       },

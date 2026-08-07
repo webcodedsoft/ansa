@@ -52,7 +52,7 @@ const connect = () => {
 const chunk = (n: number) => ({ data: Buffer.alloc(n, 0x7f), offsetMs: 0 });
 
 describe("openListenSession", () => {
-  it("configures the session as mu-law with the keyterms on open", () => {
+  it("configures the session as mu-law on open", () => {
     const f = connect();
     f.open();
 
@@ -60,7 +60,19 @@ describe("openListenSession", () => {
     expect(update.type).toBe("session.update");
     expect(update.session.audio.input.format).toEqual({ type: "audio/pcmu" });
     expect(update.session.audio.input.turn_detection.silence_duration_ms).toBe(500);
-    expect(update.session.audio.input.transcription.prompt).toContain("Ansa");
+  });
+
+  // Regression guard. Passing keyterms as a `prompt` made the model recite them back as
+  // caller speech on a live call — "Expect these terms: Ansa, policy, premium, naira."
+  // arrived five times as phantom turns, and the agent answered them. Whisper-family
+  // models regurgitate their prompt when fed silence or noise. Never send one.
+  it("never sends a transcription prompt, whatever keyterms it is given", () => {
+    const f = connect();
+    f.open();
+
+    const transcription = JSON.parse(f.sent[0] as string).session.audio.input.transcription;
+    expect(transcription.prompt).toBeUndefined();
+    expect(JSON.stringify(transcription)).not.toContain("Ansa");
   });
 
   // The vendor discards audio sent before the session is configured. Dropping those
