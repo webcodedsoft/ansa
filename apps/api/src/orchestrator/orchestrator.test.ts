@@ -543,6 +543,81 @@ describe("runConversation", () => {
     });
   });
 
+  describe("asking it to repeat", () => {
+    const askAndAnswer = (h: ReturnType<typeof setup>) => {
+      h.tts.last().done();
+      h.stream.ackAll();
+      h.listen.final("When does my policy renew?");
+      h.llm.last().emit("Your policy renews in May. ");
+      h.llm.last().finish();
+      const reply = h.tts.last();
+      for (let i = 0; i < 10; i += 1) reply.audio(400);
+      reply.done();
+      h.stream.ackAll();
+      return h;
+    };
+
+    it("says the same thing again instead of answering something new", () => {
+      const h = askAndAnswer(setup());
+      const completionsBefore = h.llm.completions.length;
+
+      h.listen.final("Sorry, what?");
+
+      expect(h.tts.texts().at(-1)).toBe("Your policy renews in May.");
+      // No model round trip: someone who missed what you said wants it now.
+      expect(h.llm.completions).toHaveLength(completionsBefore);
+      assertInvariants(h);
+    });
+
+    // History holds only what was heard, so replaying from there would repeat the
+    // fragment they already got rather than the part they missed.
+    it("repeats what it meant to say, not the truncated part they heard", () => {
+      const h = setup({ bargeInGuardMs: 0 });
+      h.tts.last().done();
+      h.stream.ackAll();
+
+      h.listen.final("Tell me about my policy.");
+      h.llm.last().emit("Your policy renews in May and the premium is unchanged. ");
+      h.llm.last().finish();
+      const reply = h.tts.last();
+      for (let i = 0; i < 3; i += 1) reply.audio(400); // only a little heard
+      h.stream.ackAll();
+      h.listen.speechStart(9999);
+
+      h.listen.final("Sorry, I did not catch that.");
+
+      expect(h.tts.texts().at(-1)).toBe(
+        "Your policy renews in May and the premium is unchanged.",
+      );
+    });
+
+    it("replays the greeting if asked right after it", () => {
+      const h = setup();
+      h.tts.last().done();
+      h.stream.ackAll();
+
+      h.listen.final("Pardon?");
+
+      expect(h.tts.texts().at(-1)).toBe("Thank you for calling An-Sah. How can I help you?");
+    });
+
+    // Anchoring is what stops this hijacking real turns.
+    it("does not mistake a real question containing 'what' for a repeat request", () => {
+      const h = askAndAnswer(setup());
+      const before = h.llm.completions.length;
+
+      h.listen.final("What can you do for me?");
+
+      expect(h.llm.completions.length).toBe(before + 1);
+    });
+
+    it("does nothing special before the agent has said anything", () => {
+      const h = setup({ greetingAudio: null });
+      // No utterance recorded yet beyond the greeting, which is set at call open.
+      expect(h.tts.texts()).toHaveLength(1);
+    });
+  });
+
   it("closes the listen session when the call ends", () => {
     const h = setup();
 

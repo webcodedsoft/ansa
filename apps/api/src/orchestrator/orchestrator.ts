@@ -139,6 +139,35 @@ const MAX_SENTENCES_PER_TURN = 2;
  * Only applied while the agent is speaking. The same word alone in silence is a real
  * turn — a caller answering "yeah" to a question means yes.
  */
+/**
+ * "Sorry, what?", "come again", "I didn't catch that" — the caller did not hear, and
+ * wants the same thing again rather than a new answer.
+ *
+ * Split into a politeness prefix and a core, because real repair requests are compound:
+ * matching whole fixed phrases missed "sorry, what?", which is the commonest form of it.
+ * Both parts are anchored — "what can you do for me" is a question, not a request to
+ * repeat, and a substring match would hijack it.
+ */
+const POLITE_PREFIX = /^(sorry|pardon( me)?|excuse me)[, ]*/;
+
+const REPAIR_CORE = new RegExp(
+  "^(" +
+    "what( was that| did you say| again)?|huh|eh|" +
+    "come again|say (that |it )?again|repeat( that| it)?|one more time|" +
+    "(i )?(didn t|didnt|did not|couldn t|couldnt|could not|can t|cant|cannot) " +
+    "(hear|catch|get) (that|you|it)( again)?|" +
+    "can you (say that again|repeat( that| it)?)" +
+    ")$",
+);
+
+/** `text` must already be normalised: lower case, punctuation stripped. */
+const isRepairRequest = (text: string): boolean => {
+  const withoutPolite = text.replace(POLITE_PREFIX, "");
+  // A bare "sorry?" or "pardon?" on a phone call means "say that again".
+  if (withoutPolite.length === 0) return true;
+  return REPAIR_CORE.test(withoutPolite);
+};
+
 const BACKCHANNEL = new Set([
   "mm", "mmm", "mhm", "mmhm", "hmm", "hm", "uh", "uh huh", "uhhuh", "huh",
   "yeah", "yep", "yes", "ok", "okay", "right", "sure", "aha", "ah", "oh", "i see",
@@ -167,6 +196,15 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
    * way a transcript will be. A transcript wholly contained in this is our own voice.
    */
   let spokenWindow = "";
+
+  /**
+   * The last thing the agent set out to say, in full — not what the caller heard.
+   *
+   * Conversation history deliberately holds only the heard portion, so replaying from
+   * there would repeat the fragment they already got rather than the part they missed.
+   * A repeat has to be of the intent.
+   */
+  let lastUtterance: string | null = null;
 
   /** Timers for the thinking-gap acknowledgements, cleared the moment real audio starts. */
   let fillerTimers: ReturnType<typeof setTimeout>[] = [];
@@ -537,6 +575,37 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     enqueue(recovery, RECOVERY_LINE);
   };
 
+  /**
+   * Says the previous utterance again, without consulting the model.
+   *
+   * Faster than a normal turn by the whole LLM round trip (~700ms), which is the right
+   * shape: someone who missed what you said wants it repeated now, not thought about.
+   * It is also exactly what was said before rather than a fresh paraphrase, which is
+   * what "sorry, what?" is asking for.
+   */
+  const repeatLast = (): void => {
+    const text = lastUtterance;
+    if (text === null) return;
+
+    if (turn !== null) stopSpeaking("superseded by repeat request");
+    turnSeq += 1;
+    const repeat: AgentTurn = {
+      seq: turnSeq,
+      queue: [],
+      synthesis: null,
+      cancelLlm: null,
+      bytesSent: 0,
+      bytesHeard: 0,
+      spoken: [],
+      inFlight: null,
+      llmDone: true,
+      sentenceAudioAt: null,
+    };
+    turn = repeat;
+    log.info("repeating the previous utterance", { seq: repeat.seq, chars: text.length });
+    enqueue(repeat, text);
+  };
+
   const respondTo = (callerText: string): void => {
     // A transcript can arrive while the agent is still speaking — the echo guard
     // suppresses the speech-start but not the transcript behind it. Without this the
@@ -617,6 +686,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       if (tail.length > 0 && !isFragment && sentencesSpoken < MAX_SENTENCES_PER_TURN) {
         enqueue(current, tail);
       }
+      lastUtterance = full.trim().length > 0 ? full.trim() : lastUtterance;
       log.info("agent turn", { seq, chars: full.length });
       // Nothing to say and nothing queued: without this a turn with no audio at all
       // would never close.
@@ -677,6 +747,15 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       log.info("transcript during agent audio", { text, spokenWindow });
     }
 
+    // The caller did not hear us. Say it again rather than answering something else —
+    // and do it without a model round trip, because they want it now.
+    if (lastUtterance !== null && isRepairRequest(normalise(text))) {
+      log.info("caller asked us to repeat", { text });
+      conversation.addCaller(text);
+      repeatLast();
+      return;
+    }
+
     log.info("caller said", { text, offsetMs: transcript.offsetMs });
     respondTo(text);
   });
@@ -705,6 +784,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     sentenceAudioAt: null,
   };
   turn = greetingTurn;
+  lastUtterance = deps.greeting;
 
   const cached = deps.greetingAudio ?? null;
   if (cached !== null && cached.length > 0) {
