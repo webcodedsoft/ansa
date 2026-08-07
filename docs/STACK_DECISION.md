@@ -65,11 +65,46 @@ interface.
 
 ---
 
-## STT / turn detection — not chosen
+## STT / turn detection — OpenAI realtime (provisional, Slice 3)
 
-Gate A decides. Candidates: Intron Sahara v2, Deepgram Flux, Spitch. The listen layer is
-already split into `@ansa/transcriber` and `@ansa/turn-detector` so the winner may be two
-different vendors (R4.1.6).
+**Chosen for integration speed. Gate A still decides.** Candidates there remain Intron
+Sahara v2, Deepgram Flux and Spitch; Intron is still the likely accuracy winner on
+Nigerian speech.
+
+Verified against the live GA API on 2026-08-07 (`wss://api.openai.com/v1/realtime?intent=transcription`):
+
+- **Native 8kHz μ-law** — `format: {type: "audio/pcmu"}` accepted, no transcoding hop.
+- **Streaming interim results** (24 deltas), clearing R4.1.4.
+- **Turn events** — `speech_started` / `speech_stopped`, so one provider can serve both
+  `Transcriber` and `TurnDetector`. They stay separate interfaces regardless (R4.1.6).
+- **Transcription quality on a Nigerian voice at 8kHz was exact**, including the two
+  things that matter most: the brand name, and both number strings.
+  - said: "…calling Ansa about my policy number A B four one seven, and my number is
+    zero eight one three eight one seven eight five five zero."
+  - heard: "…calling Ansa about my policy number AB417, and my number is 08138178550."
+
+**ElevenLabs was ruled out for STT.** `/v1/speech-to-text` requires a complete file or
+URL — batch transcription, which R4.1.4 makes disqualifying. Their model catalogue lists
+only TTS and speech-to-speech models.
+
+**Deepgram was passed over** for the provisional pick: TASKS itself describes Flux as
+English-only and American-centric, and debugging a conversation loop through a
+transcriber that mangles the developer's own accent is a bad position to build from.
+
+**Outstanding:**
+
+- [ ] **Time from `speech_stopped` to final transcript looks far too slow.** All deltas
+      arrived in a burst *after* the turn closed, roughly 4s later on a 9.4s utterance —
+      against an 800ms end-to-end budget. It may scale down with realistic 2–3s turns.
+      **Measure this with short utterances first thing in Slice 3; if it holds, it
+      changes the architecture, not just the provider.**
+- [ ] Re-test on real human speech. This was TTS audio: no disfluency, no restarts, no
+      noise. PRD §9.1 warns a stack chosen on clean audio looks 10–20 points better than
+      it performs.
+
+**Note for any test harness:** VAD closes a turn only when it *hears* silence. Stopping
+the audio stream is not the same thing and yields no transcript at all. Carriers stream
+silence continuously; harnesses must too.
 
 ## Telephony — Twilio (provisional, Slice 1)
 
