@@ -157,8 +157,26 @@ you can act on.
 - Open: the adapter forwards TTS chunks at whatever size the provider emits (400 bytes in
   the stub). Real Twilio prefers ~160-byte/20ms frames. It accepts larger and buffers, but
   chunk size affects how fast `clear()` can cut audio off, so revisit at barge-in.
-- Slice 1's remaining work is not code: a number, credentials, ngrok, a Nigerian voice,
-  and a phone call.
+- Slice 1's remaining work is not code: a number, credentials, ngrok, a paid ElevenLabs
+  plan, and a phone call.
+
+- *2026-08-07 — ElevenLabs verified against the live API.* `output_format=ulaw_8000`
+  returns genuine raw μ-law 8kHz: `content-type: audio/ulaw`, no container, and a decoded
+  waveform that is speech rather than noise. **R4.2.4 satisfied, no transcoding hop.**
+- Voice chosen is `eOHsvebhdtt0XFeHVMQY` = **Olabisi — Warm and Relatable**, labelled
+  `accent=nigerian locale=en-NG use_case=conversational gender=female age=young`. The right
+  shape: Nigerian and conversational rather than narration.
+- **Blocker: the ElevenLabs account is free-tier and cannot use Voice Library voices via
+  the API** (`402 paid_plan_required`). The 22 premade voices work but none are Nigerian,
+  so the μ-law check was run against a premade voice. A real call with Olabisi needs a paid
+  plan. Nothing in the code changes — only the plan.
+- **Watch: time to first byte is 256–277ms against a <300ms target (R4.2.3)**, measured
+  laptop-to-ElevenLabs, not from a Lagos datacentre under load. Almost no headroom. This is
+  an early signal that latency, not accuracy, may be what decides the provider at Gate A.
+- Verification lesson worth keeping: magic-number sniffing cannot tell μ-law from MP3,
+  because μ-law encodes near-silence as `0xff`/`0x7f` and those are exactly MP3 sync words.
+  The first two verifier runs produced a false "SUSPECT". What actually settles it is
+  decoding as μ-law and checking the waveform statistics.
 
 ---
 

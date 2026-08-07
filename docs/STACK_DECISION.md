@@ -33,10 +33,17 @@ best-trodden Twilio media-streams path.
 
 **Outstanding — must be closed before this is trusted:**
 
-- [ ] Confirm `output_format=ulaw_8000` genuinely returns μ-law 8kHz. This was *not*
-      verified: elevenlabs.io/docs now 308-redirects to app.buildwithfern.com, which 404s
-      on every path tried. One authenticated request settles it. **If it fails, the choice
-      is wrong** — a transcoding hop is real work and would change the comparison.
+- [x] **Confirmed 2026-08-07: `output_format=ulaw_8000` returns raw μ-law 8kHz.**
+      `content-type: audio/ulaw`, no container, 13,003 bytes = 1.63s at 8000 B/s, and the
+      decoded waveform is speech (peak 23932/32767, rms 4396, 41% near-silent samples —
+      noise-as-μ-law would be loud almost everywhere). No transcoding hop. R4.2.4 satisfied.
+- [ ] **Time to first byte is marginal: 256–277ms measured, against a <300ms target
+      (R4.2.3), and that is from a laptop in Nigeria to ElevenLabs' default region — not
+      from a Lagos datacentre under load.** Little headroom. R9.1.8 makes this a Gate A
+      measurement, and it may be what disqualifies the provider rather than accuracy.
+- [ ] **Blocked: the account is on the free plan and cannot use Voice Library voices via
+      the API** — `402 paid_plan_required`. The premade voices work, but none are Nigerian.
+      Olabisi needs a paid subscription before a real call can use her.
 - [x] Pick a Nigerian voice — `eOHsvebhdtt0XFeHVMQY`, from the Voice Library, chosen by
       Vera on 2026-08-07. Provisional, and set per-environment rather than in code, so
       swapping it is one variable.
