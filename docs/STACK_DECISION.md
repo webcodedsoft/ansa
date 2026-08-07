@@ -170,7 +170,25 @@ Downstream behaviour on this input was correct — the agent said it did not cat
 and asked the caller to repeat. The pipeline is sound and the input is not.
 
 **This is the case Intron Sahara v2 exists for**, and it moves STT accuracy ahead of
-latency as the thing Gate A most needs to settle. It is also a second mark against
+latency as the thing Gate A most needs to settle.
+
+**Refined the same evening, and the refinement matters.** A later call on the same voice
+and the same line transcribed near-perfectly, including disfluencies:
+
+> "Well, I'll use it for coding, right? You know, I asked about learning programming
+> because I wanted to know how I use it to build up my knowledge." *(145 chars, one turn)*
+
+The difference between that and "I'd like to move one apology" is **vocabulary, not
+accent**. Every failure so far has been on an insurance term — "policy" became apology,
+penalty, and course — while general English came through clean. So the problem is not
+that the model cannot handle Nigerian speech; it is that it has no domain vocabulary and
+**this provider offers no way to give it one**. The only mechanism available was the
+`prompt` field, which recited its contents back as phantom caller turns.
+
+That makes R4.1.3 (per-tenant keyterm boosting) a hard requirement of the provider
+choice rather than a nice-to-have, and it is a structural gap here rather than something
+tuning can close. Weight it accordingly at Gate A: a provider that accepts real
+vocabulary boosting may beat one with better raw WER. It is also a second mark against
 prompt/keyterm handling on this provider (the first being the hallucinated keyterm
 prompt), so R4.1.3 vocabulary boosting remains unavailable here.
 
