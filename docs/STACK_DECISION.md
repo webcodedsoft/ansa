@@ -211,6 +211,49 @@ direction: the remaining errors are vocabulary, and **no model size fixes a word
 model has never been told to expect**. That is R4.1.3's job and this provider cannot do
 it.
 
+### Intron Sahara v2 — attempted 2026-08-07, blocked on their API
+
+Streaming exists, so R4.1.4 is satisfied and TASKS' main worry is answered. Connection,
+auth and session creation all work: `wss://infer.voice.intron.io/stt/v1/stream`, Bearer
+token, `101` upgrade, `SESSION_CREATED`, and it accepts `sample_rate: 8000`.
+
+**Audio cannot be sent.** Every payload shape their documentation describes is rejected
+with the same generic `INPUT_ERROR: "Invalid base64 audio payload"` — raw PCM16 base64,
+WAV-wrapped per chunk, unpadded base64, data-URI prefixed, and the whole clip as a
+single WAV. Four encodings, one error, so the message is probably misleading about the
+real cause. **Next step is voice@intron.io, not more guessing.**
+
+Documented gaps found on the way, all Gate A input:
+
+- **PCM16 only** — no μ-law, so a transcoding hop is required (a cost under R4.2.4).
+- **No turn detection at all** — the caller sends `COMMIT`. This forces CLAUDE.md's
+  predicted composition: Intron transcribes, another provider detects turns, audio
+  fanned out to both, and double STT cost (R4.1.9 exists for this).
+- **No phrase boosting**, per their docs — which undercuts the main strategic argument
+  for Intron. Note though that `SESSION_CREATED` returns a `use_prompt_id` config field
+  the docs do not mention; worth asking about, since R4.1.3 may be available after all.
+
+### The A/B was run on the wrong audio, and the earlier conclusion was too strong
+
+The comparison used TTS audio in a Nigerian voice at 8kHz μ-law. On it,
+`gpt-4o-transcribe` scored **5 of 6 exact and got "policy" right every time**, including
+the naira amount and the premium question — the exact phrases that fail on live calls.
+
+Two consequences.
+
+**The methodology cannot answer the question.** Clean audio does not reproduce the
+failure, so it would have flattered both providers equally. PRD §9.1 says this outright:
+a stack chosen on clean read-aloud looks 10–20 points better than it performs. **A real
+provider comparison needs recorded caller audio** — `audio_segments` in Slice 2, and the
+Gate A corpus proper.
+
+**"It is vocabulary, not accent" was too strong.** Same vocabulary, clean audio, near
+perfect. The variable is not the words alone but the words surviving a degraded channel:
+domain terms fail first because they are low-probability, and what degrades them is real
+accented speech over a real line. Keyterm boosting still matters — it raises exactly
+those probabilities — but it is a mitigation for channel degradation, not a fix for a
+vocabulary the model lacks.
+
 ### The transcriber leaves the language, and it cannot be filtered out
 
 Twice on live calls, from ordinary Nigerian-accented English with `language: "en"` set
