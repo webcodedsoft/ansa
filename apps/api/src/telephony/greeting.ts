@@ -1,9 +1,13 @@
 /**
  * Slice 1 spoke exactly this and hung up. Slice 3 opens the conversation with it and
- * then listens. It is the real greeting rather than a placeholder so the phone-line
- * test in PRD §1.0 happens on every call.
+ * then listens, so it ends with a handover: a caller who is only greeted does not know
+ * it is their turn, and the question is also a complete clause for semantic end-of-turn
+ * detection to commit against.
+ *
+ * It is the real brand name rather than a placeholder so the phone-line test in
+ * PRD §1.0 happens on every call.
  */
-export const GREETING_TEXT = "Thank you for calling Ansa.";
+export const GREETING_TEXT = "Thank you for calling Ansa. How can I help you?";
 
 /**
  * The brand is "Ansa" everywhere a human reads it. TTS is handed "An-Sah" instead,

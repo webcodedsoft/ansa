@@ -1,6 +1,6 @@
 import type { Server } from "node:http";
 
-import type { Logger } from "@ansa/shared";
+import { TELEPHONY_AUDIO, type AudioChunk, type Logger } from "@ansa/shared";
 import type { CallMediaStream, TelephonyProvider } from "@ansa/telephony";
 import type { LlmProvider } from "@ansa/llm";
 import { openListenSession } from "@ansa/openai-listen";
@@ -9,7 +9,9 @@ import { Inject, Injectable, type OnApplicationShutdown } from "@nestjs/common";
 import { WebSocketServer, type WebSocket } from "ws";
 
 import type { AppConfig } from "../config/env";
+import { FILLER_PHRASES } from "./filler";
 import { forSpeech, GREETING_TEXT } from "./greeting";
+import { createAudioCache } from "./prerender";
 import { runConversation } from "../orchestrator/orchestrator";
 import { openListenSocket } from "./ws-listen-socket";
 import {
@@ -29,6 +31,9 @@ import { fromWebSocket } from "./ws-media-socket";
 @Injectable()
 export class MediaGateway implements OnApplicationShutdown {
   private server: WebSocketServer | null = null;
+  /** Fixed phrases, rendered once at boot rather than per call. */
+  private greetingAudio: readonly AudioChunk[] | null = null;
+  private fillers: readonly (readonly AudioChunk[])[] = [];
 
   constructor(
     @Inject(TELEPHONY_PROVIDER) private readonly telephony: TelephonyProvider,
@@ -65,6 +70,33 @@ export class MediaGateway implements OnApplicationShutdown {
     });
 
     this.log.info("media stream gateway listening", { path: MEDIA_STREAM_PATH });
+
+    // Off the critical path: calls that arrive before this finishes fall back to
+    // synthesising live, which is slower but never silent.
+    void this.warmAudio();
+  }
+
+  /**
+   * Renders the greeting and the thinking-gap acknowledgements once. Everything here is
+   * a compile-time constant in a fixed voice at a fixed format, so the result is
+   * identical on every call and paying for it per call is pure latency.
+   */
+  private async warmAudio(): Promise<void> {
+    const cache = createAudioCache({
+      tts: this.tts,
+      format: TELEPHONY_AUDIO,
+      forSpeech,
+      log: this.log,
+    });
+    const voiceId = this.config.elevenLabsVoiceId;
+
+    this.greetingAudio = await cache.render(GREETING_TEXT, voiceId);
+    const rendered = await Promise.all(FILLER_PHRASES.map((p) => cache.render(p, voiceId)));
+    this.fillers = rendered.filter((c): c is readonly AudioChunk[] => c !== null);
+    this.log.info("audio warmed", {
+      greeting: this.greetingAudio !== null,
+      fillers: this.fillers.length,
+    });
   }
 
   onApplicationShutdown(): void {
@@ -138,6 +170,8 @@ export class MediaGateway implements OnApplicationShutdown {
       log: this.log,
       greeting: GREETING_TEXT,
       forSpeech,
+      greetingAudio: this.greetingAudio,
+      fillers: this.fillers,
     });
   }
 }

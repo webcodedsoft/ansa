@@ -1,6 +1,6 @@
 import type { LlmProvider } from "@ansa/llm";
 import type { OpenAiListenSession } from "@ansa/openai-listen";
-import type { Logger } from "@ansa/shared";
+import type { AudioChunk, Logger } from "@ansa/shared";
 import type { CallMediaStream } from "@ansa/telephony";
 import { durationMs, type SynthesisStream, type TtsProvider } from "@ansa/tts";
 
@@ -28,6 +28,18 @@ export interface OrchestratorDeps {
    * This is a floor, not echo cancellation. Too high and real interruptions are ignored.
    */
   readonly bargeInGuardMs?: number;
+  /**
+   * The greeting, already rendered. Fixed text in a fixed voice is deterministic, so
+   * synthesising it over the network on every call spends ~500-950ms of silence at the
+   * moment the caller is listening hardest. Null falls back to synthesising live.
+   */
+  readonly greetingAudio?: readonly AudioChunk[] | null;
+  /**
+   * Pre-rendered acknowledgements, played into the thinking gap. Empty disables filler.
+   */
+  readonly fillers?: readonly (readonly AudioChunk[])[];
+  /** Play the first filler if no reply audio has gone out this long after end-of-turn. */
+  readonly fillerAfterMs?: number;
 }
 
 /** A sentence that has been handed to TTS, and where its audio sits in the turn. */
@@ -76,6 +88,11 @@ const DEFAULT_BARGE_IN_GUARD_MS = 400;
  */
 const CHARS_PER_SECOND = 13;
 
+/** First acknowledgement. Early enough that the caller never hears a full second of nothing. */
+const DEFAULT_FILLER_AFTER_MS = 450;
+/** Second one, which is R6.2's two-second rule made literal. Never more than two per turn. */
+const SECOND_FILLER_AFTER_MS = 2200;
+
 export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps): void => {
   const log = deps.log.child({ callId: stream.callId });
   const conversation = createConversation();
@@ -99,6 +116,42 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
    * way a transcript will be. A transcript wholly contained in this is our own voice.
    */
   let spokenWindow = "";
+
+  /** Timers for the thinking-gap acknowledgements, cleared the moment real audio starts. */
+  let fillerTimers: ReturnType<typeof setTimeout>[] = [];
+  let fillerIndex = 0;
+
+  const cancelFiller = (): void => {
+    for (const timer of fillerTimers) clearTimeout(timer);
+    fillerTimers = [];
+  };
+
+  /**
+   * Filler audio goes to the carrier and nowhere else: it is not counted in bytesSent,
+   * produces no mark, and never enters the conversation. The agent did not say anything
+   * it should remember. It IS added to the spoken window so the echo filter recognises
+   * it coming back.
+   */
+  const playFiller = (): void => {
+    const pool = deps.fillers ?? [];
+    if (pool.length === 0) return;
+    const chunks = pool[fillerIndex % pool.length];
+    fillerIndex += 1;
+    if (chunks === undefined) return;
+    for (const chunk of chunks) stream.send(chunk);
+    log.debug("played thinking filler", { index: fillerIndex });
+  };
+
+  const armFiller = (): void => {
+    cancelFiller();
+    if ((deps.fillers ?? []).length === 0) return;
+    const first = deps.fillerAfterMs ?? DEFAULT_FILLER_AFTER_MS;
+    fillerTimers = [
+      setTimeout(playFiller, first),
+      setTimeout(playFiller, SECOND_FILLER_AFTER_MS),
+    ];
+    for (const timer of fillerTimers) timer.unref();
+  };
 
   const stageStart = new Map<string, number>();
   const mark = (stage: string): void => {
@@ -189,6 +242,8 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       if (first) {
         first = false;
         current.sentenceAudioAt = Date.now();
+        // The agent is speaking for real now; no acknowledgement should land on top.
+        cancelFiller();
         measure("tts_first_byte", { seq: current.seq });
       }
       stream.send(chunk);
@@ -265,6 +320,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     current.cancelLlm?.();
     current.synthesis?.cancel();
     current.queue.length = 0;
+    cancelFiller();
     stream.clear();
 
     commitHeard(current);
@@ -304,13 +360,25 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         return;
       }
     }
+    // The agent has made no sound yet, so there is nothing to interrupt. Tearing the
+    // turn down here would cancel an LLM that was milliseconds from its first token —
+    // the dead air manufacturing the interruption that deletes the answer.
+    if (current !== null && current.sentenceAudioAt === null) {
+      log.debug("caller spoke while the agent was still thinking", {
+        offsetMs: event.offsetMs,
+      });
+      return;
+    }
+
     log.debug("caller speech start", { offsetMs: event.offsetMs });
     if (current !== null) stopSpeaking("caller interrupted");
-    mark("caller_turn");
   });
 
   deps.listen.turns.onEndOfTurn(() => {
     mark("stt_final");
+    // Fires 480-1200ms before the transcript does, so it is the earliest point at which
+    // we know the caller has stopped and is waiting.
+    armFiller();
   });
 
   // Recoverable. The vendor emits these for conditions that do not end a session, and
@@ -440,6 +508,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   });
 
   stream.onClosed((reason) => {
+    cancelFiller();
     echoSegments.clear();
     stopSpeaking("call ended");
     deps.listen.close();
@@ -461,8 +530,33 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     sentenceAudioAt: null,
   };
   turn = greetingTurn;
-  // The greeting commits through the same recorder as every other turn. That asymmetry
-  // is what hid the history bug: it was the one utterance added before it was spoken.
-  enqueue(greetingTurn, deps.greeting);
+
+  const cached = deps.greetingAudio ?? null;
+  if (cached !== null && cached.length > 0) {
+    // Pre-rendered: the caller hears the greeting immediately rather than after a
+    // network round trip. Accounting mirrors the live path exactly so barge-in, marks
+    // and history behave identically.
+    greetingTurn.sentenceAudioAt = Date.now();
+    spokenWindow = `${spokenWindow} ${deps.forSpeech(deps.greeting)}`.slice(-400);
+    let markedAt = 0;
+    for (const chunk of cached) {
+      stream.send(chunk);
+      greetingTurn.bytesSent += chunk.data.length;
+      if (durationMs(greetingTurn.bytesSent - markedAt, stream.format) >= 200) {
+        markedAt = greetingTurn.bytesSent;
+        stream.mark(`${greetingTurn.seq}:${greetingTurn.bytesSent}`);
+      }
+    }
+    greetingTurn.spoken.push({
+      text: deps.greeting,
+      startByte: 0,
+      endByte: greetingTurn.bytesSent,
+    });
+    stream.mark(`${greetingTurn.seq}:${greetingTurn.bytesSent}`);
+  } else {
+    // The greeting commits through the same recorder as every other turn. That asymmetry
+    // is what hid the history bug: it was the one utterance added before it was spoken.
+    enqueue(greetingTurn, deps.greeting);
+  }
   log.info("conversation started");
 };

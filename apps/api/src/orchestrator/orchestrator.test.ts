@@ -1,12 +1,21 @@
 import type { Message } from "@ansa/llm";
 import { describe, expect, it } from "vitest";
 
-import { fakeListen, fakeLlm, fakeStream, fakeTts, silentLog } from "./fakes";
+import type { AudioChunk } from "@ansa/shared";
+
+import { chunkOf, fakeListen, fakeLlm, fakeStream, fakeTts, silentLog } from "./fakes";
 import { runConversation } from "./orchestrator";
 
-const GREETING = "Thank you for calling Ansa.";
+const GREETING = "Thank you for calling Ansa. How can I help you?";
 
-const setup = (opts: { bargeInGuardMs?: number } = {}) => {
+const setup = (
+  opts: {
+    bargeInGuardMs?: number;
+    greetingAudio?: readonly AudioChunk[] | null;
+    fillers?: readonly (readonly AudioChunk[])[];
+    fillerAfterMs?: number;
+  } = {},
+) => {
   const stream = fakeStream();
   const listen = fakeListen();
   const llm = fakeLlm();
@@ -52,7 +61,7 @@ describe("runConversation", () => {
   it("greets the caller through forSpeech, without waiting to be spoken to", () => {
     const h = setup();
 
-    expect(h.tts.texts()).toEqual(["Thank you for calling An-Sah."]);
+    expect(h.tts.texts()).toEqual(["Thank you for calling An-Sah. How can I help you?"]);
     assertInvariants(h);
   });
 
@@ -95,7 +104,7 @@ describe("runConversation", () => {
     first.done();
 
     expect(h.tts.texts()).toEqual([
-      "Thank you for calling An-Sah.",
+      "Thank you for calling An-Sah. How can I help you?",
       "It renews in May.",
       "Your premium is unchanged.",
     ]);
@@ -133,7 +142,7 @@ describe("runConversation", () => {
     h.tts.last().audio(800);
 
     h.listen.speechStart(4200);
-    h.listen.final("Thank you for calling An-Sah.", 4200);
+    h.listen.final("Thank you for calling An-Sah. How can I help you?", 4200);
 
     expect(h.llm.completions).toHaveLength(0);
     assertInvariants(h);
@@ -154,7 +163,7 @@ describe("runConversation", () => {
     h.tts.last().audio(800);
 
     // No speech-start: this arrives purely as content, echoed back by the handset.
-    h.listen.final("thank you for calling an sah", 5000);
+    h.listen.final("thank you for calling an sah how can i help you", 5000);
 
     expect(h.llm.completions).toHaveLength(0);
   });
@@ -242,7 +251,7 @@ describe("runConversation", () => {
 
     expect(h.llm.lastMessages()[0]).toEqual({
       role: "assistant",
-      content: "Thank you for calling Ansa.",
+      content: "Thank you for calling Ansa. How can I help you?",
     });
     assertInvariants(h);
   });
@@ -332,6 +341,91 @@ describe("runConversation", () => {
     // A new turn was accepted, which only happens if the previous one closed.
     expect(h.llm.completions).toHaveLength(1);
     assertInvariants(h);
+  });
+
+  describe("dead air", () => {
+    // The greeting is a constant in a fixed voice: deterministic, yet it cost a measured
+    // 959ms cold on a live call, at the moment the caller is listening hardest.
+    it("plays a pre-rendered greeting without calling TTS at all", () => {
+      const h = setup({ greetingAudio: [chunkOf(1600), chunkOf(1600)] });
+
+      expect(h.tts.syntheses).toHaveLength(0);
+      expect(h.stream.bytesSent()).toBe(3200);
+      expect(h.stream.marks.length).toBeGreaterThan(0);
+    });
+
+    it("still greets when the pre-render failed", () => {
+      const h = setup({ greetingAudio: null });
+
+      expect(h.tts.texts()).toEqual(["Thank you for calling An-Sah. How can I help you?"]);
+    });
+
+    it("credits a pre-rendered greeting to history once heard", () => {
+      const h = setup({ greetingAudio: [chunkOf(4000)] });
+      h.stream.ackAll();
+
+      h.listen.final("Hello?");
+
+      expect(h.llm.lastMessages()[0]?.content).toBe(GREETING);
+    });
+
+    it("plays an acknowledgement when the reply is slow", async () => {
+      const h = setup({ fillers: [[chunkOf(4800)]], fillerAfterMs: 5 });
+      h.tts.last().done();
+      h.stream.ackAll();
+      const before = h.stream.bytesSent();
+
+      h.listen.endOfTurn(1000);
+      await new Promise((r) => setTimeout(r, 30));
+
+      expect(h.stream.bytesSent()).toBe(before + 4800);
+    });
+
+    // Filler is not something the agent said. It must not be remembered, marked, or
+    // counted as audio the caller heard.
+    it("keeps filler out of history and out of the accounting", async () => {
+      const h = setup({ fillers: [[chunkOf(4800)]], fillerAfterMs: 5 });
+      h.tts.last().done();
+      h.stream.ackAll();
+      const marksBefore = h.stream.marks.length;
+
+      h.listen.endOfTurn(1000);
+      await new Promise((r) => setTimeout(r, 30));
+      h.listen.final("Hello?");
+
+      expect(h.stream.marks.length).toBe(marksBefore);
+      expect(h.llm.lastMessages().some((m) => m.content.includes("Mm"))).toBe(false);
+    });
+
+    it("does not play filler once the real reply has started", async () => {
+      const h = setup({ fillers: [[chunkOf(4800)]], fillerAfterMs: 20 });
+      h.tts.last().done();
+      h.stream.ackAll();
+
+      h.listen.endOfTurn(1000);
+      h.listen.final("Hello?");
+      h.llm.last().emit("Hello there. ");
+      h.tts.last().audio(400);
+      const after = h.stream.bytesSent();
+      await new Promise((r) => setTimeout(r, 40));
+
+      expect(h.stream.bytesSent()).toBe(after);
+    });
+
+    // The dead air used to manufacture the interruption that deleted the answer: a
+    // caller noise during the think window cancelled an LLM about to produce its first
+    // token, and if the noise transcribed under two characters no reply came at all.
+    it("does not treat a noise during the think window as an interruption", () => {
+      const h = setup({ bargeInGuardMs: 0 });
+      h.tts.last().done();
+      h.stream.ackAll();
+
+      h.listen.final("When does my policy renew?");
+      h.listen.speechStart(9999);
+
+      expect(h.llm.last().cancelled).toBe(false);
+      expect(h.stream.clears).toBe(0);
+    });
   });
 
   it("closes the listen session when the call ends", () => {

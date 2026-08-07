@@ -3,8 +3,12 @@ import { describe, expect, it } from "vitest";
 import { forSpeech, GREETING_TEXT } from "./greeting";
 
 describe("the greeting", () => {
+  it("hands over to the caller, so they know it is their turn", () => {
+    expect(GREETING_TEXT.trimEnd().endsWith("?")).toBe(true);
+  });
+
   it("says the brand name, which is the point of speaking it at all (PRD §1.0)", () => {
-    expect(GREETING_TEXT).toBe("Thank you for calling Ansa.");
+    expect(GREETING_TEXT).toBe("Thank you for calling Ansa. How can I help you?");
   });
 });
 
@@ -12,7 +16,7 @@ describe("forSpeech", () => {
   // Confirmed on a real call: at 8kHz μ-law "Ansa" is heard as "Anza", because /s/ lives
   // above the telephony passband. The respelling is what makes it survive.
   it("respells the brand name for the telephone channel", () => {
-    expect(forSpeech(GREETING_TEXT)).toBe("Thank you for calling An-Sah.");
+    expect(forSpeech(GREETING_TEXT)).toBe("Thank you for calling An-Sah. How can I help you?");
   });
 
   it("leaves the written brand name untouched, so transcripts stay honest", () => {
