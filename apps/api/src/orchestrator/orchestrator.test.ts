@@ -190,15 +190,16 @@ describe("runConversation", () => {
 
   // A dropped realtime socket used to leave the agent permanently deaf: the caller
   // keeps talking to a line that will never answer. Silence is the one outcome
-  // CLAUDE.md rules out.
-  it("ends the call when the listen connection dies", () => {
+  // CLAUDE.md rules out. The call ends, but it says why first — see the recovery
+  // tests below for the hangup itself.
+  it("stops speaking and recovers when the listen connection dies", () => {
     const h = setup();
     h.tts.last().audio(800);
 
     h.listen.failWith("socket closed with code 1006");
 
-    expect(h.stream.hungUp).toBe(true);
     expect(h.tts.syntheses[0]?.cancelled).toBe(true);
+    expect(h.tts.texts().at(-1)).toContain("Sorry");
     assertInvariants(h);
   });
 
@@ -425,6 +426,60 @@ describe("runConversation", () => {
 
       expect(h.llm.last().cancelled).toBe(false);
       expect(h.stream.clears).toBe(0);
+    });
+  });
+
+  describe("failures degrade into speech", () => {
+    it("says something when the model fails rather than going quiet", () => {
+      const h = setup();
+      h.tts.last().done();
+      h.stream.ackAll();
+
+      h.listen.final("When does my policy renew?");
+      h.llm.last().fail("openai returned 429");
+
+      expect(h.tts.texts().at(-1)).toContain("Sorry");
+      assertInvariants(h);
+    });
+
+    it("retries a failed sentence once before giving up on it", () => {
+      const h = setup();
+
+      h.tts.last().fail("elevenlabs returned 500");
+
+      expect(h.tts.texts()).toEqual([
+        "Thank you for calling An-Sah. How can I help you?",
+        "Thank you for calling An-Sah. How can I help you?",
+      ]);
+      expect(h.stream.hungUp).toBe(false);
+    });
+
+    // Two failures with nothing said: do not keep retrying through the provider that
+    // just failed. An open silent line is worse than a clean ending.
+    it("ends the call when a turn cannot produce any audio at all", () => {
+      const h = setup();
+
+      h.tts.last().fail("elevenlabs returned 500");
+      h.tts.last().fail("elevenlabs returned 500");
+
+      expect(h.stream.hungUp).toBe(true);
+    });
+
+    it("apologises before hanging up when the listen connection dies", () => {
+      const h = setup();
+      h.tts.last().done();
+      h.stream.ackAll();
+
+      h.listen.failWith("socket closed with code 1006");
+
+      expect(h.tts.texts().at(-1)).toContain("Sorry");
+      expect(h.stream.hungUp).toBe(false);
+
+      // Only once the caller has actually heard it.
+      h.tts.last().audio(4000);
+      h.tts.last().done();
+      h.stream.ackAll();
+      expect(h.stream.hungUp).toBe(true);
     });
   });
 

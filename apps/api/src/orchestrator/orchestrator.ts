@@ -93,6 +93,22 @@ const DEFAULT_FILLER_AFTER_MS = 450;
 /** Second one, which is R6.2's two-second rule made literal. Never more than two per turn. */
 const SECOND_FILLER_AFTER_MS = 2200;
 
+/**
+ * Said when a turn produces nothing. Deliberately an invitation rather than an
+ * explanation: the caller does not care why, and "sorry, could you say it again"
+ * recovers a turn that would otherwise end in silence.
+ */
+const RECOVERY_LINE = "Sorry, I did not catch that. Could you say it again?";
+
+/**
+ * If a turn has produced no audio at all by this point, say something.
+ *
+ * Anchored to the turn and cleared by the first reply byte — never to wall-clock
+ * silence, because a timer that re-arms on every quiet moment eventually fires while
+ * the caller is mid-thought, which is worse than the gap it was closing.
+ */
+const TURN_WATCHDOG_MS = 4_000;
+
 export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps): void => {
   const log = deps.log.child({ callId: stream.callId });
   const conversation = createConversation();
@@ -120,6 +136,12 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   /** Timers for the thinking-gap acknowledgements, cleared the moment real audio starts. */
   let fillerTimers: ReturnType<typeof setTimeout>[] = [];
   let fillerIndex = 0;
+
+  let watchdog: ReturnType<typeof setTimeout> | null = null;
+  const cancelWatchdog = (): void => {
+    if (watchdog !== null) clearTimeout(watchdog);
+    watchdog = null;
+  };
 
   const cancelFiller = (): void => {
     for (const timer of fillerTimers) clearTimeout(timer);
@@ -217,6 +239,9 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     conversation.recordAgentTurn(current.seq, heardText(current));
   };
 
+  /** Retry counter per sentence, so a transient TTS failure costs one repeat, not the turn. */
+  const attempts = new Map<string, number>();
+
   const speakNext = (current: AgentTurn): void => {
     // One synthesis at a time. Starting the next sentence before the previous finishes
     // interleaves two audio streams at the carrier, which is heard as garbled speech.
@@ -224,6 +249,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     const sentence = current.queue.shift();
     if (sentence === undefined) return;
 
+    const attempt = attempts.get(sentence) ?? 0;
     const startByte = current.bytesSent;
     let markedAt = current.bytesSent;
     current.inFlight = { text: sentence, startByte };
@@ -244,6 +270,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         current.sentenceAudioAt = Date.now();
         // The agent is speaking for real now; no acknowledgement should land on top.
         cancelFiller();
+        cancelWatchdog();
         measure("tts_first_byte", { seq: current.seq });
       }
       stream.send(chunk);
@@ -271,10 +298,29 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     synthesis.onError((error) => {
       // A stale turn must stop walking its queue, the same guard onAudio and onDone have.
       if (turn?.seq !== current.seq) return;
-      log.error("tts failed", { seq: current.seq, error: error.message });
+      log.error("tts failed", { seq: current.seq, error: error.message, attempt });
       current.synthesis = null;
       current.inFlight = null;
+
+      if (attempt === 0) {
+        // One retry. Transient failures are common on this path and re-saying the
+        // sentence is cheaper to the caller than losing it.
+        current.queue.unshift(sentence);
+        attempts.set(sentence, 1);
+        speakNext(current);
+        return;
+      }
+
+      attempts.delete(sentence);
       speakNext(current);
+      if (current.bytesSent === 0 && current.queue.length === 0 && current.synthesis === null) {
+        // Nothing was said and nothing can be: do not synthesise a fallback through the
+        // provider that just failed twice. An open silent line is worse than ending.
+        log.error("turn produced no audio, ending the call", { seq: current.seq });
+        turn = null;
+        stream.hangUp();
+        return;
+      }
       // If the queue is now empty no mark will ever arrive, and without this the turn
       // stays open forever and the agent never speaks again.
       finishIfComplete(current);
@@ -321,6 +367,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     current.synthesis?.cancel();
     current.queue.length = 0;
     cancelFiller();
+    cancelWatchdog();
     stream.clear();
 
     commitHeard(current);
@@ -393,10 +440,45 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   deps.listen.onFailure((reason) => {
     log.error("listen connection lost, ending the call", { reason });
     stopSpeaking("listen connection lost");
-    stream.hangUp();
+    // Say something before going: an open line the agent cannot hear is worse than a
+    // clean ending, but ending mid-air with no explanation is worse than either.
+    sayRecovery("listen connection lost");
+    const farewell = turn;
+    if (farewell === null) {
+      stream.hangUp();
+      return;
+    }
+    stream.onMark(() => {
+      if (farewell.bytesHeard >= farewell.bytesSent && farewell.bytesSent > 0) stream.hangUp();
+    });
   });
 
   // ---- one caller turn -----------------------------------------------------
+  /**
+   * Opens a new turn purely to say something. Used when a turn produced nothing, so the
+   * caller gets speech instead of a dead line. Routed through enqueue like any other
+   * utterance so it is normalised, marked and remembered identically.
+   */
+  const sayRecovery = (reason: string): void => {
+    if (turn !== null) return;
+    turnSeq += 1;
+    const recovery: AgentTurn = {
+      seq: turnSeq,
+      queue: [],
+      synthesis: null,
+      cancelLlm: null,
+      bytesSent: 0,
+      bytesHeard: 0,
+      spoken: [],
+      inFlight: null,
+      llmDone: true,
+      sentenceAudioAt: null,
+    };
+    turn = recovery;
+    log.warn("speaking a recovery line", { reason, seq: recovery.seq });
+    enqueue(recovery, RECOVERY_LINE);
+  };
+
   const respondTo = (callerText: string): void => {
     // A transcript can arrive while the agent is still speaking — the echo guard
     // suppresses the speech-start but not the transcript behind it. Without this the
@@ -424,6 +506,15 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       sentenceAudioAt: null,
     };
     turn = current;
+
+    cancelWatchdog();
+    watchdog = setTimeout(() => {
+      if (turn?.seq !== seq) return;
+      log.error("turn produced no audio in time", { seq });
+      stopSpeaking("turn watchdog");
+      sayRecovery("turn watchdog");
+    }, TURN_WATCHDOG_MS);
+    watchdog.unref();
 
     mark("llm_first_token");
     const sentences = createSentenceBuffer();
@@ -462,6 +553,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       // Cancels the in-flight synthesis rather than letting it stop mid-word behind a
       // guard, and clears whatever is queued at the carrier.
       stopSpeaking("llm failed");
+      sayRecovery("llm failed");
     });
   };
 
@@ -509,6 +601,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
 
   stream.onClosed((reason) => {
     cancelFiller();
+    cancelWatchdog();
     echoSegments.clear();
     stopSpeaking("call ended");
     deps.listen.close();

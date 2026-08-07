@@ -17,6 +17,9 @@ const DEFAULT_BASE_URL = "https://api.elevenlabs.io";
 // The low-latency model. Gate A revisits this alongside the provider itself.
 const DEFAULT_MODEL_ID = "eleven_turbo_v2_5";
 
+/** See the LLM adapter: a hung connection must fail loudly rather than hang the turn. */
+const REQUEST_TIMEOUT_MS = 5_000;
+
 /**
  * Map our format onto the vendor's name for it. Deliberately narrow: an unsupported
  * format throws rather than falling back to something that would need transcoding,
@@ -105,7 +108,7 @@ export const createElevenLabsTts = (options: ElevenLabsOptions): TtsProvider => 
 
           const response = await doFetch(url, {
             method: "POST",
-            signal: stream.signal,
+            signal: AbortSignal.any([stream.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
             headers: {
               "xi-api-key": options.apiKey,
               "Content-Type": "application/json",

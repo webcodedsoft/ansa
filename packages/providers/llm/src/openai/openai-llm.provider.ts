@@ -13,6 +13,13 @@ const DEFAULT_BASE_URL = "https://api.openai.com";
 // arrive inside a budget the caller can feel. Revisit against quality at Gate A.
 const DEFAULT_MODEL = "gpt-4o-mini";
 
+/**
+ * A hung connection never rejects on its own, so without a deadline the orchestrator
+ * waits forever and the caller hears silence — the one outcome CLAUDE.md rules out.
+ * Generous enough that a slow-but-alive model still answers.
+ */
+const REQUEST_TIMEOUT_MS = 8_000;
+
 interface Emitters {
   readonly delta: ((text: string) => void)[];
   readonly done: ((full: string) => void)[];
@@ -78,7 +85,9 @@ export const createOpenAiLlm = (options: OpenAiLlmOptions): LlmProvider => {
         try {
           const response = await doFetch(`${baseUrl}/v1/chat/completions`, {
             method: "POST",
-            signal: controller.signal,
+            // Cancellation and deadline are distinct: `cancelled` distinguishes a
+            // barge-in from a timeout below, so a timeout still reaches onError.
+            signal: AbortSignal.any([controller.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
             headers: {
               Authorization: `Bearer ${options.apiKey}`,
               "Content-Type": "application/json",
