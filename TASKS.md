@@ -105,6 +105,12 @@ you can act on.
   `hangUp()` needs no REST credentials.
 - Not done: nothing sends audio yet, and no `mark` has round-tripped. Step 3 (TTS) is
   what makes the outbound half real.
+- `tools/fake-carrier` impersonates the carrier end to end — webhook, TwiML, media socket,
+  μ-law frames — so the call path can be exercised without ngrok, a number, or telephony
+  minutes. It counts outbound media frames and marks, which is how step 4 will prove the
+  greeting actually reached the caller rather than merely being queued. See its README.
+  It does **not** replace the real call: a slice is done when a phone proves it.
+  `tools/*` is now a pnpm workspace root.
 
 ---
 

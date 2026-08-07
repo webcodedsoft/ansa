@@ -197,6 +197,34 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@24.13.3)(vite@8.2.1(@types/node@24.13.3)(terser@5.49.2))
 
+  tools/fake-carrier:
+    dependencies:
+      twilio:
+        specifier: ^6.0.2
+        version: 6.0.2
+      ws:
+        specifier: ^8.21.2
+        version: 8.21.2
+    devDependencies:
+      '@ansa/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
+      eslint:
+        specifier: 10.8.0
+        version: 10.8.0
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.2.1(@types/node@24.13.3)(terser@5.49.2))
+
 packages:
 
   '@angular-devkit/core@19.2.24':

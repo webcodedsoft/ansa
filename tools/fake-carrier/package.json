@@ -1,0 +1,26 @@
+{
+  "name": "@ansa/fake-carrier",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Impersonates the carrier so calls can be exercised without ngrok or telephony minutes.",
+  "main": "./dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run --passWithNoTests",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "twilio": "^6.0.2",
+    "ws": "^8.21.2"
+  },
+  "devDependencies": {
+    "@ansa/config": "workspace:*",
+    "@types/node": "^24.0.0",
+    "@types/ws": "^8.18.1",
+    "eslint": "10.8.0",
+    "typescript": "5.9.3",
+    "vitest": "^4.1.10"
+  }
+}
