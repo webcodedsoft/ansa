@@ -53,28 +53,26 @@ export type TwilioFrame =
   | TwilioStop
   | TwilioDtmf;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
 
-function readString(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
+const readString = (value: unknown): string | null =>
+  typeof value === "string" && value.length > 0 ? value : null;
 
-function readNumber(value: unknown): number | null {
+const readNumber = (value: unknown): number | null => {
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
   if (typeof value === "string" && value.trim().length > 0) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
-}
+};
 
 /**
  * Parse one inbound frame. Returns null for anything malformed or unrecognised: a
  * carrier adding a new event type must not take a call down.
  */
-export function parseFrame(raw: string): TwilioFrame | null {
+export const parseFrame = (raw: string): TwilioFrame | null => {
   let decoded: unknown;
   try {
     decoded = JSON.parse(raw);
@@ -145,29 +143,26 @@ export function parseFrame(raw: string): TwilioFrame | null {
     default:
       return null;
   }
-}
+};
 
-export function encodeMedia(streamSid: string, payload: Buffer): string {
-  return JSON.stringify({
+export const encodeMedia = (streamSid: string, payload: Buffer): string =>
+  JSON.stringify({
     event: "media",
     streamSid,
     media: { payload: payload.toString("base64") },
   });
-}
 
-export function encodeMark(streamSid: string, name: string): string {
-  return JSON.stringify({ event: "mark", streamSid, mark: { name } });
-}
+export const encodeMark = (streamSid: string, name: string): string =>
+  JSON.stringify({ event: "mark", streamSid, mark: { name } });
 
-export function encodeClear(streamSid: string): string {
-  return JSON.stringify({ event: "clear", streamSid });
-}
+export const encodeClear = (streamSid: string): string =>
+  JSON.stringify({ event: "clear", streamSid });
 
-export function toAudioEncoding(carrierEncoding: string): AudioEncoding | null {
+export const toAudioEncoding = (carrierEncoding: string): AudioEncoding | null => {
   if (carrierEncoding === "audio/x-mulaw") return "mulaw";
   if (carrierEncoding === "audio/l16") return "linear16";
   return null;
-}
+};
 
 const XML_ESCAPES: Readonly<Record<string, string>> = {
   "<": "&lt;",
@@ -177,9 +172,8 @@ const XML_ESCAPES: Readonly<Record<string, string>> = {
   '"': "&quot;",
 };
 
-export function escapeXml(value: string): string {
-  return value.replace(/[<>&'"]/g, (char) => XML_ESCAPES[char] ?? char);
-}
+export const escapeXml = (value: string): string =>
+  value.replace(/[<>&'"]/g, (char) => XML_ESCAPES[char] ?? char);
 
 /**
  * `<Connect><Stream>` is the bidirectional verb. `<Start><Stream>` only forks audio to
@@ -188,9 +182,6 @@ export function escapeXml(value: string): string {
  * The document deliberately ends after `</Connect>`: when the socket closes there is no
  * next verb, so the carrier hangs up. That is how hangUp() works without REST credentials.
  */
-export function renderConnectStream(mediaStreamUrl: string): string {
-  return (
-    '<?xml version="1.0" encoding="UTF-8"?>' +
-    `<Response><Connect><Stream url="${escapeXml(mediaStreamUrl)}" /></Connect></Response>`
-  );
-}
+export const renderConnectStream = (mediaStreamUrl: string): string =>
+  '<?xml version="1.0" encoding="UTF-8"?>' +
+  `<Response><Connect><Stream url="${escapeXml(mediaStreamUrl)}" /></Connect></Response>`;

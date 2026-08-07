@@ -22,14 +22,14 @@ const DEFAULT_MODEL_ID = "eleven_turbo_v2_5";
  * format throws rather than falling back to something that would need transcoding,
  * because a silent transcoding hop is exactly the cost R4.2.4 exists to avoid.
  */
-export function toOutputFormat(format: AudioFormat): string {
+export const toOutputFormat = (format: AudioFormat): string => {
   if (format.encoding === "mulaw" && format.sampleRate === 8000) return "ulaw_8000";
   if (format.encoding === "linear16" && format.sampleRate === 16000) return "pcm_16000";
   if (format.encoding === "linear16" && format.sampleRate === 22050) return "pcm_22050";
   throw new Error(
     `ElevenLabs has no native output for ${format.encoding}@${format.sampleRate}Hz`,
   );
-}
+};
 
 class ElevenLabsSynthesisStream implements SynthesisStream {
   private readonly audioListeners: ((chunk: AudioChunk) => void)[] = [];
@@ -85,7 +85,7 @@ class ElevenLabsSynthesisStream implements SynthesisStream {
   }
 }
 
-export function createElevenLabsTts(options: ElevenLabsOptions): TtsProvider {
+export const createElevenLabsTts = (options: ElevenLabsOptions): TtsProvider => {
   const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
   const modelId = options.modelId ?? DEFAULT_MODEL_ID;
   const doFetch = options.fetchImpl ?? fetch;
@@ -96,15 +96,7 @@ export function createElevenLabsTts(options: ElevenLabsOptions): TtsProvider {
     synthesize(request: SynthesisRequest): SynthesisStream {
       const stream = new ElevenLabsSynthesisStream();
 
-      // Deferred by a microtask so the caller's onAudio/onDone/onError, registered
-      // synchronously after this returns, are attached before anything can be emitted.
-      // Without it, a failure raised before the first await — an unsupported format,
-      // say — is emitted to nobody and the turn goes silent with no error anywhere.
-      queueMicrotask(() => {
-        void run();
-      });
-
-      async function run(): Promise<void> {
+      const run = async (): Promise<void> => {
         try {
           const outputFormat = toOutputFormat(request.format);
           const url =
@@ -159,9 +151,17 @@ export function createElevenLabsTts(options: ElevenLabsOptions): TtsProvider {
           if (stream.isCancelled) return;
           stream.emitError(error instanceof Error ? error : new Error(String(error)));
         }
-      }
+      };
+
+      // Deferred by a microtask so the caller's onAudio/onDone/onError, registered
+      // synchronously after this returns, are attached before anything can be emitted.
+      // Without it, a failure raised before the first await — an unsupported format,
+      // say — is emitted to nobody and the turn goes silent with no error anywhere.
+      queueMicrotask(() => {
+        void run();
+      });
 
       return stream;
     },
   };
-}
+};

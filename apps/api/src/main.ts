@@ -10,7 +10,7 @@ import type { AppConfig } from "./config/env";
 import { MediaGateway } from "./telephony/media.gateway";
 import { APP_CONFIG, LOGGER } from "./telephony/tokens";
 
-async function bootstrap(): Promise<void> {
+const bootstrap = async (): Promise<void> => {
   // Nest's own logger is off: every line this process writes is structured JSON from
   // @ansa/shared, so a call can be reconstructed from logs alone.
   const app = await NestFactory.create(AppModule, { logger: false });
@@ -30,7 +30,7 @@ async function bootstrap(): Promise<void> {
     publicBaseUrl: config.publicBaseUrl,
     verifySignatures: config.verifySignatures,
   });
-}
+};
 
 bootstrap().catch((error: unknown) => {
   createLogger({ component: "api" }).error("api failed to start", {

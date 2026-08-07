@@ -25,14 +25,13 @@ const START = JSON.stringify({
   },
 });
 
-function mediaFrame(payload: Buffer, timestamp: string): string {
-  return JSON.stringify({
+const mediaFrame = (payload: Buffer, timestamp: string): string =>
+  JSON.stringify({
     event: "media",
     sequenceNumber: "2",
     streamSid: "MZ111",
     media: { track: "inbound", chunk: "1", timestamp, payload: payload.toString("base64") },
   });
-}
 
 describe("parseFrame", () => {
   it("reads the start frame's call and stream identifiers", () => {

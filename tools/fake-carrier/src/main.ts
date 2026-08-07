@@ -15,11 +15,9 @@ interface Options {
 
 const MODES: readonly Mode[] = ["unsigned", "signed", "badsig"];
 
-function isMode(value: string): value is Mode {
-  return (MODES as readonly string[]).includes(value);
-}
+const isMode = (value: string): value is Mode => (MODES as readonly string[]).includes(value);
 
-function parseArgs(argv: readonly string[]): Options {
+const parseArgs = (argv: readonly string[]): Options => {
   let baseUrl = "http://127.0.0.1:3222";
   let mode: Mode = "unsigned";
   let frames = 120;
@@ -56,7 +54,7 @@ function parseArgs(argv: readonly string[]): Options {
   }
 
   return { baseUrl, mode, frames, holdMs };
-}
+};
 
 // Synthetic throughout. The SIDs are the carrier's documented shapes; the numbers are
 // reserved test ranges, not anyone's line.
@@ -71,7 +69,7 @@ const CALL_PARAMS: Readonly<Record<string, string>> = {
 
 const STREAM_SID = "MZfaketeststream0000000000000001";
 
-function buildHeaders(mode: Mode, url: string): Record<string, string> {
+const buildHeaders = (mode: Mode, url: string): Record<string, string> => {
   const headers: Record<string, string> = {
     "Content-Type": "application/x-www-form-urlencoded",
   };
@@ -87,7 +85,7 @@ function buildHeaders(mode: Mode, url: string): Record<string, string> {
   }
 
   return headers;
-}
+};
 
 interface OutboundTally {
   media: number;
@@ -96,7 +94,7 @@ interface OutboundTally {
   clears: number;
 }
 
-function tallyOutbound(raw: string, tally: OutboundTally): void {
+const tallyOutbound = (raw: string, tally: OutboundTally): void => {
   let frame: unknown;
   try {
     frame = JSON.parse(raw);
@@ -137,9 +135,9 @@ function tallyOutbound(raw: string, tally: OutboundTally): void {
     tally.clears += 1;
     console.log("[carrier] <- clear (barge-in)");
   }
-}
+};
 
-async function streamMedia(streamUrl: string, options: Options): Promise<number> {
+const streamMedia = async (streamUrl: string, options: Options): Promise<number> => {
   const socket = new WebSocket(streamUrl);
   const tally: OutboundTally = { media: 0, mediaBytes: 0, marks: [], clears: 0 };
 
@@ -212,9 +210,9 @@ async function streamMedia(streamUrl: string, options: Options): Promise<number>
   socket.close();
 
   return finished;
-}
+};
 
-async function main(): Promise<number> {
+const main = async (): Promise<number> => {
   const options = parseArgs(process.argv.slice(2));
   const url = `${options.baseUrl}/telephony/voice`;
 
@@ -248,7 +246,7 @@ async function main(): Promise<number> {
 
   console.log(`[carrier] opening media socket at ${streamUrl}`);
   return streamMedia(streamUrl, options);
-}
+};
 
 main()
   .then((code) => {

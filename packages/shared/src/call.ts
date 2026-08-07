@@ -6,6 +6,4 @@
  */
 export type CallId = string & { readonly __brand: "CallId" };
 
-export function asCallId(raw: string): CallId {
-  return raw as CallId;
-}
+export const asCallId = (raw: string): CallId => raw as CallId;

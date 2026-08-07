@@ -1,5 +1,7 @@
 import { validateRequest } from "twilio";
 
+import { asCallId } from "@ansa/shared";
+
 import type {
   AnswerInstruction,
   CarrierResponse,
@@ -9,8 +11,6 @@ import type {
   TelephonyProvider,
   WebhookRequest,
 } from "../types";
-import { asCallId } from "@ansa/shared";
-
 import { parseFrame, renderConnectStream, toAudioEncoding } from "./protocol";
 import { TwilioMediaStream } from "./twilio-media-stream";
 
@@ -23,103 +23,97 @@ export interface TwilioProviderOptions {
   readonly verifySignatures: boolean;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
 
-function readString(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
+const readString = (value: unknown): string | null =>
+  typeof value === "string" && value.length > 0 ? value : null;
 
-export function createTwilioTelephonyProvider(
+export const createTwilioTelephonyProvider = (
   options: TwilioProviderOptions,
-): TelephonyProvider {
-  return {
-    name: "twilio",
+): TelephonyProvider => ({
+  name: "twilio",
 
-    verifyWebhook(request: WebhookRequest): boolean {
-      if (!options.verifySignatures) return true;
-      if (request.signature === null) return false;
-      if (!isRecord(request.params)) return false;
-      return validateRequest(
-        options.authToken,
-        request.signature,
-        request.url,
-        request.params as Record<string, string>,
-      );
-    },
+  verifyWebhook: (request: WebhookRequest): boolean => {
+    if (!options.verifySignatures) return true;
+    if (request.signature === null) return false;
+    if (!isRecord(request.params)) return false;
+    return validateRequest(
+      options.authToken,
+      request.signature,
+      request.url,
+      request.params as Record<string, string>,
+    );
+  },
 
-    parseInboundCall(payload: unknown): InboundCall {
-      if (!isRecord(payload)) {
-        throw new Error("Inbound call webhook body was not an object");
-      }
-      const callSid = readString(payload["CallSid"]);
-      const dialled = readString(payload["To"]);
-      if (callSid === null || dialled === null) {
-        throw new Error("Inbound call webhook body is missing CallSid or To");
-      }
-      return {
-        callId: asCallId(callSid),
-        dialled,
-        // Withheld numbers arrive as "anonymous" rather than as an absent field.
-        caller: readString(payload["From"]),
-      };
-    },
+  parseInboundCall: (payload: unknown): InboundCall => {
+    if (!isRecord(payload)) {
+      throw new Error("Inbound call webhook body was not an object");
+    }
+    const callSid = readString(payload["CallSid"]);
+    const dialled = readString(payload["To"]);
+    if (callSid === null || dialled === null) {
+      throw new Error("Inbound call webhook body is missing CallSid or To");
+    }
+    return {
+      callId: asCallId(callSid),
+      dialled,
+      // Withheld numbers arrive as "anonymous" rather than as an absent field.
+      caller: readString(payload["From"]),
+    };
+  },
 
-    renderAnswer(instruction: AnswerInstruction): CarrierResponse {
-      return {
-        contentType: "text/xml; charset=utf-8",
-        body: renderConnectStream(instruction.mediaStreamUrl),
-      };
-    },
+  renderAnswer: (instruction: AnswerInstruction): CarrierResponse => ({
+    contentType: "text/xml; charset=utf-8",
+    body: renderConnectStream(instruction.mediaStreamUrl),
+  }),
 
-    attachMediaStream(socket: MediaSocket, handlers: MediaStreamHandlers): void {
-      let stream: TwilioMediaStream | null = null;
+  attachMediaStream: (socket: MediaSocket, handlers: MediaStreamHandlers): void => {
+    let stream: TwilioMediaStream | null = null;
 
-      socket.onMessage((raw) => {
-        const frame = parseFrame(raw);
-        if (frame === null) return;
+    socket.onMessage((raw) => {
+      const frame = parseFrame(raw);
+      if (frame === null) return;
 
-        switch (frame.event) {
-          case "start": {
-            if (stream !== null) return;
-            const encoding = toAudioEncoding(frame.encoding);
-            if (encoding === null) {
-              handlers.onError(
-                new Error(`Carrier opened a stream in an unsupported encoding: ${frame.encoding}`),
-              );
-              socket.close();
-              return;
-            }
-            stream = new TwilioMediaStream(socket, frame.streamSid, frame.callSid, {
-              encoding,
-              sampleRate: frame.sampleRate,
-            });
-            handlers.onStream(stream);
+      switch (frame.event) {
+        case "start": {
+          if (stream !== null) return;
+          const encoding = toAudioEncoding(frame.encoding);
+          if (encoding === null) {
+            handlers.onError(
+              new Error(`Carrier opened a stream in an unsupported encoding: ${frame.encoding}`),
+            );
+            socket.close();
             return;
           }
-
-          case "media":
-            stream?.emitAudio({ data: frame.payload, offsetMs: frame.offsetMs });
-            return;
-
-          case "mark":
-            stream?.emitMark(frame.name);
-            return;
-
-          case "stop":
-            stream?.emitClosed("carrier sent stop");
-            return;
-
-          case "connected":
-          case "dtmf":
-            return;
+          stream = new TwilioMediaStream(socket, frame.streamSid, frame.callSid, {
+            encoding,
+            sampleRate: frame.sampleRate,
+          });
+          handlers.onStream(stream);
+          return;
         }
-      });
 
-      socket.onClose((reason) => {
-        stream?.emitClosed(reason);
-      });
-    },
-  };
-}
+        case "media":
+          stream?.emitAudio({ data: frame.payload, offsetMs: frame.offsetMs });
+          return;
+
+        case "mark":
+          stream?.emitMark(frame.name);
+          return;
+
+        case "stop":
+          stream?.emitClosed("carrier sent stop");
+          return;
+
+        case "connected":
+        case "dtmf":
+          return;
+      }
+    });
+
+    socket.onClose((reason) => {
+      stream?.emitClosed(reason);
+    });
+  },
+});

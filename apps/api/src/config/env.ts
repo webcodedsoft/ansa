@@ -9,15 +9,15 @@ export interface AppConfig {
   readonly verifySignatures: boolean;
 }
 
-function required(env: NodeJS.ProcessEnv, key: string): string {
+const required = (env: NodeJS.ProcessEnv, key: string): string => {
   const value = env[key];
   if (value === undefined || value.trim().length === 0) {
     throw new Error(`Missing required environment variable: ${key}`);
   }
   return value.trim();
-}
+};
 
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
+export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
   const verifySignatures = env["TWILIO_VERIFY_SIGNATURES"] !== "false";
 
   return {
@@ -27,4 +27,4 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     twilioAuthToken: verifySignatures ? required(env, "TWILIO_AUTH_TOKEN") : "",
     verifySignatures,
   };
-}
+};

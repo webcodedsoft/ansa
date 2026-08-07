@@ -65,6 +65,23 @@ ansa/
 
 Turborepo + pnpm. TypeScript strict. No `any` without a comment explaining why.
 
+**Functions are expressions, not declarations.** Write `const parseFrame = (raw: string) =>
+…`, never `function parseFrame(raw: string) {…}`. Enforced by `func-style: expression` in
+`@ansa/config`, so it fails lint rather than review.
+
+Two consequences worth knowing before you fight them:
+
+- **Order matters.** Expressions do not hoist, so a helper must appear above its first use.
+  This is mostly a feature — a file reads top-down in dependency order — but it will bite
+  when you move code and get "used before declaration".
+- **Class methods are exempt**, because they cannot be anything else. NestJS controllers,
+  modules and gateways stay classes; the decorators require it. The rule targets free
+  functions, not methods.
+
+Arrow functions keep their inferred name in stack traces when assigned to a `const`, so
+this costs nothing in debuggability. Type predicates work unchanged:
+`const isRecord = (v: unknown): v is Record<string, unknown> => …`.
+
 ---
 
 ## Inbound only

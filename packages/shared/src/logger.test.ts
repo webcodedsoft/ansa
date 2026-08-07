@@ -12,9 +12,8 @@ const writeSpy = vi
     return true;
   });
 
-function lines(): Record<string, unknown>[] {
-  return written.map((line) => JSON.parse(line) as Record<string, unknown>);
-}
+const lines = (): Record<string, unknown>[] =>
+  written.map((line) => JSON.parse(line) as Record<string, unknown>);
 
 afterEach(() => {
   written.length = 0;

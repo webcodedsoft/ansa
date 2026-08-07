@@ -11,8 +11,8 @@ const BYTES_PER_SAMPLE: Readonly<Record<string, number>> = {
  * chunk with its offset inside the utterance, which is what lets Slice 3 work out how
  * much of a turn the caller actually heard before interrupting.
  */
-export function durationMs(byteLength: number, format: AudioFormat): number {
+export const durationMs = (byteLength: number, format: AudioFormat): number => {
   const bytesPerSample = BYTES_PER_SAMPLE[format.encoding] ?? 1;
   const samples = byteLength / bytesPerSample;
   return (samples / format.sampleRate) * 1000;
-}
+};

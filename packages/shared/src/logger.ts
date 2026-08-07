@@ -19,7 +19,7 @@ export interface Logger {
   child(fields: LogFields): Logger;
 }
 
-function emit(level: LogLevel, base: LogFields, message: string, fields?: LogFields): void {
+const emit = (level: LogLevel, base: LogFields, message: string, fields?: LogFields): void => {
   const line = JSON.stringify({
     ts: new Date().toISOString(),
     level,
@@ -28,14 +28,12 @@ function emit(level: LogLevel, base: LogFields, message: string, fields?: LogFie
     ...fields,
   });
   process.stdout.write(`${line}\n`);
-}
+};
 
-export function createLogger(base: LogFields = {}): Logger {
-  return {
-    debug: (message, fields) => emit("debug", base, message, fields),
-    info: (message, fields) => emit("info", base, message, fields),
-    warn: (message, fields) => emit("warn", base, message, fields),
-    error: (message, fields) => emit("error", base, message, fields),
-    child: (fields) => createLogger({ ...base, ...fields }),
-  };
-}
+export const createLogger = (base: LogFields = {}): Logger => ({
+  debug: (message, fields) => emit("debug", base, message, fields),
+  info: (message, fields) => emit("info", base, message, fields),
+  warn: (message, fields) => emit("warn", base, message, fields),
+  error: (message, fields) => emit("error", base, message, fields),
+  child: (fields) => createLogger({ ...base, ...fields }),
+});

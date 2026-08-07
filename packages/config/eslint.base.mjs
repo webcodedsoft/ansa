@@ -60,6 +60,10 @@ export default tseslint.config(
       "@typescript-eslint/consistent-type-imports": "error",
       eqeqeq: ["error", "smart"],
       "no-console": "error",
+      // Functions are expressions, not declarations (CLAUDE.md). Class methods are
+      // exempt automatically — the rule only sees free functions.
+      "func-style": ["error", "expression"],
+      "prefer-arrow-callback": "error",
     },
   },
 );

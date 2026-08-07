@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createElevenLabsTts, toOutputFormat } from "./elevenlabs-tts.provider";
 
-function streamingResponse(chunks: readonly Uint8Array[], holdOpen = false): Response {
+const streamingResponse = (chunks: readonly Uint8Array[], holdOpen = false): Response => {
   const body = new ReadableStream<Uint8Array>({
     async start(controller) {
       for (const chunk of chunks) {
@@ -16,12 +16,12 @@ function streamingResponse(chunks: readonly Uint8Array[], holdOpen = false): Res
     },
   });
   return new Response(body, { status: 200 });
-}
+};
 
-function collect(): { chunks: AudioChunk[]; onAudio: (chunk: AudioChunk) => void } {
+const collect = (): { chunks: AudioChunk[]; onAudio: (chunk: AudioChunk) => void } => {
   const chunks: AudioChunk[] = [];
   return { chunks, onAudio: (chunk) => chunks.push(chunk) };
-}
+};
 
 const GREETING = "Thank you for calling Ansa.";
 
