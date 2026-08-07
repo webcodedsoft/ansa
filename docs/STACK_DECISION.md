@@ -148,6 +148,32 @@ worse than waiting — sounded right and was wrong: it waited 7.6 seconds on a p
 greeting and the caller repeated themselves to check the line was alive. Lower is not
 safer, it is differently wrong.
 
+### Transcription accuracy is now the largest gap (live probes, 2026-08-07)
+
+Two probe calls after the conversation-quality pass. Every orchestration mechanism
+behaved correctly and is visible in the log — non-zero `msHeard` on barge-in, echo
+caught, backchannel handled, filler played, 9 of 9 turns played to completion,
+`turn_to_audio` mostly 1248–1417ms. **What broke was transcription.**
+
+| spoken | transcribed |
+|---|---|
+| "I'd like to know about my policy" | "I'd like to move one apology." |
+| "…when my policy renews" | "…when my penalty is." |
+| "this is on speaker, can you hear me?" | "I this is my new speaker, can I hear you?" |
+| *(English)* | **"പലനി പിടിച്ച്"** — Malayalam script |
+
+The last one matters most: `language: "en"` is set explicitly and the model still left
+the language entirely. That is not a mishearing, it is a failure mode, and it happened
+on ordinary Nigerian-accented speech over a normal line.
+
+Downstream behaviour on this input was correct — the agent said it did not catch that
+and asked the caller to repeat. The pipeline is sound and the input is not.
+
+**This is the case Intron Sahara v2 exists for**, and it moves STT accuracy ahead of
+latency as the thing Gate A most needs to settle. It is also a second mark against
+prompt/keyterm handling on this provider (the first being the hallucinated keyterm
+prompt), so R4.1.3 vocabulary boosting remains unavailable here.
+
 ### Latency: the finding that outranks provider choice
 
 Per-turn, measured on live calls from Nigeria:

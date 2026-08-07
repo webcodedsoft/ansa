@@ -178,6 +178,37 @@ describe("runConversation", () => {
     expect(h.llm.completions).toHaveLength(1);
   });
 
+  // Seen on a live call: "Mm." arrived while the agent was mid-sentence, was treated as
+  // a turn, and discarded 916ms of speech the caller was in the middle of hearing. A
+  // person saying "mm-hm" is showing they are listening, not taking the floor.
+  it("does not let a backchannel noise interrupt the agent", () => {
+    const h = setup({ bargeInGuardMs: 0 });
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("Tell me about my policy.");
+    h.llm.last().emit("It renews in May. ");
+    const reply = h.tts.last();
+    for (let i = 0; i < 10; i += 1) reply.audio(400);
+
+    h.listen.final("Mm.", 9999);
+
+    expect(reply.cancelled).toBe(false);
+    expect(h.llm.completions).toHaveLength(1);
+    assertInvariants(h);
+  });
+
+  // The same word in silence is a real answer: "yeah" to a question means yes.
+  it("treats the same word as a real turn when the agent is not speaking", () => {
+    const h = setup();
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("Yeah.");
+
+    expect(h.llm.completions).toHaveLength(1);
+  });
+
   it("ignores transcripts too short to be speech", () => {
     const h = setup();
     h.tts.last().done();

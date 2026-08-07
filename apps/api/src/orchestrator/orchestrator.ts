@@ -116,6 +116,22 @@ const TURN_WATCHDOG_MS = 4_000;
  */
 const MAX_SENTENCES_PER_TURN = 2;
 
+/**
+ * Backchannel: the noises a listener makes to show they are still there.
+ *
+ * A person saying "mm-hm" while you speak is not taking the floor, and a speaker who
+ * stopped dead every time would be exhausting. Seen on a live call: "Mm." arrived
+ * mid-reply, was treated as a turn, and discarded 916ms of speech the caller was in the
+ * middle of hearing.
+ *
+ * Only applied while the agent is speaking. The same word alone in silence is a real
+ * turn — a caller answering "yeah" to a question means yes.
+ */
+const BACKCHANNEL = new Set([
+  "mm", "mmm", "mhm", "mmhm", "hmm", "hm", "uh", "uh huh", "uhhuh", "huh",
+  "yeah", "yep", "yes", "ok", "okay", "right", "sure", "aha", "ah", "oh", "i see",
+]);
+
 export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps): void => {
   const log = deps.log.child({ callId: stream.callId });
   const conversation = createConversation();
@@ -614,6 +630,12 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     // because both numbers are the same offset from the same event.
     if (echoSegments.delete(transcript.offsetMs)) {
       log.info("ignored echoed agent audio", { text, offsetMs: transcript.offsetMs });
+      return;
+    }
+
+    // Backchannel while the agent is speaking is listening, not interrupting.
+    if (turn !== null && BACKCHANNEL.has(normalise(text))) {
+      log.debug("ignored backchannel", { text });
       return;
     }
 
