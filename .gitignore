@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.turbo/
+*.tsbuildinfo
+
+# Secrets. Twilio and provider credentials never enter the repo (PRD R5.2.1).
+.env
+.env.*
+!.env.example
+
+coverage/
+*.log
+.DS_Store
