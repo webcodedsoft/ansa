@@ -14,11 +14,16 @@ export interface AppConfig {
   readonly openAiApiKey: string;
   readonly transcriptionModel: string;
   /**
-   * How long the caller must be silent before the turn is committed. Measured tradeoff:
-   * at 500ms a 10s utterance was split at a natural thinking pause (a false end-of-turn),
-   * and roughly half the 1.0s end-of-speech-to-transcript latency is this floor. Lower
-   * is faster and interrupts more.
+   * "semantic_vad" (default) or "server_vad".
+   *
+   * server_vad is a stopwatch and cannot tell a thinking pause from a finished
+   * sentence: at 500ms a live caller was chopped mid-sentence, and raising it only
+   * adds latency for everyone else. semantic_vad decides from what was said.
    */
+  readonly turnDetectionMode: string;
+  /** semantic_vad only. "low" waits longer and interrupts less. */
+  readonly vadEagerness: string;
+  /** server_vad only. Ignored under semantic_vad. */
   readonly vadSilenceMs: number;
 }
 
@@ -51,6 +56,8 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
     elevenLabsBaseUrl: optional(env, "ELEVENLABS_BASE_URL"),
     openAiApiKey: required(env, "OPENAI_API_KEY"),
     transcriptionModel: optional(env, "TRANSCRIPTION_MODEL") ?? "gpt-4o-mini-transcribe",
-    vadSilenceMs: Number(env["VAD_SILENCE_MS"] ?? 500),
+    turnDetectionMode: optional(env, "TURN_DETECTION") ?? "semantic_vad",
+    vadEagerness: optional(env, "VAD_EAGERNESS") ?? "low",
+    vadSilenceMs: Number(env["VAD_SILENCE_MS"] ?? 900),
   };
 };

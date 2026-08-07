@@ -2,7 +2,7 @@ import type { AudioChunk, AudioFormat } from "@ansa/shared";
 import type { Transcript, TranscriberSession } from "@ansa/transcriber";
 import type { TurnEvent, TurnSession } from "@ansa/turn-detector";
 
-import { encodeAudioAppend, encodeSessionUpdate, parseEvent } from "./protocol";
+import { encodeAudioAppend, encodeSessionUpdate, parseEvent, type TurnDetection } from "./protocol";
 
 /**
  * A duplex text-frame transport. Injected so the session can be tested without a
@@ -20,7 +20,7 @@ export interface ListenSocket {
 export interface ListenConnectOptions {
   readonly format: AudioFormat;
   readonly model: string;
-  readonly silenceMs: number;
+  readonly turnDetection: TurnDetection;
   readonly keyterms: readonly string[];
 }
 

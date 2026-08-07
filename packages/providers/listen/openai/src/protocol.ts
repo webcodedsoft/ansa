@@ -12,16 +12,27 @@ export const toInputFormat = (format: AudioFormat): { type: string } => {
   throw new Error(`No realtime input format for ${format.encoding}@${format.sampleRate}Hz`);
 };
 
+/**
+ * How the end of a caller's turn is decided.
+ *
+ * `server_vad` is a stopwatch: commit after N milliseconds of silence. It cannot tell a
+ * thinking pause from a finished sentence, so every value is wrong for someone — at
+ * 500ms a live caller was chopped mid-sentence ("Well, I would like to..."), and raising
+ * it just adds latency to everyone else.
+ *
+ * `semantic_vad` decides from what was actually said: an unfinished clause holds the
+ * turn open, a complete one commits. `eagerness` biases that judgement — `low` waits
+ * longer and interrupts less. This is the closest thing this provider has to the
+ * model-native end-of-turn detection R4.1.6 asks for.
+ */
+export type TurnDetection =
+  | { readonly type: "server_vad"; readonly silenceMs: number }
+  | { readonly type: "semantic_vad"; readonly eagerness: "auto" | "low" | "medium" | "high" };
+
 export interface SessionOptions {
   readonly format: AudioFormat;
   readonly model: string;
-  /**
-   * How long the caller must be silent before the turn is committed. This is the
-   * single most consequential knob on the call: lower cuts callers off mid-thought
-   * (false end-of-turn), higher leaves the agent sitting in silence. R9.1.6 scores
-   * both rates, and they trade directly against each other.
-   */
-  readonly silenceMs: number;
+  readonly turnDetection: TurnDetection;
   /**
    * Domain vocabulary (R4.1.3). Currently unused: this provider offers no vocabulary
    * boosting, and the prompt field it does offer hallucinates its contents back as
@@ -48,7 +59,10 @@ export const encodeSessionUpdate = (options: SessionOptions): string =>
           // vocabulary boosting (R4.1.3), not as prompt text — another thing for Gate A
           // to weigh.
           transcription: { model: options.model, language: "en" },
-          turn_detection: { type: "server_vad", silence_duration_ms: options.silenceMs },
+          turn_detection:
+            options.turnDetection.type === "semantic_vad"
+              ? { type: "semantic_vad", eagerness: options.turnDetection.eagerness }
+              : { type: "server_vad", silence_duration_ms: options.turnDetection.silenceMs },
         },
       },
     },

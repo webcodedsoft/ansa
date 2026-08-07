@@ -43,7 +43,7 @@ const connect = () => {
   const session = openListenSession(f.socket, {
     format: TELEPHONY_AUDIO,
     model: "gpt-4o-transcribe",
-    silenceMs: 500,
+    turnDetection: { type: "server_vad", silenceMs: 500 },
     keyterms: ["Ansa"],
   });
   return { ...f, session };

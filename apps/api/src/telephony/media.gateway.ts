@@ -113,7 +113,13 @@ export class MediaGateway implements OnApplicationShutdown {
     const listen = openListenSession(openListenSocket(this.config.openAiApiKey), {
       format: stream.format,
       model: this.config.transcriptionModel,
-      silenceMs: this.config.vadSilenceMs,
+      turnDetection:
+        this.config.turnDetectionMode === "server_vad"
+          ? { type: "server_vad", silenceMs: this.config.vadSilenceMs }
+          : {
+              type: "semantic_vad",
+              eagerness: this.config.vadEagerness as "auto" | "low" | "medium" | "high",
+            },
       // Callers say the brand name back, and it must not be mangled (R4.1.3).
       keyterms: ["Ansa", "policy", "premium", "naira"],
     });
