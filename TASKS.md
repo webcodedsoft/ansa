@@ -55,8 +55,11 @@ you can act on.
       *Inbound proven: 120 × 160-byte μ-law frames received and counted. Outbound
       `send`/`mark`/`clear` implemented but not yet exercised — nothing generates audio
       until step 3.*
-- [ ] TTS provider interface + chosen implementation behind it (R4.1.1 principle applied
+- [x] TTS provider interface + chosen implementation behind it (R4.1.1 principle applied
       to TTS too). No vendor types outside the adapter.
+      *ElevenLabs, provisional, recorded in `docs/STACK_DECISION.md`. Unit-tested against
+      an injected fetch; it has never called the live API. `ulaw_8000` is still unconfirmed
+      — see the outstanding list in that file.*
 - [ ] Agent answers, speaks one sentence in the chosen Nigerian voice, ends the call.
       Make it the real greeting — "Thank you for calling Ansa" — so the phone-line name
       test (PRD §1.0) happens on day one rather than after the logo is designed.
@@ -454,3 +457,19 @@ why they are listed here.
 - Update this file before you stop working. Check boxes, note what broke.
 - One slice at a time. Do not start the next until the current one's "done when" is true.
 - Push to remote at the end of every session.
+
+- *2026-08-07 — Step 3 of 4 (TTS) complete in code, unverified against the live API.*
+  ElevenLabs adapter behind `TtsProvider`: HTTP streaming, `cancel()` backed by an
+  `AbortController`, chunks stamped with their offset inside the utterance. No new
+  dependency — global `fetch`. Nine tests against an injected fetch; 37 in the repo.
+- Defect the tests caught: errors raised *before* the first `await` — an unsupported audio
+  format, say — were emitted before the caller could register `onError`, so they vanished
+  and the turn would have gone silent with nothing logged. Synthesis now starts in a
+  microtask. **Any listener-registered-after-return API in this repo has this hazard.**
+- `toOutputFormat` throws on an unsupported format instead of falling back. A silent
+  fallback would reintroduce exactly the transcoding hop R4.2.4 exists to avoid.
+- **Blocking step 4:** `ELEVENLABS_API_KEY`, and a voice id. `output_format=ulaw_8000` is
+  still unconfirmed — elevenlabs.io/docs 308-redirects to app.buildwithfern.com which 404s,
+  so it could not be checked from docs. One authenticated request settles it and that is
+  the first thing to run when the key lands. If μ-law is not native, the provider choice
+  is wrong and should be revisited rather than papered over with a transcoder.
