@@ -54,6 +54,22 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   let turnSeq = 0;
   let turn: AgentTurn | null = null;
 
+  /**
+   * Speech segments the barge-in guard judged to be our own audio coming back.
+   *
+   * The guard only suppresses the speech-start event. The transcript of that same
+   * segment still arrives, and without this it is answered as though the caller said
+   * it — the agent holding a conversation with itself. Matching is exact rather than a
+   * tolerance window, because a transcript now carries the offset of the speech-start
+   * that produced it.
+   */
+  const echoSegments = new Set<number>();
+  /**
+   * The last few hundred characters the agent has actually spoken, normalised the same
+   * way a transcript will be. A transcript wholly contained in this is our own voice.
+   */
+  let spokenWindow = "";
+
   const stageStart = new Map<string, number>();
   const mark = (stage: string): void => {
     stageStart.set(stage, Date.now());
@@ -116,6 +132,10 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   };
 
   const enqueue = (current: AgentTurn, sentence: string): void => {
+    // The window holds what TTS was actually given, so the comparison is against the
+    // words that were spoken — including the "An-Sah" respelling, which is what a
+    // transcriber will hear.
+    spokenWindow = `${spokenWindow} ${deps.forSpeech(sentence)}`.slice(-400);
     current.queue.push(sentence);
     speakNext(current);
   };
@@ -170,6 +190,10 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       if (speakingFor < guardMs) {
         // Almost certainly our own audio returning through the caller's handset. A
         // caller cannot react to speech they have not finished hearing.
+        //
+        // Remember the segment: its transcript is still coming, and answering that is
+        // how the agent ends up talking to itself.
+        echoSegments.add(event.offsetMs);
         log.debug("ignored speech start inside barge-in guard", { speakingFor });
         return;
       }
@@ -252,6 +276,14 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     });
   };
 
+  /** Compare speech the way a transcriber renders it: no case, no punctuation. */
+  const normalise = (text: string): string =>
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
   deps.listen.transcripts.onFinal((transcript) => {
     const text = transcript.text.trim();
     // Silence and line noise transcribe as a stray mark or a single letter. Answering
@@ -260,11 +292,34 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       log.debug("ignored empty transcript", { text });
       return;
     }
+
+    // Layer 1: this segment's speech-start was already judged to be echo. Exact match,
+    // because both numbers are the same offset from the same event.
+    if (echoSegments.delete(transcript.offsetMs)) {
+      log.info("ignored echoed agent audio", { text, offsetMs: transcript.offsetMs });
+      return;
+    }
+
+    // Layer 2: the guard only covers segments whose speech-start it saw. This catches
+    // the rest by content — but only against our own recent words, never as a blanket
+    // "ignore transcripts while speaking", which would swallow real barge-in.
+    if (turn !== null) {
+      const heardBack = normalise(text);
+      if (heardBack.length > 0 && normalise(spokenWindow).includes(heardBack)) {
+        log.info("ignored transcript matching our own speech", { text });
+        return;
+      }
+      // Whatever this is, it is worth seeing: it tells us on the next call whether the
+      // filter above is over- or under-firing.
+      log.info("transcript during agent audio", { text, spokenWindow });
+    }
+
     log.info("caller said", { text, offsetMs: transcript.offsetMs });
     respondTo(text);
   });
 
   stream.onClosed((reason) => {
+    echoSegments.clear();
     stopSpeaking("call ended");
     deps.listen.close();
     log.info("conversation ended", { reason, turns: turnSeq });

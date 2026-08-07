@@ -79,6 +79,13 @@ export const openListenSession = (
   let failed = false;
   let bytesWritten = 0;
   let pendingBytes = 0;
+  /**
+   * Where the speech currently being transcribed began. A transcript's offset is then
+   * "when this utterance started" rather than "when its text happened to arrive", which
+   * is what R4.1.7 needs to correlate the two streams — and what lets the orchestrator
+   * recognise a transcript as belonging to a speech segment it already judged to be echo.
+   */
+  let segmentStartMs: number | null = null;
   // Frames that arrive before the session is configured would be discarded by the
   // vendor, taking the first word of the call with them.
   const pending: Buffer[] = [];
@@ -119,6 +126,7 @@ export const openListenSession = (
       }
       case "speechStart": {
         const at = { offsetMs: event.offsetMs ?? streamOffsetMs() };
+        segmentStartMs = at.offsetMs;
         for (const l of speechStart) l(at);
         return;
       }
@@ -138,6 +146,8 @@ export const openListenSession = (
         return;
       }
       case "final": {
+        const startedAt = segmentStartMs;
+        segmentStartMs = null;
         const t: Transcript = {
           text: event.text,
           // This provider reports neither word timings nor confidence. That is a real
@@ -145,7 +155,7 @@ export const openListenSession = (
           // an invented number.
           words: [],
           confidence: null,
-          offsetMs: streamOffsetMs(),
+          offsetMs: startedAt ?? streamOffsetMs(),
         };
         for (const l of final) l(t);
         return;

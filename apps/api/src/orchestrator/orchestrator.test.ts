@@ -123,6 +123,50 @@ describe("runConversation", () => {
     assertInvariants(h);
   });
 
+  // The guard suppresses the speech-start but the transcript of that same segment
+  // still arrives. Answering it is the agent holding a conversation with itself, which
+  // is what five phantom turns on a live call turned out to be.
+  it("ignores the transcript of a speech segment it judged to be echo", () => {
+    const h = setup({ bargeInGuardMs: 10_000 });
+    h.tts.last().audio(800);
+
+    h.listen.speechStart(4200);
+    h.listen.final("Thank you for calling An-Sah.", 4200);
+
+    expect(h.llm.completions).toHaveLength(0);
+    assertInvariants(h);
+  });
+
+  it("still answers a transcript from a segment it did not suppress", () => {
+    const h = setup({ bargeInGuardMs: 10_000 });
+    h.tts.last().audio(800);
+
+    h.listen.speechStart(4200);
+    h.listen.final("When does my policy renew?", 9999);
+
+    expect(h.llm.completions).toHaveLength(1);
+  });
+
+  it("ignores a transcript that merely repeats what the agent is saying", () => {
+    const h = setup({ bargeInGuardMs: 0 });
+    h.tts.last().audio(800);
+
+    // No speech-start: this arrives purely as content, echoed back by the handset.
+    h.listen.final("thank you for calling an sah", 5000);
+
+    expect(h.llm.completions).toHaveLength(0);
+  });
+
+  // The containment filter must never become "ignore the caller while speaking".
+  it("answers genuinely new words spoken over the agent", () => {
+    const h = setup({ bargeInGuardMs: 0 });
+    h.tts.last().audio(800);
+
+    h.listen.final("Actually, I want to cancel my policy.", 5000);
+
+    expect(h.llm.completions).toHaveLength(1);
+  });
+
   it("ignores transcripts too short to be speech", () => {
     const h = setup();
     h.tts.last().done();
