@@ -13,7 +13,9 @@ import { prepareEvents } from "./prepare";
 import {
   ATTEMPT_HEADER,
   EVENT_ID_HEADER,
+  EVENT_TYPE_HEADER,
   SIGNATURE_HEADER,
+  TENANT_HEADER,
   TIMESTAMP_HEADER,
   verifySignature,
 } from "./signature";
@@ -209,6 +211,10 @@ describe("signing", () => {
     expect(hit).toBeDefined();
     if (hit === undefined) return;
     expect(hit.body).toBe(body);
+    // The receiver routes on these before it verifies anything, so they have to be there.
+    expect(hit.headers[EVENT_TYPE_HEADER]).toBe("call.ended");
+    expect(hit.headers[TENANT_HEADER]).toBe(TENANT);
+    expect(hit.headers["content-type"]).toContain("application/json");
     expect(
       verifySignature({
         secret: SECRET,

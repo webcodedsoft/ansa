@@ -67,7 +67,7 @@ export interface EventConfig {
   readonly subscriptions: readonly EventSubscription[];
 }
 
-export const NO_EVENT_CONFIG: EventConfig = { egress: { allowedHosts: [] }, subscriptions: [] };
+const NO_EVENT_CONFIG: EventConfig = { egress: { allowedHosts: [] }, subscriptions: [] };
 
 /** Long enough for a receiver that writes to its own database before answering. */
 const DEFAULT_TIMEOUT_MS = 10_000;

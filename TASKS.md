@@ -824,12 +824,19 @@ beyond the shadowing rule that already stops a tenant redefining a platform tool
       *Already true from Slice 5; verified against both new routes rather than re-added.*
 - [x] Parallel dispatch for independent tool calls (R5.4.4). *Landed in Slice 5 —
       `Promise.all` over the model's requested calls, with the tier gate per tool.*
-- [ ] Full tool invocation logging with per-tenant PII redaction (R5.2.4). **Half.**
-      Every invocation is logged with redacted arguments, latency and outcome, and
-      `redact.ts` matches credential-shaped keys. Two gaps: the redaction is one global
-      rule rather than **per tenant**, and `record.event` still writes tool calls to
-      `call_events` rather than to the `tool_invocations` table, which exists and is
-      still empty.
+- [ ] Full tool invocation logging with per-tenant PII redaction (R5.2.4). **Half, and
+      the half that is missing moved.** Every invocation is logged with redacted
+      arguments, latency and outcome, and `redact.ts` matches credential-shaped keys.
+
+      The per-tenant capability now exists — Slice 6a built `redaction.ts`, which reaches
+      free text and is configured per tenant — but **the dispatcher does not use it**. Its
+      log line still goes through the global key rule, because reaching the tenant's policy
+      from `dispatch.ts` means plumbing it through the dispatcher and that is a change to
+      the tool path rather than to this one. Outbound payloads, which are the case that
+      actually mattered, do use it.
+
+      The other gap is unchanged: `record.event` still writes tool calls to `call_events`
+      rather than to the `tool_invocations` table, which exists and is still empty.
 - [x] Security test suite: SSRF attempts, credential leakage into transcripts, cross-
       tenant tool access. **Not in CI, because there is no CI.** *63 egress tests, the
       vault's tenant-binding tests, credential-absence-from-logs on both routes, and
@@ -887,12 +894,12 @@ a tenant publishes a `tool_config`.
 
 ## Slice 6a — Event webhooks: pushing data back to the organisation
 
-**Not built. Written down here so it is not built as a tool, which is the tempting
-mistake.** Requested during Slice 6: the organisation wants its own data pushed to it —
-call ended → the call record; transferred to a human → the conversation so far; more
-later.
+**Built, not proven.** Every box below is code with tests behind it and none of it has
+been near a phone call, because it cannot be: what is missing is an endpoint belonging to
+a real organisation. Requested during Slice 6 — call ended → the call record; transferred
+to a human → the conversation so far.
 
-An event webhook is not a tool call, and the differences are not cosmetic:
+It was built as an event path and not as a tool, which was the tempting mistake:
 
 | | tool call | event webhook |
 |---|---|---|
@@ -902,39 +909,85 @@ An event webhook is not a tool call, and the differences are not cosmetic:
 | failure | agent apologises and recovers | retry with backoff, at-least-once |
 | risk tiers | central | meaningless — nothing is being done to the caller |
 
-Building events as tools would be wrong in both directions: it puts a delivery on the
-conversation's critical path, and it lets the model decide whether an organisation
-receives its own data.
+**Nothing below the seam was rebuilt.** The Slice 6 transport, egress guard, vault and
+breaker are the ones used; `breaker.ts`'s `(tenantId, subject)` key was written for this
+and needed no change. There is still exactly one outbound HTTP client in this product.
 
-**What already exists, so none of it is rebuilt:**
+- [x] **Per-tenant PII redaction that reaches free text (R5.2.4).**
+      `packages/tools/src/redaction.ts`, pure, exhaustively tested.
 
-- The **shared HTTP layer**, built in Slice 6 and deliberately free of tool-call
-  assumptions: `connector/transport.ts` (guarded, address-pinned, redirect-rechecking, and
-  its deadline comes from the caller's signal rather than from the voice budget),
-  `connector/egress.ts`, `connector/vault.ts`, `redact.ts`, and `breaker.ts` — whose key is
-  `(tenantId, subject)` rather than `(tenantId, tool)` for exactly this.
-- The **transfer payload**: `apps/api/src/handoff/` already builds a summary from the event
-  log for the human who picks up. That summary *is* the payload.
-- The **call-ended payload**: `calls`, `call_events`, `transcripts` and `turns`, read by
-  `packages/db/src/call-log.ts`.
-- **Delivery configuration** has an obvious home beside `tenants.tool_config` and the same
-  credential vault. It is a different shape and should be a different key, not a third
-  entry in `http[]`.
+      **The default inverted during the slice and the reasoning is the part to keep.**
+      The first version withheld anything it could not reliably redact and made the
+      tenant opt in to receiving it. That is wrong: the organisation is the data
+      controller, the caller is *their* customer, and the payload is a record of a
+      conversation their own agent had. Withholding their own data on a judgement we made
+      about their compliance posture is not our call, and it would break the obvious uses
+      — a CRM that needs the policy number, a ticketing system that needs the callback
+      number. **Nothing is redacted unless a tenant configures it.**
 
-**The blocker to write down before anyone starts:**
+      When they do configure it, two sources of signal and they are not equal.
+      `captured-identifier` uses what `call-facts.ts` recorded — including every form the
+      transcriber offered, not only the settled value, because the other spellings are
+      still sitting in the transcript. That is knowledge. `email`, `card-number` (Luhn),
+      `digit-sequence` and `spoken-digit-sequence` are shape, which generalises but infers.
 
-- [ ] **Per-tenant PII redaction of outbound payloads (R5.2.4) does not exist.** These
-      payloads contain transcripts, and a transcript is where a caller reads their policy
-      number aloud. `redact.ts` matches credential-shaped *keys* in tool arguments; it does
-      nothing to free text and knows nothing about a tenant's rules. Shipping an event path
-      that posts raw transcripts to a third party would be an NDPR problem, not a feature.
-      This is the same gap flagged half-done in Slice 6 above, and it blocks both.
+      **What it provably cannot catch is documented where a tenant configuring it will
+      read it** (`docs/EVENT_WEBHOOKS.md`), not expressed by withholding: a name in prose,
+      a date of birth (a date has a shape; a date *of birth* does not), an address, and
+      any health or financial disclosure. `digit-sequence` over-masks amounts and years,
+      which is the trade for a rule that cannot know what a number means.
 
-- [ ] Delivery with retry and backoff, at-least-once, off the call path entirely.
-- [ ] Signed payloads, so the organisation can verify the delivery came from us.
-- [ ] A delivery log the tenant can be shown when they say they never received it.
+      One thing is not a tenant setting and never will be: credential-shaped keys are
+      removed unconditionally. That is not caller PII and not the tenant's data to receive.
 
----
+      Two bugs worth remembering. The captured-identifier matcher filtered on `[A-Za-z0-9]`
+      and so built a pattern that could not match the value it came from whenever the name
+      carried a diacritic — Yorùbá, Norwegian, Spanish all silently survived redaction.
+      Unicode property escapes, and lookarounds rather than `\b`, which JavaScript defines
+      over ASCII. And the first card fixtures were hand-written and not Luhn-valid, so the
+      test proved the regex and not the check.
+
+- [x] Delivery with retry and backoff, at-least-once, off the call path entirely.
+      An outbox table (migration 0014) rather than an in-memory queue, because
+      at-least-once has to survive a deploy. The call path writes one row and forgets it;
+      `apps/api/src/events/delivery.sweeper.ts` claims due rows on a timer. **There is no
+      code path from a receiver's outage back to a conversation** — not a careful async
+      function, an absence of a path.
+
+- [x] Signed payloads. HMAC-SHA256 over `v1.<timestamp>.<event id>.<body>`, with the
+      timestamp and event id *inside* the signed string so the replay window is not
+      editable and a body cannot be moved onto another delivery. The attempt number is
+      outside it, so a retry sends identical bytes and dedupe on the event id works.
+      `verifySignature` is the receiver's side, kept so the claim is proved by a test.
+      The vault gained a `signing` kind and `resolveSigner` — still no `reveal()`, the
+      secret stays in the closure and a digest comes out, and a value sealed for auth
+      cannot sign.
+
+- [x] A delivery log the tenant can be shown. `/viewer/deliveries`, with the exact bytes
+      sent on every row: the question is not "did a request happen" but "what did you
+      send me", and a status code answers the first only. Settled rows purge at 30 days;
+      a delivery still retrying is never purged.
+
+- [ ] **Proven against a real endpoint.** Nobody has configured a receiver, so no delivery
+      has ever been attempted against a server we do not own. Specifically unproven:
+      whether a real receiver's TLS and redirect behaviour survives the address-pinned
+      transport, whether the backoff feels right against a real outage, and whether the
+      signature paragraph in the docs is enough for somebody to implement verification
+      from without asking us a question.
+
+**Design decisions that will look arbitrary later:**
+
+- The payload is built and serialised **once**, when the event fires, and the bytes are
+  stored. Rebuilding per attempt is the obvious design and is wrong three ways: the
+  signature covers the body; a payload derived from the call record would change if a
+  transcript were corrected between attempts; and the redaction that applied is the config
+  version in force *then*.
+- Hooked in as a **tee on the recorder** (`apps/api/src/events/publisher.ts`), the same
+  shape as `handoff/journal.ts`. Neither the orchestrator nor `handoff.ts` learns that
+  webhooks exist, which is the claim of the slice made structural.
+- The event layer lives in `packages/tools/src/events/`, which is a slight misnomer. It is
+  there because it shares the whole connector layer and a new package would have bought
+  nothing; the header comment in `events/config.ts` says loudly that these are not tools.
 
 ## Slice 7 — Tenant configuration and first real tenant
 

@@ -100,7 +100,7 @@ const reported = (fact: Fact): ReportedIdentifier | null =>
  * call are interpretive and belong in the transcript, not in a field an outside system
  * would key a customer record on.
  */
-export const reportedIdentifiers = (
+const reportedIdentifiers = (
   facts: CallFacts | null,
 ): Readonly<Record<string, ReportedIdentifier>> => {
   if (facts === null) return {};

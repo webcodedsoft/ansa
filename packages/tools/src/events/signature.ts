@@ -32,7 +32,7 @@ import type { EventType } from "./config";
  * deduplicate on the event id.
  */
 
-export const SIGNATURE_VERSION = "v1";
+const SIGNATURE_VERSION = "v1";
 
 export const SIGNATURE_HEADER = "ansa-signature";
 export const TIMESTAMP_HEADER = "ansa-timestamp";
@@ -41,7 +41,7 @@ export const EVENT_TYPE_HEADER = "ansa-event-type";
 export const TENANT_HEADER = "ansa-tenant-id";
 export const ATTEMPT_HEADER = "ansa-delivery-attempt";
 
-export const signingString = (timestampSeconds: number, eventId: string, body: string): string =>
+const signingString = (timestampSeconds: number, eventId: string, body: string): string =>
   `${SIGNATURE_VERSION}.${timestampSeconds}.${eventId}.${body}`;
 
 export interface SignedRequest {
