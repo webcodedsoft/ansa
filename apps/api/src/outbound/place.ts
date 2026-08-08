@@ -83,7 +83,14 @@ export const placeOutboundCall = async (deps: {
     to: request.to,
     from: request.from,
     mediaStreamUrl: request.mediaStreamUrl,
-    parameters: { tenantId: request.tenantId },
+    parameters: {
+      tenantId: request.tenantId,
+      direction: "outbound",
+      // The number we dialled and the number we dialled from, so the call record does
+      // not have to reconstruct either from a socket that knows neither.
+      dialled: request.to,
+      caller: request.from,
+    },
     ...(request.statusCallbackUrl === undefined ? {} : { statusCallbackUrl: request.statusCallbackUrl }),
     ...(request.amdCallbackUrl === undefined ? {} : { amdCallbackUrl: request.amdCallbackUrl }),
   });

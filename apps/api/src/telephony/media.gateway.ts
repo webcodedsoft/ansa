@@ -20,6 +20,8 @@ import { ACKNOWLEDGEMENTS, ALL_FILLERS, PROGRESS, STILL_WORKING } from "./filler
 import { forSpeech, GREETING_TEXT } from "./greeting";
 import { createAudioCache } from "./prerender";
 import { composeListen } from "./composite-listen";
+import { createCallRecorder } from "./event-log";
+import type { Db } from "@ansa/db";
 import { BASE_KEYTERMS } from "../tenancy/defaults";
 import type { TenantRegistry } from "../tenancy/tenant-registry";
 import { runConversation, type ListenSession } from "../orchestrator/orchestrator";
@@ -29,6 +31,10 @@ import {
   APP_CONFIG,
   LLM_PROVIDER,
   LOGGER,
+  CALLER_PARAM,
+  DATA_SOURCE,
+  DIALLED_PARAM,
+  DIRECTION_PARAM,
   MEDIA_STREAM_PATH,
   TELEPHONY_PROVIDER,
   TENANT_PARAM,
@@ -56,6 +62,7 @@ export class MediaGateway implements OnApplicationShutdown {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(LOGGER) private readonly log: Logger,
     @Inject(TENANT_REGISTRY) private readonly tenants: TenantRegistry,
+    @Inject(DATA_SOURCE) private readonly dataSource: Db | null,
   ) {}
 
   /**
@@ -287,6 +294,23 @@ export class MediaGateway implements OnApplicationShutdown {
       keyterms: keyterms.length,
     });
 
+    // Created here rather than at stream start: the tenant is what scopes every row,
+    // and until the lookup above returned there was nothing to scope them to.
+    const recorder = createCallRecorder({ dataSource: this.dataSource, log });
+    if (tenant?.tenantId != null) {
+      recorder.started({
+        tenantId: tenant.tenantId,
+        carrierCallId: stream.callId,
+        direction: stream.parameters[DIRECTION_PARAM] === "outbound" ? "outbound" : "inbound",
+        dialled: stream.parameters[DIALLED_PARAM] ?? "unknown",
+        caller: stream.parameters[CALLER_PARAM] ?? null,
+        configVersion: tenant.configVersion,
+      });
+      stream.onClosed((reason) => {
+        recorder.ended(reason);
+      });
+    }
+
     const listen = this.openListen(stream.format, keyterms);
 
     runConversation(stream, {
@@ -294,6 +318,7 @@ export class MediaGateway implements OnApplicationShutdown {
       // Drained last, immediately before the conversation starts, so no frame can slip
       // between the buffer closing and the orchestrator subscribing.
       initialAudio: drainEarlyAudio(),
+      recorder,
       llm: this.llm,
       tts: this.tts,
       voiceId: this.config.elevenLabsVoiceId,

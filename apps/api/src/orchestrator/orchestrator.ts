@@ -10,6 +10,7 @@ import { classify } from "./action";
 import { advance, idle, nameFrom, worthConfirming, type CaptureState } from "./capture";
 import { endsMidThought } from "./completeness";
 import { createSpeechGate } from "./speech-gate";
+import { nullRecorder, type CallRecorder } from "../telephony/event-log";
 import { parseSpokenDigits } from "@ansa/normalizer";
 import { createConversation } from "./conversation";
 import { interpret, normalise } from "./hearing";
@@ -91,6 +92,11 @@ export interface OrchestratorDeps {
    * "cannot lose a word", and only replaying them makes that true.
    */
   readonly initialAudio?: readonly AudioChunk[];
+  /**
+   * Writes the call down. Defaults to doing nothing, so a deployment without a database
+   * behaves exactly as before and every existing test stays valid.
+   */
+  readonly recorder?: CallRecorder;
 }
 
 /** A sentence that has been handed to TTS, and where its audio sits in the turn. */
@@ -455,7 +461,9 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     }
     stageStart.delete(stage);
     // Slice 2's `latencies` table is where these land once the event log is wired.
-    log.info("latency", { stage, ms: Date.now() - started, ...extra });
+    const ms = Date.now() - started;
+    log.info("latency", { stage, ms, ...extra });
+    record.event("latency", { stage, ms, ...extra });
   };
 
   // ---- audio in: the single fan-out point ---------------------------------
@@ -469,6 +477,8 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
    * starves the turn detector of the very thing it listens for, and end-of-turn never
    * fires. So the gate is a measurement here, not a valve.
    */
+  const record = deps.recorder ?? nullRecorder;
+
   const speechGate = createSpeechGate();
   let speechMsSinceTranscript = 0;
 
@@ -670,6 +680,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     stream.clear();
 
     commitHeard(current);
+    record.event("barge-in", { reason, seq: current.seq });
     log.info("barge-in", {
       reason,
       seq: current.seq,
@@ -804,6 +815,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     // No model round trip is coming, so there is no gap for a filler to cover.
     cancelFiller();
     log.info("speaking without the model", { reason, seq: direct.seq, text });
+    record.event("agent said", { reason, seq: direct.seq, text });
     enqueue(direct, text);
   };
 
@@ -1030,6 +1042,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     if (result.captured !== null) {
       capture = idle;
       log.info("value confirmed by the caller", { chars: result.captured.length });
+      record.event("value confirmed", { chars: result.captured.length });
       // The model finally sees the value, and sees it as confirmed. Routed through
       // respondTo so it is recorded, budgeted and spoken like any other turn.
       const asName = /^[A-Za-z][A-Za-z' -]*$/.test(result.captured);
@@ -1050,6 +1063,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       // Nothing to transfer to yet — Slice 6 owns the warm handoff. Saying so and
       // logging it beats pretending the transfer happened.
       log.error("capture failed, caller needs a human", { text });
+      record.event("escalated to a human", { text });
     }
 
     if (result.say !== null) sayNow(result.say, `readback:${capture.kind}`);
@@ -1090,6 +1104,9 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         text: transcript.text,
         speechMs,
       });
+      // Kept deliberately. A hallucination the filter caught is the clearest evidence
+      // the R9.2 review queue could have, and it exists nowhere else.
+      record.event("hallucination discarded", { text: transcript.text, speechMs });
       return;
     }
 
@@ -1150,6 +1167,8 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     // The raw text is logged and stored — it is the eval corpus and the review loop's
     // ground truth. Only the model sees the repaired version.
     log.info("caller said", { text, offsetMs: transcript.offsetMs });
+    // The raw text, never the repaired one: this is the eval corpus ground truth (R9.2.3).
+    record.event("caller said", { text, corrections: heard.corrections }, transcript.offsetMs);
     if (heard.corrections.length > 0) {
       log.info("repaired a known mishearing", { corrections: heard.corrections });
     }

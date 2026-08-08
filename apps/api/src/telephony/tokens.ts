@@ -19,3 +19,13 @@ export const AMD_WEBHOOK_PATH = "/telephony/amd";
 
 /** Path the carrier POSTs call lifecycle events to. */
 export const STATUS_WEBHOOK_PATH = "/telephony/status";
+
+/**
+ * Facts the call record needs that the media socket does not otherwise carry.
+ *
+ * The socket knows a stream SID and nothing about who dialled whom, so anything the
+ * `calls` row needs has to travel with the answer — the same route the tenant takes.
+ */
+export const DIRECTION_PARAM = "direction";
+export const DIALLED_PARAM = "dialled";
+export const CALLER_PARAM = "caller";

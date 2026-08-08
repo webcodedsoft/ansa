@@ -19,6 +19,9 @@ import {
   APP_CONFIG,
   LOGGER,
   AMD_WEBHOOK_PATH,
+  CALLER_PARAM,
+  DIALLED_PARAM,
+  DIRECTION_PARAM,
   STATUS_WEBHOOK_PATH,
   MEDIA_STREAM_PATH,
   TELEPHONY_PROVIDER,
@@ -78,7 +81,12 @@ export class VoiceController {
     const wsOrigin = this.config.publicBaseUrl.replace(/^http/, "ws");
     const answer = this.telephony.renderAnswer({
       mediaStreamUrl: `${wsOrigin}${MEDIA_STREAM_PATH}`,
-      parameters: tenant.tenantId === null ? {} : { [TENANT_PARAM]: tenant.tenantId },
+      parameters: {
+        [DIRECTION_PARAM]: "inbound",
+        [DIALLED_PARAM]: call.dialled,
+        ...(call.caller === null ? {} : { [CALLER_PARAM]: call.caller }),
+        ...(tenant.tenantId === null ? {} : { [TENANT_PARAM]: tenant.tenantId }),
+      },
     });
 
     res.setHeader("Content-Type", answer.contentType);
