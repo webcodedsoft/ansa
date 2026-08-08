@@ -42,7 +42,7 @@ const K_SUFFIX = /^(\d+(?:\.\d+)?)k$/;
 /** Words that sit inside a number without contributing one. */
 const BRIDGES = ["and", "point"];
 
-export const isNumberWord = (token: string): boolean =>
+const isNumberWord = (token: string): boolean =>
   token in UNITS || token in TENS || token in SCALES || token === "k";
 
 const tokenize = (text: string): string[] =>
