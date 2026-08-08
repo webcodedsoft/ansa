@@ -29,6 +29,35 @@ measured — which is why Gate A exists, and why it must close before Slice 4.
 
 ---
 
+## The open decision — names, and the architecture behind them
+
+Six rounds of call-fix-call on 2026-08-08 fixed a lot and did not fix this. Recorded here
+so the next session starts from the decision instead of re-running the loop.
+
+**"Adedeji Sikiru" has come back as:** Hill, Sequium, Security, Aditi, kekere, TK, Kim Woo,
+"Epic mining is secured", "Ipet may nin si Tiyo". Spelling was the fallback and a call
+falsified that too — a spelled J arrives as E. Deepgram and OpenAI fail the same way, both
+with the language pinned to English.
+
+**What the loop did fix**, and these were real: hallucinated languages (audio gate), the
+agent interrupting itself with fillers, the readback confirming a rejection, turns split
+mid-sentence, the agent greeting a greeting, outbound answering as "unknown", a call record
+that stored only one side of the conversation. None of them were the names.
+
+**The three honest options, none of which is more orchestration work:**
+
+1. **Speech-to-speech.** OpenAI Realtime or Gemini Live consuming audio directly, so the
+   model hears the accent instead of reading a mangled transcription of it. Removes the
+   class of failure. Costs: less control over turn budgets, harder to keep R4.3.1 in code
+   rather than prompt, higher price, partial orchestrator rewrite.
+2. **Design around it.** Take references by DTMF, which already works and is unambiguous;
+   look the name up from the reference; never ask a caller to say or spell it. Smaller,
+   duller, would probably ship. It is what many production IVRs do.
+3. **Accept it** for a first tenant whose calls do not turn on names.
+
+Everything else in the product is further along than this one thing. It should be decided
+deliberately rather than iterated at.
+
 ## Where this actually is — 2026-08-08
 
 The checkboxes below this line are stale. They were written before the work and were not
