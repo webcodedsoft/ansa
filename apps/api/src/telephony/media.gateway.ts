@@ -1,6 +1,12 @@
 import type { Server } from "node:http";
 
-import { TELEPHONY_AUDIO, type AudioChunk, type AudioFormat, type Logger } from "@ansa/shared";
+import {
+  asTenantId,
+  TELEPHONY_AUDIO,
+  type AudioChunk,
+  type AudioFormat,
+  type Logger,
+} from "@ansa/shared";
 import type { CallMediaStream, TelephonyProvider } from "@ansa/telephony";
 import type { LlmProvider } from "@ansa/llm";
 import { buildUrl, openDeepgramSession } from "@ansa/deepgram-listen";
@@ -231,15 +237,40 @@ export class MediaGateway implements OnApplicationShutdown {
     // vocabulary rather than waiting on a database — configuration must never become
     // silence on the line (R6.2).
     const tenantId = stream.parameters[TENANT_PARAM];
-    const tenant = tenantId === undefined ? null : this.tenants.cached(tenantId);
+    void this.startConversation(stream, log, tenantId);
+  }
+
+  /**
+   * Resolves configuration, then starts the conversation.
+   *
+   * Async because of outbound. Inbound warms the cache at the voice webhook and this is
+   * a map read; outbound inlines its TwiML and never touches a webhook, so the first
+   * time anyone asks about this tenant is here. One round trip is worth paying — the
+   * alternative, seen on the first outbound call, is answering a caller as "unknown"
+   * with none of their tenant's vocabulary.
+   *
+   * The greeting is pre-rendered and plays regardless, so the lookup happens behind
+   * audio the caller is already hearing.
+   */
+  private async startConversation(
+    stream: CallMediaStream,
+    log: Logger,
+    tenantId: string | undefined,
+  ): Promise<void> {
+    const tenant =
+      tenantId === undefined
+        ? null
+        : (this.tenants.cached(tenantId) ?? (await this.tenants.load(asTenantId(tenantId))));
+
     if (tenantId !== undefined && tenant === null) {
-      log.warn("tenant config not cached at stream start, using base vocabulary", { tenantId });
+      log.warn("tenant on the media socket has no config, using base vocabulary", { tenantId });
     }
     const keyterms = tenant?.keyterms ?? BASE_KEYTERMS;
     log.info("tenant for call", {
       tenantId: tenant?.tenantId ?? null,
       name: tenant?.name ?? "unknown",
       configVersion: tenant?.configVersion ?? 0,
+      keyterms: keyterms.length,
     });
 
     const listen = this.openListen(stream.format, keyterms);

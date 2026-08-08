@@ -1,5 +1,5 @@
 import { type Logger, type TenantId } from "@ansa/shared";
-import { loadTenantForNumber, type Db } from "@ansa/db";
+import { loadTenantConfig, loadTenantForNumber, type Db } from "@ansa/db";
 
 
 import { BASE_KEYTERMS, MAX_KEYTERMS } from "./defaults";
@@ -138,6 +138,51 @@ export const createTenantRegistry = (options: TenantRegistryOptions) => {
 
     /** Synchronous read for the media socket. Null means "use defaults, do not wait". */
     cached: (tenantId: string): CallTenant | null => fresh(byTenant.get(tenantId)),
+
+    /**
+     * Load configuration for a tenant we already know, warming the cache.
+     *
+     * Outbound calls need this and inbound ones do not. Inbound resolves at the voice
+     * webhook, which warms the cache a moment before the media socket opens. Outbound
+     * inlines its TwiML at origination, so there is no webhook and nothing has ever
+     * looked this tenant up in this process — the id arrives on the socket already
+     * known, with no configuration behind it.
+     *
+     * Found by the first outbound call: the tenant travelled out and back correctly and
+     * the agent still answered on base vocabulary.
+     */
+    load: async (tenantId: TenantId): Promise<CallTenant | null> => {
+      const hit = fresh(byTenant.get(tenantId));
+      if (hit !== null) return hit;
+      if (dataSource === null) return null;
+
+      try {
+        const config = await loadTenantConfig(dataSource, tenantId);
+        if (config === null) {
+          log.error("tenant id on the media socket has no config", { tenantId });
+          return null;
+        }
+
+        const tenant: CallTenant = {
+          tenantId,
+          name: config.name,
+          keyterms: mergeKeyterms(config.keyterms, log, tenantId),
+          voiceId: config.voiceId,
+          greeting: config.greeting,
+          persona: config.persona,
+          configVersion: config.configVersion,
+        };
+        // Cached by id only: this call never had a dialled number to key on.
+        byTenant.set(tenantId, { tenant, expiresAt: now() + ttlMs });
+        return tenant;
+      } catch (error) {
+        log.error("could not load tenant config for an outbound call", {
+          tenantId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return null;
+      }
+    },
   };
 };
 

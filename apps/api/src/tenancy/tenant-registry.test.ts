@@ -185,3 +185,35 @@ describe("tenant registry", () => {
     expect(db.query.mock.calls.length).toBeGreaterThan(afterCached);
   });
 });
+
+describe("a call that never passed through ingress", () => {
+  it("loads config by id, which is what outbound needs", async () => {
+    // The first outbound call answered as "unknown" on base vocabulary: the tenant id
+    // arrived on the media socket correctly, but nothing in this process had ever looked
+    // it up, because outbound inlines its TwiML and never touches the voice webhook.
+    const log = silentLog();
+    const registry = createTenantRegistry({
+      dataSource: configuredDb(["motor cover"]) as never,
+      log: log as never,
+    });
+
+    expect(registry.cached(TENANT)).toBeNull();
+
+    const loaded = await registry.load(TENANT as never);
+    expect(loaded?.name).toBe("Kano General");
+    expect(loaded?.keyterms).toContain("motor cover");
+    // Warmed, so the rest of the call is a map read.
+    expect(registry.cached(TENANT)?.name).toBe("Kano General");
+  });
+
+  it("answers on defaults rather than failing when the load does not work", async () => {
+    const log = silentLog();
+    const registry = createTenantRegistry({
+      dataSource: { query: async () => { throw new Error("down"); } } as never,
+      log: log as never,
+    });
+
+    // Configuration failing must never become silence on the line (R6.2).
+    expect(await registry.load(TENANT as never)).toBeNull();
+  });
+});
