@@ -127,6 +127,8 @@ interface AgentTurn {
   bytesHeard: number;
   /** Completed sentences, in order. Used to reconstruct what was heard. */
   readonly spoken: SpokenSentence[];
+  /** When this turn first had audio queued. Stamped in enqueue, the one funnel all turns share. */
+  startedAtMs?: number;
   /**
    * The sentence currently being synthesised. Its total audio length is not yet known,
    * so what the caller has heard of it is estimated from duration rather than measured.
@@ -481,6 +483,19 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
    */
   const record = deps.recorder ?? nullRecorder;
 
+  /**
+   * Turn numbering for the record, shared across both speakers.
+   *
+   * Separate from turnSeq, which counts the agent's turns and skips the caller's. The
+   * table is unique on (call, seq), so a shared counter is the only numbering that cannot
+   * collide — and it also makes the stored order the order they actually happened in.
+   */
+  let recordedTurns = 0;
+  const streamStartedAt = Date.now();
+  const sinceStart = (): number => Date.now() - streamStartedAt;
+  /** Where the caller's current turn began, from the turn detector rather than guessed. */
+  let callerTurnStartedMs: number | null = null;
+
   const speechGate = createSpeechGate();
   let speechMsSinceTranscript = 0;
 
@@ -544,6 +559,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   };
 
   const commitHeard = (current: AgentTurn): void => {
+    recordAgentTurn(current, null);
     conversation.recordAgentTurn(current.seq, heardText(current));
   };
 
@@ -644,6 +660,20 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
    * could satisfy that — a mark arriving, the model finishing, a synthesis failing —
    * because whichever happens last is the one that closes the turn.
    */
+  /** Called on both exits: played out, and cut off. */
+  const recordAgentTurn = (current: AgentTurn, bargedInAtMs: number | null): void => {
+    if (current.startedAtMs === undefined) return; // never spoke, so never a turn
+    recordedTurns += 1;
+    record.turn({
+      seq: recordedTurns,
+      speaker: "agent",
+      startedOffsetMs: current.startedAtMs,
+      endedOffsetMs: sinceStart(),
+      bargedInAtMs,
+    });
+    current.startedAtMs = undefined; // recorded once, whichever exit runs first
+  };
+
   const finishIfComplete = (current: AgentTurn): void => {
     if (turn?.seq !== current.seq) return;
     if (!current.llmDone) return;
@@ -658,6 +688,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   };
 
   const enqueue = (current: AgentTurn, sentence: string): void => {
+    current.startedAtMs ??= sinceStart();
     // The window holds what TTS was actually given, so the comparison is against the
     // words that were spoken — including the "An-Sah" respelling, which is what a
     // transcriber will hear.
@@ -682,6 +713,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     stream.clear();
 
     commitHeard(current);
+    recordAgentTurn(current, Math.round(durationMs(current.bytesHeard, stream.format)));
     record.event("barge-in", { reason, seq: current.seq });
     log.info("barge-in", {
       reason,
@@ -705,6 +737,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   });
 
   deps.listen.turns.onSpeechStart((event) => {
+    callerTurnStartedMs ??= event.offsetMs;
     const current = turn;
     if (current !== null && current.sentenceAudioAt !== null) {
       const speakingFor = Date.now() - current.sentenceAudioAt;
@@ -1171,6 +1204,18 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     log.info("caller said", { text, offsetMs: transcript.offsetMs });
     // The raw text, never the repaired one: this is the eval corpus ground truth (R9.2.3).
     record.event("caller said", { text, corrections: heard.corrections }, transcript.offsetMs);
+    recordedTurns += 1;
+    record.turn({
+      seq: recordedTurns,
+      speaker: "caller",
+      // The detector's speech-start when we have it; the transcript's own offset when we
+      // do not, which is late but never wrong in the other direction.
+      startedOffsetMs: callerTurnStartedMs ?? transcript.offsetMs,
+      endedOffsetMs: transcript.offsetMs,
+      bargedInAtMs: null,
+    });
+    callerTurnStartedMs = null;
+
     record.transcript({
       text,
       confidence: transcript.confidence,

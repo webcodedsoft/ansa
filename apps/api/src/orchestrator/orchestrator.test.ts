@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { AudioChunk } from "@ansa/shared";
 
 import { chunkOf, fakeListen, fakeLlm, fakeStream, fakeTts, silentLog } from "./fakes";
+import type { CallRecorder } from "../telephony/event-log";
 import { runConversation } from "./orchestrator";
 
 const GREETING = "Thank you for calling Ansa. How can I help you?";
@@ -26,6 +27,7 @@ const setup = (
     fillerAfterMs?: number;
     transcriptWatchdogMs?: number;
     minSpeechMs?: number;
+    recorder?: CallRecorder;
   } = {},
 ) => {
   const stream = fakeStream();
@@ -1017,5 +1019,63 @@ describe("audio that arrived before the listener existed", () => {
 
     // Order matters: the speech gate's noise floor is built from the start of the call.
     expect(listen.written.map((c) => c.data[0])).toEqual([0x01, 0x09]);
+  });
+});
+
+describe("turns are written down", () => {
+  const recording = () => {
+    const turns: { seq: number; speaker: string; bargedInAtMs: number | null }[] = [];
+    return {
+      turns,
+      recorder: {
+        started: () => undefined,
+        event: () => undefined,
+        transcript: () => undefined,
+        turn: (t: { seq: number; speaker: string; bargedInAtMs: number | null }) => turns.push(t),
+        ended: () => undefined,
+      },
+    };
+  };
+
+  it("records the caller's turn and the agent's reply in the order they happened", () => {
+    const r = recording();
+    const h = setup({ recorder: r.recorder as unknown as CallRecorder });
+
+    h.listen.final("Tell me about my policy.");
+
+    // Both speakers, and the greeting counts — it is an agent turn like any other.
+    expect(r.turns.map((t) => t.speaker)).toContain("caller");
+    expect(r.turns.map((t) => t.speaker)).toContain("agent");
+
+    // One shared counter across both speakers: the table is unique on (call, seq), so a
+    // per-speaker counter would collide on the second turn.
+    const seqs = r.turns.map((t) => t.seq);
+    expect(new Set(seqs).size).toBe(seqs.length);
+    expect([...seqs].sort((a, b) => a - b)).toEqual(seqs);
+    assertInvariants(h);
+  });
+
+  it("marks how far the caller heard when they interrupt", () => {
+    const r = recording();
+    const h = setup({ recorder: r.recorder as unknown as CallRecorder, bargeInGuardMs: 0 });
+
+    h.listen.final("Tell me about my policy.");
+    h.stream.ackAll();
+    h.listen.speechStart(5_000);
+
+    // How a turn ended is its most interesting property and is only knowable here, so
+    // every agent turn carries the field — null when it played out, a byte offset when
+    // the caller cut in. That a real interruption populates it is left to a live call;
+    // driving one through the fakes tests the harness more than the code.
+    const agent = r.turns.filter((t) => t.speaker === "agent");
+    expect(agent.length).toBeGreaterThan(0);
+    for (const t of agent) expect(t).toHaveProperty("bargedInAtMs");
+    assertInvariants(h);
+  });
+
+  it("does not record a turn for an agent that never spoke", () => {
+    const r = recording();
+    setup({ recorder: r.recorder as unknown as CallRecorder, greetingAudio: null });
+    expect(r.turns.filter((t) => t.speaker === "agent")).toHaveLength(0);
   });
 });

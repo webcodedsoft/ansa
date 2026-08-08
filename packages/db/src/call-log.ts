@@ -182,12 +182,16 @@ export const recordTurns = async (
   await withTenant(dataSource, tenantId, async (scope) => {
     const values: unknown[] = [];
     const tuples = turns.map((t, i) => {
-      const b = i * 6;
-      values.push(tenantId, callRowId, t.seq, t.speaker, t.startedOffsetMs, t.endedOffsetMs);
-      return `($${b + 1}, $${b + 2}, $${b + 3}, $${b + 4}, $${b + 5}, $${b + 6})`;
+      const b = i * 7;
+      values.push(
+        tenantId, callRowId, t.seq, t.speaker,
+        t.startedOffsetMs, t.endedOffsetMs, t.bargedInAtMs,
+      );
+      return `($${b + 1}, $${b + 2}, $${b + 3}, $${b + 4}, $${b + 5}, $${b + 6}, $${b + 7})`;
     });
     await scope.query(
-      `insert into turns (tenant_id, call_id, seq, speaker, started_offset_ms, ended_offset_ms)
+      `insert into turns
+         (tenant_id, call_id, seq, speaker, started_offset_ms, ended_offset_ms, barged_in_at_ms)
        values ${tuples.join(", ")}
        on conflict do nothing`,
       values,

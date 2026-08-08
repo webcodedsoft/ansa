@@ -3,8 +3,10 @@ import {
   recordCallEvents,
   recordCallStarted,
   recordTranscripts,
+  recordTurns,
   type Db,
   type RecordedTranscript,
+  type RecordedTurn,
   type StartedCall,
 } from "@ansa/db";
 import type { Logger } from "@ansa/shared";
@@ -36,6 +38,14 @@ export interface CallRecorder {
    * caller's mishearing into a keyterm and a test case for every tenant.
    */
   transcript(transcript: RecordedTranscript): void;
+  /**
+   * One side's turn, once it is over.
+   *
+   * Recorded at the end rather than the start, because a turn's most interesting property
+   * is how it finished — played out, or cut off mid-sentence by the caller — and neither
+   * is known when it begins.
+   */
+  turn(turn: RecordedTurn): void;
   ended(reason: string, carrierStatus?: string | null, durationSeconds?: number | null): void;
 }
 
@@ -44,6 +54,7 @@ export const nullRecorder: CallRecorder = {
   started: () => undefined,
   event: () => undefined,
   transcript: () => undefined,
+  turn: () => undefined,
   ended: () => undefined,
 };
 
@@ -65,6 +76,7 @@ export const createCallRecorder = (deps: {
   // would lose the greeting and the first caller turn every time.
   let buffer: { kind: string; offsetMs?: number | null; detail?: Readonly<Record<string, unknown>> }[] = [];
   let transcripts: RecordedTranscript[] = [];
+  let turns: RecordedTurn[] = [];
   let timer: NodeJS.Timeout | null = null;
   let closed = false;
 
@@ -77,6 +89,17 @@ export const createCallRecorder = (deps: {
       void recordTranscripts(dataSource, tenantId, callRowId, words).catch((error: unknown) => {
         log.error("could not write transcripts", {
           dropped: words.length,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
+
+    if (turns.length > 0) {
+      const batch = turns;
+      turns = [];
+      void recordTurns(dataSource, tenantId, callRowId, batch).catch((error: unknown) => {
+        log.error("could not write turns", {
+          dropped: batch.length,
           error: error instanceof Error ? error.message : String(error),
         });
       });
@@ -133,6 +156,14 @@ export const createCallRecorder = (deps: {
       // Same bound as events: a call whose row never appeared must not accumulate.
       if (transcripts.length > FLUSH_AT * 4) transcripts = transcripts.slice(-FLUSH_AT * 4);
       if (transcripts.length >= FLUSH_AT) flush();
+      else arm();
+    },
+
+    turn: (t) => {
+      if (closed) return;
+      turns.push(t);
+      if (turns.length > FLUSH_AT * 4) turns = turns.slice(-FLUSH_AT * 4);
+      if (turns.length >= FLUSH_AT) flush();
       else arm();
     },
 
