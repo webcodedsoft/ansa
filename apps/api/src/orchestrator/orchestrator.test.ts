@@ -8,6 +8,8 @@ import { asCallId, asTenantId } from "@ansa/shared";
 import { chunkOf, fakeListen, fakeLlm, fakeStream, fakeTts, silentLog } from "./fakes";
 import { createCallFacts, type CallFactsStore } from "../conversation/call-facts";
 import { DEFAULT_SYSTEM_PROMPT } from "../prompts/compose";
+import type { Handoff } from "../handoff/handoff";
+import type { EscalationTrigger } from "../handoff/triggers";
 import type { CallRecorder } from "../telephony/event-log";
 import { runConversation } from "./orchestrator";
 
@@ -34,6 +36,7 @@ const setup = (
     recorder?: CallRecorder;
     facts?: CallFactsStore;
     systemPrompt?: string;
+    makeHandoff?: (say: (text: string) => Promise<void>) => Handoff;
   } = {},
 ) => {
   const stream = fakeStream();
@@ -885,6 +888,129 @@ describe("readback in the turn loop (R4.3)", () => {
     // A caller fidgeting with their handset must not become a reference.
     expect(h.tts.texts().length).toBe(before);
     assertInvariants(h);
+  });
+});
+
+describe("handing the call to a person (R6.4)", () => {
+  /** Records what it was asked to do and keeps hold of `say`, which is the seam. */
+  const spyHandoff = () => {
+    const triggers: EscalationTrigger[] = [];
+    let say: ((text: string) => Promise<void>) | null = null;
+    const make = (s: (text: string) => Promise<void>): Handoff => {
+      say = s;
+      return {
+        escalate: async (trigger: EscalationTrigger): Promise<void> => {
+          triggers.push(trigger);
+        },
+      };
+    };
+    return { make, triggers, sayWith: (): ((text: string) => Promise<void>) => {
+      if (say === null) throw new Error("the orchestrator never built the handoff");
+      return say;
+    } };
+  };
+
+  /**
+   * The ordering only a phone call punishes. `transferToNumber` replaces the carrier
+   * instruction and tears down the media stream; audio still queued at the carrier —
+   * ~1.8s on this project's own calls — goes with it. So the departure line has to be
+   * HEARD, and `say` resolving early is the bug that would strand a caller mid-sentence.
+   */
+  it("resolves the departure line only once the caller has heard it", async () => {
+    const spy = spyHandoff();
+    const h = setup({ makeHandoff: spy.make });
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    let heard = false;
+    const spoken = spy.sayWith()("Let me put you through to someone now.").then(() => {
+      heard = true;
+    });
+
+    // Synthesised and sent, but the carrier has not acknowledged a byte of it.
+    h.tts.last().audio(1600);
+    h.tts.last().done();
+    await Promise.resolve();
+    expect(heard).toBe(false);
+
+    h.stream.ackAll();
+    await spoken;
+    expect(heard).toBe(true);
+  });
+
+  it("transfers a caller who asks for a person, without a model turn", () => {
+    const spy = spyHandoff();
+    const h = setup({ makeHandoff: spy.make });
+    const before = h.llm.completions.length;
+
+    h.listen.final("Can I speak to a person please?");
+
+    expect(spy.triggers.map((t) => t.kind)).toEqual(["asked-for-a-person"]);
+    // They are leaving. Answering the question they did not ask wastes their time.
+    expect(h.llm.completions.length).toBe(before);
+  });
+
+  it("does not transfer on our own audio saying it", () => {
+    const spy = spyHandoff();
+    const h = setup({ bargeInGuardMs: 10_000, makeHandoff: spy.make });
+    h.tts.last().audio(800);
+
+    h.listen.speechStart(4200);
+    h.listen.final("Let me put you through to someone now.", 4200);
+
+    expect(spy.triggers).toEqual([]);
+  });
+
+  it("hands over when capture gives up, and says one departure line rather than two", () => {
+    const spy = spyHandoff();
+    const h = setup({ makeHandoff: spy.make });
+
+    h.listen.final("My name is Adebayo.");
+    h.listen.final("No.");
+    h.listen.final("No.");
+    const before = h.tts.texts().length;
+    h.listen.final("No.");
+
+    expect(spy.triggers.map((t) => t.kind)).toEqual(["capture-failed"]);
+    // capture.ts's own "Let me get a colleague for you" is suppressed: the handoff speaks
+    // its own line, and the caller must not hear both.
+    expect(h.tts.texts().slice(before)).toEqual([]);
+  });
+
+  it("counts three failed turns as one broken call, and only three", () => {
+    const spy = spyHandoff();
+    const h = setup({ makeHandoff: spy.make });
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    for (let i = 0; i < 2; i += 1) {
+      h.listen.final("Sorry, what did you say?");
+      h.llm.completions.at(-1)?.finish();
+      h.stream.ackAll();
+    }
+    expect(spy.triggers).toEqual([]);
+
+    h.listen.final("Sorry, what did you say?");
+    expect(spy.triggers.map((t) => t.kind)).toEqual(["repeated-misunderstanding"]);
+  });
+
+  it("does not transfer a call that keeps working between failures", () => {
+    const spy = spyHandoff();
+    const h = setup({ makeHandoff: spy.make });
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    for (let i = 0; i < 4; i += 1) {
+      h.listen.final("Sorry, what did you say?");
+      // A turn that produced real speech resets the counter — R6.4 is three failures on
+      // one intent, not three scattered across a call that was otherwise fine.
+      h.listen.final("What are your opening hours?");
+      h.llm.last().emit("We are open from eight until five.");
+      h.llm.last().finish();
+      h.stream.ackAll();
+    }
+
+    expect(spy.triggers).toEqual([]);
   });
 });
 

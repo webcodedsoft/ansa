@@ -17,6 +17,8 @@ import {
 } from "./capture";
 import type { CallFactsStore, IdentifierField } from "../conversation/call-facts";
 import { renderFacts } from "../conversation/facts-prompt";
+import type { Handoff } from "../handoff/handoff";
+import { createEscalationWatch, type EscalationTrigger } from "../handoff/triggers";
 import { endsMidThought, isBareGreeting } from "./completeness";
 import { createSpeechGate } from "./speech-gate";
 import { nullRecorder, type CallRecorder } from "../telephony/event-log";
@@ -130,6 +132,17 @@ export interface OrchestratorDeps {
    * skipped.
    */
   readonly facts?: CallFactsStore;
+  /**
+   * Builds the thing that hands the call to a person. Absent means escalation only logs,
+   * as it did before there was anywhere to transfer to.
+   *
+   * A factory rather than a built `Handoff` because of the one ordering constraint that
+   * only a phone call punishes: the departure line must be HEARD before the transfer
+   * replaces the carrier instruction and tears down the media stream. Only the
+   * orchestrator knows when a line has been heard, so it supplies `say` and the gateway
+   * supplies everything else.
+   */
+  readonly makeHandoff?: (say: (text: string) => Promise<void>) => Handoff;
 }
 
 /**
@@ -636,6 +649,16 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   /** Retry counter per sentence, so a transient TTS failure costs one repeat, not the turn. */
   const attempts = new Map<string, number>();
 
+  /**
+   * Waiters for turns whose caller has to have HEARD them, keyed by turn sequence.
+   *
+   * Only the handoff needs this so far, and it needs it badly: the transfer replaces the
+   * call's carrier instruction, which tears down the media stream. Audio still queued at
+   * the carrier — measured at ~1.8s on this project's own calls — is discarded with it, so
+   * "let me put you through" has to be heard, not merely sent.
+   */
+  const playedOut = new Map<number, () => void>();
+
   const speakNext = (current: AgentTurn): void => {
     // One synthesis at a time. Starting the next sentence before the previous finishes
     // interleaves two audio streams at the carrier, which is heard as garbled speech.
@@ -763,6 +786,8 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       seq: current.seq,
       ms: Math.round(durationMs(current.bytesHeard, stream.format)),
     });
+    playedOut.get(current.seq)?.();
+    playedOut.delete(current.seq);
     turn = null;
     callState.apply({ kind: "agent.turn.completed", seq: current.seq });
   };
@@ -954,6 +979,38 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     enqueue(direct, text);
   };
 
+  /**
+   * Says one line and resolves once the caller has heard it.
+   *
+   * Resolves early — without waiting — when the turn was superseded or never opened, since
+   * nothing more is coming for it. `createHandoff` guards the other side with its own
+   * timeout, so a mark that never arrives costs a warning rather than a stranded caller;
+   * that timeout is the backstop and this is the mechanism.
+   */
+  const sayAndWait = (text: string, reason: string): Promise<void> =>
+    new Promise((resolve) => {
+      sayNow(text, reason);
+      const spoken = turn;
+      if (spoken === null) {
+        resolve();
+        return;
+      }
+      playedOut.set(spoken.seq, resolve);
+    });
+
+  /**
+   * The one path from "the agent has given up" to "a person is on the line". Absent
+   * handoff means the triggers still count and still log, and nothing transfers — which is
+   * exactly what this call did before.
+   */
+  const handoff = deps.makeHandoff?.((text) => sayAndWait(text, "handoff")) ?? null;
+  const watch = createEscalationWatch();
+  const escalate = (trigger: EscalationTrigger | null): boolean => {
+    if (trigger === null) return false;
+    void handoff?.escalate(trigger);
+    return handoff !== null;
+  };
+
   const sayRecovery = (reason: string): void => {
     if (turn !== null) return;
     turnSeq += 1;
@@ -973,6 +1030,10 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     callState.apply({ kind: "agent.turn.started", seq: recovery.seq, reason: "recovery" });
     log.warn("speaking a recovery line", { reason, seq: recovery.seq });
     enqueue(recovery, RECOVERY_LINE);
+    // A turn that went nowhere. Three of these and the caller gets a person (R6.4) — the
+    // counter resets on any turn that produced real speech, so three scattered failures
+    // across an otherwise fine call do not transfer someone who was doing fine.
+    escalate(watch.misunderstood(reason));
   };
 
   /**
@@ -1138,6 +1199,9 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       ) {
         enqueue(current, tail);
       }
+      // A turn that produced real speech is a turn that worked. R6.4 is three failures on
+      // the same intent, not three across a six-minute call that was otherwise fine.
+      if (full.trim().length > 0) watch.understood();
       lastUtterance = full.trim().length > 0 ? full.trim() : lastUtterance;
       // The text, not just its length. Judging whether a call felt human is impossible
       // from a character count, and Slice 4a's review loop needs the words anyway.
@@ -1262,10 +1326,13 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     conversation.addCaller(forModel);
 
     if (capture.kind === "escalate") {
-      // Nothing to transfer to yet — Slice 6 owns the warm handoff. Saying so and
-      // logging it beats pretending the transfer happened.
       log.error("capture failed, caller needs a human", { text });
       record.event("escalated to a human", { text });
+      // Returning here matters: capture produces "Let me get a colleague for you" as its
+      // own `say`, and the handoff speaks its own departure line. Without the early return
+      // the caller hears both. With no handoff configured, capture's line is still the
+      // right thing to say and is still said.
+      if (escalate(watch.captureFailed())) return true;
     }
 
     if (capture.kind === "confirming") {
@@ -1289,6 +1356,10 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
           source: "stt",
           atMs: Date.now(),
         });
+      }
+      // A third go at the same thing is the point where asking again stops being useful.
+      if (capture.attempt >= 3) {
+        escalate(watch.misunderstood(`third readback of the ${capture.subject}`));
       }
     }
     if (result.say !== null) sayNow(result.say, `readback:${capture.kind}`);
@@ -1426,6 +1497,9 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       log.info("caller asked us to repeat", { text });
       conversation.addCaller(text);
       callState.apply({ kind: "caller.turn.dispatched" });
+      // The caller not hearing us is the same broken call as us not hearing them, counted
+      // in the same place.
+      escalate(watch.misunderstood("caller asked us to repeat"));
       repeatLast();
       return;
     }
@@ -1465,6 +1539,18 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     const whole = carried === null ? text : `${carried.text} ${text}`;
     const wholeForModel =
       carried === null ? heard.forModel : `${carried.forModel} ${heard.forModel}`;
+
+    // They asked to leave. Placed after the echo, backchannel, particle and repair
+    // filters, so "put me through" echoed back from our own audio cannot transfer a call —
+    // and before both the continuation hold and capture, because a caller mid-readback who
+    // says "just give me a person" is answered today with another readback, which is the
+    // exact loop R6.4 forbids.
+    if (escalate(watch.callerSaid(whole))) {
+      // The ask belongs in the record; no model turn follows, because they are leaving.
+      conversation.addCaller(whole);
+      callState.apply({ kind: "caller.turn.dispatched" });
+      return;
+    }
 
     // Never hold a turn back while a number is being confirmed. "No" and "yes" are
     // complete answers, and a caller correcting a digit must not be made to wait.

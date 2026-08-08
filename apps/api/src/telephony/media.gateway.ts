@@ -23,6 +23,11 @@ import { ACKNOWLEDGEMENTS, ALL_FILLERS, PROGRESS, STILL_WORKING } from "./filler
 import { forSpeech, GREETING_TEXT } from "./greeting";
 import { createAudioCache } from "./prerender";
 import { composeListen } from "./composite-listen";
+import { createHandoff } from "../handoff/handoff";
+import { withHandoffJournal } from "../handoff/journal";
+import type { HandoffDestination } from "../handoff/destination";
+import { HANDOFF_DESTINATION, WHISPER_REGISTRY } from "../handoff/tokens";
+import type { WhisperRegistry } from "../handoff/whisper";
 import { createCallFacts } from "../conversation/call-facts";
 import { createCallRecorder } from "./event-log";
 import type { Db } from "@ansa/db";
@@ -67,6 +72,8 @@ export class MediaGateway implements OnApplicationShutdown {
     @Inject(LOGGER) private readonly log: Logger,
     @Inject(TENANT_REGISTRY) private readonly tenants: TenantRegistry,
     @Inject(DATA_SOURCE) private readonly dataSource: Db | null,
+    @Inject(HANDOFF_DESTINATION) private readonly destination: HandoffDestination | null,
+    @Inject(WHISPER_REGISTRY) private readonly whisper: WhisperRegistry,
   ) {}
 
   /**
@@ -346,6 +353,10 @@ export class MediaGateway implements OnApplicationShutdown {
     // Created here rather than at stream start: the tenant is what scopes every row,
     // and until the lookup above returned there was nothing to scope them to.
     const recorder = createCallRecorder({ dataSource: this.dataSource, log });
+    // Tees the same events on their way to call_events. The recorder batches, so the last
+    // few seconds of a call — the ones that caused the escalation — are not in the table
+    // yet when the transfer is dialled.
+    const journal = withHandoffJournal(recorder);
     if (tenant?.tenantId != null) {
       recorder.started({
         tenantId: tenant.tenantId,
@@ -387,10 +398,32 @@ export class MediaGateway implements OnApplicationShutdown {
     runConversation(stream, {
       listen,
       facts,
+      // Built per call, and given `say` by the orchestrator: the departure line has to be
+      // heard before `transferToNumber` replaces the carrier instruction and takes the
+      // media stream with it.
+      makeHandoff: (say) =>
+        createHandoff({
+          telephony: this.telephony,
+          callId: asCallId(stream.callId),
+          tenantId: tenant?.tenantId ?? null,
+          callerNumber: stream.parameters[CALLER_PARAM] ?? null,
+          destination: this.destination,
+          events: journal.events,
+          record: journal.recorder,
+          log,
+          say,
+          hangUp: () => {
+            stream.hangUp();
+          },
+          whisper: this.whisper,
+          whisperBaseUrl: this.config.publicBaseUrl,
+        }),
       // Drained last, immediately before the conversation starts, so no frame can slip
       // between the buffer closing and the orchestrator subscribing.
       initialAudio: drainEarlyAudio(),
-      recorder,
+      // The teed recorder, not the bare one: everything the orchestrator records has to
+      // reach both the table and the summary the person answering will hear.
+      recorder: journal.recorder,
       listenProvider: this.config.listenProvider,
       transcriptionConfig:
         this.config.listenProvider === "deepgram"
