@@ -11,8 +11,20 @@ loadDotEnv();
 const url = process.env["DIRECT_URL"];
 if (url === undefined) throw new Error("DIRECT_URL must be set: this test needs a database");
 
-const A = asTenantId("33333333-3333-4333-8333-333333333333");
-const B = asTenantId("44444444-4444-4444-8444-444444444444");
+/**
+ * A tenant id no other integration test uses.
+ *
+ * These files share one database and run in the same pass, and this test asserts an exact
+ * row list: "tenant A sees precisely the calls tenant A created". It shared
+ * `33333333-…`/`44444444-…` with `review.test.ts`, so on a full-suite run it saw that
+ * file's rows and read its own correct isolation as a leak. RLS was never wrong — the
+ * fixture was. One id range per file is what keeps the assertion meaningful.
+ *
+ * In use elsewhere: `11111111-…`/`22222222-…` in `rls.test.ts`, `33333333-…`/`44444444-…`
+ * in `review.test.ts`.
+ */
+const A = asTenantId("55555555-5555-4555-8555-555555555555");
+const B = asTenantId("66666666-6666-4666-8666-666666666666");
 
 let ds: DataSource;
 
