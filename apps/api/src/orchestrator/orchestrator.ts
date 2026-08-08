@@ -9,6 +9,7 @@ import { createFillerPicker } from "../telephony/filler";
 import { classify } from "./action";
 import { advance, idle, nameFrom, worthConfirming, type CaptureState } from "./capture";
 import { endsMidThought } from "./completeness";
+import { createSpeechGate } from "./speech-gate";
 import { parseSpokenDigits } from "@ansa/normalizer";
 import { createConversation } from "./conversation";
 import { interpret, normalise } from "./hearing";
@@ -75,6 +76,12 @@ export interface OrchestratorDeps {
   readonly fillerAfterMs?: number;
   /** Speak a recovery line if the caller finishes and no transcript arrives in time. */
   readonly transcriptWatchdogMs?: number;
+  /**
+   * Least speech that can produce a real transcript. Zero disables the check, which is
+   * what most orchestrator tests want: they drive transcripts directly to exercise turn
+   * logic and never fan in audio at all.
+   */
+  readonly minSpeechMs?: number;
 }
 
 /** A sentence that has been handed to TTS, and where its audio sits in the turn. */
@@ -157,6 +164,29 @@ const RECOVERY_LINE = "Sorry, I did not catch that. Could you say it again?";
  * seconds, and it only ever applies to a turn that could not be answered sensibly.
  */
 const CONTINUATION_WAIT_MS = 1_100;
+
+/** One carrier frame. */
+const FRAME_MS = 20;
+
+/**
+ * The least speech that can produce a real transcript.
+ *
+ * Every transcriber tried has invented fluent text from silence and line noise, each
+ * with the language pinned to English: Deepgram returned Malayalam and Māori, OpenAI
+ * returned "Ay, mi nombre es Pikachu" and a sentence of Japanese. Three vendors failing
+ * identically is not three vendor bugs — Whisper-family models are trained to emit text,
+ * so given nothing they emit something.
+ *
+ * Filtering on the text cannot work. "Not latin script" caught the Japanese; nothing
+ * catches "Pikachu" or "Biology is that again?", because a hallucination that happens to
+ * be plausible English is indistinguishable downstream. The only durable signal is
+ * whether the caller actually made a sound.
+ *
+ * 160ms is deliberately below the shortest real turn that matters — a bare "no" runs
+ * about 300ms — because the costs are not symmetric. Dropping a real transcript costs
+ * one "sorry, I didn't catch that". Accepting an invented one derails the call.
+ */
+const MIN_SPEECH_MS = 160;
 
 const TURN_WATCHDOG_MS = 4_000;
 
@@ -408,7 +438,21 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   };
 
   // ---- audio in: the single fan-out point ---------------------------------
+  /**
+   * Measures how much real speech the caller has produced, so a transcript that came
+   * from silence can be recognised as invented.
+   *
+   * The audio itself is forwarded UNCHANGED. It is tempting to forward only the frames
+   * the gate opens on, and for the transcriber alone that would be right — but with a
+   * provider that serves both listen interfaces from one connection, withholding silence
+   * starves the turn detector of the very thing it listens for, and end-of-turn never
+   * fires. So the gate is a measurement here, not a valve.
+   */
+  const speechGate = createSpeechGate();
+  let speechMsSinceTranscript = 0;
+
   stream.onAudio((chunk) => {
+    if (speechGate.push(chunk.data).length > 0) speechMsSinceTranscript += FRAME_MS;
     deps.listen.write(chunk);
   });
 
@@ -1004,6 +1048,17 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   });
 
   deps.listen.transcripts.onFinal((transcript) => {
+    const speechMs = speechMsSinceTranscript;
+    speechMsSinceTranscript = 0;
+
+    if (speechMs < (deps.minSpeechMs ?? MIN_SPEECH_MS)) {
+      log.warn("discarded a transcript with no speech behind it", {
+        text: transcript.text,
+        speechMs,
+      });
+      return;
+    }
+
     const heard = interpret(transcript.text);
     if (heard.kind === "noise") {
       // Conservative on purpose: letting noise through wastes one turn, but ignoring a

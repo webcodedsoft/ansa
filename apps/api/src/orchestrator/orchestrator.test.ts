@@ -25,6 +25,7 @@ const setup = (
     fillerTiers?: readonly (readonly string[])[];
     fillerAfterMs?: number;
     transcriptWatchdogMs?: number;
+    minSpeechMs?: number;
   } = {},
 ) => {
   const stream = fakeStream();
@@ -40,6 +41,10 @@ const setup = (
     log: silentLog,
     greeting: GREETING,
     forSpeech: (t) => t.replace(/\bAnsa\b/g, "An-Sah"),
+    // These tests drive transcripts directly to exercise turn logic and never fan in
+    // audio, so the no-speech filter would discard every one of them. The filter has its
+    // own tests, which do fan in audio.
+    minSpeechMs: 0,
     ...opts,
   });
 
@@ -892,6 +897,60 @@ describe("the filler must not interrupt a deliberate pause", () => {
     await new Promise((r) => setTimeout(r, 300));
 
     expect(h.stream.sent.length, "audio played during the wait").toBe(before);
+    assertInvariants(h);
+  });
+});
+
+describe("transcripts invented from silence", () => {
+  const withFilter = () => setup({ minSpeechMs: 160 });
+  const loudFrame = () =>
+    Buffer.from(Array.from({ length: 160 }, (_u, j) => (j % 2 === 0 ? 0x00 : 0x80)));
+
+  it("discards a transcript when the caller made no sound", () => {
+    const h = withFilter();
+    const before = h.llm.completions.length;
+
+    // Only silence has been fanned in. Anything the transcriber returns here it made up:
+    // this is literally the "Ay, mi nombre es Pikachu" case.
+    for (let i = 0; i < 100; i += 1) {
+      h.stream.audioIn({ data: Buffer.alloc(160, 0xff), offsetMs: i * 20 });
+    }
+    h.listen.final("Ay, mi nombre es Pikachu.");
+
+    expect(h.llm.completions.length).toBe(before);
+    assertInvariants(h);
+  });
+
+  it("keeps a transcript the caller actually spoke", () => {
+    const h = withFilter();
+
+    for (let i = 0; i < 40; i += 1) h.stream.audioIn({ data: loudFrame(), offsetMs: i * 20 });
+    h.listen.final("I want to renew my policy.");
+
+    expect(h.llm.completions.length).toBeGreaterThan(0);
+    assertInvariants(h);
+  });
+
+  it("keeps a turn as short as a bare no", () => {
+    const h = withFilter();
+
+    // ~300ms of speech. The threshold must sit below this or corrections are lost.
+    for (let i = 0; i < 15; i += 1) h.stream.audioIn({ data: loudFrame(), offsetMs: i * 20 });
+    h.listen.final("No.");
+
+    expect(h.llm.completions.length).toBeGreaterThan(0);
+    assertInvariants(h);
+  });
+
+  it("still forwards every byte to the listener", () => {
+    const h = withFilter();
+    for (let i = 0; i < 50; i += 1) {
+      h.stream.audioIn({ data: Buffer.alloc(160, 0xff), offsetMs: i * 20 });
+    }
+
+    // Withholding silence would starve a shared turn detector of the one thing it
+    // listens for, and end-of-turn would never fire.
+    expect(h.listen.written.length).toBe(50);
     assertInvariants(h);
   });
 });
