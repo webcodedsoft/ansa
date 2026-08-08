@@ -1,6 +1,12 @@
 import { Buffer } from "node:buffer";
 
-import type { CompletionRequest, CompletionStream, LlmProvider, Message } from "@ansa/llm";
+import type {
+  CompletionRequest,
+  CompletionStream,
+  LlmProvider,
+  Message,
+  ToolInvocation,
+} from "@ansa/llm";
 import type { OpenAiListenSession } from "@ansa/openai-listen";
 import { TELEPHONY_AUDIO, asCallId, type AudioChunk, type Logger } from "@ansa/shared";
 import type { CallMediaStream } from "@ansa/telephony";
@@ -162,6 +168,8 @@ export interface FakeCompletion {
   cancelled: boolean;
   emit(token: string): void;
   finish(): void;
+  /** The model asking for tools instead of speaking. Mutually exclusive with finish(). */
+  callTools(calls: readonly ToolInvocation[]): void;
   fail(message: string): void;
 }
 
@@ -181,6 +189,7 @@ export const fakeLlm = (): FakeLlm => {
     complete: (request) => {
       const deltas: ((t: string) => void)[] = [];
       const dones: ((f: string) => void)[] = [];
+      const toolCalls: ((c: readonly ToolInvocation[]) => void)[] = [];
       const errors: ((e: Error) => void)[] = [];
       let full = "";
       const c: FakeCompletion = {
@@ -195,6 +204,10 @@ export const fakeLlm = (): FakeLlm => {
           if (c.cancelled) return;
           dones.forEach((l) => l(full));
         },
+        callTools: (calls) => {
+          if (c.cancelled) return;
+          toolCalls.forEach((l) => l(calls));
+        },
         fail: (m) => {
           if (c.cancelled) return;
           errors.forEach((l) => l(new Error(m)));
@@ -204,6 +217,7 @@ export const fakeLlm = (): FakeLlm => {
       const stream: CompletionStream = {
         onDelta: (l) => deltas.push(l),
         onDone: (l) => dones.push(l),
+        onToolCall: (l) => toolCalls.push(l),
         onError: (l) => errors.push(l),
         cancel: () => {
           c.cancelled = true;

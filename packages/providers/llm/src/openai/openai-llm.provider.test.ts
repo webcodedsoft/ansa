@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createOpenAiLlm, parseSseLine } from "./openai-llm.provider";
+import { createOpenAiLlm, parseSseDelta, parseSseLine } from "./openai-llm.provider";
 
 const sse = (chunks: readonly string[], holdOpen = false): Response =>
   new Response(
@@ -34,7 +34,145 @@ describe("parseSseLine", () => {
   });
 });
 
+/** One streamed tool-call fragment, in the vendor's own shape. */
+const toolDelta = (
+  index: number,
+  fn: { name?: string; arguments?: string },
+): string =>
+  `data: ${JSON.stringify({
+    choices: [{ delta: { tool_calls: [{ index, type: "function", function: fn }] } }],
+  })}\n`;
+
+describe("parseSseDelta", () => {
+  it("reads a tool-call fragment alongside the content it has none of", () => {
+    const frame = parseSseDelta(toolDelta(0, { name: "policy_lookup", arguments: '{"ref' }).trim());
+    expect(frame?.content).toBeNull();
+    expect(frame?.toolCalls).toEqual([
+      { index: 0, name: "policy_lookup", argsFragment: '{"ref' },
+    ]);
+  });
+
+  it("carries the continuation fragments, which have no name", () => {
+    const frame = parseSseDelta(toolDelta(0, { arguments: '":"AB1"}' }).trim());
+    expect(frame?.toolCalls).toEqual([{ index: 0, name: null, argsFragment: '":"AB1"}' }]);
+  });
+});
+
 describe("createOpenAiLlm", () => {
+  it("offers nothing when no tool is registered, exactly as before tools existed", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(sse([delta("Hello.")]));
+    const llm = createOpenAiLlm({ apiKey: "k", fetchImpl: fetchImpl as typeof fetch });
+
+    llm.complete({ system: "s", messages: [], tools: [] }).onDone(() => undefined);
+    await new Promise((r) => setTimeout(r, 20));
+
+    const body = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body)) as Record<string, unknown>;
+    expect(body).not.toHaveProperty("tools");
+  });
+
+  it("passes a registered tool through to the vendor unchanged", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(sse([delta("Hello.")]));
+    const llm = createOpenAiLlm({ apiKey: "k", fetchImpl: fetchImpl as typeof fetch });
+
+    const parameters = { type: "object", properties: { reference: { type: "string" } } };
+    llm
+      .complete({
+        system: "s",
+        messages: [],
+        tools: [{ name: "policy_lookup", description: "Look up a policy", parameters }],
+      })
+      .onDone(() => undefined);
+    await new Promise((r) => setTimeout(r, 20));
+
+    const body = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body)) as {
+      tools?: readonly { type: string; function: Record<string, unknown> }[];
+    };
+    // The schema is opaque here: passed through, never interpreted.
+    expect(body.tools).toEqual([
+      {
+        type: "function",
+        function: { name: "policy_lookup", description: "Look up a policy", parameters },
+      },
+    ]);
+  });
+
+  it("reassembles a tool call streamed in fragments", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      sse([
+        toolDelta(0, { name: "policy_lookup", arguments: "" }),
+        toolDelta(0, { arguments: '{"refe' }),
+        toolDelta(0, { arguments: 'rence":"AB1234"}' }),
+      ]),
+    );
+    const llm = createOpenAiLlm({ apiKey: "k", fetchImpl: fetchImpl as typeof fetch });
+
+    const stream = llm.complete({ system: "s", messages: [] });
+    let answered = false;
+    stream.onDone(() => {
+      answered = true;
+    });
+    const calls = await new Promise<readonly { name: string; args: unknown }[]>((resolve) =>
+      stream.onToolCall(resolve),
+    );
+
+    expect(calls).toEqual([{ name: "policy_lookup", args: { reference: "AB1234" } }]);
+    // A turn either answers or calls: an onDone here would put an empty assistant turn
+    // into the conversation beside the tool result.
+    expect(answered).toBe(false);
+  });
+
+  it("keeps two concurrent calls apart by their index", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      sse([
+        toolDelta(0, { name: "policy_lookup", arguments: '{"reference"' }),
+        toolDelta(1, { name: "branch_hours", arguments: '{"city"' }),
+        toolDelta(0, { arguments: ':"AB1234"}' }),
+        toolDelta(1, { arguments: ':"Lagos"}' }),
+      ]),
+    );
+    const llm = createOpenAiLlm({ apiKey: "k", fetchImpl: fetchImpl as typeof fetch });
+
+    const stream = llm.complete({ system: "s", messages: [] });
+    const calls = await new Promise<readonly { name: string; args: unknown }[]>((resolve) =>
+      stream.onToolCall(resolve),
+    );
+
+    expect(calls).toEqual([
+      { name: "policy_lookup", args: { reference: "AB1234" } },
+      { name: "branch_hours", args: { city: "Lagos" } },
+    ]);
+  });
+
+  it("degrades into an error rather than running a tool with arguments it cannot read", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      sse([toolDelta(0, { name: "policy_lookup", arguments: "{not json" })]),
+    );
+    const llm = createOpenAiLlm({ apiKey: "k", fetchImpl: fetchImpl as typeof fetch });
+
+    const stream = llm.complete({ system: "s", messages: [] });
+    stream.onToolCall(() => {
+      throw new Error("a malformed call must never be dispatched");
+    });
+    const error = await new Promise<Error>((resolve) => stream.onError(resolve));
+
+    // The orchestrator turns onError into a recovery line, so the caller hears something.
+    expect(error.message).toContain("policy_lookup");
+  });
+
+  it("still answers normally when the model asks for no tool", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(sse([delta("We are open until five.")]));
+    const llm = createOpenAiLlm({ apiKey: "k", fetchImpl: fetchImpl as typeof fetch });
+
+    const stream = llm.complete({
+      system: "s",
+      messages: [],
+      tools: [{ name: "policy_lookup", description: "d", parameters: {} }],
+    });
+    const full = await new Promise<string>((resolve) => stream.onDone(resolve));
+
+    expect(full).toBe("We are open until five.");
+  });
+
   it("streams deltas as they arrive and reports the full text once", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(sse([delta("Your policy "), delta("renews in May.")]));
     const llm = createOpenAiLlm({ apiKey: "k", fetchImpl: fetchImpl as typeof fetch });
