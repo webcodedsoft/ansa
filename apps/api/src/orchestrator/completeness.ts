@@ -48,3 +48,39 @@ export const endsMidThought = (text: string): boolean => {
 
   return CANNOT_END.has(last);
 };
+
+/**
+ * Words that are only ever preamble.
+ *
+ * A caller opening with "hi, good afternoon, my name is Sikiru" says it in one breath, and
+ * a detector listening for silence will cut after "afternoon" — a complete clause, so
+ * endsMidThought sees nothing wrong with it. On a live call the agent then answered that
+ * greeting with a greeting of its own, having already opened the call with one, and talked
+ * straight over the name.
+ *
+ * Nobody rings a company to say good afternoon and stop. The greeting is throat-clearing
+ * before the real turn, and waiting a beat for the rest costs nothing that answering it
+ * twice does not cost more.
+ */
+const PLEASANTRIES = new Set([
+  "hi", "hey", "hello", "yo",
+  "good", "morning", "afternoon", "evening", "day",
+  "how", "are", "you", "doing", "well", "hope",
+  "please", "sorry", "excuse", "me", "thanks", "thank",
+  "ok", "okay", "so", "right", "erm", "um", "uh", "and", "yes", "yeah",
+]);
+
+/**
+ * Whether the turn is nothing but pleasantries.
+ *
+ * `text` must already be normalised by the same `normalise` the rest of the turn loop
+ * uses.
+ */
+export const isBareGreeting = (text: string): boolean => {
+  const words = text.trim().split(/\s+/).filter((w) => w !== "");
+  // A single "hello?" is a caller checking the line is alive and deserves an answer now,
+  // not a pause. Two or more is someone winding up to say something.
+  if (words.length < 2 || words.length > 6) return false;
+  return words.every((w) => PLEASANTRIES.has(w));
+};
+

@@ -8,7 +8,7 @@ import { durationMs, type SynthesisStream, type TtsProvider } from "@ansa/tts";
 import { createFillerPicker } from "../telephony/filler";
 import { classify } from "./action";
 import { advance, idle, nameFrom, worthConfirming, type CaptureState } from "./capture";
-import { endsMidThought } from "./completeness";
+import { endsMidThought, isBareGreeting } from "./completeness";
 import { createSpeechGate } from "./speech-gate";
 import { nullRecorder, type CallRecorder } from "../telephony/event-log";
 import { parseSpokenDigits } from "@ansa/normalizer";
@@ -1250,7 +1250,8 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
 
     // Never hold a turn back while a number is being confirmed. "No" and "yes" are
     // complete answers, and a caller correcting a digit must not be made to wait.
-    if (capture.kind === "idle" && endsMidThought(normalise(whole))) {
+    const flatWhole = normalise(whole);
+    if (capture.kind === "idle" && (endsMidThought(flatWhole) || isBareGreeting(flatWhole))) {
       log.info("caller has not finished, waiting", { text: whole });
       cancelFiller();
       const timer = setTimeout(() => {
