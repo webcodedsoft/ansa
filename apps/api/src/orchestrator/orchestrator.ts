@@ -25,6 +25,7 @@ import { interpret, normalise } from "./hearing";
 import { budgetFor, budgetMs } from "./turn-budget";
 import { createSentenceBuffer } from "./sentences";
 import { SYSTEM_PROMPT } from "./system-prompt";
+import { createCallState } from "./call-state/machine";
 
 /**
  * Everything the orchestrator needs in order to listen, and nothing about who is
@@ -520,6 +521,15 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
    */
   const record = deps.recorder ?? nullRecorder;
 
+  /**
+   * The call's state as one named value. It decides nothing — every branch below still
+   * makes the decision it makes today and reports what it did. See call-state/machine.ts.
+   */
+  const callState = createCallState((transition) => {
+    log.info("call state", { ...transition });
+    record.event("call_state", { ...transition });
+  });
+
   // The transcriber is already connected by the time the orchestrator runs; this marks
   // when audio actually starts reaching it, which is the number that matters.
   let audioSeen = false;
@@ -645,6 +655,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       if (first) {
         first = false;
         current.sentenceAudioAt = Date.now();
+        callState.apply({ kind: "agent.audio.started", seq: current.seq });
         // The agent is speaking for real now; no acknowledgement should land on top.
         cancelFiller();
         cancelWatchdog();
@@ -698,6 +709,12 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         // provider that just failed twice. An open silent line is worse than ending.
         log.error("turn produced no audio, ending the call", { seq: current.seq });
         turn = null;
+        callState.apply({
+          kind: "agent.turn.interrupted",
+          seq: current.seq,
+          reason: "tts failed twice",
+        });
+        callState.apply({ kind: "call.hangup.requested", reason: "tts failed twice" });
         stream.hangUp();
         return;
       }
@@ -739,6 +756,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       ms: Math.round(durationMs(current.bytesHeard, stream.format)),
     });
     turn = null;
+    callState.apply({ kind: "agent.turn.completed", seq: current.seq });
   };
 
   const enqueue = (current: AgentTurn, sentence: string): void => {
@@ -756,6 +774,10 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     const current = turn;
     if (current === null) return;
     turn = null;
+    // After the null guard, deliberately: stopSpeaking is called from paths that find no
+    // turn at all, and reporting above it would invent an interruption on a call where
+    // nothing was playing.
+    callState.apply({ kind: "agent.turn.interrupted", seq: current.seq, reason });
 
     // Order matters: stop producing before discarding, or audio synthesised in the gap
     // lands at the carrier after the clear and plays over the caller.
@@ -805,6 +827,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         // Remember the segment: its transcript is still coming, and answering that is
         // how the agent ends up talking to itself.
         echoSegments.add(event.offsetMs);
+        callState.apply({ kind: "caller.speech.started", handling: "echo" });
         log.debug("ignored speech start inside barge-in guard", { speakingFor });
         return;
       }
@@ -816,14 +839,19 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       log.debug("caller spoke while the agent was still thinking", {
         offsetMs: event.offsetMs,
       });
+      callState.apply({ kind: "caller.speech.started", handling: "over-thinking" });
       return;
     }
 
     log.debug("caller speech start", { offsetMs: event.offsetMs });
+    // Reported whether or not a turn is open: it is the caller taking the floor, and
+    // stopSpeaking reports the interruption separately on the next line.
+    callState.apply({ kind: "caller.speech.started", handling: "barge-in" });
     if (current !== null) stopSpeaking("caller interrupted");
   });
 
   deps.listen.turns.onEndOfTurn(() => {
+    callState.apply({ kind: "caller.turn.ended" });
     mark("stt_final");
     // The number R5.5 is actually written against: caller stops speaking -> agent
     // starts speaking. Everything else is a component of it.
@@ -862,11 +890,15 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     sayRecovery("listen connection lost");
     const farewell = turn;
     if (farewell === null) {
+      callState.apply({ kind: "call.hangup.requested", reason: "listen connection lost" });
       stream.hangUp();
       return;
     }
     stream.onMark(() => {
-      if (farewell.bytesHeard >= farewell.bytesSent && farewell.bytesSent > 0) stream.hangUp();
+      if (farewell.bytesHeard >= farewell.bytesSent && farewell.bytesSent > 0) {
+        callState.apply({ kind: "call.hangup.requested", reason: "listen connection lost" });
+        stream.hangUp();
+      }
     });
   });
 
@@ -904,6 +936,9 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       sentenceAudioAt: null,
     };
     turn = direct;
+    // `capture` and only capture: readbacks, spell prompts and keypad prompts all arrive
+    // here, and nothing else does.
+    callState.apply({ kind: "agent.turn.started", seq: direct.seq, reason: "capture" });
     // No model round trip is coming, so there is no gap for a filler to cover.
     cancelFiller();
     log.info("speaking without the model", { reason, seq: direct.seq, text });
@@ -927,6 +962,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       sentenceAudioAt: null,
     };
     turn = recovery;
+    callState.apply({ kind: "agent.turn.started", seq: recovery.seq, reason: "recovery" });
     log.warn("speaking a recovery line", { reason, seq: recovery.seq });
     enqueue(recovery, RECOVERY_LINE);
   };
@@ -958,6 +994,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       sentenceAudioAt: null,
     };
     turn = repeat;
+    callState.apply({ kind: "agent.turn.started", seq: repeat.seq, reason: "repeat" });
     log.info("repeating the previous utterance", { seq: repeat.seq, chars: text.length });
     enqueue(repeat, text);
   };
@@ -995,6 +1032,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       sentenceAudioAt: null,
     };
     turn = current;
+    callState.apply({ kind: "agent.turn.started", seq, reason: "model" });
 
     cancelWatchdog();
     watchdog = setTimeout(() => {
@@ -1155,6 +1193,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     // Confidence travels with the turn and can only add checking: below a floor an
     // identifier gets one spoken attempt before the keypad instead of two. Null is passed
     // through unchanged — null is not low.
+    const previous = capture;
     const result = advance(capture, {
       kind: "speech",
       text,
@@ -1177,6 +1216,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     const capturedKind = result.capturedKind;
     if (captured !== null && capturedKind !== null) {
       capture = idle;
+      callState.apply({ kind: "capture.updated", previous, next: capture });
       log.info("value confirmed by the caller", { kind: capturedKind, chars: captured.length });
       record.event("value confirmed", { kind: capturedKind, chars: captured.length });
 
@@ -1206,6 +1246,8 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       respondTo(text, confirmedUtterance(capturedKind, captured));
       return true;
     }
+
+    callState.apply({ kind: "capture.updated", previous, next: capture });
 
     // Recorded here because respondTo is not running for this turn, and a history with
     // the agent's readback but not the caller's number makes no sense to the model.
@@ -1258,6 +1300,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     // They are typing, so anything still playing is in the way.
     if (turn !== null) stopSpeaking("caller is using the keypad");
 
+    const previous = capture;
     const result = advance(capture, { kind: "keypad", digit });
     capture = result.state;
 
@@ -1265,6 +1308,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     const capturedKind = result.capturedKind;
     if (captured !== null && capturedKind !== null) {
       capture = idle;
+      callState.apply({ kind: "capture.updated", previous, next: capture });
       log.info("value entered on the keypad", { kind: capturedKind, chars: captured.length });
       // Tones are unambiguous, which is why `dtmf` is a confirming source in its own
       // right. The keypad is only ever offered after speech has already failed twice, so
@@ -1289,6 +1333,9 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       respondTo(captured, confirmedUtterance(capturedKind, captured));
       return;
     }
+    // Every press reports, including the ones that only lengthen `digits` — those are
+    // the presses CAPTURING_ENTITY is made of.
+    callState.apply({ kind: "capture.updated", previous, next: capture });
     if (result.say !== null) sayNow(result.say, "keypad");
   });
 
@@ -1311,6 +1358,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       // Kept deliberately. A hallucination the filter caught is the clearest evidence
       // the R9.2 review queue could have, and it exists nowhere else.
       record.event("hallucination discarded", { text: transcript.text, speechMs });
+      callState.apply({ kind: "caller.transcript.discarded", reason: "no-speech" });
       return;
     }
 
@@ -1319,6 +1367,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       // Conservative on purpose: letting noise through wastes one turn, but ignoring a
       // caller who spoke makes the agent look like it is not listening.
       log.info("ignored non-speech", { reason: heard.reason, text: transcript.text });
+      callState.apply({ kind: "caller.transcript.discarded", reason: "noise" });
       return;
     }
     const text = heard.raw;
@@ -1327,6 +1376,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     // because both numbers are the same offset from the same event.
     if (echoSegments.delete(transcript.offsetMs)) {
       log.info("ignored echoed agent audio", { text, offsetMs: transcript.offsetMs });
+      callState.apply({ kind: "caller.transcript.discarded", reason: "echo" });
       return;
     }
 
@@ -1335,6 +1385,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     // Backchannel while the agent is speaking is listening, not interrupting.
     if (turn !== null && BACKCHANNEL.has(flat)) {
       log.debug("ignored backchannel", { text });
+      callState.apply({ kind: "caller.transcript.discarded", reason: "backchannel" });
       return;
     }
 
@@ -1342,6 +1393,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     // "eh" as a continuer used to fall through and make the agent repeat itself.
     if (NIGERIAN_PARTICLES.has(flat)) {
       log.debug("ignored bare particle", { text, speaking: turn !== null });
+      callState.apply({ kind: "caller.transcript.discarded", reason: "particle" });
       return;
     }
 
@@ -1352,6 +1404,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       const heardBack = flat;
       if (heardBack.length > 0 && normalise(spokenWindow).includes(heardBack)) {
         log.info("ignored transcript matching our own speech", { text });
+        callState.apply({ kind: "caller.transcript.discarded", reason: "self-speech" });
         return;
       }
       // Whatever this is, it is worth seeing: it tells us on the next call whether the
@@ -1364,6 +1417,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     if (lastUtterance !== null && isRepairRequest(flat)) {
       log.info("caller asked us to repeat", { text });
       conversation.addCaller(text);
+      callState.apply({ kind: "caller.turn.dispatched" });
       repeatLast();
       return;
     }
@@ -1410,9 +1464,11 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     if (capture.kind === "idle" && (endsMidThought(flatWhole) || isBareGreeting(flatWhole))) {
       log.info("caller has not finished, waiting", { text: whole });
       cancelFiller();
+      callState.apply({ kind: "caller.turn.held" });
       const timer = setTimeout(() => {
         pending = null;
         log.info("caller did not continue, answering what we have", { text: whole });
+        callState.apply({ kind: "caller.turn.dispatched" });
         if (!captureHandled(whole, wholeForModel, transcript.confidence)) {
           respondTo(whole, wholeForModel);
         }
@@ -1422,6 +1478,8 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       return;
     }
 
+    callState.apply({ kind: "caller.turn.dispatched" });
+
     // Before the model, never after. R4.3.1 is a gate, and a gate the model can answer
     // around is not a gate.
     if (captureHandled(whole, wholeForModel, transcript.confidence)) return;
@@ -1430,6 +1488,10 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   });
 
   stream.onClosed((reason) => {
+    // First, deliberately. The machine is terminal once closed, so the interruption
+    // `stopSpeaking("call ended")` reports three lines down is ignored rather than logged
+    // as a state change on a call that has already ended.
+    callState.apply({ kind: "call.closed", reason });
     clearPending();
     cancelFiller();
     cancelWatchdog();
@@ -1454,6 +1516,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     sentenceAudioAt: null,
   };
   turn = greetingTurn;
+  callState.apply({ kind: "agent.turn.started", seq: greetingTurn.seq, reason: "greeting" });
   lastUtterance = deps.greeting;
 
   const cached = deps.greetingAudio ?? null;
@@ -1462,7 +1525,10 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     // network round trip. Accounting mirrors the live path exactly so barge-in, marks
     // and history behave identically.
     greetingTurn.sentenceAudioAt = Date.now();
-    spokenWindow = `${spokenWindow} ${deps.forSpeech(deps.greeting)}`.slice(-400);
+    // The live-synthesis branch needs nothing: it goes through enqueue -> speakNext and
+    // reports from there.
+    callState.apply({ kind: "agent.audio.started", seq: greetingTurn.seq });
+    spokenWindow =`${spokenWindow} ${deps.forSpeech(deps.greeting)}`.slice(-400);
     let markedAt = 0;
     for (const chunk of cached) {
       stream.send(chunk);
