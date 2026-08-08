@@ -40,6 +40,8 @@ export interface FakeStream {
   /** Acknowledge every mark placed so far, i.e. the caller heard everything. */
   ackAll(): void;
   audioIn(chunk: AudioChunk): void;
+  /** The caller pressed a key on their handset (R4.3.3). */
+  press(digit: string): void;
   closeCall(reason: string): void;
 }
 
@@ -48,6 +50,7 @@ export const fakeStream = (): FakeStream => {
   const marks: string[] = [];
   const audioListeners: ((c: AudioChunk) => void)[] = [];
   const markListeners: ((n: string) => void)[] = [];
+  const digitListeners: ((d: string) => void)[] = [];
   const closedListeners: ((r: string) => void)[] = [];
   const self = {
     sent,
@@ -58,6 +61,9 @@ export const fakeStream = (): FakeStream => {
     ackMark: (name: string) => markListeners.forEach((l) => l(name)),
     ackAll: () => marks.forEach((m) => markListeners.forEach((l) => l(m))),
     audioIn: (chunk: AudioChunk) => audioListeners.forEach((l) => l(chunk)),
+    press: (digit: string) => {
+      for (const l of digitListeners) l(digit);
+    },
     closeCall: (reason: string) => closedListeners.forEach((l) => l(reason)),
     stream: {
       parameters: {},
@@ -70,6 +76,7 @@ export const fakeStream = (): FakeStream => {
       clear: () => {
         self.clears += 1;
       },
+      onDigit: (l: (d: string) => void) => digitListeners.push(l),
       onClosed: (l: (r: string) => void) => closedListeners.push(l),
       hangUp: () => {
         self.hungUp = true;

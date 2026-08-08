@@ -109,8 +109,11 @@ export const createTwilioTelephonyProvider = (
           stream?.emitClosed("carrier sent stop");
           return;
 
-        case "connected":
         case "dtmf":
+          stream?.emitDigit(frame.digit);
+          return;
+
+        case "connected":
           return;
       }
     });

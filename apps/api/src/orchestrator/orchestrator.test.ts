@@ -740,3 +740,85 @@ describe("reply length adapts to what was asked", () => {
     expect(spoken).toBeGreaterThan(3);
   });
 });
+
+describe("readback in the turn loop (R4.3)", () => {
+  it("holds the model back while a dictated number is unconfirmed", () => {
+    const h = setup();
+    const before = h.llm.completions.length;
+
+    h.listen.final("My policy number is four one seven two nine.");
+
+    // The gate's whole purpose: the model must not get to answer around a number that
+    // has not been confirmed.
+    expect(h.llm.completions.length).toBe(before);
+    const said = h.tts.texts().join(" ");
+    expect(said).toContain("read that back");
+    expect(said).toContain("four one seven");
+    assertInvariants(h);
+  });
+
+  it("lets the model run once the caller agrees, and tells it the confirmed value", () => {
+    const h = setup();
+    h.listen.final("My policy number is four one seven two nine.");
+    const during = h.llm.completions.length;
+
+    h.listen.final("Yes, that is correct.");
+
+    expect(h.llm.completions.length).toBeGreaterThan(during);
+    const lastCaller = [...h.llm.lastMessages()].reverse().find((m) => m.role === "user");
+    expect(lastCaller?.content).toContain("41729");
+    assertInvariants(h);
+  });
+
+  it("does not read back a plain quantity", () => {
+    const h = setup();
+
+    h.listen.final("I have three policies with you.");
+
+    // "You have three policies, let me read that back" would be intolerable.
+    expect(h.llm.completions.length).toBeGreaterThan(0);
+    expect(h.tts.texts().join(" ")).not.toContain("read that back");
+    assertInvariants(h);
+  });
+
+  it("takes a correction without ever releasing the wrong value", () => {
+    const h = setup();
+    h.listen.final("It is four one seven two nine.");
+    h.listen.final("No, it is four one eight two nine.");
+
+    const said = h.tts.texts().join(" ");
+    // Five digits group as "four one eight, two nine" - the comma is a pause in TTS.
+    expect(said).toContain("four one eight, two nine");
+    // Still nothing has reached the model: a correction is speech and gets confirmed too.
+    expect(h.llm.completions.length).toBe(0);
+    assertInvariants(h);
+  });
+
+  it("offers the keypad after two failures and accepts the tones", () => {
+    const h = setup();
+    h.listen.final("It is four one seven two nine.");
+    h.listen.final("No.");
+    h.listen.final("No.");
+
+    expect(h.tts.texts().join(" ")).toContain("keypad");
+
+    for (const digit of "41829") h.stream.press(digit);
+    h.stream.press("#");
+
+    // Tones are unambiguous, so this goes straight through to the model.
+    const lastCaller = [...h.llm.lastMessages()].reverse().find((m) => m.role === "user");
+    expect(lastCaller?.content).toContain("41829");
+    assertInvariants(h);
+  });
+
+  it("ignores keypad tones when no capture is running", () => {
+    const h = setup();
+    const before = h.tts.texts().length;
+
+    for (const digit of "417") h.stream.press(digit);
+
+    // A caller fidgeting with their handset must not become a reference.
+    expect(h.tts.texts().length).toBe(before);
+    assertInvariants(h);
+  });
+});

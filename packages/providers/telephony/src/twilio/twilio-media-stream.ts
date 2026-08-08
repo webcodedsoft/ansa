@@ -13,6 +13,7 @@ export class TwilioMediaStream implements CallMediaStream {
   private readonly streamSid: string;
   private readonly audioListeners: ((chunk: AudioChunk) => void)[] = [];
   private readonly markListeners: ((name: string) => void)[] = [];
+  private readonly digitListeners: ((digit: string) => void)[] = [];
   private readonly closedListeners: ((reason: string) => void)[] = [];
   private closed = false;
 
@@ -74,6 +75,14 @@ export class TwilioMediaStream implements CallMediaStream {
   }
 
   /** @internal Idempotent: the carrier's stop frame and the socket close both arrive. */
+  onDigit(listener: (digit: string) => void): void {
+    this.digitListeners.push(listener);
+  }
+
+  emitDigit(digit: string): void {
+    for (const listener of this.digitListeners) listener(digit);
+  }
+
   emitClosed(reason: string): void {
     if (this.closed) return;
     this.closed = true;

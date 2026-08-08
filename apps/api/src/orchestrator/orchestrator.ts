@@ -7,6 +7,8 @@ import { durationMs, type SynthesisStream, type TtsProvider } from "@ansa/tts";
 
 import { createFillerPicker } from "../telephony/filler";
 import { classify } from "./action";
+import { advance, idle, worthConfirming, type CaptureState } from "./capture";
+import { parseSpokenDigits } from "@ansa/normalizer";
 import { createConversation } from "./conversation";
 import { interpret, normalise } from "./hearing";
 import { budgetFor, budgetMs } from "./turn-budget";
@@ -664,6 +666,38 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
    * caller gets speech instead of a dead line. Routed through enqueue like any other
    * utterance so it is normalised, marked and remembered identically.
    */
+  /**
+   * Readback state (R4.3.1). Lives for the whole call: a caller gives a policy number
+   * early and a phone number later, and each has to be confirmed on its own terms.
+   */
+  let capture: CaptureState = idle;
+
+  /**
+   * Says something the model had no part in, superseding whatever is playing.
+   *
+   * Unlike sayRecovery this interrupts, because a readback is a reply to what the caller
+   * just said and arriving after the next sentence would be worse than not arriving.
+   */
+  const sayNow = (text: string, reason: string): void => {
+    if (turn !== null) stopSpeaking(reason);
+    turnSeq += 1;
+    const direct: AgentTurn = {
+      seq: turnSeq,
+      queue: [],
+      synthesis: null,
+      cancelLlm: null,
+      bytesSent: 0,
+      bytesHeard: 0,
+      spoken: [],
+      inFlight: null,
+      llmDone: true,
+      sentenceAudioAt: null,
+    };
+    turn = direct;
+    log.info("speaking without the model", { reason, seq: direct.seq });
+    enqueue(direct, text);
+  };
+
   const sayRecovery = (reason: string): void => {
     if (turn !== null) return;
     turnSeq += 1;
@@ -862,6 +896,70 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     });
   };
 
+  /**
+   * Applies the readback gate to a caller turn.
+   *
+   * Returns true when capture has taken the turn, in which case the model must not run:
+   * a number under confirmation is not yet a fact, and letting the model answer around
+   * it is exactly the failure R4.3.1 exists to prevent.
+   */
+  const captureHandled = (text: string, forModel: string): boolean => {
+    if (capture.kind === "idle") {
+      const value = parseSpokenDigits(text);
+      if (value === null || !worthConfirming(value, text)) return false;
+    }
+
+    const result = advance(capture, { kind: "speech", text });
+    capture = result.state;
+
+    if (result.captured !== null) {
+      capture = idle;
+      log.info("value confirmed by the caller", { chars: result.captured.length });
+      // The model finally sees the number, and sees it as confirmed. Routed through
+      // respondTo so it is recorded, budgeted and spoken like any other turn.
+      respondTo(text, `Yes, that is correct. My number is ${result.captured}.`);
+      return true;
+    }
+
+    // Recorded here because respondTo is not running for this turn, and a history with
+    // the agent's readback but not the caller's number makes no sense to the model.
+    conversation.addCaller(forModel);
+
+    if (capture.kind === "escalate") {
+      // Nothing to transfer to yet — Slice 6 owns the warm handoff. Saying so and
+      // logging it beats pretending the transfer happened.
+      log.error("capture failed, caller needs a human", { text });
+    }
+
+    if (result.say !== null) sayNow(result.say, `readback:${capture.kind}`);
+    return true;
+  };
+
+  /**
+   * Keypad tones (R4.3.3). Ignored unless the keypad was actually offered — a caller who
+   * fidgets with their phone mid-sentence must not have it read as a reference.
+   */
+  stream.onDigit((digit) => {
+    if (capture.kind !== "keypad") {
+      log.debug("ignored keypad tone outside capture", { digit });
+      return;
+    }
+
+    // They are typing, so anything still playing is in the way.
+    if (turn !== null) stopSpeaking("caller is using the keypad");
+
+    const result = advance(capture, { kind: "keypad", digit });
+    capture = result.state;
+
+    if (result.captured !== null) {
+      capture = idle;
+      log.info("value entered on the keypad", { chars: result.captured.length });
+      respondTo(result.captured, `My number is ${result.captured}.`);
+      return;
+    }
+    if (result.say !== null) sayNow(result.say, "keypad");
+  });
+
   deps.listen.transcripts.onFinal((transcript) => {
     const heard = interpret(transcript.text);
     if (heard.kind === "noise") {
@@ -923,6 +1021,11 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     if (heard.corrections.length > 0) {
       log.info("repaired a known mishearing", { corrections: heard.corrections });
     }
+
+    // Before the model, never after. R4.3.1 is a gate, and a gate the model can answer
+    // around is not a gate.
+    if (captureHandled(text, heard.forModel)) return;
+
     respondTo(text, heard.forModel);
   });
 

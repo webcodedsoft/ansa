@@ -64,6 +64,11 @@ export interface CallMediaStream {
   onMark(listener: (name: string) => void): void;
   /** Discard audio already queued for playback. This is the barge-in primitive (R6.1). */
   clear(): void;
+  /**
+   * Keypad tones. The carrier already sends these; they were being dropped at the
+   * adapter. They are the fallback when speech capture has failed twice (R4.3.3).
+   */
+  onDigit(listener: (digit: string) => void): void;
   onClosed(listener: (reason: string) => void): void;
   hangUp(): void;
 }

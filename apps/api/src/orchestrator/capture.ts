@@ -39,6 +39,26 @@ export interface CaptureResult {
 
 export const idle: CaptureState = { kind: "idle" };
 
+/** Words that mean the caller is dictating something they expect to be acted on. */
+const REFERENCE_CUE =
+  /\b(policy|reference|ref|claim|account|acct|number|code|pin|otp|nin|bvn|phone|mobile|call me on)\b/i;
+
+/**
+ * Whether a value the caller said is a reference to confirm or just a quantity.
+ *
+ * Reading back every number would be intolerable — "you have three policies, let me read
+ * that back, three, is that correct?" — so the trigger lives here rather than inside the
+ * state machine, which stays about what to do once capturing has begun.
+ *
+ * A letter, a leading zero, or four or more characters means a reference by shape. A cue
+ * word means one by context. "I have 3 policies" is neither.
+ */
+export const worthConfirming = (value: string, text: string): boolean =>
+  /[A-Z]/.test(value) ||
+  value.startsWith("0") ||
+  value.length >= 4 ||
+  REFERENCE_CUE.test(text);
+
 /**
  * Agreement, including the Nigerian forms. "Na so" and "correct" are as common as "yes",
  * and an agent that only recognises "yes" makes the caller repeat themselves.
