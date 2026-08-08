@@ -29,6 +29,48 @@ measured — which is why Gate A exists, and why it must close before Slice 4.
 
 ---
 
+## Where this actually is — 2026-08-08
+
+The checkboxes below this line are stale. They were written before the work and were not
+kept up as slices moved, so this section is the authority and they are history. Verified
+against the code and a live call on the date above, not from memory.
+
+**Working, and proven on a phone call:**
+
+- Inbound and outbound calls, bidirectional μ-law streaming, barge-in, marks-based
+  playback truth.
+- Multi-tenant: resolution at ingress for inbound and via stream parameter for outbound,
+  RLS with FORCE on all 10 tables, per-tenant keyterms and config, versioned.
+- Conversation loop: turn budgets by caller action, repair, backchannel, fillers, echo
+  defence, watchdogs.
+- `packages/normalizer` — 45 tests. Nigerian number/money/date speech, both directions.
+- Readback with spelling and DTMF fallback, enforced in the dispatch path.
+- Audio-level hallucination filter. Three providers invented fluent text from silence;
+  this is what stopped it.
+- Outbound: origination, voicemail detection, full lifecycle callbacks, consent gate with
+  per-organisation lawful basis.
+
+**424 tests across 9 packages. Lint, typecheck and tests green.**
+
+**Known broken, and the reason to be careful about the rest:**
+
+- **Names are not transcribed.** "Adedeji Sikiru" came back as Hill, Sequium, Security,
+  kekere, Aditi. Spelling was the fallback and a live call falsified it too: a spelled J
+  arrives as E. This is the transcription ceiling, not an orchestration bug, and no
+  amount of readback logic fixes a name the transcriber never heard.
+- Latency ~1.1s against an 800ms budget, most of it Nigeria→US distance.
+- The agent still cannot look anything up. No tools, no knowledge base.
+
+**Next, in order:**
+
+1. **Event log persistence (Slice 2).** Everything above is logged and nothing is stored.
+   It blocks the R9.2 review loop, the call viewer, and the R7.5 audit trail that would
+   let a call be traced to the consent basis in force when it was placed.
+2. **Speech-to-speech spike.** The cascade throws the acoustics away and that is where
+   names die. Measure it against the same calls before investing further in readback.
+3. **Tool registry (Slice 5).** The end of "I can't check that", and the largest cause of
+   calls feeling hollow.
+
 ## Slice 1 — One call, one sentence
 
 **Start here.** This is day one.
