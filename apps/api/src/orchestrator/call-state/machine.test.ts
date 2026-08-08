@@ -260,7 +260,7 @@ describe("capture, driven by the real capture machine", () => {
   it("waits for a correction when there is nothing better to offer", () => {
     const call = greeted();
     const capture = capturing(call);
-    capture.said("four one seven");
+    capture.said("my policy number is four one seven");
     // "No" with no replacement. capture.ts asks again — "Sorry — once more, slowly?" —
     // which is a request for the value, not for a yes or a no.
     expect(capture.said("No")).toBe("WAITING_FOR_CORRECTION");
@@ -269,7 +269,7 @@ describe("capture, driven by the real capture machine", () => {
   it("goes back to confirming when the caller corrects the value in the same breath", () => {
     const call = greeted();
     const capture = capturing(call);
-    capture.said("four one seven");
+    capture.said("my policy number is four one seven");
     // "No, it's four one eight" is a new candidate, read back rather than trusted. The
     // caller is being asked yes or no again, so this is not a correction wait.
     expect(capture.said("No, it's four one eight")).toBe("CONFIRMING_ENTITY");
@@ -279,7 +279,7 @@ describe("capture, driven by the real capture machine", () => {
   it("captures on the keypad after speech has failed twice", () => {
     const call = greeted();
     const capture = capturing(call);
-    capture.said("four one seven");
+    capture.said("my policy number is four one seven");
     expect(capture.said("No")).toBe("WAITING_FOR_CORRECTION");
     expect(capture.said("No")).toBe("CAPTURING_ENTITY");
     expect(capture.capture.kind).toBe("keypad");
@@ -287,16 +287,19 @@ describe("capture, driven by the real capture machine", () => {
     // Digits accumulating is capture, not correction.
     expect(capture.pressed("4")).toBe("CAPTURING_ENTITY");
     expect(capture.pressed("1")).toBe("CAPTURING_ENTITY");
+    expect(capture.pressed("7")).toBe("CAPTURING_ENTITY");
     // Hash releases the value: keypad tones are unambiguous and there is no readback.
+    // Two digits would not — the shape check applies to typed values too, because a
+    // caller can type a fragment perfectly clearly and the keypad does not fix that.
     expect(capture.pressed("#")).toBe("LISTENING");
-    expect(capture.capture).toMatchObject({ kind: "confirmed", value: "41" });
+    expect(capture.capture).toMatchObject({ kind: "confirmed", value: "417" });
     expect(capture.released()).toBe("LISTENING");
   });
 
   it("waits for a correction when the caller talks instead of typing", () => {
     const call = greeted();
     const capture = capturing(call);
-    capture.said("four one seven");
+    capture.said("my policy number is four one seven");
     capture.said("No");
     capture.said("No");
     expect(capture.capture.kind).toBe("keypad");
@@ -336,7 +339,7 @@ describe("capture, driven by the real capture machine", () => {
   it("transfers when the caller cannot get the value across at all", () => {
     const call = greeted();
     const capture = capturing(call);
-    capture.said("four one seven");
+    capture.said("my policy number is four one seven");
     capture.said("No");
     capture.said("No");
     capture.said("I already told you");
@@ -346,19 +349,20 @@ describe("capture, driven by the real capture machine", () => {
   it("transfers on an empty keypad entry", () => {
     const call = greeted();
     const capture = capturing(call);
-    capture.said("four one seven");
+    capture.said("my policy number is four one seven");
     capture.said("No");
     capture.said("No");
     expect(capture.pressed("#")).toBe("TRANSFERRING");
   });
 
   it("stays TRANSFERRING however many turns the caller takes", () => {
-    // Recorded, not endorsed. Once capture escalates, orchestrator.ts swallows every
-    // caller turn for the rest of the call and the agent never speaks again — see the
-    // "known wrong" section of WIRING.md. The machine reports what happens.
+    // The call stays in TRANSFERRING, and the caller stays audible. Capture releases
+    // every turn once it has escalated (`CaptureResult.handled`), so the model answers
+    // them — the black hole where the agent went silent for the rest of the call is
+    // fixed in capture.ts; see CAPTURE_WIRING.md §1 for the orchestrator half.
     const call = greeted();
     const capture = capturing(call);
-    capture.said("four one seven");
+    capture.said("my policy number is four one seven");
     capture.said("No");
     capture.said("No");
     capture.said("I already told you");
@@ -372,7 +376,7 @@ describe("capture, driven by the real capture machine", () => {
     // useful thing to see in a log than the readback still waiting behind it.
     const call = greeted();
     const capture = capturing(call);
-    capture.said("four one seven");
+    capture.said("my policy number is four one seven");
     call.apply({ kind: "agent.turn.started", seq: 2, reason: "recovery" });
     expect(call.state).toBe("ERROR_RECOVERY");
     call.apply({ kind: "agent.turn.completed", seq: 2 });

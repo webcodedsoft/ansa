@@ -105,6 +105,15 @@ const appendToken = (out: string[], tokens: readonly string[], index: number): n
 
   const unit = UNITS[token];
   if (unit !== undefined) {
+    // A bare "o" straight after a letter is the letter O, not a zero. A reference with a
+    // letter prefix came back as a zero in the middle of it — the caller said "P, O, L,
+    // two two nine one" and the value stored started "P zero L". Structural, not a list:
+    // zero does not follow a letter inside a dictated value, and the letter O does.
+    const previous = out[out.length - 1] ?? "";
+    if (token === "o" && /[A-Z]$/.test(previous)) {
+      out.push("O");
+      return 1;
+    }
     out.push(String(unit));
     return 1;
   }
@@ -145,6 +154,18 @@ const appendToken = (out: string[], tokens: readonly string[], index: number): n
  * themselves number-ish ("for my one policy, the number is four one seven"), and the
  * value they mean is the run they spent the most breath on.
  */
+/**
+ * Hesitation, not a value and not the end of one.
+ *
+ * A caller reading a long reference off a card pauses in the middle of it, and the
+ * transcriber writes the pause down. Without this, "eight three one, um, six four" is
+ * two short runs and the longer-run rule keeps only the first half of the identifier.
+ *
+ * Deliberately only pure disfluencies. "And" and "like" were candidates and are not
+ * here: they join two genuinely separate numbers as often as they bridge one.
+ */
+const FILLER = new Set(["um", "uh", "er", "erm", "ah", "hmm", "mm", "eh", "sorry"]);
+
 export const parseSpokenDigits = (text: string): string | null => {
   const tokens = clean(text);
 
@@ -159,8 +180,16 @@ export const parseSpokenDigits = (text: string): string | null => {
 
     const run: string[] = [];
     let hasStrong = false;
-    while (index < tokens.length && isValueToken(tokens[index] ?? "")) {
+    while (index < tokens.length) {
       const raw = tokens[index] ?? "";
+      if (FILLER.has(raw)) {
+        // Only bridges when a value resumes on the other side; a trailing "um" ends it.
+        const next = tokens[index + 1] ?? "";
+        if (!isValueToken(next)) break;
+        index += 1;
+        continue;
+      }
+      if (!isValueToken(raw)) break;
       if (isStrongToken(HOMOPHONES[raw] ?? raw)) hasStrong = true;
       index += appendToken(run, tokens, index);
     }
@@ -171,6 +200,22 @@ export const parseSpokenDigits = (text: string): string | null => {
 
   return best === "" ? null : best;
 };
+
+const BRIDGES = ["as", "in", "for", "like", "and", "of"];
+
+/**
+ * Separators a caller says out loud while spelling.
+ *
+ * A literal hyphen is deliberately absent: transcribers render an ordinary spelling as
+ * "S-I-K-I-R-U" about half the time, so treating punctuation as a separator would put a
+ * hyphen between every letter. Only a separator the caller pronounced counts.
+ */
+const SPOKEN_SEPARATOR: Readonly<Record<string, string>> = {
+  dash: "-", hyphen: "-", space: " ",
+};
+
+const titleCasePart = (part: string): string =>
+  part === "" ? part : part.charAt(0).toUpperCase() + part.slice(1);
 
 /**
  * A name the caller has spelled out, letter by letter.
@@ -183,8 +228,18 @@ export const parseSpokenDigits = (text: string): string | null => {
  *
  * Transcribers render spelled letters in several ways — "S I K I R U", "s-i-k-i-r-u",
  * "S. I. K." — and all of them flatten to single-letter tokens.
+ *
+ * `minLetters` is two when something has just asked for a spelling and three otherwise.
+ * Two-letter surnames are real in East Asian and other naming traditions and dropping
+ * them means those callers can never get their name across; three is the floor when this
+ * runs speculatively, where "OK" would otherwise become somebody's name.
+ *
+ * What this cannot recover, and does not pretend to: case inside a part, and a space the
+ * caller did not pronounce. Neither is audible, so neither survives a spelling, and both
+ * are storage concerns rather than readback ones — the caller hears the same sounds
+ * either way.
  */
-export const parseSpelledName = (text: string): string | null => {
+export const parseSpelledName = (text: string, minLetters = 3): string | null => {
   const tokens = text
     .toLowerCase()
     .replace(/['’]/g, "")
@@ -193,7 +248,8 @@ export const parseSpelledName = (text: string): string | null => {
     .split(/\s+/)
     .filter((t) => t !== "");
 
-  const BRIDGES = ["as", "in", "for", "like", "and", "of"];
+  const letterCount = (run: readonly string[]): number =>
+    run.filter((c) => /^[a-z]$/.test(c)).length;
 
   let best: string[] = [];
   let run: string[] = [];
@@ -204,7 +260,14 @@ export const parseSpelledName = (text: string): string | null => {
       continue;
     }
 
-    const lastLetter = run[run.length - 1];
+    const separator = SPOKEN_SEPARATOR[token];
+    if (separator !== undefined && letterCount(run) > 0) {
+      run.push(separator);
+      continue;
+    }
+
+    // The last letter, skipping any separator the caller just said.
+    const lastLetter = [...run].reverse().find((c) => /^[a-z]$/.test(c));
 
     // "S for Sunday" and "A as in Apple": the bridge is skipped and so is the word that
     // illustrates the letter, because it confirms the letter rather than adding one.
@@ -213,16 +276,21 @@ export const parseSpelledName = (text: string): string | null => {
     if (BRIDGES.includes(token) && run.length > 0) continue;
     if (lastLetter !== undefined && token.startsWith(lastLetter)) continue;
 
-    if (run.length > best.length) best = run;
+    if (letterCount(run) > letterCount(best)) best = run;
     run = [];
   }
-  if (run.length > best.length) best = run;
+  if (letterCount(run) > letterCount(best)) best = run;
 
-  // Two letters is not a spelling, it is a false positive on "OK" or a stray article.
-  if (best.length < 3) return null;
+  if (letterCount(best) < minLetters) return null;
 
-  // Title case, not upper. "SIKIRU" makes TTS engines spell the word out letter by
-  // letter, which would read the name back as the very thing the caller just did.
-  const joined = best.join("");
-  return joined.charAt(0).toUpperCase() + joined.slice(1);
+  // Title case per part, not upper. "SIKIRU" makes TTS engines spell the word out letter
+  // by letter, which would read the name back as the very thing the caller just did.
+  // Per part rather than once, so a hyphenated or two-part name is not left with a
+  // lowercase second half.
+  return best
+    .join("")
+    .replace(/^[- ]+|[- ]+$/g, "")
+    .split(/([- ])/)
+    .map((part) => (/^[- ]$/.test(part) ? part : titleCasePart(part)))
+    .join("");
 };

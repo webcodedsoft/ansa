@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { advance, idle, type CaptureState } from "./capture";
+import {
+  advance,
+  confirmedUtterance,
+  ENTITY_POLICY,
+  expecting,
+  idle,
+  logSafe,
+  mustConfirm,
+  spokenAttemptsFor,
+  type CaptureState,
+} from "./capture";
 
 const speak = (state: CaptureState, text: string) => advance(state, { kind: "speech", text });
 const press = (state: CaptureState, digit: string) => advance(state, { kind: "keypad", digit });
@@ -22,7 +32,7 @@ describe("readback", () => {
   });
 
   it("releases the value only after the caller agrees", () => {
-    const asked = speak(idle, "four one seven");
+    const asked = speak(idle, "my policy number is four one seven");
     const done = speak(asked.state, "Yes, that's correct");
     expect(done.state.kind).toBe("confirmed");
     expect(done.captured).toBe("417");
@@ -30,7 +40,7 @@ describe("readback", () => {
 
   it("accepts the Nigerian forms of agreement", () => {
     for (const yes of ["na so", "correct", "exactly", "yeah", "that's right"]) {
-      const asked = speak(idle, "four one seven");
+      const asked = speak(idle, "my policy number is four one seven");
       expect(speak(asked.state, yes).captured).toBe("417");
     }
   });
@@ -38,7 +48,7 @@ describe("readback", () => {
   it("takes a correction and a rejection said in one breath", () => {
     // "No, it's four one eight" is the normal way to correct a digit, and the correction
     // must not be lost to the rejection.
-    const asked = speak(idle, "four one seven");
+    const asked = speak(idle, "my policy number is four one seven");
     const fixed = speak(asked.state, "No, it's four one eight");
     expect(fixed.state).toMatchObject({ kind: "confirming", value: "418" });
     expect(fixed.say).toContain("four one eight");
@@ -47,14 +57,14 @@ describe("readback", () => {
   });
 
   it("never releases a value on a bare rejection", () => {
-    const asked = speak(idle, "four one seven");
+    const asked = speak(idle, "my policy number is four one seven");
     const rejected = speak(asked.state, "No");
     expect(rejected.captured).toBeNull();
     expect(rejected.state.kind).toBe("confirming");
   });
 
   it("offers the keypad after two failed spoken attempts, not sooner", () => {
-    let state = speak(idle, "four one seven").state;
+    let state = speak(idle, "my policy number is four one seven").state;
     state = speak(state, "No").state;
     expect(state.kind).toBe("confirming"); // still speech on attempt two
 
@@ -64,7 +74,7 @@ describe("readback", () => {
   });
 
   it("accepts keypad digits and confirms on hash", () => {
-    let state: CaptureState = { kind: "keypad", digits: "", attempt: 0 };
+    let state: CaptureState = { kind: "keypad", subject: "reference", digits: "", attempt: 0 };
     for (const d of "417") state = press(state, d).state;
     const done = press(state, "#");
     // Tones are unambiguous, so there is nothing a readback could catch.
@@ -72,7 +82,7 @@ describe("readback", () => {
   });
 
   it("lets star clear a mistyped entry", () => {
-    let state: CaptureState = { kind: "keypad", digits: "", attempt: 0 };
+    let state: CaptureState = { kind: "keypad", subject: "reference", digits: "", attempt: 0 };
     for (const d of "419") state = press(state, d).state;
     state = press(state, "*").state;
     for (const d of "417") state = press(state, d).state;
@@ -80,12 +90,12 @@ describe("readback", () => {
   });
 
   it("escalates rather than looping when the keypad is not working either", () => {
-    const empty: CaptureState = { kind: "keypad", digits: "", attempt: 0 };
+    const empty: CaptureState = { kind: "keypad", subject: "reference", digits: "", attempt: 0 };
     expect(press(empty, "#").state.kind).toBe("escalate");
   });
 
   it("escalates when the caller keeps talking instead of typing", () => {
-    let state: CaptureState = { kind: "keypad", digits: "", attempt: 0 };
+    let state: CaptureState = { kind: "keypad", subject: "reference", digits: "", attempt: 0 };
     state = speak(state, "I don't have my phone away from my ear").state;
     const gone = speak(state, "Can you just take it down?");
     expect(gone.state.kind).toBe("escalate");
@@ -95,13 +105,13 @@ describe("readback", () => {
   it("terminates even when the caller never answers the question", () => {
     // Neither agreement nor a number, repeatedly: this must still reach the keypad
     // rather than asking forever.
-    let state = speak(idle, "four one seven").state;
+    let state = speak(idle, "my policy number is four one seven").state;
     for (let i = 0; i < 5; i += 1) state = speak(state, "What was that?").state;
     expect(["keypad", "escalate"]).toContain(state.kind);
   });
 
   it("is inert once the value is confirmed", () => {
-    const asked = speak(idle, "four one seven");
+    const asked = speak(idle, "my policy number is four one seven");
     const done = speak(asked.state, "yes");
     const after = speak(done.state, "actually make it four one eight");
     expect(after.state).toEqual(done.state);
@@ -221,7 +231,7 @@ describe("names (2026-08-08 call: Sikiru -> Hill -> Sequium -> Security)", () =>
 
   it("still confirms a number the same way", () => {
     const r = speak(idle, "My policy number is four one seven two nine");
-    expect(r.state).toMatchObject({ subject: "number" });
+    expect(r.state).toMatchObject({ subject: "reference" });
   });
 });
 
@@ -328,5 +338,464 @@ describe("one STT result must not drive a decision (2026-08-08 call)", () => {
   it("still confirms cleanly when the caller agrees first time", () => {
     const asked = speak(idle, "four one seven two nine");
     expect(speak(asked.state, "Yes, that is correct").captured).toBe("41729");
+  });
+});
+
+/**
+ * Fixed clock: Friday 2026-08-07, 09:00 in Lagos. Passed explicitly so no test here
+ * depends on when it runs.
+ */
+const NOW = Date.parse("2026-08-07T08:00:00Z");
+
+const say = (state: CaptureState, text: string, confidence?: number | null) =>
+  advance(state, { kind: "speech", text, at: NOW, confidence });
+
+const agree = (state: CaptureState) => say(state, "Yes, that is correct");
+
+describe("escalation is terminal for capture, not for the call", () => {
+  it("lets the model answer the turn after an escalation", () => {
+    // 2026-08-08, 12:12:42. Once capture reached `escalate` it kept reporting every
+    // later turn as handled with nothing to say, so the agent went silent for the rest
+    // of the call — having just told the caller a colleague was coming.
+    let state = say(idle, "My name is Hill").state;
+    state = say(state, "No").state;
+    state = say(state, "I already told you").state;
+    state = say(state, "This is ridiculous").state;
+    expect(state.kind).toBe("escalate");
+
+    const after = say(state, "Actually, can you tell me my renewal date?");
+    expect(after.handled).toBe(false);
+    expect(after.state.kind).toBe("escalate");
+  });
+
+  it("does not drag an escalated caller back into a readback", () => {
+    // They failed three times. Offering to confirm a policy number now is the loop they
+    // were just rescued from.
+    const escalated: CaptureState = { kind: "escalate" };
+    const after = say(escalated, "my policy number is four one seven two nine");
+    expect(after.state.kind).toBe("escalate");
+    expect(after.say).toBeNull();
+    expect(after.handled).toBe(false);
+  });
+
+  it("releases a turn that holds nothing worth capturing", () => {
+    // The same class of bug one state earlier: capture ran, found nothing, and the
+    // orchestrator still counted the turn as handled.
+    const r = say(idle, "I want to renew my cover");
+    expect(r.handled).toBe(false);
+    expect(r.say).toBeNull();
+  });
+
+  it("claims the turn while it is actually confirming something", () => {
+    const r = say(idle, "my policy number is four one seven two nine");
+    expect(r.handled).toBe(true);
+    // And on the turn the value is released, which has nothing to say but is very much
+    // capture's turn — the reason `handled` is not just `say !== null`.
+    const done = agree(r.state);
+    expect(done.say).toBeNull();
+    expect(done.handled).toBe(true);
+    expect(done.captured).toBe("41729");
+  });
+});
+
+describe("risk decides whether a value is confirmed at all (§9)", () => {
+  it("confirms every identifier, with no way to opt out", () => {
+    for (const kind of ["name", "reference", "phone", "email", "nin", "bvn", "otp"] as const) {
+      expect(ENTITY_POLICY[kind].risk, kind).toBe("identifier");
+      expect(ENTITY_POLICY[kind].confirm, kind).toBe("always");
+      // R4.3.1: no confidence, however high, reaches a false.
+      expect(mustConfirm(kind, "whatever", 1), kind).toBe(true);
+      expect(mustConfirm(kind, "whatever", 0.99), kind).toBe(true);
+    }
+  });
+
+  it("confirms consequential values too, because a wrong action is a wrong action", () => {
+    for (const kind of ["address", "date", "time", "amount"] as const) {
+      expect(ENTITY_POLICY[kind].risk, kind).toBe("consequential");
+      expect(mustConfirm(kind, "2026-08-14", 1), kind).toBe(true);
+    }
+  });
+
+  it("leaves a conversational quantity alone", () => {
+    // "You have three policies, let me read that back, three, is that correct?"
+    const r = say(idle, "I have three policies");
+    expect(r.state).toEqual(idle);
+    expect(r.say).toBeNull();
+  });
+
+  it("no longer reads a year back at the caller", () => {
+    // The old shape rule confirmed this because it was four characters long.
+    const r = say(idle, "I have been with you since 2019");
+    expect(r.state.kind).toBe("idle");
+  });
+
+  it("confirms a quantity after all when the transcriber says it struggled", () => {
+    // The only direction confidence is allowed to move the decision.
+    const r = say(idle, "I have three policies", 0.4);
+    expect(r.state.kind).toBe("confirming");
+    expect(r.state).toMatchObject({ subject: "quantity" });
+  });
+
+  it("has no confirmation rule that means never", () => {
+    // A `"never"` in this union is the change that quietly repeals R4.3.1.
+    const rules = Object.values(ENTITY_POLICY).map((p) => p.confirm);
+    expect(rules).not.toContain("never");
+  });
+});
+
+describe("confidence may add checking and never remove it", () => {
+  it("shortens the road to the keypad on a bad line", () => {
+    expect(spokenAttemptsFor("reference", 0.4)).toBeLessThan(spokenAttemptsFor("reference", 0.95));
+    expect(spokenAttemptsFor("reference", 0.4)).toBeGreaterThanOrEqual(1);
+  });
+
+  it("does not shorten it when there is nowhere better to go", () => {
+    // A date cannot be typed or spelled, so cutting attempts short only escalates
+    // sooner — which is not more checking, it is less conversation.
+    expect(spokenAttemptsFor("date", 0.4)).toBe(spokenAttemptsFor("date", 0.95));
+  });
+
+  it("still reads the value back on a bad line", () => {
+    const r = say(idle, "my policy number is four one seven two nine", 0.2);
+    expect(r.state.kind).toBe("confirming");
+    // Grouped in threes for the ear, so the digits are there with a pause in them.
+    expect(r.say).toContain("four one seven");
+  });
+
+  it("treats an absent confidence as neither high nor low", () => {
+    expect(spokenAttemptsFor("reference", null)).toBe(spokenAttemptsFor("reference", 0.95));
+    expect(mustConfirm("quantity", "3", null)).toBe(false);
+  });
+});
+
+describe("phone numbers", () => {
+  it("captures and canonicalises one the caller gave", () => {
+    const r = say(idle, "my mobile is oh eight one three eight one seven eight five five oh");
+    expect(r.state).toMatchObject({ subject: "phone", value: "08138178550" });
+    expect(r.say).toContain("oh eight one three");
+    expect(agree(r.state).captured).toBe("08138178550");
+  });
+
+  it("takes the international form as the same number", () => {
+    const r = say(idle, "call me on two three four eight one three eight one seven eight five five oh");
+    expect(r.state).toMatchObject({ subject: "phone", value: "08138178550" });
+  });
+
+  it("asks again rather than confirming half a number", () => {
+    // "Is that right?" on nine digits wastes an exchange on something already wrong.
+    const r = say(idle, "my phone number is eight one three eight one seven");
+    expect(r.state.kind).toBe("awaiting");
+    expect(r.say).toContain("complete mobile number");
+  });
+});
+
+describe("email", () => {
+  it("captures a spelled address and spells the local part back", () => {
+    const r = say(idle, "my email is s i k i r u at gmail dot com");
+    expect(r.state).toMatchObject({ subject: "email", value: "sikiru@gmail.com" });
+    expect(r.say).toContain("S, I, K, I, R, U");
+    expect(agree(r.state).captured).toBe("sikiru@gmail.com");
+  });
+
+  it("falls back to spelling just the local part, keeping the domain", () => {
+    const asked = say(idle, "my email is sequium at gmail dot com");
+    const no = say(asked.state, "No, that's not it");
+    expect(no.state.kind).toBe("spelling");
+    expect(no.say).toContain("the part before the at");
+
+    const spelled = say(no.state, "S I K I R U");
+    expect(spelled.state).toMatchObject({ value: "sikiru@gmail.com" });
+  });
+});
+
+describe("dates and times", () => {
+  it("reads a date back with the weekday, which the caller never gave", () => {
+    const r = say(idle, "can you call me back on the fourteenth of August");
+    expect(r.state).toMatchObject({ subject: "date", value: "2026-08-14" });
+    // NOW is a Friday and so is the 14th; a caller who meant Tuesday hears it here.
+    expect(r.say).toContain("Friday the fourteenth of August");
+    expect(agree(r.state).captured).toBe("2026-08-14");
+  });
+
+  it("says which way it guessed the am or pm", () => {
+    const r = say(idle, "half past two");
+    expect(r.state).toMatchObject({ subject: "time", value: "14:30" });
+    expect(r.say).toContain("in the afternoon");
+  });
+
+  it("escalates rather than offering a keypad for a date", () => {
+    // There is no key for "next Tuesday".
+    let state = say(idle, "call me back tomorrow").state;
+    state = say(state, "No").state;
+    state = say(state, "No").state;
+    expect(state.kind).toBe("escalate");
+  });
+});
+
+describe("amounts", () => {
+  it("captures the amount and not the other number in the turn", () => {
+    const r = say(idle, "I have three policies and the premium is forty five thousand naira");
+    expect(r.state).toMatchObject({ subject: "amount", value: "45000" });
+    // Said as words: "forty-five thousand naira" is checkable by ear, digits are not.
+    expect(r.say).toContain("forty-five thousand naira");
+  });
+});
+
+describe("addresses", () => {
+  it("keeps the caller's own words and reads them back", () => {
+    const r = say(idle, "my address is 14 Adeola Odeku Street, Victoria Island");
+    expect(r.state).toMatchObject({ subject: "address" });
+    expect(r.say).toContain("Adeola Odeku Street");
+    expect(agree(r.state).captured).toBe("14 Adeola Odeku Street, Victoria Island");
+  });
+});
+
+describe("the identifiers with a knowable shape", () => {
+  it("catches a short NIN before asking the caller to confirm it", () => {
+    const r = say(idle, "my NIN is one two three four five six seven eight nine");
+    expect(r.state.kind).toBe("awaiting");
+    expect(r.say).toContain("nine digits");
+    expect(r.say).toContain("eleven");
+  });
+
+  it("confirms a full BVN", () => {
+    const r = say(idle, "my BVN is two two one one three three four four five five six");
+    expect(r.state).toMatchObject({ subject: "bvn", value: "22113344556" });
+    expect(agree(r.state).captured).toBe("22113344556");
+  });
+
+  it("applies the shape check to keypad entry too", () => {
+    // Tones are unambiguous, but a caller can type nine digits perfectly clearly.
+    let state: CaptureState = { kind: "keypad", subject: "nin", digits: "", attempt: 0 };
+    for (const d of "123456789") state = press(state, d).state;
+    const short = press(state, "#");
+    expect(short.captured).toBeNull();
+    expect(short.say).toContain("nine digits");
+  });
+
+  it("never puts a sensitive value in something loggable", () => {
+    // The orchestrator logs the candidate on every entity_candidate event, so without
+    // this the transcript viewer becomes a list of national identity numbers.
+    expect(logSafe("nin", "22113344556")).not.toContain("22113344556");
+    expect(logSafe("otp", "492013")).not.toContain("492013");
+    expect(logSafe("reference", "41729")).toBe("41729");
+  });
+});
+
+describe("the agent asking first", () => {
+  it("asks, then parses the answer as the kind it asked for", () => {
+    // "Sikiru" and "the fourteenth" are not recognisable as values in free speech. They
+    // are unambiguous in answer to a question, which is what `awaiting` is for.
+    const asked = expecting("name");
+    expect(asked.say).toContain("your name");
+
+    const answered = say(asked.state, "Sikiru");
+    expect(answered.state).toMatchObject({ subject: "name", value: "Sikiru" });
+  });
+
+  it("takes a bare date once it has been asked for", () => {
+    const answered = say(expecting("date").state, "the fourteenth");
+    expect(answered.state).toMatchObject({ subject: "date", value: "2026-08-14" });
+  });
+
+  it("takes a bare amount once it has been asked for, and not before", () => {
+    expect(say(idle, "about forty five thousand").state.kind).toBe("idle");
+    const answered = say(expecting("amount").state, "about forty five thousand");
+    expect(answered.state).toMatchObject({ subject: "amount", value: "45000" });
+  });
+
+  it("gives up on a caller who will not answer the question", () => {
+    let state = expecting("email").state;
+    state = say(state, "Sorry, what?").state;
+    state = say(state, "I can't hear you").state;
+    expect(["spelling", "escalate"]).toContain(state.kind);
+  });
+});
+
+describe("every entity has a capture mode, a normalizer path and a rule", () => {
+  it("is complete, so adding a kind means filling in a row", () => {
+    for (const [kind, policy] of Object.entries(ENTITY_POLICY)) {
+      expect(policy.ask.length, kind).toBeGreaterThan(0);
+      expect(policy.label.length, kind).toBeGreaterThan(0);
+      expect(["spelling", "keypad", "retry"], kind).toContain(policy.fallback);
+      expect(["identifier", "consequential", "conversational"], kind).toContain(policy.risk);
+      // The normalizer path: every kind can say its own value back (R4.3.2).
+      expect(typeof policy.say, kind).toBe("function");
+    }
+  });
+
+  it("only lets the conversational tier skip confirmation", () => {
+    for (const [kind, policy] of Object.entries(ENTITY_POLICY)) {
+      if (policy.confirm === "when-uncertain") {
+        expect(policy.risk, kind).toBe("conversational");
+      }
+    }
+  });
+});
+
+/**
+ * Nothing in capture or the normalizer may key on a value.
+ *
+ * These tables exist so that a change which only helps one name fails visibly. They are
+ * deliberately unrelated to the values in the live-call regressions above: those record
+ * what went wrong once, these prove the logic is about shape and context rather than
+ * about any particular string. None of them is a name anyone on this project has said.
+ */
+const NAMES: readonly { readonly label: string; readonly name: string }[] = [
+  { label: "short, East Asian", name: "Ng" },
+  { label: "short, Anglo diminutive", name: "Bea" },
+  { label: "common Anglo", name: "Harriet" },
+  { label: "West African, Akan", name: "Kwabena" },
+  { label: "East African, Kikuyu", name: "Wanjiru" },
+  { label: "long South Asian", name: "Venkataraman" },
+  { label: "Arabic with particle", name: "Al Rashid" },
+  { label: "Slavic", name: "Nowakowski" },
+  { label: "Iberian, two-part", name: "Pilar Escamilla" },
+  { label: "Dutch, particled three-part", name: "Anke van Dijk" },
+  { label: "unusual pronunciation", name: "Siobhan" },
+  { label: "hyphenated", name: "Marie Claude" },
+];
+
+const spellingOf = (name: string): string =>
+  name
+    .split(" ")
+    .map((part) => [...part].join(" "))
+    .join(" space ");
+
+describe("names: the logic is about shape, not about any name", () => {
+  for (const { label, name } of NAMES) {
+    it(`captures and confirms a ${label} name`, () => {
+      const asked = say(idle, `My name is ${name}`);
+      expect(asked.state, name).toMatchObject({ subject: "name", value: name });
+      expect(asked.say, name).toContain(name);
+      expect(agree(asked.state).captured, name).toBe(name);
+    });
+
+    it(`recovers a ${label} name through spelling`, () => {
+      // The transcriber got something else; the caller spells it. This is the path that
+      // has to work for a name nobody has ever boosted a keyterm for.
+      let state = say(idle, "My name is Something Else").state;
+      state = say(state, "No, that's not it").state;
+      expect(state.kind, name).toBe("spelling");
+
+      const spelled = say(state, spellingOf(name));
+      // Case-insensitive on purpose. A spelling carries letters and word boundaries and
+      // nothing else — a caller does not pronounce the lowercase "v" in a particled
+      // name, so title case per part is the honest reconstruction. Case is a storage
+      // concern, not a readback one: the caller hears the same sounds either way.
+      expect(spelled.state, name).toMatchObject({
+        value: expect.stringMatching(new RegExp(`^${name}$`, "i")),
+      });
+      expect(agree(spelled.state).captured?.toLowerCase(), name).toBe(name.toLowerCase());
+    });
+  }
+
+  it("keeps a spelling alphabet structural rather than enumerated", () => {
+    // "X for Word" works because Word begins with X, not because Word is in a table.
+    // The illustrating words here are ordinary nouns from no spelling alphabet at all.
+    const state = say(say(idle, "My name is Something Else").state, "No").state;
+    const spelled = say(state, "B for bicycle, E for engine, A for anchor");
+    expect(spelled.state).toMatchObject({ value: "Bea" });
+  });
+
+  it("does not read a name out of a turn that is a conversational move", () => {
+    const state = say(say(idle, "My name is Something Else").state, "No").state;
+    expect(say(state, "OK").state.kind).not.toBe("confirming");
+  });
+
+  it("keeps a name the transcriber emitted with its diacritics", () => {
+    // An ASCII-only filter discarded the whole name, which is the failure this module
+    // exists to prevent.
+    expect(say(idle, "My name is Ayòbámi").state).toMatchObject({ value: "Ayòbámi" });
+  });
+
+  it("does not read a callback instruction as an introduction", () => {
+    // "call me" is both an introduction and the front of "call me on oh eight one…".
+    const r = say(idle, "call me on oh eight one three eight one seven eight five five oh");
+    expect(r.state).toMatchObject({ subject: "phone" });
+  });
+});
+
+/**
+ * Identifier shapes, again unrelated to anything a live call produced. Every one is
+ * synthetic and none of them is special-cased anywhere.
+ */
+const IDENTIFIERS: readonly {
+  readonly label: string;
+  readonly spoken: string;
+  readonly value: string;
+}[] = [
+  { label: "purely numeric, digit by digit", spoken: "six two nine four one", value: "62941" },
+  { label: "numeric with a leading zero", spoken: "oh four four seven one", value: "04471" },
+  { label: "leading letters", spoken: "K R seven three nine two", value: "KR7392" },
+  { label: "trailing letters", spoken: "five five one eight T Q", value: "5518TQ" },
+  { label: "interleaved letters and digits", spoken: "J four M nine P two", value: "J4M9P2" },
+  { label: "spoken as tens rather than digits", spoken: "sixty two ninety four", value: "6294" },
+  { label: "spoken with a repeat", spoken: "double seven three one five", value: "77315" },
+  { label: "spoken with a pause mid-value", spoken: "eight three one, um, six four", value: "83164" },
+  { label: "letter O next to letters", spoken: "R O V four two eight", value: "ROV428" },
+];
+
+describe("identifiers: the logic is about shape, not about any identifier", () => {
+  for (const { label, spoken, value } of IDENTIFIERS) {
+    it(`captures a reference given with ${label}`, () => {
+      const asked = say(idle, `My policy number is ${spoken}`);
+      expect(asked.state, label).toMatchObject({ subject: "reference", value });
+      expect(asked.captured, label).toBeNull();
+      expect(agree(asked.state).captured, label).toBe(value);
+    });
+
+    it(`accepts the same reference on the keypad where it is typeable`, () => {
+      const digits = value.replace(/\D/g, "");
+      let state: CaptureState = { kind: "keypad", subject: "reference", digits: "", attempt: 0 };
+      for (const d of digits) state = press(state, d).state;
+      expect(press(state, "#").captured, label).toBe(digits);
+    });
+  }
+
+  it("takes a letter-only identifier once it has been asked for", () => {
+    // A tenant whose records are lettered has no digits to offer, and a run of letters
+    // cannot be picked out of free speech. Directed, it is unambiguous.
+    const answered = say(expecting("reference").state, "Q F R D M");
+    expect(answered.state).toMatchObject({ subject: "reference", value: "QFRDM" });
+  });
+
+  it("survives a plausible transcription error and the correction that follows", () => {
+    // The digit arrives wrong, the caller says so, the corrected value is read back
+    // rather than trusted — and the wrong one is never offered again.
+    const asked = say(idle, "My policy number is nine one four seven three");
+    expect(asked.state).toMatchObject({ value: "91473" });
+
+    const fixed = say(asked.state, "No, it's nine one four seven two");
+    expect(fixed.state).toMatchObject({ value: "91472" });
+    expect(fixed.captured).toBeNull();
+    expect(fixed.say).not.toContain("seven three");
+    expect(agree(fixed.state).captured).toBe("91472");
+  });
+
+  it("groups an identifier that fits no national pattern without mangling it", () => {
+    // Nigerian mobile grouping is length-and-prefix specific; everything else falls back
+    // to threes rather than being chopped into a shape it does not have.
+    const r = say(idle, "my policy number is four four one six three two nine six oh one one one");
+    expect(r.say).toContain("four four one");
+    expect(r.state).toMatchObject({ value: "441632960111" });
+  });
+});
+
+describe("what the model is told once a value is confirmed", () => {
+  it("says what kind of thing it is, rather than sniffing the shape", () => {
+    // The orchestrator used to regex the value to guess name-or-number, so a confirmed
+    // date reached the model as "My number is 2026-08-14."
+    expect(confirmedUtterance("date", "2026-08-14")).toContain("The date is 2026-08-14");
+    expect(confirmedUtterance("email", "ada@example.com")).toContain("My email is");
+    expect(confirmedUtterance("name", "Kwabena")).toContain("My name is Kwabena");
+    expect(confirmedUtterance("bvn", "22113344556")).toContain("My B V N is");
+  });
+
+  it("is phrased as the caller's own words, because it enters history as a caller turn", () => {
+    // A system note here is a system note the model may read aloud.
+    for (const kind of Object.keys(ENTITY_POLICY) as (keyof typeof ENTITY_POLICY)[]) {
+      expect(confirmedUtterance(kind, "x"), kind).toMatch(/^Yes, that is/);
+    }
   });
 });

@@ -1,4 +1,5 @@
 import { sayNumber } from "./numbers";
+import { parseNumberBefore, parseSpokenNumber } from "./spoken-number";
 
 /**
  * Money, which is the highest-stakes thing this package says.
@@ -57,3 +58,56 @@ export const expandMoney = (text: string): string =>
       const value = parseAmount(amount);
       return `${sayNumber(value)} ${value === 1 ? "pound" : "pounds"}`;
     });
+
+/* --------------------------------------------------- the other direction */
+
+/**
+ * The word that marks the number to its left as naira.
+ *
+ * Kobo are deliberately not in here. "Forty five thousand naira fifty kobo" has two
+ * currency words and scanning for either from the right finds the kobo, which is how an
+ * amount of forty-five thousand naira came out as fifty.
+ */
+const CURRENCY_WORD = /^(naira|nairas|ngn)$/;
+
+const CURRENCY_SYMBOL = /(?:₦|NGN\s?|\bN(?=\s?\d))\s?([\d,]+(?:\.\d{1,2})?)/i;
+
+/**
+ * An amount the caller quoted, in naira.
+ *
+ * Anchored on the currency word rather than taken from the start of the turn. "I have
+ * three policies and the premium is forty five thousand naira" contains two numbers and
+ * only one of them is money; reading left from "naira" gets the right one, and reading
+ * forward from the beginning gets three.
+ *
+ * Returns naira, rounded to the kobo. Kobo are essentially extinct in retail pricing
+ * here — nothing is quoted in them — so carrying a minor-unit integer through the whole
+ * pipeline would buy precision for a case that does not occur, at the cost of every call
+ * site having to remember which unit it holds.
+ */
+export const parseSpokenAmount = (text: string): number | null => {
+  const symbol = CURRENCY_SYMBOL.exec(text);
+  if (symbol !== null) return Math.round(parseAmount(symbol[1] ?? "") * 100) / 100;
+
+  const naira = parseNumberBefore(text, CURRENCY_WORD);
+  if (naira === null) return null;
+
+  // "forty five thousand naira fifty kobo". Rare, but a readback that drops the kobo
+  // from an amount the caller said is a readback that hides the mistake it exists for.
+  const kobo = parseNumberBefore(text, /^kobo$/);
+  const withKobo = kobo === null || kobo >= 100 ? naira : naira + kobo / 100;
+  return Math.round(withKobo * 100) / 100;
+};
+
+/**
+ * An amount with no currency word attached — "forty five thousand", said in answer to
+ * "how much?".
+ *
+ * Separate from `parseSpokenAmount` on purpose. Treating any bare number in a turn as
+ * money is how "I have three policies" becomes three naira; this may only be called when
+ * the agent has just asked for an amount and the answer can be nothing else.
+ */
+export const parseBareAmount = (text: string): number | null => parseSpokenNumber(text);
+
+/** An amount read back. The same words `expandMoney` would produce, reached directly. */
+export const sayAmount = (naira: number): string => sayNaira(naira);
