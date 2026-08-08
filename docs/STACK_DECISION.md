@@ -578,3 +578,43 @@ has not been measured on a real line.
 
 Next: a live call with the flag on, then re-run this harness on that recording to confirm
 the improvement holds and to measure what it costs.
+
+
+## 2026-08-08, third run — the encoding does not matter, and the name is deterministic
+
+Six trials on the same real recording through the PRODUCTION adapter, three each way:
+
+| | name-shaped token survived |
+|---|---|
+| mu-law 8k | 3/3 |
+| pcm 24k | 3/3 |
+
+**`OPENAI_SEND_PCM` is reverted to false.** The earlier entry claiming PCM rescued the name
+was drawn from ONE harness run against ONE mu-law run, and it did not replicate — the very
+next production run reversed it. Two single-sample comparisons reaching opposite
+conclusions is the definition of noise, and enabling a flag on the first of them repeated
+the exact mistake that produced three wrong provider conclusions earlier in the day. PCM
+also endpoints markedly slower, so it costs latency for nothing.
+
+**The finding that actually matters, and it is the answer to the whole day.** The caller's
+name is Sikiru. Every one of the six runs returned **Chike**. Not sometimes, not with
+variance between encodings — the same wrong name, six times out of six, on both encodings,
+through both the harness and the production adapter.
+
+That rules out almost everything this project has suspected:
+
+- not the encoding — proven equivalent here
+- not Twilio or the line — the same recording gives the same answer every time
+- not run-to-run variance — it is perfectly deterministic
+- not endpointing — the turn is captured cleanly, "Hi, my name is Chike. How are you doing?"
+- not prompting, not keyterms, not the orchestrator
+
+It is the acoustic model's mapping for this speaker saying this name, and it is stable. A
+stable wrong answer cannot be fixed by retrying, rephrasing, or reconfiguring the cascade;
+readback and spelling can only ever *detect* it. That is the evidence for speech-to-speech
+that was missing this morning — a model that hears the audio has something to work with
+that a transcript reading "Chike" does not.
+
+**A note on the test that hid this.** The trial asserted that a name-shaped token followed
+"my name is". It passed 6/6 while being wrong 6/6. Ground truth was known and unused. Any
+future measurement here must compare against what the caller actually said.
