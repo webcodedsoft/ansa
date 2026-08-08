@@ -68,7 +68,14 @@ import { VoiceController } from "./voice.controller";
           return null;
         }
         try {
-          return await createDataSource({ url: config.databaseUrl }).initialize();
+          const dataSource = await createDataSource({ url: config.databaseUrl }).initialize();
+          // initialize() does not open a connection. The first query of the process pays
+          // TCP and TLS to the database's region on top of its own round trip, which was
+          // measured at 1.15s on the media socket of the first outbound call after a
+          // restart. Paying it here costs a caller nothing.
+          await dataSource.query("select 1");
+          log.info("database pool warmed");
+          return dataSource;
         } catch (error) {
           log.error("database unavailable at boot, answering on defaults", {
             error: error instanceof Error ? error.message : String(error),

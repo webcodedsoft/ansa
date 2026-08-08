@@ -1,6 +1,8 @@
 import { Buffer } from "node:buffer";
 import { describe, expect, it, vi } from "vitest";
 
+import { asCallId } from "@ansa/shared";
+
 import { createTwilioTelephonyProvider } from "./twilio-telephony.provider";
 
 const ACCOUNT = "AC00000000000000000000000000000001";
@@ -110,5 +112,48 @@ describe("placeCall", () => {
     await expect(
       inboundOnly.placeCall({ to: "+1", from: "+2", mediaStreamUrl: "wss://x" }),
     ).rejects.toThrow(/account SID/);
+  });
+});
+
+describe("answering-machine detection", () => {
+  it("runs detection in parallel rather than in front of the call", async () => {
+    const p = provider(ok());
+    await p.provider.placeCall({
+      to: "+1", from: "+2", mediaStreamUrl: "wss://x",
+      amdCallbackUrl: "https://x/amd",
+    });
+
+    // Synchronous detection withheld the media stream for 6.9 seconds on a real call:
+    // the caller says hello into nothing. Async connects immediately.
+    const form = formOf(p.fetch);
+    expect(form.get("AsyncAmd")).toBe("true");
+    expect(form.get("AsyncAmdStatusCallback")).toBe("https://x/amd");
+    expect(form.get("MachineDetection")).toBe("DetectMessageEnd");
+  });
+
+  it("asks for no detection at all when told not to", async () => {
+    const p = provider(ok());
+    await p.provider.placeCall({
+      to: "+1", from: "+2", mediaStreamUrl: "wss://x", detectVoicemail: false,
+    });
+    expect(formOf(p.fetch).get("AsyncAmd")).toBeNull();
+  });
+});
+
+describe("endCall", () => {
+  it("completes the call through the carrier", async () => {
+    const p = provider({ ok: true, status: 200, json: async () => ({}) } as unknown as Response);
+    await p.provider.endCall(asCallId("CA999"));
+
+    const [url] = p.fetch.mock.calls[0] as unknown as [string];
+    expect(url).toBe(`https://carrier.test/2010-04-01/Accounts/${ACCOUNT}/Calls/CA999.json`);
+    expect(formOf(p.fetch).get("Status")).toBe("completed");
+  });
+
+  it("surfaces a refusal rather than pretending the call ended", async () => {
+    const p = provider({
+      ok: false, status: 404, text: async () => "not found",
+    } as unknown as Response);
+    await expect(p.provider.endCall(asCallId("CA999"))).rejects.toThrow(/404/);
   });
 });

@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import { validateRequest } from "twilio";
 
 import { asCallId } from "@ansa/shared";
+import type { CallId } from "@ansa/shared";
 
 import type {
   AnswerInstruction,
@@ -58,10 +59,23 @@ const buildCallForm = (
   form.set("From", request.from);
   form.set("Twiml", streamXml);
 
-  // Defaults on. DetectMessageEnd rather than Enable: knowing a machine answered is not
-  // useful on its own, we need to know when its greeting has finished.
+  // Defaults on, and asynchronous.
+  //
+  // Synchronous detection withholds the media stream until it has decided, which was
+  // measured at 6.9 seconds of dead air before the first audio frame of an outbound
+  // call — the caller says hello into nothing. Asynchronous connects immediately and
+  // reports the verdict to a callback, so the conversation starts on time and voicemail
+  // is still caught.
+  //
+  // DetectMessageEnd rather than Enable: knowing a machine answered is not useful on its
+  // own, we need to know when its greeting has finished.
   if (request.detectVoicemail !== false) {
     form.set("MachineDetection", "DetectMessageEnd");
+    form.set("AsyncAmd", "true");
+    if (request.amdCallbackUrl !== undefined) {
+      form.set("AsyncAmdStatusCallback", request.amdCallbackUrl);
+      form.set("AsyncAmdStatusCallbackMethod", "POST");
+    }
   }
 
   if (request.statusCallbackUrl !== undefined) {
@@ -114,6 +128,30 @@ export const createTwilioTelephonyProvider = (
     contentType: "text/xml; charset=utf-8",
     body: renderConnectStream(instruction.mediaStreamUrl, instruction.parameters ?? {}),
   }),
+
+  endCall: async (callId: CallId): Promise<void> => {
+    const accountSid = options.accountSid;
+    if (accountSid === undefined || accountSid === "") {
+      throw new Error("Cannot end a call without a Twilio account SID");
+    }
+    const doFetch = options.fetch ?? globalThis.fetch;
+    const base = options.apiBaseUrl ?? "https://api.twilio.com";
+    const response = await doFetch(
+      `${base}/2010-04-01/Accounts/${encodeURIComponent(accountSid)}/Calls/${encodeURIComponent(callId)}.json`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${Buffer.from(`${accountSid}:${options.authToken}`).toString("base64")}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ Status: "completed" }).toString(),
+      },
+    );
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      throw new Error(`Could not end call ${callId} (${response.status}): ${detail.slice(0, 200)}`);
+    }
+  },
 
   placeCall: async (request: PlaceCallRequest): Promise<PlacedCall> => {
     const accountSid = options.accountSid;

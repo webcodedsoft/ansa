@@ -9,6 +9,7 @@ import {
   Post,
   Res,
 } from "@nestjs/common";
+import { asCallId } from "@ansa/shared";
 import type { Logger } from "@ansa/shared";
 import type { TelephonyProvider } from "@ansa/telephony";
 
@@ -17,6 +18,7 @@ import type { TenantRegistry } from "../tenancy/tenant-registry";
 import {
   APP_CONFIG,
   LOGGER,
+  AMD_WEBHOOK_PATH,
   MEDIA_STREAM_PATH,
   TELEPHONY_PROVIDER,
   TENANT_PARAM,
@@ -80,5 +82,58 @@ export class VoiceController {
 
     res.setHeader("Content-Type", answer.contentType);
     return answer.body;
+  }
+
+  /**
+   * The carrier's verdict on what answered an outbound call.
+   *
+   * Arrives after the agent has already started talking, because detection runs in
+   * parallel rather than in front of the call — synchronous detection cost every human
+   * caller nearly seven seconds of silence. So this is a late correction, not a gate.
+   *
+   * Signature-verified like any other carrier webhook: it is a public URL that can hang
+   * up calls, which is a denial of service if anyone can post to it.
+   */
+  @Post("amd")
+  @HttpCode(HttpStatus.OK)
+  async answeringMachine(
+    @Body() body: unknown,
+    @Headers("x-twilio-signature") signature: string | undefined,
+  ): Promise<void> {
+    const verified = this.telephony.verifyWebhook({
+      url: `${this.config.publicBaseUrl}${AMD_WEBHOOK_PATH}`,
+      params: body,
+      signature: signature ?? null,
+    });
+    if (!verified) {
+      this.log.warn("rejected unsigned answering-machine webhook");
+      throw new ForbiddenException();
+    }
+
+    const fields = (body ?? {}) as Record<string, unknown>;
+    const callSid = typeof fields["CallSid"] === "string" ? fields["CallSid"] : null;
+    const answeredBy = typeof fields["AnsweredBy"] === "string" ? fields["AnsweredBy"] : "unknown";
+    if (callSid === null) return;
+
+    // Branded once here, at the edge, so nothing downstream handles an unvalidated
+    // carrier string.
+    const callId = asCallId(callSid);
+    const log = this.log.child({ callId });
+    log.info("carrier reported what answered", { answeredBy });
+
+    // "human" and "unknown" both keep the call. Hanging up on an uncertain verdict would
+    // drop real callers, and the cost of talking to a voicemail is money rather than a
+    // lost customer — so the doubt resolves in the caller's favour.
+    if (!answeredBy.startsWith("machine") && answeredBy !== "fax") return;
+
+    try {
+      await this.telephony.endCall(callId);
+      log.info("hung up on a voicemail", { answeredBy });
+    } catch (error) {
+      log.error("could not hang up on a voicemail", {
+        answeredBy,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }

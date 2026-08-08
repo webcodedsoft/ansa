@@ -46,6 +46,14 @@ export interface PlaceCallRequest {
   readonly detectVoicemail?: boolean;
   /** Where the carrier should report ringing, answer, no-answer and failure. */
   readonly statusCallbackUrl?: string;
+  /**
+   * Where the carrier should report whether a human or a machine answered.
+   *
+   * Detection runs in parallel with the conversation rather than in front of it, so this
+   * arrives after the agent has already started speaking. That is the right trade: the
+   * alternative costs every human caller seven seconds of silence.
+   */
+  readonly amdCallbackUrl?: string;
 }
 
 /**
@@ -153,6 +161,8 @@ export interface TelephonyProvider {
    * the discovery downstream to somewhere with less context.
    */
   placeCall(request: PlaceCallRequest): Promise<PlacedCall>;
+  /** Hang up a call in progress. Used when the thing that answered was a voicemail. */
+  endCall(callId: CallId): Promise<void>;
   /** Adopt a media socket the carrier has just opened. */
   attachMediaStream(socket: MediaSocket, handlers: MediaStreamHandlers): void;
 }

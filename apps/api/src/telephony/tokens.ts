@@ -13,3 +13,6 @@ export const MEDIA_STREAM_PATH = "/telephony/media";
 
 /** Name of the `<Parameter>` carrying the resolved tenant to the media socket. */
 export const TENANT_PARAM = "tenantId";
+
+/** Path the carrier POSTs the answering-machine verdict to. */
+export const AMD_WEBHOOK_PATH = "/telephony/amd";
