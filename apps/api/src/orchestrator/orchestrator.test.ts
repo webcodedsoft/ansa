@@ -818,6 +818,57 @@ describe("readback in the turn loop (R4.3)", () => {
     assertInvariants(h);
   });
 
+  /**
+   * 2026-08-08, 12:12:42, on a real call: capture escalated and the agent never spoke
+   * again. `captureHandled` reported every subsequent turn as handled, so `respondTo`
+   * never ran, and the caller — who had just been told a colleague was coming — talked to
+   * a dead line until they hung up.
+   */
+  it("keeps answering the caller after capture has escalated", () => {
+    const h = setup();
+
+    // Name capture with no usable candidate: readback rejected, spelling asked for twice,
+    // then given up on. The route is what capture.ts decides, not something asserted here.
+    h.listen.final("My name is Adebayo.");
+    h.listen.final("No.");
+    h.listen.final("No.");
+    h.listen.final("No.");
+    expect(h.tts.texts().join(" ")).toContain("colleague");
+
+    const answered = h.llm.completions.length;
+    const spokenSoFar = h.tts.texts().length;
+    h.listen.final("Fine. What time do you close today?");
+
+    // The model gets the turn. Silence here is the bug.
+    expect(h.llm.completions.length).toBeGreaterThan(answered);
+    // And they are not dragged back into the readback they just failed three times:
+    // `escalate` is terminal for capture, so nothing capture says can follow it.
+    expect(h.tts.texts().slice(spokenSoFar).join(" ")).not.toMatch(/spell|colleague|right\?/);
+    assertInvariants(h);
+  });
+
+  /**
+   * The old gate reached capture only through a name cue or a digit run, so every entity
+   * whose value is not digits was unreachable however clearly the caller said it. A table
+   * rather than one case: a fix that only rescues one kind fails visibly here.
+   */
+  it.each([
+    ["an email", "my email is s i k i r u at gmail dot com"],
+    ["an amount", "the premium is forty five thousand naira"],
+    ["an address", "my address is 14 Adeola Odeku Street, Victoria Island"],
+    ["a date", "call me back tomorrow"],
+  ])("confirms %s before the model sees it", (_what, said) => {
+    const h = setup();
+
+    h.listen.final(said);
+
+    // Held back, and something was said about it — the readback wording belongs to
+    // capture.ts and is asserted there.
+    expect(h.llm.completions.length).toBe(0);
+    expect(h.tts.texts().length).toBeGreaterThan(0);
+    assertInvariants(h);
+  });
+
   it("ignores keypad tones when no capture is running", () => {
     const h = setup();
     const before = h.tts.texts().length;

@@ -7,11 +7,10 @@ import { durationMs, type SynthesisStream, type TtsProvider } from "@ansa/tts";
 
 import { createFillerPicker } from "../telephony/filler";
 import { classify } from "./action";
-import { advance, idle, nameFrom, worthConfirming, type CaptureState } from "./capture";
+import { advance, confirmedUtterance, idle, logSafe, type CaptureState } from "./capture";
 import { endsMidThought, isBareGreeting } from "./completeness";
 import { createSpeechGate } from "./speech-gate";
 import { nullRecorder, type CallRecorder } from "../telephony/event-log";
-import { parseSpokenDigits } from "@ansa/normalizer";
 import { createConversation } from "./conversation";
 import { interpret, normalise } from "./hearing";
 import { budgetFor, budgetMs } from "./turn-budget";
@@ -1089,34 +1088,48 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
    * a number under confirmation is not yet a fact, and letting the model answer around
    * it is exactly the failure R4.3.1 exists to prevent.
    */
-  const captureHandled = (text: string, forModel: string): boolean => {
-    // Whether to engage capture at all. The state machine decides what to do once it is
-    // engaged; this decides whether the turn is worth confirming in the first place.
+  const captureHandled = (
+    text: string,
+    forModel: string,
+    confidence: number | null,
+  ): boolean => {
+    // No gate in front of the machine any more. The old one could only reach capture
+    // through a name cue or a digit run, so email, address, date, time and amount were
+    // unreachable whatever the caller said. `advance` classifies the turn itself and
+    // reports the answer on `handled`.
     //
-    // A name always is. Nigerian names cannot be transcribed reliably on this channel and
-    // keyterms cannot help — the caller's name is unknown by definition, so there is
-    // nothing to boost. Confirming is the only way to discover we heard it wrong.
-    if (capture.kind === "idle" && nameFrom(text) === null) {
-      const value = parseSpokenDigits(text);
-      if (value === null || !worthConfirming(value, text)) return false;
-    }
-
-    const result = advance(capture, { kind: "speech", text });
+    // Confidence travels with the turn and can only add checking: below a floor an
+    // identifier gets one spoken attempt before the keypad instead of two. Null is passed
+    // through unchanged — null is not low.
+    const result = advance(capture, {
+      kind: "speech",
+      text,
+      confidence,
+      at: Date.now(),
+    });
     capture = result.state;
 
-    if (result.captured !== null) {
+    // Capture is not involved in this turn — nothing to capture, or capture is over.
+    //
+    // Releasing rather than swallowing is what keeps an escalated caller audible. On a
+    // real call at 12:12:42 on 2026-08-08 the state reached `escalate`, `advance` returned
+    // it unchanged with nothing to say, this function still reported the turn as handled,
+    // and the caller — who had just been told a colleague was coming — talked to a dead
+    // line for the rest of the call. The state stays `escalate`, so they are never dragged
+    // back into a readback; the model simply answers them like any other caller.
+    if (!result.handled) return false;
+
+    const captured = result.captured;
+    const capturedKind = result.capturedKind;
+    if (captured !== null && capturedKind !== null) {
       capture = idle;
-      log.info("value confirmed by the caller", { chars: result.captured.length });
-      record.event("value confirmed", { chars: result.captured.length });
+      log.info("value confirmed by the caller", { kind: capturedKind, chars: captured.length });
+      record.event("value confirmed", { kind: capturedKind, chars: captured.length });
       // The model finally sees the value, and sees it as confirmed. Routed through
-      // respondTo so it is recorded, budgeted and spoken like any other turn.
-      const asName = /^[A-Za-z][A-Za-z' -]*$/.test(result.captured);
-      respondTo(
-        text,
-        asName
-          ? `Yes, that is right. My name is ${result.captured}.`
-          : `Yes, that is correct. My number is ${result.captured}.`,
-      );
+      // respondTo so it is recorded, budgeted and spoken like any other turn. The kind
+      // comes from capture rather than from the shape of the value: shape-sniffing turned
+      // a confirmed date into "My number is 2026-08-14."
+      respondTo(text, confirmedUtterance(capturedKind, captured));
       return true;
     }
 
@@ -1132,7 +1145,13 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     }
 
     if (capture.kind === "confirming") {
-      record.event("entity_candidate", { subject: capture.subject, value: capture.value });
+      // Redacted on the way out. A NIN, a BVN and a one-time code all reach this line in
+      // the clear otherwise, and the transcript viewer becomes a list of national identity
+      // numbers. `logSafe` keys on the entity's `sensitive` flag, never on the value.
+      record.event("entity_candidate", {
+        subject: capture.subject,
+        value: logSafe(capture.subject, capture.value),
+      });
       record.event("confirmation_requested", { subject: capture.subject, attempt: capture.attempt });
     }
     if (result.say !== null) sayNow(result.say, `readback:${capture.kind}`);
@@ -1155,10 +1174,12 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     const result = advance(capture, { kind: "keypad", digit });
     capture = result.state;
 
-    if (result.captured !== null) {
+    const captured = result.captured;
+    const capturedKind = result.capturedKind;
+    if (captured !== null && capturedKind !== null) {
       capture = idle;
-      log.info("value entered on the keypad", { chars: result.captured.length });
-      respondTo(result.captured, `My number is ${result.captured}.`);
+      log.info("value entered on the keypad", { kind: capturedKind, chars: captured.length });
+      respondTo(captured, confirmedUtterance(capturedKind, captured));
       return;
     }
     if (result.say !== null) sayNow(result.say, "keypad");
@@ -1285,7 +1306,9 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       const timer = setTimeout(() => {
         pending = null;
         log.info("caller did not continue, answering what we have", { text: whole });
-        if (!captureHandled(whole, wholeForModel)) respondTo(whole, wholeForModel);
+        if (!captureHandled(whole, wholeForModel, transcript.confidence)) {
+          respondTo(whole, wholeForModel);
+        }
       }, CONTINUATION_WAIT_MS);
       timer.unref();
       pending = { text: whole, forModel: wholeForModel, timer };
@@ -1294,7 +1317,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
 
     // Before the model, never after. R4.3.1 is a gate, and a gate the model can answer
     // around is not a gate.
-    if (captureHandled(whole, wholeForModel)) return;
+    if (captureHandled(whole, wholeForModel, transcript.confidence)) return;
 
     respondTo(whole, wholeForModel);
   });

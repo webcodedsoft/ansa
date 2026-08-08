@@ -285,7 +285,7 @@ const FUNCTION_WORD =
  * Matched against a single sentence rather than the whole turn: "My name is Hill. How
  * are you doing?" must yield "Hill", not "Hill How are you doing".
  */
-export const nameFrom = (text: string): string | null => {
+const nameFrom = (text: string): string | null => {
   for (const sentence of text.split(/[.?!,]+/)) {
     const match = NAME_CUE.exec(sentence.trim());
     if (match === null) continue;
@@ -707,10 +707,6 @@ export const confirmedUtterance = (kind: EntityKind, value: string): string => {
 
 /* ------------------------------------------------------------ classification */
 
-/** Words that mean the caller is dictating something they expect to be acted on. */
-const REFERENCE_CUE =
-  /\b(policy|reference|ref|claim|account|acct|number|code|pin|otp|nin|bvn|phone|mobile|call me on)\b/i;
-
 /**
  * Cue words that name the entity outright, most specific first.
  *
@@ -781,25 +777,15 @@ export const classify = (text: string, atMs: number): EntityKind | null => {
   return "quantity";
 };
 
-/**
- * Whether a value the caller said is worth confirming.
- *
- * Kept with its original signature because the orchestrator gates on it before engaging
- * capture at all. It now answers by classifying rather than by shape alone, which is the
- * substantive change: "I've been with you since 2019" used to be confirmed because it
- * was four characters long, and a year read back to a caller is what makes an agent
- * sound like a form being filled in.
+/*
+ * `worthConfirming` lived here and has been deleted along with the orchestrator gate it
+ * served. That gate asked "is this turn worth engaging capture for" *before* capture was
+ * consulted, which meant the answer had to be derived from a digit parse the orchestrator
+ * did itself — and so email, address, date, time and amount were unreachable however
+ * clearly the caller said them. `advance` now classifies its own turn and answers the same
+ * question on `CaptureResult.handled`, from the parsed value rather than from a guess at
+ * it. Two answers to one question is how they drift apart.
  */
-export const worthConfirming = (value: string, text: string): boolean => {
-  const kind = classify(text, Date.now());
-  if (kind === null) return false;
-  // Not `mustConfirm(kind, value)`: `value` here is whatever the orchestrator's own
-  // digit parse produced, which is not the parsed form for a date or an amount. The
-  // question at this seam is only "is this worth engaging capture for", and the answer
-  // for anything but a bare conversational quantity is yes.
-  if (ENTITY_POLICY[kind].confirm === "always") return true;
-  return REFERENCE_CUE.test(text) && value.length >= 4;
-};
 
 /* ------------------------------------------------------------------ speaking */
 
