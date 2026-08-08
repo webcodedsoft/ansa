@@ -1,4 +1,4 @@
-import { forSpeech, parseSpokenDigits, sayReference } from "@ansa/normalizer";
+import { forSpeech, parseSpelledName, parseSpokenDigits, sayReference } from "@ansa/normalizer";
 
 /**
  * Readback (R4.3.1).
@@ -18,9 +18,22 @@ import { forSpeech, parseSpokenDigits, sayReference } from "@ansa/normalizer";
 /** R4.3.3: the keypad is offered after two failed spoken attempts, not sooner. */
 export const MAX_SPOKEN_ATTEMPTS = 2;
 
+/**
+ * What is being captured. It changes the fallback, not the flow: a number the caller
+ * cannot get across goes to the keypad, and a name goes to spelling — there is no key
+ * for "Sikiru".
+ */
+export type CaptureSubject = "number" | "name";
+
 export type CaptureState =
   | { readonly kind: "idle" }
-  | { readonly kind: "confirming"; readonly value: string; readonly attempt: number }
+  | {
+      readonly kind: "confirming";
+      readonly value: string;
+      readonly attempt: number;
+      readonly subject: CaptureSubject;
+    }
+  | { readonly kind: "spelling"; readonly attempt: number }
   | { readonly kind: "keypad"; readonly digits: string; readonly attempt: number }
   | { readonly kind: "confirmed"; readonly value: string }
   | { readonly kind: "escalate" };
@@ -79,8 +92,16 @@ const NO = /\b(no|nope|nah|wrong|incorrect|not (right|correct|it)|mistake)\b/i;
 /** Agreement that merely contains a "no". Nigerian English uses all three. */
 const FALSE_NEGATIVES = /\bno (problem|worries|wahala)\b/gi;
 
-const readback = (value: string): string =>
-  forSpeech(`Let me read that back to you. ${sayReference(value)}. Is that correct?`);
+const readback = (value: string, subject: CaptureSubject): string =>
+  subject === "name"
+    // A name is read back as a word, not spelled at the caller. Spelling it back before
+    // they have complained is both slower and faintly insulting.
+    ? forSpeech(`Let me make sure I have that right. ${value}. Have I got that?`)
+    : forSpeech(`Let me read that back to you. ${sayReference(value)}. Is that correct?`);
+
+const spellPrompt = forSpeech(
+  "Sorry about that. Could you spell it for me, one letter at a time?",
+);
 
 const retry = forSpeech("Sorry, let's try again. Could you say it once more, slowly?");
 
@@ -90,22 +111,90 @@ const keypadPrompt = forSpeech(
 
 const escalation = forSpeech("Let me put you through to a colleague who can help with this.");
 
-/** Begin a capture. The caller's turn is searched for a value; no value, no state change. */
+/** How a caller introduces themselves. Deliberately explicit forms only. */
+const NAME_CUE = /\b(?:my name is|my name's|the name is|i am called|i'm called|call me)\s+(.*)$/i;
+
+/**
+ * The name in a caller's turn, if they gave one.
+ *
+ * Matched against a single sentence rather than the whole turn: "My name is Hill. How
+ * are you doing?" must yield "Hill", not "Hill How are you doing".
+ */
+export const nameFrom = (text: string): string | null => {
+  for (const sentence of text.split(/[.?!]+/)) {
+    const match = NAME_CUE.exec(sentence.trim());
+    if (match === null) continue;
+
+    const rest = (match[1] ?? "").trim();
+    // At most two words: a first name, or a first and last. More than that is the
+    // transcriber running on, not a longer name.
+    const words = rest.split(/\s+/).filter((w) => /^[A-Za-z][A-Za-z'-]*$/.test(w)).slice(0, 2);
+    if (words.length === 0) continue;
+    return words.join(" ");
+  }
+  return null;
+};
+
+/** Begin a capture of a value the orchestrator has already decided is worth confirming. */
+export const beginCapture = (value: string, subject: CaptureSubject): CaptureResult => ({
+  state: { kind: "confirming", value, attempt: 1, subject },
+  say: readback(value, subject),
+  captured: null,
+});
+
+/**
+ * Begin a capture. The caller's turn is searched for a value; no value, no state change.
+ *
+ * A name is looked for first. "My policy number is four one seven" contains no name cue
+ * and "my name is Hill" contains no digits, so the two do not compete in practice — but
+ * when a caller gives both, who they are is the thing the transcriber is worse at.
+ */
 const start = (text: string): CaptureResult => {
+  const name = nameFrom(text);
+  if (name !== null) return beginCapture(name, "name");
+
   const value = parseSpokenDigits(text);
   if (value === null) return { state: idle, say: null, captured: null };
+  return beginCapture(value, "number");
+};
+
+/** Where a caller goes when speech has failed twice: keypad for a number, spelling for a name. */
+const fallbackFor = (subject: CaptureSubject): CaptureResult =>
+  subject === "name"
+    ? { state: { kind: "spelling", attempt: 0 }, say: spellPrompt, captured: null }
+    : { state: { kind: "keypad", digits: "", attempt: 0 }, say: keypadPrompt, captured: null };
+
+const spelling = (
+  state: { readonly attempt: number },
+  text: string,
+): CaptureResult => {
+  const spelled = parseSpelledName(text);
+  if (spelled !== null) {
+    return {
+      state: { kind: "confirming", value: spelled, attempt: 1, subject: "name" },
+      say: readback(spelled, "name"),
+      captured: null,
+    };
+  }
+
+  // They answered something other than a spelling. Ask once more, then hand over.
+  if (state.attempt >= 1) {
+    return { state: { kind: "escalate" }, say: escalation, captured: null };
+  }
   return {
-    state: { kind: "confirming", value, attempt: 1 },
-    say: readback(value),
+    state: { kind: "spelling", attempt: state.attempt + 1 },
+    say: spellPrompt,
     captured: null,
   };
 };
 
 const confirming = (
-  state: { readonly value: string; readonly attempt: number },
+  state: { readonly value: string; readonly attempt: number; readonly subject: CaptureSubject },
   text: string,
 ): CaptureResult => {
-  const said = parseSpokenDigits(text);
+  // A name is never re-read from free speech: the transcriber already proved it cannot
+  // hear it, and re-parsing produces a third wrong spelling rather than a correction.
+  const said = state.subject === "name" ? null : parseSpokenDigits(text);
 
   // Order matters. A caller correcting a digit usually says "no, it's four one eight" —
   // rejection and correction in one breath. Checking for a value first would accept the
@@ -124,18 +213,20 @@ const confirming = (
     // readback rather than being taken at face value — the correction is speech too, and
     // R4.3.1 does not exempt it.
     return {
-      state: { kind: "confirming", value: said, attempt: state.attempt + 1 },
-      say: readback(said),
+      state: { kind: "confirming", value: said, attempt: state.attempt + 1, subject: state.subject },
+      say: readback(said, state.subject),
       captured: null,
     };
   }
 
   if (rejected) {
-    if (state.attempt >= MAX_SPOKEN_ATTEMPTS) {
-      return { state: { kind: "keypad", digits: "", attempt: 0 }, say: keypadPrompt, captured: null };
+    // A rejected name goes straight to spelling. Asking someone to say it again slowly
+    // is what produced "Hill", then "Sequium", then "Security security security".
+    if (state.subject === "name" || state.attempt >= MAX_SPOKEN_ATTEMPTS) {
+      return fallbackFor(state.subject);
     }
     return {
-      state: { kind: "confirming", value: state.value, attempt: state.attempt + 1 },
+      state: { kind: "confirming", value: state.value, attempt: state.attempt + 1, subject: state.subject },
       say: retry,
       captured: null,
     };
@@ -151,12 +242,10 @@ const confirming = (
 
   // Neither agreement nor a value: the caller said something else entirely. Ask again
   // rather than guessing, and count it, so an unanswerable exchange still terminates.
-  if (state.attempt >= MAX_SPOKEN_ATTEMPTS) {
-    return { state: { kind: "keypad", digits: "", attempt: 0 }, say: keypadPrompt, captured: null };
-  }
+  if (state.attempt >= MAX_SPOKEN_ATTEMPTS) return fallbackFor(state.subject);
   return {
-    state: { kind: "confirming", value: state.value, attempt: state.attempt + 1 },
-    say: readback(state.value),
+    state: { kind: "confirming", value: state.value, attempt: state.attempt + 1, subject: state.subject },
+    say: readback(state.value, state.subject),
     captured: null,
   };
 };
@@ -206,6 +295,8 @@ export const advance = (state: CaptureState, event: CaptureEvent): CaptureResult
       return start(event.text);
     case "confirming":
       return confirming(state, event.text);
+    case "spelling":
+      return spelling(state, event.text);
     case "keypad": {
       // Talking instead of typing. Repeat the instruction once, then hand over.
       if (state.attempt >= 1) {

@@ -154,3 +154,73 @@ describe("readback regressions from live calls", () => {
     expect(speak(asked.state, "Right?").captured).toBeNull();
   });
 });
+
+describe("names (2026-08-08 call: Sikiru -> Hill -> Sequium -> Security)", () => {
+  it("confirms a name the caller introduces, as a word not a spelling", () => {
+    const r = speak(idle, "Hi. Good morning. My name is Hill. How are you doing?");
+    expect(r.state).toMatchObject({ kind: "confirming", subject: "name", value: "Hill" });
+    // Spelling it back before they have complained is slower and faintly insulting.
+    expect(r.say).toContain("Hill");
+    expect(r.say).not.toContain("H I");
+    expect(r.captured).toBeNull();
+  });
+
+  it("does not swallow the rest of the turn into the name", () => {
+    const r = speak(idle, "My name is Hill. How are you doing?");
+    expect(r.state).toMatchObject({ value: "Hill" });
+  });
+
+  it("goes straight to spelling when a name is rejected", () => {
+    // Asking someone to say it again slowly is what produced three wrong spellings.
+    const asked = speak(idle, "My name is Hill");
+    const no = speak(asked.state, "No, that's not it");
+    expect(no.state.kind).toBe("spelling");
+    expect(no.say).toContain("spell");
+  });
+
+  it("takes the spelled name and confirms that instead", () => {
+    let state = speak(idle, "My name is Security").state;
+    state = speak(state, "No").state;
+    const spelled = speak(state, "S I K I R U");
+    expect(spelled.state).toMatchObject({ kind: "confirming", value: "Sikiru" });
+
+    expect(speak(spelled.state, "Yes that's right").captured).toBe("Sikiru");
+  });
+
+  it("reads a spelling given with bridging words", () => {
+    let state = speak(idle, "My name is Security").state;
+    state = speak(state, "No").state;
+    // The illustrating word is recognised by its own first letter, so this works for any
+    // word in any language — no spelling alphabet is hardcoded.
+    expect(speak(state, "S for Sunday, I for India, K, I, R, U").state).toMatchObject({
+      value: "Sikiru",
+    });
+  });
+
+  it("never re-parses a name from free speech", () => {
+    // The transcriber already proved it cannot hear this name; parsing again produces a
+    // third wrong version rather than a correction.
+    const asked = speak(idle, "My name is Hill");
+    const again = speak(asked.state, "No, it is Sequium");
+    expect(again.state.kind).toBe("spelling");
+  });
+
+  it("hands over when spelling fails too", () => {
+    let state = speak(idle, "My name is Hill").state;
+    state = speak(state, "No").state;
+    state = speak(state, "I already told you").state;
+    expect(speak(state, "This is ridiculous").state.kind).toBe("escalate");
+  });
+
+  it("handles a two-part name, spelled", () => {
+    let state = speak(idle, "My name is Security").state;
+    state = speak(state, "No").state;
+    // Nothing here knows about any particular name; it is letters in, letters out.
+    expect(speak(state, "A D E D E J I").state).toMatchObject({ value: "Adedeji" });
+  });
+
+  it("still confirms a number the same way", () => {
+    const r = speak(idle, "My policy number is four one seven two nine");
+    expect(r.state).toMatchObject({ subject: "number" });
+  });
+});

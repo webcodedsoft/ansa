@@ -7,7 +7,7 @@ import { durationMs, type SynthesisStream, type TtsProvider } from "@ansa/tts";
 
 import { createFillerPicker } from "../telephony/filler";
 import { classify } from "./action";
-import { advance, idle, worthConfirming, type CaptureState } from "./capture";
+import { advance, idle, nameFrom, worthConfirming, type CaptureState } from "./capture";
 import { endsMidThought } from "./completeness";
 import { parseSpokenDigits } from "@ansa/normalizer";
 import { createConversation } from "./conversation";
@@ -929,7 +929,13 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
    * it is exactly the failure R4.3.1 exists to prevent.
    */
   const captureHandled = (text: string, forModel: string): boolean => {
-    if (capture.kind === "idle") {
+    // Whether to engage capture at all. The state machine decides what to do once it is
+    // engaged; this decides whether the turn is worth confirming in the first place.
+    //
+    // A name always is. Nigerian names cannot be transcribed reliably on this channel and
+    // keyterms cannot help — the caller's name is unknown by definition, so there is
+    // nothing to boost. Confirming is the only way to discover we heard it wrong.
+    if (capture.kind === "idle" && nameFrom(text) === null) {
       const value = parseSpokenDigits(text);
       if (value === null || !worthConfirming(value, text)) return false;
     }
@@ -940,9 +946,15 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     if (result.captured !== null) {
       capture = idle;
       log.info("value confirmed by the caller", { chars: result.captured.length });
-      // The model finally sees the number, and sees it as confirmed. Routed through
+      // The model finally sees the value, and sees it as confirmed. Routed through
       // respondTo so it is recorded, budgeted and spoken like any other turn.
-      respondTo(text, `Yes, that is correct. My number is ${result.captured}.`);
+      const asName = /^[A-Za-z][A-Za-z' -]*$/.test(result.captured);
+      respondTo(
+        text,
+        asName
+          ? `Yes, that is right. My name is ${result.captured}.`
+          : `Yes, that is correct. My number is ${result.captured}.`,
+      );
       return true;
     }
 

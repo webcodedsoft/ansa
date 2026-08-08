@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseSpokenDigits } from "./spoken-digits";
+import { parseSpelledName, parseSpokenDigits } from "./spoken-digits";
 
 describe("parseSpokenDigits", () => {
   it("reads digits dictated one at a time", () => {
@@ -81,5 +81,29 @@ describe("parseSpokenDigits contractions", () => {
     // "No, it's four one eight" was captured as S418 before the apostrophe closed up.
     expect(parseSpokenDigits("No, it's four one eight")).toBe("418");
     expect(parseSpokenDigits("that's nine nine two")).toBe("992");
+  });
+});
+
+describe("parseSpelledName", () => {
+  it("reads a plain spelling", () => {
+    expect(parseSpelledName("S I K I R U")).toBe("Sikiru");
+    expect(parseSpelledName("a d e d e j i")).toBe("Adedeji");
+  });
+
+  it("reads a spelling given with illustrating words", () => {
+    // Matched by the word's own first letter, so no spelling alphabet is hardcoded and
+    // it works for whatever word the caller reaches for.
+    expect(parseSpelledName("S for Sunday, I for India, K, I, R, U")).toBe("Sikiru");
+    expect(parseSpelledName("A as in Adamawa, D as in Delta, E, J, I")).toBe("Adeji");
+  });
+
+  it("survives the punctuation a transcriber inserts", () => {
+    expect(parseSpelledName("S. I. K. I. R. U.")).toBe("Sikiru");
+    expect(parseSpelledName("s-i-k-i-r-u")).toBe("Sikiru");
+  });
+
+  it("is not fooled by ordinary speech", () => {
+    expect(parseSpelledName("I would like to renew my cover")).toBeNull();
+    expect(parseSpelledName("OK")).toBeNull();
   });
 });

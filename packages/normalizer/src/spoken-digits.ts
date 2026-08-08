@@ -171,3 +171,58 @@ export const parseSpokenDigits = (text: string): string | null => {
 
   return best === "" ? null : best;
 };
+
+/**
+ * A name the caller has spelled out, letter by letter.
+ *
+ * Nigerian names cannot be transcribed reliably from 8kHz telephony audio and keyterms
+ * cannot help: a caller's name is unknown by definition, so there is nothing to boost.
+ * On a live call "Sikiru" came back as "Hill", then "Sequium", then "Security security
+ * security". Spelling is the only path that converges, and it is what a human agent does
+ * on a bad line too.
+ *
+ * Transcribers render spelled letters in several ways — "S I K I R U", "s-i-k-i-r-u",
+ * "S. I. K." — and all of them flatten to single-letter tokens.
+ */
+export const parseSpelledName = (text: string): string | null => {
+  const tokens = text
+    .toLowerCase()
+    .replace(/['’]/g, "")
+    .replace(/[^a-z\s-]/g, " ")
+    .replace(/-/g, " ")
+    .split(/\s+/)
+    .filter((t) => t !== "");
+
+  const BRIDGES = ["as", "in", "for", "like", "and", "of"];
+
+  let best: string[] = [];
+  let run: string[] = [];
+
+  for (const token of tokens) {
+    if (token.length === 1) {
+      run.push(token);
+      continue;
+    }
+
+    const lastLetter = run[run.length - 1];
+
+    // "S for Sunday" and "A as in Apple": the bridge is skipped and so is the word that
+    // illustrates the letter, because it confirms the letter rather than adding one.
+    // Recognised by its own first letter, which is what makes it work for any word in
+    // any language rather than needing a spelling alphabet.
+    if (BRIDGES.includes(token) && run.length > 0) continue;
+    if (lastLetter !== undefined && token.startsWith(lastLetter)) continue;
+
+    if (run.length > best.length) best = run;
+    run = [];
+  }
+  if (run.length > best.length) best = run;
+
+  // Two letters is not a spelling, it is a false positive on "OK" or a stray article.
+  if (best.length < 3) return null;
+
+  // Title case, not upper. "SIKIRU" makes TTS engines spell the word out letter by
+  // letter, which would read the name back as the very thing the caller just did.
+  const joined = best.join("");
+  return joined.charAt(0).toUpperCase() + joined.slice(1);
+};
