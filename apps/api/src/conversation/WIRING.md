@@ -1,3 +1,8 @@
+> **APPLIED 2026-08-08** in "The call keeps a record, not just a transcript". All seven
+> steps, with one deviation: step 3 routes a confirmed value by the entity kind capture
+> now reports rather than by the `asName` regex, and a kind the store has no field for
+> writes nothing. The "proving it on a phone call" section is still owed.
+
 # Wiring `call-facts` into the call
 
 Written by the `context-memory` agent during a parallel run in which nine agents shared

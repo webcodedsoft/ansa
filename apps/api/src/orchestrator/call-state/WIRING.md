@@ -1,3 +1,8 @@
+> **APPLIED 2026-08-08** in "The call's state is one named value, and it decides
+> nothing", exactly as written. `orchestrator.test.ts` passed with no expectation
+> touched. Section 6 lists six things known wrong: 1, 3, 6 and the echo half of 2 are
+> now fixed; 4, 5 and 7 are not.
+
 # Wiring the call state machine into `orchestrator.ts`
 
 Apply this by hand, serially, once the other agents working in `orchestrator.ts` have

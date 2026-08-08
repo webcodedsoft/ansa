@@ -1,3 +1,9 @@
+> **STEP 0 APPLIED 2026-08-08** in "The model can ask for a tool". Steps 1-5 are NOT
+> applied. They need `@ansa/tools` added to `apps/api/package.json`, which is a
+> dependency decision for a human, and the only registrable tool that exists is
+> `createInMemoryPolicyBook`, a fake — registering it would let the agent answer a real
+> caller from a policy book nobody wrote.
+
 # Wiring `@ansa/tools` into the call path
 
 Written by the `tools-and-actions` agent while eight other agents held

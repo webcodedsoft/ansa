@@ -1,3 +1,7 @@
+> **APPLIED 2026-08-08** in "The tenant's own prompt reaches the model". Steps 1 and 2,
+> with `systemPrompt` required rather than defaulted and `orchestrator/system-prompt.ts`
+> deleted. Sections 3-6 are still open.
+
 # Wiring the tenant layer into a call
 
 Written because nine agents were working in this tree at once and `orchestrator.ts` and

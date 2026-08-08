@@ -29,38 +29,69 @@ measured — which is why Gate A exists, and why it must close before Slice 4.
 
 ---
 
-## Open at the end of 2026-08-08
+## Open at the end of 2026-08-08 — after the integration pass
 
-**Seven agents landed, nothing is wired.** Nine commits and seven `WIRING.md` files, all
-targeting `orchestrator.ts` — which is exactly why no agent could apply them. The next job
-is one integrator doing them serially, in this order:
+**Six of the seven `WIRING.md` files are applied**, serially, one commit each, on the
+order they were written in. `pnpm lint && pnpm typecheck && pnpm test` is green: 915 tests
+across 10 packages. **None of it is proven — no call has been placed since.**
 
-1. `orchestrator/CAPTURE_WIRING.md` — carries the escalation fix. Live bug, two lines.
-2. `conversation/WIRING.md` — structured state; the rest read from it.
-3. `orchestrator/call-state/WIRING.md` — no-behaviour-change refactor onto that state.
-4. `prompts/WIRING.md` · 5. `handoff/WIRING.md` · 6. `viewer/WIRING.md`
-7. `packages/tools/WIRING.md` last — blocked on its own step 0: `packages/providers/llm`
-   has no tool surface, so the model cannot request a tool at all.
+What landed, in order:
 
-**Two agents never ran** — `turn-taking` and `latency-audio` — both need a recording.
+1. `orchestrator/CAPTURE_WIRING.md` — the escalation black hole is closed. Capture
+   releases a turn it is not handling, so an escalated caller is answered by the model
+   instead of hearing silence for the rest of the call. With it: the gate is gone (email,
+   address, date, time and amount can reach capture at all now), confidence travels with
+   the speech event, `entity_candidate` is redacted through `logSafe`, and a confirmed
+   value is announced by its kind rather than by the shape of the string.
+2. `conversation/WIRING.md` — the call keeps a record. One deviation, recorded in the
+   commit: a confirmed value is routed by entity kind rather than by an `asName` regex,
+   and kinds the store has no field for write nothing rather than being filed as a policy
+   number.
+3. `orchestrator/call-state/WIRING.md` — applied as written, no behaviour change, and
+   `orchestrator.test.ts` passes with no expectation touched, which is the proof.
+4. `prompts/WIRING.md` — the tenant's composed prompt reaches the model. `systemPrompt`
+   is required rather than defaulted, and `orchestrator/system-prompt.ts` is deleted.
+5. `handoff/WIRING.md` — five triggers and a call site. The departure line is heard, not
+   merely sent, before the transfer tears down the media stream.
+6. `viewer/WIRING.md` — nothing left to wire. Its seams were fixed by their owners, except
+   `barged_in_at_ms`, which is below.
+7. `packages/tools/WIRING.md` — **step 0 only.** The LLM interface now has a tool surface
+   and the OpenAI adapter reassembles streamed tool calls, so the model can ask. Steps 1-5
+   are not applied: they need `@ansa/tools` on `apps/api`'s package.json, which is a
+   dependency decision, and the only registrable tool that exists is an in-memory fake.
 
-**One failing test, diagnosed, not fixed.** `packages/db` tenant-scope fails only when the
-suite runs together; both files pass alone. `review.test.ts` and `tenant-scope.test.ts`
-both use tenant `33333333-3333-4333-8333-333333333333`, so the isolation test sees rows it
-did not create and reads it as a leak. **It is not a leak** — RLS showed tenant A's rows to
-tenant A, correctly. The fix is a unique tenant id per integration test file.
+**Also fixed, with the tests that were missing:** `barged_in_at_ms` (the turn was written
+on the first acknowledged mark, so `stopSpeaking` had nothing left to stamp — it is now
+written at the two real exits); `RECOVERY_LINE` is four lines picked by the same
+never-twice-running picker the fillers use; the transcript watchdog is cancelled when the
+caller starts again; and the echo guard no longer stamps the caller's turn start with our
+own audio.
 
-**Defects found and not fixed**, each recorded with its owner:
+**The failing `packages/db` test is fixed** — a tenant id range per integration test file.
+It was never a leak.
 
-- `barged_in_at_ms` is still null on every interruption. `commitHeard` records the turn on
-  the first acknowledged mark, before `stopSpeaking` runs — an earlier fix of mine moved
-  the call but not early enough. (turn-taking)
+### What a human has to do next
+
+1. **Place a call.** Nothing above is proven. In one call: give a name and confirm it,
+   change the subject for two turns, then ask "do you know who you're speaking to?"; ask
+   for a person and check the departure line is heard in full before the transfer; and read
+   the new `call state` lines looking for a `-> UNDERSTANDING` that never leaves.
+2. **Decide `HANDOFF_TO_NUMBER`.** With no destination configured, escalation apologises
+   and hangs up rather than transferring — honest, and not a handoff.
+3. **Decide tools.** Steps 1-5 of `packages/tools/WIRING.md` need the workspace dependency
+   approved and a real `PolicyBook`, or an explicit decision to ship the fake behind a
+   flag.
+
+**Still open, unowned by this pass:**
+
+- **Two agents never ran** — `turn-taking` and `latency-audio` — both need a recording.
 - R6.7 sits in the "enforced in code" column of MULTI_TENANT_ARCHITECTURE.md and is not
-  enforced anywhere. Nothing watches for "are you an AI". (conversation loop)
-- `RECOVERY_LINE` is one constant spoken verbatim every time.
-- The transcript watchdog survives the caller starting again, so a recovery line can fire
-  five seconds into their next sentence.
-- The barge-in echo guard stamps the caller's turn start with our own echo.
+  enforced anywhere. Nothing watches for "are you an AI".
+- An identifier said with a pause is confirmed twice, in halves: the continuation wait is
+  skipped during capture, correctly, so "my reference is A B four…" / "…one seven two"
+  produces two readbacks and neither is the reference. (entity-capture with turn-taking)
+- `pending` outlives a new agent turn. Theory rather than an observed bug, but a stale
+  `pending` silently disables the thinking-gap filler on the following turn.
 
 ## How the remaining work is split
 

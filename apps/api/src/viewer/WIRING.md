@@ -1,3 +1,9 @@
+> **READ 2026-08-08.** Nothing here needed wiring. Of the seams it hands to other
+> agents: `barged_in_at_ms` is fixed ("Four defects in the turn loop"); the diacritic
+> name, the non-numeric entity and the letter-by-letter spelling were fixed by their
+> owners before this pass; the TypeORM `[rows, affected]` fix is in packages/db. Still
+> open: an identifier said with a pause, confirmed twice in halves.
+
 # Observability — what was wired, and what someone else has to finish
 
 Written by the `observability` agent during a parallel run, so that the seams it could not

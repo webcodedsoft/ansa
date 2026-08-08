@@ -1,3 +1,8 @@
+> **APPLIED 2026-08-08** in "The escalation goes somewhere, and the caller hears why
+> first". Steps 3, 4a-4d and 5. Step 4e waits on tool dispatch. Step 2 (moving the
+> destination into AppConfig) is still open, and so is everything under "what a real
+> call still has to prove".
+
 # Wiring the handoff
 
 Written because eight other agents are in this tree at the same time and `orchestrator.ts`,

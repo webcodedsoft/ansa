@@ -1,3 +1,8 @@
+> **APPLIED 2026-08-08** in "Capture releases the turn it is not handling". Sections 1-6
+> are wired. Section 7 (`expecting`) is deliberately not: who decides *when* to ask
+> belongs to the conversation director, and nothing decides it yet. The "what is still
+> unproven" list at the bottom is still unproven.
+
 # Wiring `capture.ts` into `orchestrator.ts`
 
 Written by the `entity-capture` agent while four other agents held `orchestrator.ts`. Every
