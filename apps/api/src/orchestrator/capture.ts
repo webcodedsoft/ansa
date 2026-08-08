@@ -16,7 +16,7 @@ import { forSpeech, parseSpelledName, parseSpokenDigits, sayReference } from "@a
  */
 
 /** R4.3.3: the keypad is offered after two failed spoken attempts, not sooner. */
-export const MAX_SPOKEN_ATTEMPTS = 2;
+const MAX_SPOKEN_ATTEMPTS = 2;
 
 /**
  * What is being captured. It changes the fallback, not the flow: a number the caller
@@ -172,7 +172,7 @@ export const nameFrom = (text: string): string | null => {
 };
 
 /** Begin a capture of a value the orchestrator has already decided is worth confirming. */
-export const beginCapture = (value: string, subject: CaptureSubject): CaptureResult => ({
+const beginCapture = (value: string, subject: CaptureSubject): CaptureResult => ({
   state: { kind: "confirming", value, attempt: 1, subject },
   say: readback(value, subject, 1),
   captured: null,

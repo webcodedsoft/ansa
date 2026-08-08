@@ -54,30 +54,7 @@ export const recordCallStarted = async (
     return rows[0]?.id ?? null;
   });
 
-export interface CallEvent {
-  readonly tenantId: TenantId;
-  readonly callRowId: string;
-  /** Short, stable, greppable. The same word the log line uses. */
-  readonly kind: string;
-  readonly offsetMs?: number | null;
-  readonly detail?: Readonly<Record<string, unknown>>;
-}
 
-export const recordCallEvent = async (dataSource: Db, event: CallEvent): Promise<void> => {
-  await withTenant(dataSource, event.tenantId, async (scope) => {
-    await scope.query(
-      `insert into call_events (tenant_id, call_id, kind, offset_ms, detail)
-       values ($1, $2, $3, $4, $5)`,
-      [
-        event.tenantId,
-        event.callRowId,
-        event.kind,
-        event.offsetMs ?? null,
-        JSON.stringify(event.detail ?? {}),
-      ],
-    );
-  });
-};
 
 /** Batched, because a call produces far more events than it does round trips worth spending. */
 export const recordCallEvents = async (

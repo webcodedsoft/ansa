@@ -12,7 +12,7 @@ import { sayNumber } from "./numbers";
 /** Nigerians write the naira as ₦ and, very commonly, as a bare N before a digit. */
 const NAIRA = String.raw`(?:₦|NGN|N(?=\s?[\d]))`;
 
-export const sayKobo = (kobo: number): string =>
+const sayKobo = (kobo: number): string =>
   kobo === 0 ? "" : `${sayNumber(kobo)} ${kobo === 1 ? "kobo" : "kobo"}`;
 
 /**

@@ -41,8 +41,8 @@ export type ConsentPolicy =
  * Narrowing it is a choice an organisation makes about its own customers. Widening it is
  * a choice about someone else's evening, which is not theirs to make.
  */
-export const OUTER_EARLIEST_HOUR = 8;
-export const OUTER_LATEST_HOUR = 20;
+const OUTER_EARLIEST_HOUR = 8;
+const OUTER_LATEST_HOUR = 20;
 
 export interface ConsentFacts {
   /** The organisation's declared basis. Absent behaves as the strictest. */

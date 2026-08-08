@@ -6,7 +6,8 @@ export type TenantId = string & { readonly __brand: "TenantId" };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export const isTenantId = (raw: string): raw is TenantId => UUID.test(raw);
+/** Internal: asTenantId is the only door, so nothing outside needs to ask separately. */
+const isTenantId = (raw: string): boolean => UUID.test(raw);
 
 export const asTenantId = (raw: string): TenantId => {
   if (!isTenantId(raw)) {
