@@ -29,6 +29,19 @@ measured — which is why Gate A exists, and why it must close before Slice 4.
 
 ---
 
+## How the remaining work is split
+
+`docs/AGENT_PLAN.md` divides the conversation-quality brief across ten focused agents, one
+per core feature, with what each owns, what already exists so it is not rebuilt, and the
+order to run them.
+
+Two things it settles up front: the product is NestJS and not Next.js whatever a brief
+says, and most of the brief is already implemented — an agent told to "add barge-in" would
+reimplement working code.
+
+`stt-reliability` runs first and alone. If the harness shows the fault is the cascade
+rather than a configuration, half the other charters change.
+
 ## The open decision — names, and the architecture behind them
 
 Six rounds of call-fix-call on 2026-08-08 fixed a lot and did not fix this. Recorded here
