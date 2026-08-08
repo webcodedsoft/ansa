@@ -13,7 +13,40 @@
 /** Nigeria is UTC+1 year-round, with no daylight saving. */
 const WAT_OFFSET_MINUTES = 60;
 
+/**
+ * How an organisation establishes it may call someone.
+ *
+ * Tenants choose their lawful basis. They do not choose whether one is required, and
+ * they cannot switch the check off — that is the line CLAUDE.md draws, and it is what
+ * stops a configuration mistake becoming an unlawful call.
+ *
+ * The two are genuinely different situations rather than strict-and-lax. An insurer
+ * ringing its own policyholder about their renewal is not relying on marketing consent
+ * and should not have to manufacture a per-number record to say so; a company cold-
+ * calling a purchased list is, and must.
+ */
+export type ConsentPolicy =
+  /** A recorded, per-number grant. The default, and the only basis for unsolicited calls. */
+  | "per_number"
+  /**
+   * A standing relationship — the tenant calling its own customers about their own
+   * business with it. The declaration lives on the tenant and is versioned, so a call can
+   * always be traced to the basis in force when it was placed (R7.5).
+   */
+  | "existing_relationship";
+
+/**
+ * The outer bound on calling hours, which no tenant may widen.
+ *
+ * Narrowing it is a choice an organisation makes about its own customers. Widening it is
+ * a choice about someone else's evening, which is not theirs to make.
+ */
+export const OUTER_EARLIEST_HOUR = 8;
+export const OUTER_LATEST_HOUR = 20;
+
 export interface ConsentFacts {
+  /** The organisation's declared basis. Absent behaves as the strictest. */
+  readonly policy?: ConsentPolicy;
   /** Most recent consent record for this tenant and number, if any. */
   readonly consent: { readonly grantedAt: Date; readonly revokedAt: Date | null } | null;
   /** Any suppression, this tenant's or global. */
@@ -46,24 +79,30 @@ export const mayCall = (facts: ConsentFacts): ConsentVerdict => {
   // an older record saying they once agreed.
   if (facts.suppressed) return { allowed: false, reason: "number is on the do-not-call list" };
 
-  if (facts.consent === null) {
-    // Fails closed. The absence of a record is precisely what an unlawful call looks
-    // like from the outside, so it cannot be treated as permission.
-    return { allowed: false, reason: "no consent on record for this number" };
-  }
-
-  if (facts.consent.revokedAt !== null && facts.consent.revokedAt <= facts.now) {
+  // Honoured under every policy. Someone who explicitly revoked has said something more
+  // specific than any standing basis the organisation asserts, and "we have a
+  // relationship" must not quietly outrank "stop calling me".
+  if (facts.consent?.revokedAt != null && facts.consent.revokedAt <= facts.now) {
     return { allowed: false, reason: "consent was withdrawn" };
   }
 
-  if (facts.consent.grantedAt > facts.now) {
-    // A future-dated grant is a data error, not permission.
-    return { allowed: false, reason: "consent is dated in the future" };
+  const policy = facts.policy ?? "per_number";
+  if (policy === "per_number") {
+    if (facts.consent === null) {
+      // Fails closed. The absence of a record is precisely what an unlawful call looks
+      // like from the outside, so it cannot be treated as permission.
+      return { allowed: false, reason: "no consent on record for this number" };
+    }
+    if (facts.consent.grantedAt > facts.now) {
+      // A future-dated grant is a data error, not permission.
+      return { allowed: false, reason: "consent is dated in the future" };
+    }
   }
 
   const hour = hourInWat(facts.now);
-  const earliest = facts.earliestHour ?? DEFAULT_EARLIEST;
-  const latest = facts.latestHour ?? DEFAULT_LATEST;
+  // Clamped, not trusted. A tenant may narrow the window; the outer bound is ours.
+  const earliest = Math.max(OUTER_EARLIEST_HOUR, facts.earliestHour ?? DEFAULT_EARLIEST);
+  const latest = Math.min(OUTER_LATEST_HOUR, facts.latestHour ?? DEFAULT_LATEST);
   if (hour < earliest || hour >= latest) {
     return {
       allowed: false,

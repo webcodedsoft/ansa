@@ -73,3 +73,61 @@ describe("mayCall", () => {
     expect(verdict.allowed === false && verdict.reason).toContain("allowed 8-17");
   });
 });
+
+describe("an organisation's own consent policy", () => {
+  it("lets a tenant calling its own customers do so without a per-number record", () => {
+    // An insurer ringing a policyholder about their renewal is not relying on marketing
+    // consent and should not have to manufacture a record to say so.
+    expect(mayCall(facts({ consent: null, policy: "existing_relationship" }))).toEqual({
+      allowed: true,
+    });
+  });
+
+  it("still refuses without a record under the default policy", () => {
+    expect(mayCall(facts({ consent: null, policy: "per_number" }))).toMatchObject({
+      allowed: false,
+    });
+    // Absent policy behaves as the strictest, so a missing column cannot loosen anything.
+    expect(mayCall(facts({ consent: null }))).toMatchObject({ allowed: false });
+  });
+
+  it("never lets any policy override a do-not-call entry", () => {
+    // The line that must hold: a tenant chooses its lawful basis, not whether the check
+    // applies. Suppression is not theirs to switch off.
+    for (const policy of ["per_number", "existing_relationship"] as const) {
+      expect(mayCall(facts({ suppressed: true, policy })), policy).toMatchObject({
+        allowed: false,
+      });
+    }
+  });
+
+  it("honours an explicit withdrawal even under a standing relationship", () => {
+    // "Stop calling me" is more specific than "we have a relationship".
+    expect(
+      mayCall(
+        facts({
+          policy: "existing_relationship",
+          consent: { grantedAt: granted.grantedAt, revokedAt: new Date("2026-06-01T00:00:00Z") },
+        }),
+      ),
+    ).toMatchObject({ allowed: false });
+  });
+
+  it("lets a tenant narrow the calling window", () => {
+    // 16:30 WAT, tenant closes at 16:00.
+    expect(
+      mayCall(facts({ now: new Date("2026-08-08T15:30:00Z"), latestHour: 16 })),
+    ).toMatchObject({ allowed: false });
+  });
+
+  it("does not let a tenant widen it", () => {
+    // 22:00 WAT with a tenant asking to call until midnight, and 06:00 WAT with one
+    // asking to start at dawn. Both are choices about someone else's day.
+    expect(
+      mayCall(facts({ now: new Date("2026-08-08T21:00:00Z"), latestHour: 24, earliestHour: 0 })),
+    ).toMatchObject({ allowed: false });
+    expect(
+      mayCall(facts({ now: new Date("2026-08-08T05:00:00Z"), earliestHour: 0 })),
+    ).toMatchObject({ allowed: false });
+  });
+});

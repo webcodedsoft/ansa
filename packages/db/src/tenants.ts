@@ -186,3 +186,36 @@ export const loadConsentFacts = async (
     };
   });
 
+export interface OutboundPolicy {
+  readonly policy: string;
+  readonly basis: string | null;
+  readonly earliestHour: number | null;
+  readonly latestHour: number | null;
+}
+
+/** The organisation's own consent settings, read inside its own scope. */
+export const loadOutboundPolicy = async (
+  dataSource: Db,
+  tenantId: TenantId,
+): Promise<OutboundPolicy | null> =>
+  withTenant(dataSource, tenantId, async (scope) => {
+    const rows = await scope.query<{
+      consent_policy: string;
+      consent_basis: string | null;
+      calling_earliest_hour: number | null;
+      calling_latest_hour: number | null;
+    }>(
+      `select consent_policy, consent_basis, calling_earliest_hour, calling_latest_hour
+         from tenants where id = $1`,
+      [tenantId],
+    );
+    const row = rows[0];
+    if (row === undefined) return null;
+    return {
+      policy: row.consent_policy,
+      basis: row.consent_basis,
+      earliestHour: row.calling_earliest_hour,
+      latestHour: row.calling_latest_hour,
+    };
+  });
+

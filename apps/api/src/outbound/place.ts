@@ -1,8 +1,8 @@
-import { loadConsentFacts, type Db } from "@ansa/db";
+import { loadConsentFacts, loadOutboundPolicy, type Db } from "@ansa/db";
 import type { Logger, TenantId } from "@ansa/shared";
 import type { PlacedCall, TelephonyProvider } from "@ansa/telephony";
 
-import { mayCall } from "./consent";
+import { mayCall, type ConsentPolicy } from "./consent";
 
 /**
  * The only way a call gets placed.
@@ -38,12 +38,34 @@ export const placeOutboundCall = async (deps: {
     throw new ConsentError("Cannot verify consent without a database");
   }
 
-  const facts = await loadConsentFacts(deps.dataSource, request.tenantId, request.to);
+  const [facts, settings] = await Promise.all([
+    loadConsentFacts(deps.dataSource, request.tenantId, request.to),
+    loadOutboundPolicy(deps.dataSource, request.tenantId),
+  ]);
+
+  // An unrecognised policy is treated as the strictest rather than trusted or thrown on.
+  // The database constrains the column too; two independent refusals are cheaper than
+  // one missed one.
+  const stored = settings?.policy;
+  const policy: ConsentPolicy = stored === "existing_relationship" ? stored : "per_number";
+  if (stored !== undefined && stored !== policy) {
+    deps.log.error("tenant has an unrecognised consent policy, treating as strictest", {
+      tenantId: request.tenantId,
+      stored,
+    });
+  }
+
+  // The request may narrow the tenant's window further; neither can widen the outer
+  // bound, which mayCall clamps.
+  const earliest = request.earliestHour ?? settings?.earliestHour ?? undefined;
+  const latest = request.latestHour ?? settings?.latestHour ?? undefined;
+
   const verdict = mayCall({
     ...facts,
+    policy,
     now: deps.now?.() ?? new Date(),
-    ...(request.earliestHour === undefined ? {} : { earliestHour: request.earliestHour }),
-    ...(request.latestHour === undefined ? {} : { latestHour: request.latestHour }),
+    ...(earliest === undefined || earliest === null ? {} : { earliestHour: earliest }),
+    ...(latest === undefined || latest === null ? {} : { latestHour: latest }),
   });
 
   if (!verdict.allowed) {
@@ -51,6 +73,7 @@ export const placeOutboundCall = async (deps: {
     // not allowed to make is a thing worth noticing, not just refusing.
     deps.log.warn("refused an outbound call", {
       tenantId: request.tenantId,
+      policy,
       reason: verdict.reason,
     });
     throw new ConsentError(verdict.reason);
