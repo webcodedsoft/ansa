@@ -38,6 +38,13 @@ export interface AppConfig {
    * (R4.1.3) or per-word confidence (R4.1.5).
    */
   readonly listenProvider: string;
+  /**
+   * With listenProvider = "composite", which vendor supplies words and which supplies
+   * turn boundaries. They are different problems with different winners, which is why
+   * Transcriber and TurnDetector were separate interfaces from the start.
+   */
+  readonly listenWords: string;
+  readonly listenTurns: string;
   readonly deepgramApiKey: string;
   readonly deepgramModel: string;
   /** `api.deepgram.com`, or `api.eu.deepgram.com` — nearer to Lagos, and worth measuring. */
@@ -68,6 +75,15 @@ const optional = (env: NodeJS.ProcessEnv, key: string): string | undefined => {
   return value === undefined || value.trim().length === 0 ? undefined : value.trim();
 };
 
+/** Whether this configuration will actually open a Deepgram connection. */
+const usesDeepgram = (env: NodeJS.ProcessEnv): boolean => {
+  const provider = env["LISTEN_PROVIDER"]?.trim() ?? "openai";
+  if (provider === "deepgram") return true;
+  if (provider !== "composite") return false;
+  return (env["LISTEN_WORDS"]?.trim() ?? "openai") === "deepgram"
+    || (env["LISTEN_TURNS"]?.trim() ?? "deepgram") === "deepgram";
+};
+
 export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
   const verifySignatures = env["TWILIO_VERIFY_SIGNATURES"] !== "false";
 
@@ -94,11 +110,10 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
     vadSilenceMs: Number(env["VAD_SILENCE_MS"] ?? 900),
 
     listenProvider: optional(env, "LISTEN_PROVIDER") ?? "openai",
+    listenWords: optional(env, "LISTEN_WORDS") ?? "openai",
+    listenTurns: optional(env, "LISTEN_TURNS") ?? "deepgram",
     // Only required when actually selected, so an OpenAI-only deployment needs no key.
-    deepgramApiKey:
-      (optional(env, "LISTEN_PROVIDER") ?? "openai") === "deepgram"
-        ? required(env, "DEEPGRAM_API_KEY")
-        : (optional(env, "DEEPGRAM_API_KEY") ?? ""),
+    deepgramApiKey: usesDeepgram(env) ? required(env, "DEEPGRAM_API_KEY") : (optional(env, "DEEPGRAM_API_KEY") ?? ""),
     deepgramModel: optional(env, "DEEPGRAM_MODEL") ?? "flux-general-en",
     deepgramHost: optional(env, "DEEPGRAM_HOST") ?? "api.deepgram.com",
     deepgramEotThreshold: Number(env["DEEPGRAM_EOT_THRESHOLD"] ?? 0.8),

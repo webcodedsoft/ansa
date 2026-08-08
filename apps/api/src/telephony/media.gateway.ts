@@ -13,6 +13,7 @@ import type { AppConfig } from "../config/env";
 import { ACKNOWLEDGEMENTS, ALL_FILLERS, PROGRESS, STILL_WORKING } from "./filler";
 import { forSpeech, GREETING_TEXT } from "./greeting";
 import { createAudioCache } from "./prerender";
+import { composeListen } from "./composite-listen";
 import { BASE_KEYTERMS } from "../tenancy/defaults";
 import type { TenantRegistry } from "../tenancy/tenant-registry";
 import { runConversation, type ListenSession } from "../orchestrator/orchestrator";
@@ -114,8 +115,16 @@ export class MediaGateway implements OnApplicationShutdown {
   }
 
 
-  private openListen(format: AudioFormat, keyterms: readonly string[]): ListenSession {
-    if (this.config.listenProvider === "deepgram") {
+  /**
+   * One provider's session. Composition happens above this, so a vendor is named in
+   * exactly one place per vendor and nowhere else.
+   */
+  private openOne(
+    provider: string,
+    format: AudioFormat,
+    keyterms: readonly string[],
+  ): ListenSession {
+    if (provider === "deepgram") {
       const url = buildUrl({
         format,
         model: this.config.deepgramModel,
@@ -145,6 +154,21 @@ export class MediaGateway implements OnApplicationShutdown {
             },
       // Carried for interface parity; this provider cannot act on them.
       keyterms,
+    });
+  }
+
+  private openListen(format: AudioFormat, keyterms: readonly string[]): ListenSession {
+    if (this.config.listenProvider !== "composite") {
+      return this.openOne(this.config.listenProvider, format, keyterms);
+    }
+
+    // Two connections, two bills. Gate A decides whether the result earns it.
+    return composeListen({
+      words: this.openOne(this.config.listenWords, format, keyterms),
+      turns: this.openOne(this.config.listenTurns, format, keyterms),
+      log: this.log,
+      wordsName: this.config.listenWords,
+      turnsName: this.config.listenTurns,
     });
   }
 
