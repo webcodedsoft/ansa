@@ -546,3 +546,35 @@ Everything that actually matters for the name problem:
 
 **The blocking action is unchanged: dial the number.** `RECORD_AUDIO_DIR=recordings` is
 set, so the next real call produces a `.ulaw`, and the harness now runs correctly on it.
+
+
+## 2026-08-08, second run — the same harness on a REAL call
+
+The synthetic control could not answer this and said so. A 37s recording of a Nigerian
+caller on a live Twilio line, four configurations, one waveform.
+
+| Configuration | The caller's name |
+|---|---|
+| openai mu-law 8k | absent entirely — "Hi, good afternoon." / "The sidewalk." / "My name is" |
+| openai pcm 24k | **captured** — "Hi, my name is Chike." |
+| deepgram mu-law 8k | absent — "Hi. Good afternoon. My name is." |
+| deepgram + keyterms | absent — same, truncated at the same place |
+
+**Both mu-law paths lose the name. The PCM path keeps it.** Same audio, same models. That
+locates the fault at the transcoding hop rather than in either model, and it is the
+opposite of what the synthetic control suggested — clean studio English could not
+distinguish the two, so the earlier "mu-law vs PCM is a non-difference" holds only for
+audio that was never the problem.
+
+Deepgram truncates at "My name is" in both configurations. Keyterms changed nothing here,
+neither helping nor harming, which is consistent with the earlier finding that their
+effect is on names adjacent to boosted words rather than on the boosted words themselves.
+
+`OPENAI_SEND_PCM` is therefore enabled. Caveats worth keeping in view: one recording, one
+speaker, one name; the PCM run produced 5 turns against mu-law's 7, so segmentation
+differs and some of the difference may be endpointing rather than recognition; and PCM
+endpointed markedly slower on the control (1367ms vs 278ms), which is a latency cost that
+has not been measured on a real line.
+
+Next: a live call with the flag on, then re-run this harness on that recording to confirm
+the improvement holds and to measure what it costs.
