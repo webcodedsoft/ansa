@@ -17,6 +17,8 @@ export interface TwilioStart {
   readonly callSid: string;
   readonly encoding: string;
   readonly sampleRate: number;
+  /** `<Parameter>` values from the TwiML, echoed back to us here. */
+  readonly parameters: Readonly<Record<string, string>>;
 }
 
 export interface TwilioMedia {
@@ -98,7 +100,17 @@ export const parseFrame = (raw: string): TwilioFrame | null => {
       const mediaFormat = isRecord(start["mediaFormat"]) ? start["mediaFormat"] : {};
       const encoding = readString(mediaFormat["encoding"]) ?? "audio/x-mulaw";
       const sampleRate = readNumber(mediaFormat["sampleRate"]) ?? 8000;
-      return { event: "start", streamSid, callSid, encoding, sampleRate };
+      // Twilio sends every custom parameter as a string; anything else is dropped
+      // rather than coerced, because a half-parsed tenant id is worse than none.
+      const raw = start["customParameters"];
+      const parameters: Record<string, string> = {};
+      if (isRecord(raw)) {
+        for (const [key, value] of Object.entries(raw)) {
+          const text = readString(value);
+          if (text !== null) parameters[key] = text;
+        }
+      }
+      return { event: "start", streamSid, callSid, encoding, sampleRate, parameters };
     }
 
     case "media": {
@@ -182,6 +194,18 @@ export const escapeXml = (value: string): string =>
  * The document deliberately ends after `</Connect>`: when the socket closes there is no
  * next verb, so the carrier hangs up. That is how hangUp() works without REST credentials.
  */
-export const renderConnectStream = (mediaStreamUrl: string): string =>
-  '<?xml version="1.0" encoding="UTF-8"?>' +
-  `<Response><Connect><Stream url="${escapeXml(mediaStreamUrl)}" /></Connect></Response>`;
+export const renderConnectStream = (
+  mediaStreamUrl: string,
+  parameters: Readonly<Record<string, string>> = {},
+): string => {
+  const params = Object.entries(parameters)
+    .map(([name, value]) => `<Parameter name="${escapeXml(name)}" value="${escapeXml(value)}" />`)
+    .join("");
+  const stream =
+    params === ""
+      ? `<Stream url="${escapeXml(mediaStreamUrl)}" />`
+      : `<Stream url="${escapeXml(mediaStreamUrl)}">${params}</Stream>`;
+  return (
+    '<?xml version="1.0" encoding="UTF-8"?>' + `<Response><Connect>${stream}</Connect></Response>`
+  );
+};

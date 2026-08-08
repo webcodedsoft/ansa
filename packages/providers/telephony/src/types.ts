@@ -18,6 +18,13 @@ export interface InboundCall {
 /** Where the carrier should open the bidirectional media socket for this call. */
 export interface AnswerInstruction {
   readonly mediaStreamUrl: string;
+  /**
+   * Values to hand back to us when the carrier opens the media socket.
+   *
+   * The media socket carries no dialled number, so anything resolved at ingress — the
+   * tenant, above all (R7.3) — has to travel with the answer or be resolved twice.
+   */
+  readonly parameters?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -41,6 +48,8 @@ export interface WebhookRequest {
 export interface CallMediaStream {
   readonly callId: CallId;
   readonly format: AudioFormat;
+  /** Whatever `AnswerInstruction.parameters` set, echoed back by the carrier. */
+  readonly parameters: Readonly<Record<string, string>>;
   /** Audio from the caller. */
   onAudio(listener: (chunk: AudioChunk) => void): void;
   /** Audio to the caller. */

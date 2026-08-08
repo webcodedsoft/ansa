@@ -65,7 +65,7 @@ export const createTwilioTelephonyProvider = (
 
   renderAnswer: (instruction: AnswerInstruction): CarrierResponse => ({
     contentType: "text/xml; charset=utf-8",
-    body: renderConnectStream(instruction.mediaStreamUrl),
+    body: renderConnectStream(instruction.mediaStreamUrl, instruction.parameters ?? {}),
   }),
 
   attachMediaStream: (socket: MediaSocket, handlers: MediaStreamHandlers): void => {
@@ -86,10 +86,13 @@ export const createTwilioTelephonyProvider = (
             socket.close();
             return;
           }
-          stream = new TwilioMediaStream(socket, frame.streamSid, frame.callSid, {
-            encoding,
-            sampleRate: frame.sampleRate,
-          });
+          stream = new TwilioMediaStream(
+            socket,
+            frame.streamSid,
+            frame.callSid,
+            { encoding, sampleRate: frame.sampleRate },
+            frame.parameters,
+          );
           handlers.onStream(stream);
           return;
         }

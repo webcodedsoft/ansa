@@ -41,6 +41,7 @@ describe("parseFrame", () => {
       callSid: "CA222",
       encoding: "audio/x-mulaw",
       sampleRate: 8000,
+      parameters: {},
     });
   });
 

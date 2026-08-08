@@ -1,5 +1,14 @@
 import { DataSource } from "typeorm";
 
+/**
+ * The database handle, as everything above this package sees it.
+ *
+ * Exported under our own name for the same reason no vendor type leaves a provider
+ * package: swapping the driver should be a change here, not in the Nest module and the
+ * tenant registry and everything else that happens to hold a connection.
+ */
+export type Db = DataSource;
+
 export interface DbConfig {
   /**
    * Must point at a role with `rolbypassrls = false`. Supabase's `postgres` has

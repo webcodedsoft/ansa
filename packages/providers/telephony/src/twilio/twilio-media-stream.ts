@@ -7,6 +7,7 @@ import { encodeClear, encodeMark, encodeMedia } from "./protocol";
 export class TwilioMediaStream implements CallMediaStream {
   readonly callId: CallId;
   readonly format: AudioFormat;
+  readonly parameters: Readonly<Record<string, string>>;
 
   private readonly socket: MediaSocket;
   private readonly streamSid: string;
@@ -15,11 +16,18 @@ export class TwilioMediaStream implements CallMediaStream {
   private readonly closedListeners: ((reason: string) => void)[] = [];
   private closed = false;
 
-  constructor(socket: MediaSocket, streamSid: string, callSid: string, format: AudioFormat) {
+  constructor(
+    socket: MediaSocket,
+    streamSid: string,
+    callSid: string,
+    format: AudioFormat,
+    parameters: Readonly<Record<string, string>> = {},
+  ) {
     this.socket = socket;
     this.streamSid = streamSid;
     this.callId = asCallId(callSid);
     this.format = format;
+    this.parameters = parameters;
   }
 
   onAudio(listener: (chunk: AudioChunk) => void): void {

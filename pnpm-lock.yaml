@@ -23,6 +23,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@ansa/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@ansa/deepgram-listen':
         specifier: workspace:*
         version: link:../../packages/providers/listen/deepgram

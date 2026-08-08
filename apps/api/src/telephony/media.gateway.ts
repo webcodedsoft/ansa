@@ -13,6 +13,8 @@ import type { AppConfig } from "../config/env";
 import { ACKNOWLEDGEMENTS, ALL_FILLERS, PROGRESS, STILL_WORKING } from "./filler";
 import { forSpeech, GREETING_TEXT } from "./greeting";
 import { createAudioCache } from "./prerender";
+import { BASE_KEYTERMS } from "../tenancy/defaults";
+import type { TenantRegistry } from "../tenancy/tenant-registry";
 import { runConversation, type ListenSession } from "../orchestrator/orchestrator";
 import { openDeepgramSocket } from "./ws-deepgram-socket";
 import { openListenSocket } from "./ws-listen-socket";
@@ -22,6 +24,8 @@ import {
   LOGGER,
   MEDIA_STREAM_PATH,
   TELEPHONY_PROVIDER,
+  TENANT_PARAM,
+  TENANT_REGISTRY,
   TTS_PROVIDER,
 } from "./tokens";
 import { fromWebSocket } from "./ws-media-socket";
@@ -44,6 +48,7 @@ export class MediaGateway implements OnApplicationShutdown {
     @Inject(LLM_PROVIDER) private readonly llm: LlmProvider,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(LOGGER) private readonly log: Logger,
+    @Inject(TENANT_REGISTRY) private readonly tenants: TenantRegistry,
   ) {}
 
   /**
@@ -108,32 +113,13 @@ export class MediaGateway implements OnApplicationShutdown {
     });
   }
 
-  /**
-   * Vocabulary the transcriber should expect (R4.1.3). Every one of these has been
-   * misheard on a live call — "policy" alone has come back as apology, penalty, polling,
-   * course and puppy. Per-tenant terms join this list in Slice 7.
-   *
-   * Only Deepgram can act on it. OpenAI's realtime API offers no boosting, and the one
-   * mechanism it does offer recited its contents back as phantom caller turns.
-   */
-  private static readonly KEYTERMS: readonly string[] = [
-    "Ansa",
-    "policy",
-    "policy number",
-    "premium",
-    "naira",
-    "claim",
-    "renewal",
-    "cover",
-    "excess",
-  ];
 
-  private openListen(format: AudioFormat): ListenSession {
+  private openListen(format: AudioFormat, keyterms: readonly string[]): ListenSession {
     if (this.config.listenProvider === "deepgram") {
       const url = buildUrl({
         format,
         model: this.config.deepgramModel,
-        keyterms: MediaGateway.KEYTERMS,
+        keyterms,
         eotThreshold: this.config.deepgramEotThreshold,
         eotTimeoutMs: this.config.deepgramEotTimeoutMs,
         host: this.config.deepgramHost,
@@ -141,7 +127,7 @@ export class MediaGateway implements OnApplicationShutdown {
       this.log.info("listening via deepgram", {
         model: this.config.deepgramModel,
         host: this.config.deepgramHost,
-        keyterms: MediaGateway.KEYTERMS.length,
+        keyterms: keyterms.length,
       });
       return openDeepgramSession(openDeepgramSocket(url, this.config.deepgramApiKey));
     }
@@ -158,7 +144,7 @@ export class MediaGateway implements OnApplicationShutdown {
               eagerness: this.config.vadEagerness as "auto" | "low" | "medium" | "high",
             },
       // Carried for interface parity; this provider cannot act on them.
-      keyterms: MediaGateway.KEYTERMS,
+      keyterms,
     });
   }
 
@@ -212,7 +198,23 @@ export class MediaGateway implements OnApplicationShutdown {
 
     // One connection per call, serving both listen interfaces. Which vendor is behind
     // it is a config value: both stay available so they can be compared on real calls.
-    const listen = this.openListen(stream.format);
+    // Synchronous by design: ingress resolved the tenant a moment ago and warmed the
+    // cache, so this is a map read. If it somehow missed, the call proceeds on the base
+    // vocabulary rather than waiting on a database — configuration must never become
+    // silence on the line (R6.2).
+    const tenantId = stream.parameters[TENANT_PARAM];
+    const tenant = tenantId === undefined ? null : this.tenants.cached(tenantId);
+    if (tenantId !== undefined && tenant === null) {
+      log.warn("tenant config not cached at stream start, using base vocabulary", { tenantId });
+    }
+    const keyterms = tenant?.keyterms ?? BASE_KEYTERMS;
+    log.info("tenant for call", {
+      tenantId: tenant?.tenantId ?? null,
+      name: tenant?.name ?? "unknown",
+      configVersion: tenant?.configVersion ?? 0,
+    });
+
+    const listen = this.openListen(stream.format, keyterms);
 
     runConversation(stream, {
       listen,

@@ -46,6 +46,13 @@ export interface AppConfig {
   readonly deepgramEotThreshold: number;
   /** Silence backstop regardless of confidence. Below the 5000 default deliberately. */
   readonly deepgramEotTimeoutMs: number;
+
+  /**
+   * Optional. Without it the agent still answers, on default configuration for every
+   * number — useful in local development, and the correct degradation if the database
+   * is unreachable at boot. Must be the `ansa_app` role, never `postgres` (see 0002).
+   */
+  readonly databaseUrl: string | undefined;
 }
 
 const required = (env: NodeJS.ProcessEnv, key: string): string => {
@@ -96,5 +103,7 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
     deepgramHost: optional(env, "DEEPGRAM_HOST") ?? "api.deepgram.com",
     deepgramEotThreshold: Number(env["DEEPGRAM_EOT_THRESHOLD"] ?? 0.8),
     deepgramEotTimeoutMs: Number(env["DEEPGRAM_EOT_TIMEOUT_MS"] ?? 3000),
+
+    databaseUrl: optional(env, "DATABASE_URL"),
   };
 };

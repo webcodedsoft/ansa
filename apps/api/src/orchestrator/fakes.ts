@@ -60,7 +60,8 @@ export const fakeStream = (): FakeStream => {
     audioIn: (chunk: AudioChunk) => audioListeners.forEach((l) => l(chunk)),
     closeCall: (reason: string) => closedListeners.forEach((l) => l(reason)),
     stream: {
-      callId: asCallId("CA-test"),
+      parameters: {},
+    callId: asCallId("CA-test"),
       format: TELEPHONY_AUDIO,
       onAudio: (l: (c: AudioChunk) => void) => audioListeners.push(l),
       send: (c: AudioChunk) => sent.push(c),
