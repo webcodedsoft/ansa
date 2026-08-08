@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { renderCall, renderCallList } from "./render";
+import { scoreCalls } from "./metrics";
+import {
+  renderCall,
+  renderCallList,
+  renderCorpus,
+  renderCorpusJsonl,
+  renderMetrics,
+} from "./render";
 
 const LINK = { token: "t", tenant: "abc-123" };
 
@@ -25,7 +32,7 @@ describe("the viewer escapes everything from a call", () => {
       summary,
       events: [],
       transcripts: [
-        { text: '<script>alert("x")</script>', correctedText: null, confidence: 0.9, offsetMs: 10, provider: "openai" },
+        { id: "t1", text: '<script>alert("x")</script>', correctedText: null, confidence: 0.9, offsetMs: 10, provider: "openai" },
       ],
     }, LINK);
 
@@ -64,8 +71,8 @@ describe("the viewer answers the question a reviewer is asking", () => {
       summary,
       events: [{ kind: "barge-in", offsetMs: 2000, detail: {}, at: new Date() }],
       transcripts: [
-        { text: "second", correctedText: null, confidence: null, offsetMs: 3000, provider: "openai" },
-        { text: "first", correctedText: null, confidence: null, offsetMs: 1000, provider: "openai" },
+        { id: "t1", text: "second", correctedText: null, confidence: null, offsetMs: 3000, provider: "openai" },
+        { id: "t2", text: "first", correctedText: null, confidence: null, offsetMs: 1000, provider: "openai" },
       ],
     }, LINK);
 
@@ -80,7 +87,7 @@ describe("the viewer answers the question a reviewer is asking", () => {
       summary,
       events: [],
       transcripts: [
-        { text: "Security", correctedText: "Sikiru", confidence: 0.4, offsetMs: 10, provider: "openai" },
+        { id: "t1", text: "Security", correctedText: "Sikiru", confidence: 0.4, offsetMs: 10, provider: "openai" },
       ],
     }, LINK);
     expect(html).toContain("Sikiru");
@@ -116,5 +123,117 @@ describe("links have to survive being clicked", () => {
   it("encodes an id rather than pasting it into a URL", () => {
     const html = renderCallList([{ ...summary, id: "a/b?c" }], link);
     expect(html).not.toContain("/viewer/a/b?c?");
+  });
+});
+
+describe("recording a correction (R9.2.3)", () => {
+  const detail = {
+    summary,
+    events: [],
+    transcripts: [
+      { id: "t-42", text: "Security", correctedText: null, confidence: 0.4, offsetMs: 10, provider: "openai" },
+    ],
+  };
+
+  it("offers a box against every transcript, pre-filled with what was heard", () => {
+    // Most turns are right and a reviewer's job is mostly to say so. Retyping a correct
+    // sentence to record that it was correct is how a review queue stops being used.
+    const html = renderCall(detail, LINK);
+    expect(html).toContain('name=transcriptId value="t-42"');
+    expect(html).toContain('name=correctedText value="Security"');
+  });
+
+  it("posts, because it writes", () => {
+    const html = renderCall(detail, LINK);
+    expect(html).toContain('method=post action="/viewer/c1/corrections"');
+  });
+
+  it("carries the credentials in the body rather than the address bar", () => {
+    // There is no session, and a token in a form action ends up in browser history and
+    // in the Referer of anything the page links to.
+    const html = renderCall(detail, LINK);
+    expect(html).toContain('type=hidden name=token value="t"');
+    expect(html).toContain('type=hidden name=tenant value="abc-123"');
+  });
+
+  it("escapes a transcript before putting it inside an attribute", () => {
+    const html = renderCall(
+      {
+        ...detail,
+        transcripts: [
+          { id: 't"><script>', text: '"><script>alert(1)</script>', correctedText: null, confidence: null, offsetMs: 1, provider: "openai" },
+        ],
+      },
+      LINK,
+    );
+    expect(html).not.toContain("<script>alert(1)");
+    expect(html).not.toContain('value=""><');
+  });
+});
+
+describe("the metrics page", () => {
+  const metrics = scoreCalls([
+    {
+      callId: "c1",
+      endReason: "carrier sent stop",
+      durationSeconds: 30,
+      callerTurns: 4,
+      agentTurns: 4,
+      events: [
+        { kind: "latency", detail: { stage: "turn_to_audio", ms: 900 } },
+        { kind: "barge-in", detail: {} },
+      ],
+      reviewed: [{ heard: "Security", corrected: "Sikiru" }],
+    },
+  ]);
+
+  it("puts the definition next to the number", () => {
+    // A metric whose meaning lives in someone's head is a number two people read
+    // differently.
+    const html = renderMetrics(metrics, LINK, { calls: 1 });
+    expect(html).toContain("Response latency p50");
+    expect(html).toContain("900ms");
+    expect(html).toContain("caller stopped");
+  });
+
+  it("shows an em dash rather than a zero for a metric with no samples", () => {
+    const empty = renderMetrics(scoreCalls([]), LINK, { calls: 0 });
+    expect(empty).toContain("—");
+    expect(empty).not.toContain("0.0%");
+  });
+});
+
+describe("the eval corpus", () => {
+  const entry = {
+    transcriptId: "t1",
+    callId: "c1",
+    carrierCallId: "CA1",
+    offsetMs: 1000,
+    provider: "openai",
+    confidence: 0.4,
+    heard: "My name is Security",
+    corrected: "My name is Sikiru",
+    correctedAt: new Date("2026-08-08T12:00:00Z"),
+  };
+
+  it("shows the mishearing beside the truth, with its error rate", () => {
+    const html = renderCorpus([entry], LINK);
+    expect(html).toContain("Security");
+    expect(html).toContain("Sikiru");
+    expect(html).toContain("0.25");
+  });
+
+  it("exports one JSON object per line, so the corpus can be appended to", () => {
+    const jsonl = renderCorpusJsonl([entry, { ...entry, transcriptId: "t2" }]);
+    const lines = jsonl.split("\n");
+    expect(lines).toHaveLength(2);
+    const parsed = JSON.parse(lines[0] ?? "{}") as Record<string, unknown>;
+    expect(parsed["heard"]).toBe("My name is Security");
+    expect(parsed["corrected"]).toBe("My name is Sikiru");
+    expect(parsed["wer"]).toBeCloseTo(0.25);
+  });
+
+  it("says so plainly when nobody has reviewed anything", () => {
+    expect(renderCorpus([], LINK)).toContain("Nothing reviewed yet");
   });
 });

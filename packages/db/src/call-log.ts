@@ -227,6 +227,8 @@ export interface CallDetail {
   readonly summary: CallSummary;
   readonly events: readonly { kind: string; offsetMs: number | null; detail: unknown; at: Date }[];
   readonly transcripts: readonly {
+    /** Addressable, because the viewer has to be able to correct one of them (R9.2.3). */
+    id: string;
     text: string;
     correctedText: string | null;
     confidence: number | null;
@@ -263,7 +265,7 @@ export const loadCall = async (
       [callId],
     );
     const transcripts = await scope.query<Record<string, unknown>>(
-      `select text, corrected_text, confidence, offset_ms, provider
+      `select id, text, corrected_text, confidence, offset_ms, provider
          from transcripts where call_id = $1 order by offset_ms`,
       [callId],
     );
@@ -288,6 +290,7 @@ export const loadCall = async (
         at: e["at"] as Date,
       })),
       transcripts: transcripts.map((t) => ({
+        id: String(t["id"]),
         text: String(t["text"]),
         correctedText: t["corrected_text"] === null ? null : String(t["corrected_text"]),
         confidence: t["confidence"] === null ? null : Number(t["confidence"]),
