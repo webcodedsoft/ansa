@@ -29,6 +29,39 @@ measured — which is why Gate A exists, and why it must close before Slice 4.
 
 ---
 
+## Open at the end of 2026-08-08
+
+**Seven agents landed, nothing is wired.** Nine commits and seven `WIRING.md` files, all
+targeting `orchestrator.ts` — which is exactly why no agent could apply them. The next job
+is one integrator doing them serially, in this order:
+
+1. `orchestrator/CAPTURE_WIRING.md` — carries the escalation fix. Live bug, two lines.
+2. `conversation/WIRING.md` — structured state; the rest read from it.
+3. `orchestrator/call-state/WIRING.md` — no-behaviour-change refactor onto that state.
+4. `prompts/WIRING.md` · 5. `handoff/WIRING.md` · 6. `viewer/WIRING.md`
+7. `packages/tools/WIRING.md` last — blocked on its own step 0: `packages/providers/llm`
+   has no tool surface, so the model cannot request a tool at all.
+
+**Two agents never ran** — `turn-taking` and `latency-audio` — both need a recording.
+
+**One failing test, diagnosed, not fixed.** `packages/db` tenant-scope fails only when the
+suite runs together; both files pass alone. `review.test.ts` and `tenant-scope.test.ts`
+both use tenant `33333333-3333-4333-8333-333333333333`, so the isolation test sees rows it
+did not create and reads it as a leak. **It is not a leak** — RLS showed tenant A's rows to
+tenant A, correctly. The fix is a unique tenant id per integration test file.
+
+**Defects found and not fixed**, each recorded with its owner:
+
+- `barged_in_at_ms` is still null on every interruption. `commitHeard` records the turn on
+  the first acknowledged mark, before `stopSpeaking` runs — an earlier fix of mine moved
+  the call but not early enough. (turn-taking)
+- R6.7 sits in the "enforced in code" column of MULTI_TENANT_ARCHITECTURE.md and is not
+  enforced anywhere. Nothing watches for "are you an AI". (conversation loop)
+- `RECOVERY_LINE` is one constant spoken verbatim every time.
+- The transcript watchdog survives the caller starting again, so a recovery line can fire
+  five seconds into their next sentence.
+- The barge-in echo guard stamps the caller's turn start with our own echo.
+
 ## How the remaining work is split
 
 `docs/AGENT_PLAN.md` divides the conversation-quality brief across ten focused agents, one
