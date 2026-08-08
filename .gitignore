@@ -11,3 +11,6 @@ dist/
 coverage/
 *.log
 .DS_Store
+
+# Caller audio. Someone's voice reading their policy number aloud.
+recordings/

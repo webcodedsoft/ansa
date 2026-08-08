@@ -1,3 +1,5 @@
+import { createWriteStream, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import type { Server } from "node:http";
 
 import {
@@ -189,6 +191,45 @@ export class MediaGateway implements OnApplicationShutdown {
     });
   }
 
+  /**
+   * Writes the caller's audio to disk when RECORD_AUDIO_DIR is set.
+   *
+   * Off unless configured, and it should be turned off again after diagnosing: this is a
+   * caller reading their policy number aloud. `tenants.audio_retention_days` exists and
+   * nothing enforces it yet, so nothing here pretends otherwise.
+   */
+  private recordAudio(stream: CallMediaStream, log: Logger): void {
+    const dir = this.config.recordAudioDir;
+    if (dir === undefined) return;
+
+    try {
+      mkdirSync(dir, { recursive: true });
+    } catch (error) {
+      log.error("could not create the audio directory", {
+        dir,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+
+    const path = join(dir, `${stream.callId}.ulaw`);
+    const file = createWriteStream(path);
+    // A recording failing must not affect the call, exactly as with the event log.
+    file.on("error", (error: Error) => {
+      log.error("could not write call audio", { path, error: error.message });
+    });
+
+    let bytes = 0;
+    stream.onAudio((chunk) => {
+      bytes += chunk.data.length;
+      file.write(chunk.data);
+    });
+    stream.onClosed(() => {
+      file.end();
+      log.info("recorded caller audio", { path, bytes, seconds: Math.round(bytes / 8000) });
+    });
+  }
+
   onApplicationShutdown(): void {
     this.server?.close();
     this.server = null;
@@ -251,6 +292,12 @@ export class MediaGateway implements OnApplicationShutdown {
     stream.onAudio((chunk) => {
       if (buffering) early.push(chunk);
     });
+
+    // Exactly what the carrier sent, unaltered: raw mu-law at 8kHz, no header. Replaying
+    // a real call through two transcribers is the only way to tell a provider problem
+    // from an encoding one, and every comparison so far has been a guess because the
+    // audio was gone the moment it was transcribed.
+    this.recordAudio(stream, log);
 
     const tenantId = stream.parameters[TENANT_PARAM];
     void this.startConversation(stream, log, tenantId, () => {

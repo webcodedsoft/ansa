@@ -75,6 +75,14 @@ export interface AppConfig {
    * than disabling its authentication.
    */
   readonly viewerToken: string | undefined;
+  /**
+   * Where to write raw caller audio, for replaying one call through several transcribers.
+   *
+   * Unset means no recording, which is the default deliberately: this is a caller's voice
+   * saying their policy number out loud, and `tenants.audio_retention_days` exists but is
+   * not yet enforced by anything. Turn it on to diagnose, off again afterwards.
+   */
+  readonly recordAudioDir: string | undefined;
 }
 
 const required = (env: NodeJS.ProcessEnv, key: string): string => {
@@ -138,5 +146,6 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
 
     databaseUrl: optional(env, "DATABASE_URL"),
     viewerToken: optional(env, "VIEWER_TOKEN"),
+    recordAudioDir: optional(env, "RECORD_AUDIO_DIR"),
   };
 };
