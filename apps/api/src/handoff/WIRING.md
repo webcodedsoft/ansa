@@ -7,11 +7,15 @@ until the edits below are made. **Nothing here is done until they are** — an e
 path nothing calls is exactly the "unwired module that reads as progress" the wiring check
 exists to catch, and it will not be caught here because the tests reference every export.
 
-Applied in order, the edits are about sixty lines.
+Applied in order, the edits are about sixty lines. Step 1 is already done; steps 3 and 4
+are not, and until step 4 exists no trigger fires and no call is ever transferred.
 
 ---
 
-## 1. `telephony.module.ts` — register the whisper endpoint and the destination
+## 1. ~~`telephony.module.ts` — register the whisper endpoint and the destination~~ DONE
+
+Applied, because nothing else was in that file and the wiring check was right to fail on
+three exports with no caller. Left here so the shape is visible.
 
 ```ts
 import { HandoffController } from "../handoff/handoff.controller";

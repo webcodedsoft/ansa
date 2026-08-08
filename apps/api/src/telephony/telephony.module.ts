@@ -9,6 +9,10 @@ import { Module } from "@nestjs/common";
 import { type AppConfig, loadConfig } from "../config/env";
 import { MediaGateway } from "./media.gateway";
 import { createTenantRegistry } from "../tenancy/tenant-registry";
+import { resolveHandoffDestination } from "../handoff/destination";
+import { HandoffController } from "../handoff/handoff.controller";
+import { HANDOFF_DESTINATION, WHISPER_REGISTRY } from "../handoff/tokens";
+import { createWhisperRegistry } from "../handoff/whisper";
 import {
   APP_CONFIG,
   DATA_SOURCE,
@@ -26,7 +30,7 @@ import { VoiceController } from "./voice.controller";
  * and nothing else — which is the whole point of the adapter boundary.
  */
 @Module({
-  controllers: [VoiceController, ViewerController],
+  controllers: [VoiceController, ViewerController, HandoffController],
   providers: [
     { provide: APP_CONFIG, useFactory: (): AppConfig => loadConfig() },
     { provide: LOGGER, useFactory: (): Logger => createLogger({ component: "api" }) },
@@ -91,8 +95,22 @@ import { VoiceController } from "./voice.controller";
       useFactory: (dataSource: Db | null, log: Logger) =>
         createTenantRegistry({ dataSource, log }),
     },
+    {
+      // One registry per process, not per call: the carrier fetches the summary from
+      // outside the call's own lifetime, over the public internet.
+      provide: WHISPER_REGISTRY,
+      useFactory: () => createWhisperRegistry(),
+    },
+    {
+      // Null when unconfigured, and escalation then says so out loud rather than
+      // transferring to a placeholder. R6.5 moves this into per-tenant config; the shape
+      // here is the one a tenants row will fill.
+      provide: HANDOFF_DESTINATION,
+      inject: [LOGGER],
+      useFactory: (log: Logger) => resolveHandoffDestination(process.env, log),
+    },
     MediaGateway,
   ],
-  exports: [MediaGateway, APP_CONFIG, LOGGER, DATA_SOURCE],
+  exports: [MediaGateway, APP_CONFIG, LOGGER, DATA_SOURCE, WHISPER_REGISTRY, HANDOFF_DESTINATION],
 })
 export class TelephonyModule {}
