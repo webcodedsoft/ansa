@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:crypto";
 
 import type { TenantId } from "@ansa/shared";
 
@@ -32,7 +32,16 @@ export type CredentialRef = string;
 export type CredentialMaterial =
   | { readonly kind: "bearer"; readonly token: string }
   | { readonly kind: "header"; readonly header: string; readonly value: string }
-  | { readonly kind: "basic"; readonly username: string; readonly password: string };
+  | { readonly kind: "basic"; readonly username: string; readonly password: string }
+  /**
+   * A shared secret used to sign what we send, rather than to authenticate us to somebody.
+   *
+   * Its own kind, and the two are not interchangeable in either direction: a value sealed
+   * for auth cannot be used to sign, and a signing secret cannot be put in a header. Event
+   * delivery (Slice 6a) needs the receiver to verify a body came from us, which is the
+   * opposite direction of trust from a tool call and deserves its own key.
+   */
+  | { readonly kind: "signing"; readonly secret: string };
 
 export interface Credential {
   /** Mutates the header map in place, at the last possible moment before the request. */
@@ -41,10 +50,35 @@ export interface Credential {
   toString(): string;
 }
 
+/**
+ * The signing counterpart of `Credential`, and the same design.
+ *
+ * There is no `reveal()` here either. The secret stays in the closure and the only thing
+ * that leaves is a digest — the vault performs the operation rather than handing out the
+ * key, which is what keeps R5.2.1 true of a signature as well as of a header.
+ */
+export interface Signer {
+  sign(data: string): string;
+  toJSON(): string;
+  toString(): string;
+}
+
 const HEADER_NAME = /^[A-Za-z0-9-]{1,64}$/;
 
-const opaque = (material: CredentialMaterial): Credential => {
-  const credential: Credential = {
+/**
+ * `console.log(credential)` and Nest's default logger both go through inspect, which
+ * ignores toJSON. This is the third door and it is shut for the same reason.
+ */
+const shutTheThirdDoor = <T extends object>(value: T): T => {
+  Object.defineProperty(value, Symbol.for("nodejs.util.inspect.custom"), {
+    value: () => "[redacted]",
+    enumerable: false,
+  });
+  return value;
+};
+
+const opaque = (material: Exclude<CredentialMaterial, { kind: "signing" }>): Credential =>
+  shutTheThirdDoor<Credential>({
     applyTo(headers) {
       switch (material.kind) {
         case "bearer":
@@ -60,15 +94,14 @@ const opaque = (material: CredentialMaterial): Credential => {
     },
     toJSON: () => "[redacted]",
     toString: () => "[redacted]",
-  };
-  // `console.log(credential)` and Nest's default logger both go through inspect, which
-  // ignores toJSON. This is the third door and it is shut for the same reason.
-  Object.defineProperty(credential, Symbol.for("nodejs.util.inspect.custom"), {
-    value: () => "[redacted]",
-    enumerable: false,
   });
-  return credential;
-};
+
+const opaqueSigner = (secret: string): Signer =>
+  shutTheThirdDoor<Signer>({
+    sign: (data) => createHmac("sha256", secret).update(data, "utf8").digest("hex"),
+    toJSON: () => "[redacted]",
+    toString: () => "[redacted]",
+  });
 
 const isMaterial = (value: unknown): value is CredentialMaterial => {
   if (value === null || typeof value !== "object") return false;
@@ -78,6 +111,10 @@ const isMaterial = (value: unknown): value is CredentialMaterial => {
   if (raw.kind === "header") {
     return typeof raw.header === "string" && HEADER_NAME.test(raw.header) && typeof raw.value === "string";
   }
+  // Long enough that a signature over it means something. A tenant who picks a four
+  // character "secret" has a signature that anybody can forge, and it is cheaper to refuse
+  // it at sealing time than to explain it after.
+  if (raw.kind === "signing") return typeof raw.secret === "string" && raw.secret.length >= 16;
   return false;
 };
 
@@ -146,6 +183,14 @@ const openCredential = (
 export interface CredentialVault {
   /** Null when the tenant has no credential under that name. Throws when it will not open. */
   resolve(tenantId: TenantId, ref: CredentialRef): Promise<Credential | null>;
+  /**
+   * The same, for a secret sealed to sign with.
+   *
+   * Refuses a value sealed as an auth credential rather than quietly signing with it. The
+   * two have different lifetimes and different blast radii — a receiver holds the signing
+   * secret, and it must never turn out to be the token that opens the tenant's own API.
+   */
+  resolveSigner(tenantId: TenantId, ref: CredentialRef): Promise<Signer | null>;
 }
 
 export interface VaultOptions {
@@ -161,7 +206,21 @@ export const createCredentialVault = (options: VaultOptions): CredentialVault =>
     async resolve(tenantId, ref) {
       const sealed = await options.load(tenantId, ref);
       if (sealed === null) return null;
-      return opaque(openCredential(key, tenantId, ref, sealed));
+      const material = openCredential(key, tenantId, ref, sealed);
+      if (material.kind === "signing") {
+        throw new Error(`credential vault: ${ref} is a signing secret, not an auth credential`);
+      }
+      return opaque(material);
+    },
+
+    async resolveSigner(tenantId, ref) {
+      const sealed = await options.load(tenantId, ref);
+      if (sealed === null) return null;
+      const material = openCredential(key, tenantId, ref, sealed);
+      if (material.kind !== "signing") {
+        throw new Error(`credential vault: ${ref} is an auth credential, not a signing secret`);
+      }
+      return opaqueSigner(material.secret);
     },
   };
 };
