@@ -35,8 +35,15 @@ interface State {
   openedAt: number | null;
 }
 
-/** The key every caller must use, so tenant and tool are never accidentally conflated. */
-export const breakerKey = (tenantId: string, tool: string): string => `${tenantId}::${tool}`;
+/**
+ * The key every caller must use, so tenant and subject are never accidentally conflated.
+ *
+ * `subject` is a tool name today. Nothing in this file knows that, deliberately: the other
+ * thing that will call an organisation's endpoint is event delivery (see TASKS.md, Slice
+ * 6a), which is not a tool call and has no risk tier, but which fails in exactly the same
+ * way and should be given up on for exactly the same reasons.
+ */
+export const breakerKey = (tenantId: string, subject: string): string => `${tenantId}::${subject}`;
 
 export const createCircuitBreaker = (options: BreakerOptions = {}): CircuitBreaker => {
   const threshold = options.failureThreshold ?? 4;

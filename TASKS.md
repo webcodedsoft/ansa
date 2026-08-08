@@ -171,7 +171,9 @@ against the code and a live call on the date above, not from memory.
 - Latency ~1.1s against an 800ms budget, most of it Nigeria→US distance.
 - The agent still cannot look anything up. It can now end the call, ask for a person and
   answer opening hours, and that is all — there is no knowledge base and no connector to
-  a tenant's own systems, which is Slice 6.
+  a tenant's own systems, which is Slice 6. **Slice 6 built the connector on 2026-08-08:
+  the route exists, in both transports, and no tenant has configured one, so this sentence
+  is still true of every call placed today.**
 
 **Next, in order:**
 
@@ -780,28 +782,157 @@ product rather than a demo.
 then both adapters against it. If a security control or latency rule ends up in one route
 and not the other, the abstraction is wrong — fix it before moving on.
 
-- [ ] Per-tenant encrypted credential vault (R5.2.1). Credentials never in logs, never in
+**The internal/external split is not a split in mechanism.** The organisation hosts the
+endpoint and we are the client — that is how a tenant supplies a "tool", and it would be
+how they supplied a webhook for one of the platform tools too. The real axis is
+platform-owned (`packages/tools/src/internal/`: `end_call`, `transfer_to_human`,
+`business_hours` — they act on the call itself and have no endpoint behind them) versus
+tenant-supplied (`packages/tools/src/connector/`). Registration does not care which,
+beyond the shadowing rule that already stops a tenant redefining a platform tool.
+
+- [x] Per-tenant encrypted credential vault (R5.2.1). Credentials never in logs, never in
       LLM context.
-- [ ] **Route A — HTTP connector adapter:** endpoint, JSON schema, auth reference, risk
+      *`connector/vault.ts`. AES-256-GCM, tenant id and ref as AAD so a ciphertext copied
+      into another tenant's row will not open. The plaintext lives in a closure; the only
+      thing that leaves is a `Credential` whose `toJSON`, `toString` and inspect symbol all
+      return `[redacted]`. Header schemes only — query-string API keys are refused because
+      the URL is logged by everyone.*
+- [x] **Route A — HTTP connector adapter:** endpoint, JSON schema, auth reference, risk
       tier, timeout. This is the default path; most tenants will never touch MCP.
-- [ ] **Route B — MCP adapter:** connect to a tenant-supplied MCP server, discover its
+- [x] **Route B — MCP adapter:** connect to a tenant-supplied MCP server, discover its
       tool list, register into the same registry with tiers assigned at registration.
-- [ ] Prove the abstraction: the same mock backend exposed both ways behaves identically
+      *JSON-RPC over Streamable HTTP, spoken directly, no new dependency. A discovered
+      tool with no tier in the tenant's config is logged and NOT registered — a server
+      cannot mark its own homework.*
+- [x] Prove the abstraction: the same mock backend exposed both ways behaves identically
       through the pipeline — same tiers, same timeouts, same logging, same holding
       speech.
-- [ ] Egress allowlist + SSRF guards: block private ranges, link-local, metadata
+      *`connector/equivalence.test.ts`: one loopback server, one backend, two tenants one
+      route each, every outcome field compared except the route label. Plus the structural
+      form — a walk of the repo asserting `dispatch.ts` is the only caller of
+      `adapter.execute`.*
+- [x] Egress allowlist + SSRF guards: block private ranges, link-local, metadata
       endpoints, unlisted redirect targets (R5.2.2).
-- [ ] Per-tool circuit breaker and retry policy; one tenant's broken endpoint cannot
-      affect another (R5.2.3).
-- [ ] Risk tier enforcement in the dispatch path: `write` requires spoken confirmation +
+      *Allowlist, then an address filter over every DNS answer, then pinning — the socket
+      may only reach addresses that passed. `node:http` rather than `fetch` precisely
+      because fetch re-resolves after the check, which is the rebinding window.*
+- [x] Per-tool circuit breaker and retry policy; one tenant's broken endpoint cannot
+      affect another (R5.2.3). *Keyed per tenant AND per tool, in the dispatch path.
+      Retry is reads only.*
+- [x] Risk tier enforcement in the dispatch path: `write` requires spoken confirmation +
       readback; `irreversible` transfers to a human and cannot execute (R5.3).
-- [ ] Parallel dispatch for independent tool calls (R5.4.4).
-- [ ] Full tool invocation logging with per-tenant PII redaction (R5.2.4).
-- [ ] Security test suite: SSRF attempts, credential leakage into transcripts, cross-
-      tenant tool access. Runs in CI.
+      *Already true from Slice 5; verified against both new routes rather than re-added.*
+- [x] Parallel dispatch for independent tool calls (R5.4.4). *Landed in Slice 5 —
+      `Promise.all` over the model's requested calls, with the tier gate per tool.*
+- [ ] Full tool invocation logging with per-tenant PII redaction (R5.2.4). **Half.**
+      Every invocation is logged with redacted arguments, latency and outcome, and
+      `redact.ts` matches credential-shaped keys. Two gaps: the redaction is one global
+      rule rather than **per tenant**, and `record.event` still writes tool calls to
+      `call_events` rather than to the `tool_invocations` table, which exists and is
+      still empty.
+- [x] Security test suite: SSRF attempts, credential leakage into transcripts, cross-
+      tenant tool access. **Not in CI, because there is no CI.** *63 egress tests, the
+      vault's tenant-binding tests, credential-absence-from-logs on both routes, and
+      cross-tenant resolution. Same standing gap as the RLS suite from Slice 2.*
+- [x] **A lookup will not run on an identifier nobody confirmed.** Not in the original
+      list, and it is the most important thing here. A tool declares
+      `identifiers: { reference: "policyNumber" }`; the dispatcher refuses unless
+      `confirmedFact` says yes and the model's value matches the confirmed one. The
+      transcriber returns a stable wrong name for a Nigerian caller — a lookup on it does
+      not fail, it returns the wrong customer.
 
 **Done when:** a mock "tenant CRM" is queried live during a call via **both** routes, the
 answer is spoken correctly in each, and the security tests pass against both.
+**Not done.** No phone call has been near any of it, and nothing reaches a real call until
+a tenant publishes a `tool_config`.
+
+**Session log**
+
+- *2026-08-08 — the connector layer is built and tested and has never met a real endpoint.*
+  1,101 tests across 10 packages; lint, typecheck and tests green. Seven commits.
+- **What a human has to do before any of this is real**, in order:
+  1. **Apply migration `0013_tenant_tools.sql`** in the Supabase SQL editor as owner. Same
+     wall as 0003 and 0012: both `DATABASE_URL` and `DIRECT_URL` are `ansa_app`, which
+     cannot ALTER the table. Until it is applied, `tool_config` reads as absent, which the
+     loader treats as "no tools configured" — so the call path is unchanged rather than
+     broken.
+  2. **Set `TOOL_CREDENTIAL_KEY`** (`openssl rand -base64 32`) in `.env`. Optional: unset
+     means any tool needing a credential is not registered, and the agent says it cannot
+     check rather than making an anonymous request to somebody's API.
+  3. **Point it at a real endpoint.** `TENANT_ID=… node tools/tenant/config.mjs publish
+     config.json "…"` with a `tools` block, and `… config.mjs credential <ref> bearer <token>`
+     to seal the secret. Then place a call and ask the thing the endpoint answers.
+- **What only a real endpoint can settle**, and none of it is testable from here: whether a
+  tenant's TLS chain validates through the pinned-address path (the loopback tests are
+  plaintext); whether real-world latency fits inside the 3s hard ceiling from Lagos on top
+  of an already 1.1s turn; whether tenants' JSON is shallow enough for dotted-path speech
+  templates; and whether a real MCP server's Streamable HTTP matches the two response
+  shapes implemented.
+- **Deliberately not built:** any data tool of ours. `createInMemoryPolicyBook` remains a
+  test fixture. The route now exists for a tenant to supply the real thing, which is what
+  Slice 6 was for.
+- **Found while wiring, not mine, fixed anyway.** The RLS suite's hardcoded table count
+  (`expect(rows).toHaveLength(10)`) had been red since `tenant_prompt_versions` landed in
+  0011 without it being updated. The number never tested what its comment claimed — the
+  query returns every table in `public`, so an unprotected one fails the per-table loop
+  whatever the count says. What it actually tracked was how many migrations a human had
+  applied by hand. Replaced with a named list of the eight core tables, which keeps the
+  other thing it was quietly doing: proving the query returned anything at all.
+- Two smaller things landed with the dispatch work and are worth knowing: `definition.timeoutMs`
+  was validated at registration and then ignored by the dispatcher since Slice 5, so a
+  tenant asking for a tighter ceiling got the platform's; and a read that fails is now
+  retried once inside the same deadline, while a write never is.
+
+---
+
+## Slice 6a — Event webhooks: pushing data back to the organisation
+
+**Not built. Written down here so it is not built as a tool, which is the tempting
+mistake.** Requested during Slice 6: the organisation wants its own data pushed to it —
+call ended → the call record; transferred to a human → the conversation so far; more
+later.
+
+An event webhook is not a tool call, and the differences are not cosmetic:
+
+| | tool call | event webhook |
+|---|---|---|
+| who decides | the model, mid-call | the platform, at a lifecycle point |
+| shape | request → response the agent speaks | fire-and-forget delivery |
+| timing | on the latency budget, holding speech, 3s hard ceiling | after the fact, must never touch the call |
+| failure | agent apologises and recovers | retry with backoff, at-least-once |
+| risk tiers | central | meaningless — nothing is being done to the caller |
+
+Building events as tools would be wrong in both directions: it puts a delivery on the
+conversation's critical path, and it lets the model decide whether an organisation
+receives its own data.
+
+**What already exists, so none of it is rebuilt:**
+
+- The **shared HTTP layer**, built in Slice 6 and deliberately free of tool-call
+  assumptions: `connector/transport.ts` (guarded, address-pinned, redirect-rechecking, and
+  its deadline comes from the caller's signal rather than from the voice budget),
+  `connector/egress.ts`, `connector/vault.ts`, `redact.ts`, and `breaker.ts` — whose key is
+  `(tenantId, subject)` rather than `(tenantId, tool)` for exactly this.
+- The **transfer payload**: `apps/api/src/handoff/` already builds a summary from the event
+  log for the human who picks up. That summary *is* the payload.
+- The **call-ended payload**: `calls`, `call_events`, `transcripts` and `turns`, read by
+  `packages/db/src/call-log.ts`.
+- **Delivery configuration** has an obvious home beside `tenants.tool_config` and the same
+  credential vault. It is a different shape and should be a different key, not a third
+  entry in `http[]`.
+
+**The blocker to write down before anyone starts:**
+
+- [ ] **Per-tenant PII redaction of outbound payloads (R5.2.4) does not exist.** These
+      payloads contain transcripts, and a transcript is where a caller reads their policy
+      number aloud. `redact.ts` matches credential-shaped *keys* in tool arguments; it does
+      nothing to free text and knows nothing about a tenant's rules. Shipping an event path
+      that posts raw transcripts to a third party would be an NDPR problem, not a feature.
+      This is the same gap flagged half-done in Slice 6 above, and it blocks both.
+
+- [ ] Delivery with retry and backoff, at-least-once, off the call path entirely.
+- [ ] Signed payloads, so the organisation can verify the delivery came from us.
+- [ ] A delivery log the tenant can be shown when they say they never received it.
 
 ---
 

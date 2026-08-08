@@ -20,7 +20,15 @@ export interface ConnectorRequest {
   readonly method: string;
   readonly headers: Readonly<Record<string, string>>;
   readonly body?: string;
-  /** The dispatcher's hard ceiling. An in-flight request is destroyed when it fires. */
+  /**
+   * When to give up, decided by the caller rather than here.
+   *
+   * The dispatcher passes its hard ceiling, which is three seconds because a caller is
+   * waiting. Nothing in this file assumes that: event delivery to the same organisation
+   * (TASKS.md, Slice 6a) happens after the call and should be allowed to take longer and
+   * to retry with backoff. Baking the voice budget in here would mean a second HTTP
+   * client for the other path, which would be a second place a redirect gets followed.
+   */
   readonly signal: AbortSignal;
 }
 
