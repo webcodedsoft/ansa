@@ -103,6 +103,43 @@ export const wasAnswered = (event: CallStatusEvent): boolean =>
   event.status === "in-progress" ||
   (event.status === "completed" && (event.durationSeconds ?? 0) > 0);
 
+/**
+ * Handing a call in progress to a person.
+ *
+ * The agent has been talking to this caller for a while. Everything it learned is in the
+ * event log, and none of it reaches the person answering unless it is spoken to them —
+ * which is what `whisperUrl` is for. A transfer without it connects two people who have
+ * to start over, which R6.4 exists to prevent.
+ */
+export interface TransferRequest {
+  readonly callId: CallId;
+  /** E.164. The person. */
+  readonly to: string;
+  /**
+   * Caller ID shown to the person answering. Must be a number the carrier account owns —
+   * presenting the caller's own number is rejected, and would hide who is transferring.
+   */
+  readonly from: string;
+  /**
+   * Fetched by the carrier when the person picks up and played to them ALONE, before the
+   * two legs are joined. This is the handoff summary. The caller hears none of it.
+   *
+   * Absent means a cold transfer: honest, but the person starts from nothing.
+   */
+  readonly whisperUrl?: string;
+  /** How long to ring before giving up. Past this the fallback below is spoken. */
+  readonly ringSeconds?: number;
+  /**
+   * Said to the caller if nobody answers.
+   *
+   * Required in spirit rather than by the type only because a transfer that rings out
+   * with no next verb hangs up on a caller who has already been failed once. Already
+   * normalized by the time it reaches here — nothing unnormalized goes to any TTS,
+   * including the carrier's.
+   */
+  readonly noAnswerLine?: string;
+}
+
 /** Where the carrier should open the bidirectional media socket for this call. */
 export interface AnswerInstruction {
   readonly mediaStreamUrl: string;
@@ -200,6 +237,22 @@ export interface TelephonyProvider {
   placeCall(request: PlaceCallRequest): Promise<PlacedCall>;
   /** Hang up a call in progress. Used when the thing that answered was a voicemail. */
   endCall(callId: CallId): Promise<void>;
+  /**
+   * Hand a call in progress to a person.
+   *
+   * Rejects rather than resolving on a carrier refusal. The caller is still on our media
+   * stream at that point, so the escalation path can apologise out loud — which it could
+   * not do if this swallowed the failure and reported a transfer that never happened.
+   */
+  transferToNumber(request: TransferRequest): Promise<void>;
+  /**
+   * The instruction to speak one line and nothing else.
+   *
+   * Serves `TransferRequest.whisperUrl`. It lives behind the adapter because the summary
+   * is ours and the markup is the carrier's, and mixing the two would put TwiML in
+   * orchestration code.
+   */
+  renderWhisper(line: string): CarrierResponse;
   /**
    * Read a call lifecycle callback. Null when the payload is not one, rather than
    * throwing: a carrier that adds a field must not take the process down.

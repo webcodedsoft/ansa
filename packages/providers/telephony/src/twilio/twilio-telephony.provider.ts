@@ -13,6 +13,7 @@ import type {
   MediaSocket,
   MediaStreamHandlers,
   TelephonyProvider,
+  TransferRequest,
   WebhookRequest,
   PlaceCallRequest,
   PlacedCall,
@@ -21,6 +22,8 @@ import {
   parseFrame,
   parseStatusCallback,
   renderConnectStream,
+  renderDialTransfer,
+  renderSay,
   toAudioEncoding,
 } from "./protocol";
 import { TwilioMediaStream } from "./twilio-media-stream";
@@ -97,6 +100,44 @@ const buildCallForm = (
   return form;
 };
 
+/**
+ * Changes what a call already in progress is doing.
+ *
+ * Both endings a live call can have go through here — hung up, and handed to a person —
+ * because they are the same REST call with a different body, and the auth header being
+ * written twice is how the second copy drifts from the first.
+ */
+const updateLiveCall = async (
+  options: TwilioProviderOptions,
+  callId: CallId,
+  form: URLSearchParams,
+  what: string,
+): Promise<void> => {
+  const accountSid = options.accountSid;
+  if (accountSid === undefined || accountSid === "") {
+    throw new Error(`Cannot ${what} without a Twilio account SID`);
+  }
+  const doFetch = options.fetch ?? globalThis.fetch;
+  const base = options.apiBaseUrl ?? "https://api.twilio.com";
+  const response = await doFetch(
+    `${base}/2010-04-01/Accounts/${encodeURIComponent(accountSid)}/Calls/${encodeURIComponent(callId)}.json`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${accountSid}:${options.authToken}`).toString("base64")}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: form.toString(),
+    },
+  );
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(
+      `Could not ${what} on call ${callId} (${response.status}): ${detail.slice(0, 200)}`,
+    );
+  }
+};
+
 export const createTwilioTelephonyProvider = (
   options: TwilioProviderOptions,
 ): TelephonyProvider => ({
@@ -137,28 +178,41 @@ export const createTwilioTelephonyProvider = (
   }),
 
   endCall: async (callId: CallId): Promise<void> => {
-    const accountSid = options.accountSid;
-    if (accountSid === undefined || accountSid === "") {
-      throw new Error("Cannot end a call without a Twilio account SID");
-    }
-    const doFetch = options.fetch ?? globalThis.fetch;
-    const base = options.apiBaseUrl ?? "https://api.twilio.com";
-    const response = await doFetch(
-      `${base}/2010-04-01/Accounts/${encodeURIComponent(accountSid)}/Calls/${encodeURIComponent(callId)}.json`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Basic ${Buffer.from(`${accountSid}:${options.authToken}`).toString("base64")}`,
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({ Status: "completed" }).toString(),
-      },
+    await updateLiveCall(
+      options,
+      callId,
+      new URLSearchParams({ Status: "completed" }),
+      "end the call",
     );
-    if (!response.ok) {
-      const detail = await response.text().catch(() => "");
-      throw new Error(`Could not end call ${callId} (${response.status}): ${detail.slice(0, 200)}`);
-    }
   },
+
+  /**
+   * Replaces the live call's instruction, which ends our media stream.
+   *
+   * That ordering is the thing to hold on to: the moment this resolves, the socket the
+   * agent is speaking through is gone. Anything the caller is owed — "let me get a
+   * colleague for you" — has to have been heard BEFORE this is called, not queued behind
+   * it. The escalation path waits for the mark; see apps/api/src/handoff.
+   */
+  transferToNumber: async (request: TransferRequest): Promise<void> => {
+    const form = new URLSearchParams();
+    form.set(
+      "Twiml",
+      renderDialTransfer({
+        to: request.to,
+        callerId: request.from,
+        ...(request.whisperUrl === undefined ? {} : { whisperUrl: request.whisperUrl }),
+        ...(request.ringSeconds === undefined ? {} : { ringSeconds: request.ringSeconds }),
+        ...(request.noAnswerLine === undefined ? {} : { noAnswerLine: request.noAnswerLine }),
+      }),
+    );
+    await updateLiveCall(options, request.callId, form, "transfer the call");
+  },
+
+  renderWhisper: (line: string): CarrierResponse => ({
+    contentType: "text/xml; charset=utf-8",
+    body: renderSay(line),
+  }),
 
   parseCallStatus: (payload: unknown): CallStatusEvent | null => {
     const parsed = parseStatusCallback(payload);

@@ -210,6 +210,64 @@ export const renderConnectStream = (
   );
 };
 
+/**
+ * Replaces a live call's instruction with a dial to a person.
+ *
+ * Three details are load-bearing and each was chosen against a specific failure:
+ *
+ * `answerOnBridge` — without it the carrier treats the caller's leg as connected the
+ * instant the dial starts, and the caller hears nothing at all while the human's phone
+ * rings. Silence over two seconds reads as a dropped call (R6.2), and a caller who has
+ * just been told "let me get a colleague" is exactly the caller who will hang up.
+ *
+ * `url` on the number — TwiML fetched when the PERSON answers, played to them alone
+ * before the legs are joined. This is the whole handoff: without it the human picks up
+ * to a stranger mid-sentence and asks for the name the caller spent four minutes
+ * spelling.
+ *
+ * A verb AFTER `</Dial>` — a document that ends at the dial hangs up on the caller when
+ * nobody answers. They have already been failed once; being cut off is the second time.
+ */
+export const renderDialTransfer = (options: {
+  readonly to: string;
+  readonly callerId: string;
+  readonly whisperUrl?: string;
+  readonly ringSeconds?: number;
+  readonly noAnswerLine?: string;
+}): string => {
+  const number =
+    options.whisperUrl === undefined
+      ? `<Number>${escapeXml(options.to)}</Number>`
+      : `<Number url="${escapeXml(options.whisperUrl)}">${escapeXml(options.to)}</Number>`;
+
+  const timeout =
+    options.ringSeconds === undefined ? "" : ` timeout="${Math.round(options.ringSeconds)}"`;
+
+  const fallback =
+    options.noAnswerLine === undefined
+      ? ""
+      : `<Say>${escapeXml(options.noAnswerLine)}</Say>`;
+
+  return (
+    '<?xml version="1.0" encoding="UTF-8"?>' +
+    "<Response>" +
+    `<Dial answerOnBridge="true" callerId="${escapeXml(options.callerId)}"${timeout}>${number}</Dial>` +
+    fallback +
+    "<Hangup />" +
+    "</Response>"
+  );
+};
+
+/**
+ * One spoken line and nothing else, for the whisper the person answering hears.
+ *
+ * Deliberately has no `<Gather>` and no next verb: the carrier joins the two legs the
+ * moment this document finishes, which is what makes the summary a preamble rather than
+ * a menu the caller is left waiting behind.
+ */
+export const renderSay = (line: string): string =>
+  '<?xml version="1.0" encoding="UTF-8"?>' + `<Response><Say>${escapeXml(line)}</Say></Response>`;
+
 const OUTCOMES = new Set([
   "initiated", "ringing", "in-progress", "completed", "busy", "no-answer", "failed", "canceled",
 ]);
