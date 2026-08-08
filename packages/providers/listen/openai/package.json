@@ -13,7 +13,8 @@
   "dependencies": {
     "@ansa/shared": "workspace:*",
     "@ansa/transcriber": "workspace:*",
-    "@ansa/turn-detector": "workspace:*"
+    "@ansa/turn-detector": "workspace:*",
+    "openai": "7.4.0"
   },
   "devDependencies": {
     "@ansa/config": "workspace:*",

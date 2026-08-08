@@ -1,9 +1,21 @@
 import type { AudioFormat } from "@ansa/shared";
+import type {
+  RealtimeAudioFormats,
+  RealtimeServerEvent,
+  SessionUpdateEvent,
+} from "openai/resources/realtime/realtime";
 
 /**
  * The realtime transcription wire protocol, isolated so it can be tested without a
  * socket. The Beta shape is retired; this is the GA schema, where audio configuration
  * lives under `session.audio.input`.
+ *
+ * The wire shapes are the vendor's own types rather than hand-written structs. Nothing
+ * here calls the SDK — the socket stays a plain WebSocket, because the SDK's realtime
+ * client cannot open an `?intent=transcription` session and does no buffering of its own.
+ * What the types buy is that a renamed field or a mistyped event name fails `typecheck`
+ * instead of failing silently on a call, which is where this project's expensive bugs
+ * have always surfaced.
  */
 
 /** The rate this provider's documentation specifies for PCM input. */
@@ -16,14 +28,19 @@ export const PCM_RATE = 24_000;
  * audio/pcm at 24kHz; audio/pcmu is accepted but undocumented, and whether that costs
  * accuracy on an already-poor channel is a measurement rather than an argument — hence
  * a flag rather than a decision.
+ *
+ * Measured 2026-08-08 on one synthetic control: the two produced byte-identical
+ * transcripts and pcmu committed the turn sooner. That is clean audio, not a phone line,
+ * so the flag stays.
  */
-export const toInputFormat = (
-  format: AudioFormat,
-  asPcm = false,
-): { type: string; rate?: number } => {
+export const toInputFormat = (format: AudioFormat, asPcm = false): RealtimeAudioFormats => {
   if (asPcm) return { type: "audio/pcm", rate: PCM_RATE };
   if (format.encoding === "mulaw" && format.sampleRate === 8000) return { type: "audio/pcmu" };
-  if (format.encoding === "linear16") return { type: "audio/pcm", rate: format.sampleRate };
+  // 24kHz is the only PCM rate the schema admits. Passing the carrier's rate through
+  // built a request the provider cannot honour; the vendor types are what surfaced it.
+  if (format.encoding === "linear16" && format.sampleRate === PCM_RATE) {
+    return { type: "audio/pcm", rate: PCM_RATE };
+  }
   throw new Error(`No realtime input format for ${format.encoding}@${format.sampleRate}Hz`);
 };
 
@@ -49,18 +66,29 @@ export interface SessionOptions {
   readonly model: string;
   readonly turnDetection: TurnDetection;
   /**
-   * Domain vocabulary (R4.1.3). Currently unused: this provider offers no vocabulary
-   * boosting, and the prompt field it does offer hallucinates its contents back as
-   * transcripts. Kept on the interface because the requirement is real and the next
-   * provider may honour it.
+   * Domain vocabulary (R4.1.3). Still unused, but the reason has changed and the old one
+   * is no longer true.
+   *
+   * The vendor schema now carries a first-class `keywords` field — real vocabulary
+   * boosting, not the `prompt` field that used to regurgitate its own contents as
+   * phantom caller turns. It is **not supported on `gpt-4o-transcribe`**, which is what
+   * `TRANSCRIPTION_MODEL` is set to; the schema documents it for `gpt-transcribe` and
+   * `gpt-live-transcribe` only. So wiring it means changing model first.
+   *
+   * Do not wire it on the strength of that alone. Measured 2026-08-08: Deepgram's
+   * equivalent turned "Sikiru" into "Akiro", deterministically, with no personal name in
+   * the list — boosting domain words was enough to damage an adjacent proper noun. The
+   * same A/B is owed here before this field is honoured.
    */
   readonly keyterms: readonly string[];
   /** Transcode mu-law to 24kHz PCM before sending. See toInputFormat. */
   readonly sendAsPcm?: boolean;
 }
 
-export const encodeSessionUpdate = (options: SessionOptions): string =>
-  JSON.stringify({
+export const encodeSessionUpdate = (options: SessionOptions): string => {
+  // Typed as the vendor's own client event. Every field name below is now checked
+  // against the published schema at build time rather than against our memory of it.
+  const event: SessionUpdateEvent = {
     type: "session.update",
     session: {
       type: "transcription",
@@ -83,7 +111,9 @@ export const encodeSessionUpdate = (options: SessionOptions): string =>
         },
       },
     },
-  });
+  };
+  return JSON.stringify(event);
+};
 
 export const encodeAudioAppend = (payload: Buffer): string =>
   JSON.stringify({ type: "input_audio_buffer.append", audio: payload.toString("base64") });
@@ -95,6 +125,26 @@ export type ListenEvent =
   | { readonly kind: "interim"; readonly text: string }
   | { readonly kind: "final"; readonly text: string }
   | { readonly kind: "error"; readonly message: string };
+
+/**
+ * The event names we act on, pinned to the vendor's server-event union.
+ *
+ * The runtime parsing below stays defensive — a vendor adding an event must not take a
+ * call down, so unknown types return null rather than throwing. What this adds is the
+ * other direction: if the provider *renames or removes* one of these, the annotation
+ * stops compiling. Previously a rename would have compiled cleanly and simply stopped
+ * matching, which reads on a call as an agent that has gone deaf.
+ */
+type ServerEventType = RealtimeServerEvent["type"];
+
+const SESSION_UPDATED: ServerEventType = "session.updated";
+const ERROR: ServerEventType = "error";
+const SPEECH_STARTED: ServerEventType = "input_audio_buffer.speech_started";
+const SPEECH_STOPPED: ServerEventType = "input_audio_buffer.speech_stopped";
+const TRANSCRIPTION_DELTA: ServerEventType =
+  "conversation.item.input_audio_transcription.delta";
+const TRANSCRIPTION_COMPLETED: ServerEventType =
+  "conversation.item.input_audio_transcription.completed";
 
 const readString = (v: unknown): string | null =>
   typeof v === "string" && v.length > 0 ? v : null;
@@ -118,9 +168,9 @@ export const parseEvent = (raw: string): ListenEvent | null => {
   const type = readString(e["type"]);
   if (type === null) return null;
 
-  if (type === "session.updated") return { kind: "ready" };
+  if (type === SESSION_UPDATED) return { kind: "ready" };
 
-  if (type === "error") {
+  if (type === ERROR) {
     const err = e["error"];
     const message =
       typeof err === "object" && err !== null
@@ -129,18 +179,22 @@ export const parseEvent = (raw: string): ListenEvent | null => {
     return { kind: "error", message };
   }
 
-  if (type === "input_audio_buffer.speech_started") {
+  if (type === SPEECH_STARTED) {
     return { kind: "speechStart", offsetMs: readNumber(e["audio_start_ms"]) };
   }
-  if (type === "input_audio_buffer.speech_stopped") {
+  if (type === SPEECH_STOPPED) {
     return { kind: "endOfTurn", offsetMs: readNumber(e["audio_end_ms"]) };
   }
 
-  if (type.endsWith("input_audio_transcription.delta")) {
+  // Exact GA name first, then a suffix match. The suffix is what the retired Beta schema
+  // emitted under a different prefix, and it is kept because no call has yet proven the
+  // old shape is gone from every session. Matching is unchanged from before the vendor
+  // types went in — only the GA spelling is now compiler-checked.
+  if (type === TRANSCRIPTION_DELTA || type.endsWith("input_audio_transcription.delta")) {
     const text = readString(e["delta"]);
     return text === null ? null : { kind: "interim", text };
   }
-  if (type.endsWith("input_audio_transcription.completed")) {
+  if (type === TRANSCRIPTION_COMPLETED || type.endsWith("input_audio_transcription.completed")) {
     const text = readString(e["transcript"]);
     return text === null ? null : { kind: "final", text };
   }
