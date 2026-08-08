@@ -14,6 +14,9 @@
 //   TENANT_ID=... node tools/tenant/config.mjs show
 //   TENANT_ID=... node tools/tenant/config.mjs show 3
 //   TENANT_ID=... node tools/tenant/config.mjs publish config.json "added motor terms"
+//   TENANT_ID=... node tools/tenant/config.mjs credential partner_api bearer <token>
+//   TENANT_ID=... node tools/tenant/config.mjs credential partner_api header X-Key <value>
+//   TENANT_ID=... node tools/tenant/config.mjs credential partner_api basic <user> <password>
 //
 // The JSON is the tenant's whole configuration, not a patch — publishing a version that
 // silently inherited half its values from the last one would make the history unreadable:
@@ -28,6 +31,25 @@
 // window and refuses one that wraps past midnight, so a typo fails here rather than
 // telling a caller to ring back tomorrow.
 //
+// `tools` is the tenant's own tool configuration (Slice 6, R5.2) and travels with the
+// version, because it changes what the agent can do. Its shape is validated by
+// packages/tools/src/connector/config.ts on the way into the registry, on every config
+// load, for the same reason persona and instructions are — see the note below.
+//
+//   { "tools": { "egress": { "allowedHosts": ["api.example.com"] },
+//                "http": [ { "name": "order_status", "description": "...",
+//                            "parameters": { "type": "object", ... },
+//                            "riskTier": "read",
+//                            "url": "https://api.example.com/orders",
+//                            "method": "GET", "send": "query",
+//                            "credentialRef": "partner_api",
+//                            "speech": { "template": "Order {id} is {state}.",
+//                                        "fallback": "I can't find that order." } } ] } }
+//
+// The credential itself never goes in that file. `credential` seals it with
+// TOOL_CREDENTIAL_KEY and writes ciphertext; the plaintext is never stored and is not
+// recoverable from here — rotate rather than recover.
+//
 // A note about validation, because its absence here is deliberate rather than forgotten.
 // Persona and instructions are filtered by apps/api/src/prompts/tenant-layer.ts on the
 // way INTO the prompt, on every config load — not on the way into the table. That is what
@@ -35,6 +57,7 @@
 // the same treatment. Publishing something that weakens a guarantee will not weaken it;
 // it will be dropped and logged as an error on the first call that loads it.
 import { createRequire } from "node:module";
+import { createCipheriv, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 const root = new URL("../../", import.meta.url).pathname;
@@ -51,9 +74,26 @@ const env = Object.fromEntries(
 const [command, ...args] = process.argv.slice(2);
 const tenantId = process.env.TENANT_ID;
 if (!tenantId) throw new Error("TENANT_ID is required");
-if (command !== "show" && command !== "publish") {
-  throw new Error("usage: config.mjs show [version] | config.mjs publish <file.json> <note>");
+if (command !== "show" && command !== "publish" && command !== "credential") {
+  throw new Error(
+    "usage: config.mjs show [version] | publish <file.json> <note> | credential <ref> <scheme> <value...>",
+  );
 }
+
+// The same envelope packages/tools/src/connector/vault.ts opens: AES-256-GCM, with the
+// tenant id and the reference name as additional authenticated data so the ciphertext
+// cannot be moved to another tenant's row and still decrypt. Duplicated here rather than
+// imported because this is a .mjs script and @ansa/tools is TypeScript; the format is four
+// dot-separated fields and the version prefix is what makes changing it detectable.
+const seal = (keyBase64, tenant, ref, material) => {
+  const key = Buffer.from(keyBase64, "base64");
+  if (key.length !== 32) throw new Error("TOOL_CREDENTIAL_KEY must be 32 bytes, base64 (openssl rand -base64 32)");
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });
+  cipher.setAAD(Buffer.from(`${tenant}:${ref}`, "utf8"));
+  const sealed = Buffer.concat([cipher.update(JSON.stringify(material), "utf8"), cipher.final()]);
+  return ["v1", iv.toString("base64"), cipher.getAuthTag().toString("base64"), sealed.toString("base64")].join(".");
+};
 
 const client = new Client({
   connectionString: env.DATABASE_URL,
@@ -73,7 +113,8 @@ if (command === "show") {
     version === undefined
       ? await client.query(
           `select name, voice_id, greeting, persona, instructions, keyterms,
-                  business_open_hour, business_close_hour, business_days, config_version
+                  business_open_hour, business_close_hour, business_days, tool_config,
+                  config_version
              from tenants where id = $1`,
           [tenantId],
         )
@@ -90,10 +131,51 @@ if (command === "show") {
        from tenant_prompt_versions where tenant_id = $1 order by version desc limit 20`,
     [tenantId],
   );
+  const { rows: credentials } = await client.query(
+    "select ref, updated_at from tenant_credentials where tenant_id = $1 order by ref",
+    [tenantId],
+  );
+  // Names and dates only. The sealed values are not printed: they are ciphertext, but a
+  // terminal is a worse place for them than a database and there is no reason to look.
+  console.log("\ncredentials:");
+  for (const c of credentials) console.log(`  ${c.ref}  ${c.updated_at.toISOString()}`);
+
   console.log("\nversions:");
   for (const h of history) {
     console.log(`  ${String(h.version).padStart(3)}  ${h.published_at.toISOString()}  ${h.published_by}  ${h.note ?? ""}`);
   }
+} else if (command === "credential") {
+  const [ref, scheme, ...rest] = args;
+  if (!ref || !scheme) throw new Error("usage: credential <ref> <bearer|header|basic> <value...>");
+
+  const material =
+    scheme === "bearer"
+      ? { kind: "bearer", token: rest[0] }
+      : scheme === "header"
+        ? { kind: "header", header: rest[0], value: rest[1] }
+        : scheme === "basic"
+          ? { kind: "basic", username: rest[0], password: rest[1] }
+          : null;
+  if (material === null) throw new Error(`unknown scheme: ${scheme}`);
+  if (Object.values(material).some((v) => v === undefined || v === "")) {
+    throw new Error(`the ${scheme} scheme needs all of its values`);
+  }
+
+  const keyBase64 = env.TOOL_CREDENTIAL_KEY;
+  if (!keyBase64) throw new Error("TOOL_CREDENTIAL_KEY is not set in .env — the API needs the same value");
+
+  // Upsert: rotating a credential is the common case, and a second row under the same
+  // name would be a silent ambiguity about which one the agent is using.
+  await client.query(
+    `insert into tenant_credentials (tenant_id, ref, sealed)
+          values ($1, $2, $3)
+     on conflict (tenant_id, ref)
+       do update set sealed = excluded.sealed, updated_at = now()`,
+    [tenantId, ref, seal(keyBase64, tenantId, ref, material)],
+  );
+  // The plaintext is deliberately not echoed, so it does not end up in a shell history
+  // file twice.
+  console.log(`sealed ${scheme} credential ${ref} for ${tenantId}`);
 } else {
   const [file, note] = args;
   if (!file) throw new Error("pass the path to a JSON config");
@@ -105,7 +187,7 @@ if (command === "show") {
   // reasoned about, and the CHECK constraint in 0012 says so too.
   const hours = config.businessHours ?? {};
   const { rows } = await client.query(
-    "select app.publish_tenant_config($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) as version",
+    "select app.publish_tenant_config($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) as version",
     [
       tenantId,
       config.name ?? null,
@@ -117,6 +199,10 @@ if (command === "show") {
       hours.opensAtHour ?? null,
       hours.closesAtHour ?? null,
       hours.openDays ?? null,
+      // Whole config, never a patch: omitting `tools` publishes a version with no tenant
+      // tools, which is the same rule voice_id and greeting already follow. It is not a
+      // way to leave the last one in place.
+      config.tools == null ? null : JSON.stringify(config.tools),
       note,
     ],
   );
