@@ -36,6 +36,9 @@ import { VoiceController } from "./voice.controller";
         createTwilioTelephonyProvider({
           authToken: config.twilioAuthToken,
           verifySignatures: config.verifySignatures,
+          ...(config.twilioAccountSid === undefined
+            ? {}
+            : { accountSid: config.twilioAccountSid }),
         }),
     },
     {

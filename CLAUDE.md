@@ -27,6 +27,8 @@ that the wrong task is being worked.
 
 **1. A slice is done when a phone call proves it.** Not when the code compiles, not when
 the unit tests pass. If you can't dial the number and hear the result, the slice is open.
+For outbound, the equivalent is a call you placed ringing a real handset — a REST call
+that returned 201 proves nothing.
 
 **2. No vendor types outside adapters.** Twilio, Deepgram, Intron, Spitch, ElevenLabs and
 Anthropic SDK types live inside `packages/providers/*` and nowhere else. Orchestration
@@ -84,17 +86,37 @@ this costs nothing in debuggability. Type predicates work unchanged:
 
 ---
 
-## Inbound only
+## Inbound and outbound
 
-Ansa answers calls. It does not place them. Every interface, every schema field, every
-event name should read as if outbound will never exist — no `direction` columns, no
-`CallType` enums, no "we'll need this later" abstractions for a feature that is gated
-behind Slice 7a.
+Ansa answers calls and places them. Outbound was explicitly out of scope until
+2026-08-08 and the codebase still reflects that in places — if you find an interface that
+reads as though outbound will never exist, it predates this and is safe to widen.
 
-If outbound ever ships, adding it will be honest work against a codebase that is good at
-one thing. Pre-generalising now buys nothing and costs clarity in every file.
+What has **not** changed is why the restriction existed, and it still constrains how
+outbound should land: pre-generalising costs clarity in every file. So widen a type when
+a real outbound requirement forces it, not in anticipation of one. `direction` exists
+because two lifecycles genuinely differ; it is not licence to add `CallType` enums for
+call kinds nobody has asked for.
 
----
+The differences that actually matter:
+
+- **Tenant resolution runs backwards.** Inbound resolves the tenant from the dialled
+  number at ingress (R7.3). Outbound already knows the tenant — it is the one that asked
+  for the call — so the tenant travels *out* with the origination and comes back on the
+  media socket as a stream parameter. Do not resolve it a second time from the caller ID.
+- **The media path is identical once answered.** `<Connect><Stream>` is the same verb, the
+  same socket, the same orchestrator. Everything below the answer is shared, and a second
+  copy of it would be the same mistake as a second tool dispatch path.
+- **Outbound can fail in ways inbound cannot.** No answer, busy, rejected, voicemail. An
+  inbound call is answered by definition; an outbound one has a lifecycle before audio
+  exists, and the orchestrator must never be started for a call that was never picked up.
+- **Voicemail is not a caller.** Answering-machine detection is not optional politeness:
+  an agent that holds a two-minute conversation with a voicemail greeting is both useless
+  and billed.
+- **Consent is a hard gate, not a policy.** Nigerian NDPR and NCC rules on unsolicited
+  calls, plus time-of-day limits and do-not-call suppression, belong in the dispatch path
+  and not in a prompt. Same rule as risk tiers: code cannot be talked out of it. A tenant
+  configuring "call these numbers" must not be able to configure away the check.
 
 ## Voice is not chat
 

@@ -7,6 +7,11 @@ export interface AppConfig {
   readonly publicBaseUrl: string;
   readonly twilioAuthToken: string;
   readonly verifySignatures: boolean;
+  /**
+   * Account SID (AC…), needed only to place outbound calls. An inbound-only deployment
+   * runs without it rather than failing at boot for a capability it never uses.
+   */
+  readonly twilioAccountSid: string | undefined;
   readonly elevenLabsApiKey: string;
   readonly elevenLabsVoiceId: string;
   /** Overridden in local testing to point at a stub. Defaults to the real API. */
@@ -98,6 +103,7 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
     publicBaseUrl: required(env, "PUBLIC_BASE_URL").replace(/\/+$/, ""),
     twilioAuthToken: verifySignatures ? required(env, "TWILIO_AUTH_TOKEN") : "",
     verifySignatures,
+    twilioAccountSid: optional(env, "TWILIO_ACCOUNT_SID"),
     // Required rather than optional: an agent that cannot speak has nothing to offer a
     // caller, so failing at boot beats failing mid-call.
     elevenLabsApiKey: required(env, "ELEVENLABS_API_KEY"),

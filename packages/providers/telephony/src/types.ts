@@ -15,6 +15,49 @@ export interface InboundCall {
   readonly caller: string | null;
 }
 
+/**
+ * Which way the call went.
+ *
+ * Present because the two lifecycles genuinely differ — an inbound call is answered by
+ * definition, an outbound one can ring out, hit voicemail, or be rejected before any
+ * audio exists. Not licence to enumerate further call kinds nobody has asked for.
+ */
+export type CallDirection = "inbound" | "outbound";
+
+/** A call we are asking the carrier to place. */
+export interface PlaceCallRequest {
+  /** E.164. */
+  readonly to: string;
+  /** E.164, and must be a number the carrier account actually owns. */
+  readonly from: string;
+  readonly mediaStreamUrl: string;
+  /**
+   * Handed back to us on the media socket. Outbound already knows its tenant — it is the
+   * one that asked for the call — so the tenant travels out here rather than being
+   * resolved a second time from the caller ID.
+   */
+  readonly parameters?: Readonly<Record<string, string>>;
+  /**
+   * Ask the carrier to detect voicemail before connecting audio.
+   *
+   * An agent that holds a two-minute conversation with a voicemail greeting is both
+   * useless and billed, so this defaults on and is turned off deliberately or not at all.
+   */
+  readonly detectVoicemail?: boolean;
+  /** Where the carrier should report ringing, answer, no-answer and failure. */
+  readonly statusCallbackUrl?: string;
+}
+
+/**
+ * The carrier accepted the request. It has not rung yet, let alone been answered — the
+ * orchestrator must not be started off the back of this.
+ */
+export interface PlacedCall {
+  readonly callId: CallId;
+  /** The carrier's own word for it: queued, initiated, ringing. */
+  readonly status: string;
+}
+
 /** Where the carrier should open the bidirectional media socket for this call. */
 export interface AnswerInstruction {
   readonly mediaStreamUrl: string;
@@ -102,6 +145,14 @@ export interface TelephonyProvider {
   parseInboundCall(payload: unknown): InboundCall;
   /** Render the instruction to answer the call and start streaming media. */
   renderAnswer(instruction: AnswerInstruction): CarrierResponse;
+  /**
+   * Place an outbound call.
+   *
+   * Rejects rather than resolving on a carrier refusal — an unowned "from" number or a
+   * malformed destination is a configuration error, and returning a half-call would push
+   * the discovery downstream to somewhere with less context.
+   */
+  placeCall(request: PlaceCallRequest): Promise<PlacedCall>;
   /** Adopt a media socket the carrier has just opened. */
   attachMediaStream(socket: MediaSocket, handlers: MediaStreamHandlers): void;
 }

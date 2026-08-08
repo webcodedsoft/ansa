@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { validateRequest } from "twilio";
 
 import { asCallId } from "@ansa/shared";
@@ -10,6 +11,8 @@ import type {
   MediaStreamHandlers,
   TelephonyProvider,
   WebhookRequest,
+  PlaceCallRequest,
+  PlacedCall,
 } from "../types";
 import { parseFrame, renderConnectStream, toAudioEncoding } from "./protocol";
 import { TwilioMediaStream } from "./twilio-media-stream";
@@ -21,6 +24,15 @@ export interface TwilioProviderOptions {
    * public tunnel lets anyone on the internet originate calls against this service.
    */
   readonly verifySignatures: boolean;
+  /**
+   * Account SID (AC…). Required only to place calls — an inbound-only deployment needs
+   * no REST credentials at all, and demanding them would be a new failure mode for a
+   * capability it never uses.
+   */
+  readonly accountSid?: string;
+  /** Overridden in tests. */
+  readonly apiBaseUrl?: string;
+  readonly fetch?: typeof globalThis.fetch;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -28,6 +40,41 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const readString = (value: unknown): string | null =>
   typeof value === "string" && value.length > 0 ? value : null;
+
+/**
+ * Places the call with the TwiML inlined rather than pointing the carrier at a webhook.
+ *
+ * Two reasons. It removes a round trip on answer, which is latency the caller hears as
+ * dead air. And a webhook URL would have to carry the tenant, which means an enumerable
+ * identifier in a query string that anyone who can reach the tunnel could probe; inlined,
+ * the tenant travels inside the instruction and comes back only on the media socket.
+ */
+const buildCallForm = (
+  request: PlaceCallRequest,
+  streamXml: string,
+): URLSearchParams => {
+  const form = new URLSearchParams();
+  form.set("To", request.to);
+  form.set("From", request.from);
+  form.set("Twiml", streamXml);
+
+  // Defaults on. DetectMessageEnd rather than Enable: knowing a machine answered is not
+  // useful on its own, we need to know when its greeting has finished.
+  if (request.detectVoicemail !== false) {
+    form.set("MachineDetection", "DetectMessageEnd");
+  }
+
+  if (request.statusCallbackUrl !== undefined) {
+    form.set("StatusCallback", request.statusCallbackUrl);
+    // Ringing and no-answer are the events that distinguish outbound from inbound; the
+    // default callback set omits them.
+    for (const event of ["initiated", "ringing", "answered", "completed"]) {
+      form.append("StatusCallbackEvent", event);
+    }
+  }
+
+  return form;
+};
 
 export const createTwilioTelephonyProvider = (
   options: TwilioProviderOptions,
@@ -67,6 +114,47 @@ export const createTwilioTelephonyProvider = (
     contentType: "text/xml; charset=utf-8",
     body: renderConnectStream(instruction.mediaStreamUrl, instruction.parameters ?? {}),
   }),
+
+  placeCall: async (request: PlaceCallRequest): Promise<PlacedCall> => {
+    const accountSid = options.accountSid;
+    if (accountSid === undefined || accountSid === "") {
+      throw new Error("Cannot place a call without a Twilio account SID");
+    }
+
+    const doFetch = options.fetch ?? globalThis.fetch;
+    const base = options.apiBaseUrl ?? "https://api.twilio.com";
+    const url = `${base}/2010-04-01/Accounts/${encodeURIComponent(accountSid)}/Calls.json`;
+
+    const streamXml = renderConnectStream(request.mediaStreamUrl, request.parameters ?? {});
+    const response = await doFetch(url, {
+      method: "POST",
+      headers: {
+        // Basic with the account SID as the username, which is what the REST API expects.
+        Authorization: `Basic ${Buffer.from(`${accountSid}:${options.authToken}`).toString("base64")}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: buildCallForm(request, streamXml).toString(),
+    });
+
+    if (!response.ok) {
+      // Surfaced rather than swallowed: an unowned "from" number and a malformed
+      // destination both land here, and both are configuration errors that are far
+      // cheaper to read now than to infer from a call that never rings.
+      const detail = await response.text().catch(() => "");
+      throw new Error(`Carrier refused the call (${response.status}): ${detail.slice(0, 300)}`);
+    }
+
+    const body = (await response.json()) as { sid?: unknown; status?: unknown };
+    if (typeof body.sid !== "string") {
+      throw new Error("Carrier accepted the call but returned no call identifier");
+    }
+
+    return {
+      callId: asCallId(body.sid),
+      // Queued or initiated. It has not rung yet, let alone been answered.
+      status: typeof body.status === "string" ? body.status : "unknown",
+    };
+  },
 
   attachMediaStream: (socket: MediaSocket, handlers: MediaStreamHandlers): void => {
     let stream: TwilioMediaStream | null = null;
