@@ -7,7 +7,16 @@ import { durationMs, type SynthesisStream, type TtsProvider } from "@ansa/tts";
 
 import { createFillerPicker } from "../telephony/filler";
 import { classify } from "./action";
-import { advance, confirmedUtterance, idle, logSafe, type CaptureState } from "./capture";
+import {
+  advance,
+  confirmedUtterance,
+  idle,
+  logSafe,
+  type CaptureState,
+  type EntityKind,
+} from "./capture";
+import type { CallFactsStore, IdentifierField } from "../conversation/call-facts";
+import { renderFacts } from "../conversation/facts-prompt";
 import { endsMidThought, isBareGreeting } from "./completeness";
 import { createSpeechGate } from "./speech-gate";
 import { nullRecorder, type CallRecorder } from "../telephony/event-log";
@@ -103,7 +112,31 @@ export interface OrchestratorDeps {
    * orchestrator must not learn a vendor's settings vocabulary, it only has to record it.
    */
   readonly transcriptionConfig?: Readonly<Record<string, string | number | boolean>>;
+  /**
+   * What the agent knows about this call, and how well it knows it.
+   *
+   * Constructed by the gateway rather than here, because the tenant is resolved on the
+   * media socket and the orchestrator has never needed to know it. Absent on a call whose
+   * number has no tenant configuration — the same calls for which the recorder is already
+   * skipped.
+   */
+  readonly facts?: CallFactsStore;
 }
+
+/**
+ * Which slot in the call record a captured entity belongs in, or null when the record has
+ * no slot for it.
+ *
+ * Keyed on the entity kind capture reports, never on the shape of the value: the previous
+ * version of this decision was a regex over the confirmed string, and it filed a confirmed
+ * date under "number". Null is the honest answer for the kinds the store has no field for
+ * — writing an email address or an amount into `policyNumber` would put a confidently
+ * wrong label in front of the model, which is worse than the model not being told.
+ */
+const FACT_FIELD_FOR: Readonly<Partial<Record<EntityKind, IdentifierField>>> = {
+  name: "callerName",
+  reference: "policyNumber",
+};
 
 /** A sentence that has been handed to TTS, and where its audio sits in the turn. */
 interface SpokenSentence {
@@ -944,6 +977,8 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
 
     measure("stt_final", { chars: callerText.length });
     conversation.addCaller(forModel);
+    // They have answered. Whatever we were waiting on is no longer outstanding.
+    deps.facts?.clear("pendingQuestion");
 
     turnSeq += 1;
     const seq = turnSeq;
@@ -973,9 +1008,15 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     record.event("llm_start", { seq });
     mark("llm_first_token");
     const sentences = createSentenceBuffer();
+    // Empty until something is known, so turn one is byte-for-byte the prompt that was
+    // sent before this existed.
+    const known = deps.facts === undefined ? "" : renderFacts(deps.facts.facts);
     const completion = deps.llm.complete({
-      // The instruction is the soft half. The word cap below is the half that holds.
-      system: `${SYSTEM_PROMPT}\n\n${budget.instruction}`,
+      // Order is deliberate. Standing instructions, then what is known about this call,
+      // then how long this particular reply may be — the per-turn instruction sits nearest
+      // the generation because it is the one that changes every turn. The instruction is
+      // the soft half; the word cap below is the half that holds.
+      system: [SYSTEM_PROMPT, known, budget.instruction].filter((s) => s !== "").join("\n\n"),
       messages: conversation.messages,
       // A guard against runaway generation, not a length control. A tight token cap
       // guillotines mid-clause and the caller hears a cut-off word.
@@ -1058,6 +1099,19 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       // caller turn present and no reply to any of them, which is not a conversation
       // anyone can review.
       record.event("agent said", { seq, text: full.trim(), action: budget.action });
+      // A turn ending in a question mark is a question by construction, so this is a
+      // code-side rule and not a prompt one: the model does not have to cooperate for the
+      // agent to know what it is still waiting on. The last question in the turn is the
+      // one outstanding — the caller answers what they heard last.
+      const asked = full.trim();
+      if (asked.endsWith("?")) {
+        deps.facts?.observe({
+          field: "pendingQuestion",
+          value: asked.split(/(?<=[.!?])\s+/).filter((s) => s.endsWith("?")).at(-1) ?? asked,
+          source: "model",
+          atMs: Date.now(),
+        });
+      }
       log.info("agent turn", {
         seq,
         text: full.trim(),
@@ -1125,6 +1179,26 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       capture = idle;
       log.info("value confirmed by the caller", { kind: capturedKind, chars: captured.length });
       record.event("value confirmed", { kind: capturedKind, chars: captured.length });
+
+      // Confirmed by the caller against a readback, so it may now be used. Source matters
+      // more than the value: this is one of the five provenances allowed to write an
+      // identifier, and the model is not among them.
+      const field = FACT_FIELD_FOR[capturedKind];
+      if (field !== undefined) {
+        const change = deps.facts?.observe({
+          field,
+          value: captured,
+          source: "caller-confirmation",
+          atMs: Date.now(),
+        });
+        // A confirmed value contradicting a confirmed value is not applied — the caller
+        // may be correcting themselves and the way to tell is to ask. Counted rather than
+        // assumed rare; re-opening the readback belongs to capture, which owns the loop.
+        if (change?.reason === "contested") {
+          log.warn("a confirmed value was contradicted and not applied", { field });
+          record.event("fact contested", { field });
+        }
+      }
       // The model finally sees the value, and sees it as confirmed. Routed through
       // respondTo so it is recorded, budgeted and spoken like any other turn. The kind
       // comes from capture rather than from the shape of the value: shape-sniffing turned
@@ -1153,6 +1227,19 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         value: logSafe(capture.subject, capture.value),
       });
       record.event("confirmation_requested", { subject: capture.subject, attempt: capture.attempt });
+      // Recorded while it is still a candidate, so the agent does not ask for a name it is
+      // at that moment in the middle of confirming. The value never reaches the model:
+      // `renderFacts` renders an unconfirmed identifier as "they have given it and you are
+      // still checking it", with no value in the line.
+      const field = FACT_FIELD_FOR[capture.subject];
+      if (field !== undefined) {
+        deps.facts?.observe({
+          field,
+          value: capture.value,
+          source: "stt",
+          atMs: Date.now(),
+        });
+      }
     }
     if (result.say !== null) sayNow(result.say, `readback:${capture.kind}`);
     return true;
@@ -1179,6 +1266,26 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     if (captured !== null && capturedKind !== null) {
       capture = idle;
       log.info("value entered on the keypad", { kind: capturedKind, chars: captured.length });
+      // Tones are unambiguous, which is why `dtmf` is a confirming source in its own
+      // right. The keypad is only ever offered after speech has already failed twice, so
+      // this is the call most likely to need the value later.
+      const field = FACT_FIELD_FOR[capturedKind];
+      if (field !== undefined) {
+        deps.facts?.observe({
+          field,
+          value: captured,
+          source: "dtmf",
+          atMs: Date.now(),
+        });
+      }
+      // Mirrors the speech path so a typed reference is as visible in the log as a spoken
+      // one — the handoff summary reads these, and the keypad is reached exactly when a
+      // call is heading for a person.
+      record.event("entity_candidate", {
+        subject: capturedKind,
+        value: logSafe(capturedKind, captured),
+      });
+      record.event("value confirmed", { kind: capturedKind, chars: captured.length });
       respondTo(captured, confirmedUtterance(capturedKind, captured));
       return;
     }

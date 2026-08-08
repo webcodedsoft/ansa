@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { Server } from "node:http";
 
 import {
+  asCallId,
   asTenantId,
   TELEPHONY_AUDIO,
   type AudioChunk,
@@ -22,6 +23,7 @@ import { ACKNOWLEDGEMENTS, ALL_FILLERS, PROGRESS, STILL_WORKING } from "./filler
 import { forSpeech, GREETING_TEXT } from "./greeting";
 import { createAudioCache } from "./prerender";
 import { composeListen } from "./composite-listen";
+import { createCallFacts } from "../conversation/call-facts";
 import { createCallRecorder } from "./event-log";
 import type { Db } from "@ansa/db";
 import { BASE_KEYTERMS } from "../tenancy/defaults";
@@ -365,10 +367,26 @@ export class MediaGateway implements OnApplicationShutdown {
       });
     }
 
+    // Only when the tenant resolved. A call on an unconfigured number is already running
+    // with base vocabulary and recording nothing; there is nothing to scope state to and
+    // CLAUDE.md rule 3 does not admit a placeholder tenant. The direction ternary is the
+    // one `recorder.started` uses above, so the two cannot disagree about which way the
+    // call went.
+    const facts =
+      tenant?.tenantId == null
+        ? undefined
+        : createCallFacts({
+            tenantId: tenant.tenantId,
+            callId: asCallId(stream.callId),
+            callDirection:
+              stream.parameters[DIRECTION_PARAM] === "outbound" ? "outbound" : "inbound",
+          });
+
     const listen = this.openListen(stream.format, keyterms);
 
     runConversation(stream, {
       listen,
+      facts,
       // Drained last, immediately before the conversation starts, so no frame can slip
       // between the buffer closing and the orchestrator subscribing.
       initialAudio: drainEarlyAudio(),

@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 
 import type { AudioChunk } from "@ansa/shared";
 
+import { asCallId, asTenantId } from "@ansa/shared";
+
 import { chunkOf, fakeListen, fakeLlm, fakeStream, fakeTts, silentLog } from "./fakes";
+import { createCallFacts, type CallFactsStore } from "../conversation/call-facts";
 import type { CallRecorder } from "../telephony/event-log";
 import { runConversation } from "./orchestrator";
 
@@ -28,6 +31,7 @@ const setup = (
     transcriptWatchdogMs?: number;
     minSpeechMs?: number;
     recorder?: CallRecorder;
+    facts?: CallFactsStore;
   } = {},
 ) => {
   const stream = fakeStream();
@@ -877,6 +881,79 @@ describe("readback in the turn loop (R4.3)", () => {
 
     // A caller fidgeting with their handset must not become a reference.
     expect(h.tts.texts().length).toBe(before);
+    assertInvariants(h);
+  });
+});
+
+describe("what the agent knows about the call (§10)", () => {
+  const newFacts = (): CallFactsStore =>
+    createCallFacts({
+      tenantId: asTenantId("11111111-1111-4111-8111-111111111111"),
+      callId: asCallId("CA-facts"),
+      callDirection: "inbound",
+    });
+
+  /**
+   * Seven names from as many traditions, plus a hyphen and a diacritic, because a fix
+   * that only carries one name through is not a fix. None of them appears in a branch —
+   * the store is keyed on the entity kind capture reports.
+   */
+  it.each([
+    "Adebayo",
+    "Ngozi Okonkwo",
+    "Siobhan",
+    "Jean-Pierre",
+    "Zoë",
+    "Wei",
+    "Maria del Carmen",
+  ])("carries a confirmed name (%s) into the model's prompt", (name) => {
+    const facts = newFacts();
+    const h = setup({ facts });
+
+    h.listen.final(`My name is ${name}.`);
+    h.listen.final("Yes, that is right.");
+
+    expect(facts.facts.callerNameConfirmed).toBe(true);
+    // The prompt the model was given for the turn that follows the confirmation.
+    expect(h.llm.last().request.system).toContain(name);
+    assertInvariants(h);
+  });
+
+  it("does not put an unconfirmed candidate in front of the model", () => {
+    const facts = newFacts();
+    const h = setup({ facts });
+
+    h.listen.final("My name is Adebayo.");
+    // Still under readback. The agent may know it is holding a name; it may not use it.
+    h.listen.final("What are your opening hours?");
+
+    expect(facts.facts.callerNameConfirmed).toBe(false);
+    const system = h.llm.completions.at(-1)?.request.system ?? "";
+    expect(system).not.toContain("Adebayo");
+    assertInvariants(h);
+  });
+
+  it("remembers the question it asked, and forgets it once answered", () => {
+    const facts = newFacts();
+    const h = setup({ facts });
+
+    h.listen.final("I want to renew.");
+    h.llm.last().emit("Happy to help. Which policy is it?");
+    h.llm.last().finish();
+    expect(facts.facts.pendingQuestion.value).toContain("Which policy is it?");
+
+    h.listen.final("The motor one.");
+    expect(facts.facts.pendingQuestion.value).toBeNull();
+    assertInvariants(h);
+  });
+
+  it("says nothing at all about the call until something is known", () => {
+    const h = setup({ facts: newFacts() });
+
+    h.listen.final("What are your opening hours?");
+
+    // Turn one must be byte-for-byte the prompt that was sent before any of this existed.
+    expect(h.llm.last().request.system).not.toContain("Do not change it");
     assertInvariants(h);
   });
 });
