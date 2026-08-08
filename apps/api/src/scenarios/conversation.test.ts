@@ -222,12 +222,14 @@ describe("§25 · the twenty scenarios", () => {
     // something that, as far as the caller is concerned, was never said.
     expect(agentTurn?.content).not.toContain("premium is unchanged");
     expect(s.kinds()).toContain("barge-in");
-    // The event carries it; the `turns` row does not, and that is a live defect rather
-    // than an oversight here. `commitHeard` records the agent turn on the first mark the
-    // carrier acknowledges, which clears `startedAtMs`, so the `recordAgentTurn` call
-    // inside `stopSpeaking` finds nothing left to stamp and `barged_in_at_ms` is null on
-    // every interruption. Owned by turn-taking; this scenario is where it shows.
-    expect(s.log.turns.filter((t) => t.speaker === "agent").length).toBeGreaterThan(0);
+    // The event carries it and so does the `turns` row. It did not: `commitHeard` used to
+    // record the agent turn on the first mark the carrier acknowledged, clearing
+    // `startedAtMs`, so `stopSpeaking` found nothing left to stamp and `barged_in_at_ms`
+    // was null on every interruption of every real call. This scenario is where it showed.
+    const interrupted = s.log.turns.filter(
+      (t) => t.speaker === "agent" && t.bargedInAtMs !== null,
+    );
+    expect(interrupted.length, "the interruption was not written down").toBeGreaterThan(0);
   });
 
   it("7 · lets the caller say mm-hm without losing the floor", () => {

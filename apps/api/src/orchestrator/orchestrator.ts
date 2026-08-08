@@ -225,8 +225,22 @@ const THIRD_FILLER_AFTER_MS = 4500;
  * Said when a turn produces nothing. Deliberately an invitation rather than an
  * explanation: the caller does not care why, and "sorry, could you say it again"
  * recovers a turn that would otherwise end in silence.
+ *
+ * Several of them, because this was one constant spoken word for word however many times
+ * a call needed it, and hearing the identical sentence twice is how a caller learns they
+ * are talking to a machine. `capture.ts` already varies its second readback for the same
+ * reason. They are deliberately not a progression — nothing here knows whether this is the
+ * first failure or the third, and a line that said so would be wrong half the time — only
+ * different ways of asking the same short thing.
  */
-const RECOVERY_LINE = "Sorry, I did not catch that. Could you say it again?";
+const RECOVERY_LINES: readonly string[] = [
+  "Sorry, I did not catch that. Could you say it again?",
+  "Sorry — I missed that. Come again?",
+  // Every one of them apologises. Two tests assert it and they are right to: a turn that
+  // produced nothing is our failure, and varying the wording is not licence to drop that.
+  "Sorry, I did not get that one. Say it again for me?",
+  "Sorry, the line is not clear. One more time?",
+];
 
 /**
  * If a turn has produced no audio at all by this point, say something.
@@ -426,6 +440,8 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   /** Timers for the thinking-gap acknowledgements, cleared the moment real audio starts. */
   let fillerTimers: ReturnType<typeof setTimeout>[] = [];
   const pickFiller = createFillerPicker();
+  /** Same picker, same reason: random, but never the same line twice running. */
+  const pickRecovery = createFillerPicker();
 
   let watchdog: ReturnType<typeof setTimeout> | null = null;
   const cancelWatchdog = (): void => {
@@ -641,8 +657,17 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     return parts.join(" ").trim();
   };
 
+  /**
+   * Updates the conversation with what the caller has actually heard so far.
+   *
+   * It does NOT record the turn, and used to. Every mark the carrier acknowledges runs
+   * this, so on the first one the turn was written down with no barge offset and
+   * `startedAtMs` cleared — and `stopSpeaking`'s own call, the one that knows where the
+   * caller cut in, then found nothing left to stamp. `barged_in_at_ms` was null on every
+   * interruption on every real call because of it. The turn is written at its two real
+   * exits instead: played out, and cut off.
+   */
   const commitHeard = (current: AgentTurn): void => {
-    recordAgentTurn(current, null);
     conversation.recordAgentTurn(current.seq, heardText(current));
   };
 
@@ -782,6 +807,9 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     if (current.bytesHeard < current.bytesSent) return;
 
     record.event("turn_complete", { seq: current.seq });
+    // Played out in full, so there is no barge offset. The other exit is stopSpeaking,
+    // which stamps one; between them every agent turn that made a sound is recorded once.
+    recordAgentTurn(current, null);
     log.info("agent turn played", {
       seq: current.seq,
       ms: Math.round(durationMs(current.bytesHeard, stream.format)),
@@ -821,9 +849,8 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     cancelWatchdog();
     stream.clear();
 
-    // Before commitHeard, which records the turn itself and would claim it with a null
-    // barge offset. Every barge-in on a live call came back with barged_in_at_ms empty
-    // because this ran second.
+    // Where the caller cut in, in milliseconds of audio they had heard. This is the only
+    // place that number exists.
     recordAgentTurn(current, Math.round(durationMs(current.bytesHeard, stream.format)));
     commitHeard(current);
     record.event("barge-in", { reason, seq: current.seq });
@@ -849,7 +876,6 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   });
 
   deps.listen.turns.onSpeechStart((event) => {
-    callerTurnStartedMs ??= event.offsetMs;
     const current = turn;
     if (current !== null && current.sentenceAudioAt !== null) {
       const speakingFor = Date.now() - current.sentenceAudioAt;
@@ -865,6 +891,12 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         return;
       }
     }
+
+    // Below the echo guard, deliberately. Above it, a segment the guard then judged to be
+    // our own audio coming back had already stamped the caller's turn start, and their
+    // next turn was filed as having begun at the moment of the echo.
+    callerTurnStartedMs ??= event.offsetMs;
+
     // The agent has made no sound yet, so there is nothing to interrupt. Tearing the
     // turn down here would cancel an LLM that was milliseconds from its first token —
     // the dead air manufacturing the interruption that deletes the answer.
@@ -880,6 +912,12 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     // Reported whether or not a turn is open: it is the caller taking the floor, and
     // stopSpeaking reports the interruption separately on the next line.
     callState.apply({ kind: "caller.speech.started", handling: "barge-in" });
+    // They have started again, so the transcript we were waiting on is no longer what
+    // they are owed. Left armed, the recovery line fires five seconds into their next
+    // sentence — the failure the watchdog exists to prevent, pointed the other way. Only
+    // when nothing is playing: with a turn open, stopSpeaking cancels it on the next line
+    // and the turn watchdog it may be holding has to survive until then.
+    if (current === null) cancelWatchdog();
     if (current !== null) stopSpeaking("caller interrupted");
   });
 
@@ -1028,8 +1066,9 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     };
     turn = recovery;
     callState.apply({ kind: "agent.turn.started", seq: recovery.seq, reason: "recovery" });
-    log.warn("speaking a recovery line", { reason, seq: recovery.seq });
-    enqueue(recovery, RECOVERY_LINE);
+    const line = pickRecovery.next(RECOVERY_LINES) ?? RECOVERY_LINES[0] ?? "";
+    log.warn("speaking a recovery line", { reason, seq: recovery.seq, line });
+    enqueue(recovery, line);
     // A turn that went nowhere. Three of these and the caller gets a person (R6.4) — the
     // counter resets on any turn that produced real speech, so three scattered failures
     // across an otherwise fine call do not transfer someone who was doing fine.

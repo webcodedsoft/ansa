@@ -570,6 +570,49 @@ describe("runConversation", () => {
       expect(h.tts.texts().some((t) => t.includes("Sorry"))).toBe(false);
     });
 
+    // The watchdog pointed the other way. It is armed at end-of-turn and was cancelled
+    // only by a reply, an audio byte or the next end-of-turn — so a caller who simply
+    // started speaking again could be interrupted, five seconds in, by "Sorry, I did not
+    // catch that" while they were mid-sentence.
+    it("does not fire that watchdog once the caller has started again", async () => {
+      const h = setup({ transcriptWatchdogMs: 30, bargeInGuardMs: 0 });
+      h.tts.last().done();
+      h.stream.ackAll();
+
+      h.listen.endOfTurn(1000);
+      h.listen.speechStart(1200);
+      await new Promise((r) => setTimeout(r, 70));
+
+      expect(h.tts.texts().some((t) => t.includes("Sorry"))).toBe(false);
+      assertInvariants(h);
+    });
+
+    // One constant spoken word for word however many times a call needed it is how a
+    // caller learns they are talking to a machine. capture.ts varies its second readback
+    // for the same reason.
+    it("does not repeat the same recovery line twice running", async () => {
+      const h = setup({ transcriptWatchdogMs: 20 });
+      h.tts.last().done();
+      h.stream.ackAll();
+
+      const said: string[] = [];
+      for (let i = 0; i < 4; i += 1) {
+        h.listen.endOfTurn(1000 * (i + 1));
+        await new Promise((r) => setTimeout(r, 60));
+        const line = h.tts.texts().at(-1) ?? "";
+        said.push(line);
+        // Let the recovery turn finish so the next watchdog can arm.
+        h.tts.last().done();
+        h.stream.ackAll();
+      }
+
+      expect(said).toHaveLength(4);
+      for (const [i, line] of said.entries()) {
+        expect(line).toContain("Sorry");
+        if (i > 0) expect(line).not.toBe(said[i - 1]);
+      }
+    });
+
     it("apologises before hanging up when the listen connection dies", () => {
       const h = setup();
       h.tts.last().done();
@@ -1300,14 +1343,24 @@ describe("audio that arrived before the listener existed", () => {
 
 describe("turns are written down", () => {
   const recording = () => {
-    const turns: { seq: number; speaker: string; bargedInAtMs: number | null }[] = [];
+    const turns: {
+      seq: number;
+      speaker: string;
+      startedOffsetMs: number;
+      bargedInAtMs: number | null;
+    }[] = [];
     return {
       turns,
       recorder: {
         started: () => undefined,
         event: () => undefined,
         transcript: () => undefined,
-        turn: (t: { seq: number; speaker: string; bargedInAtMs: number | null }) => turns.push(t),
+        turn: (t: {
+          seq: number;
+          speaker: string;
+          startedOffsetMs: number;
+          bargedInAtMs: number | null;
+        }) => turns.push(t),
         ended: () => undefined,
       },
     };
@@ -1331,22 +1384,67 @@ describe("turns are written down", () => {
     assertInvariants(h);
   });
 
-  it("marks how far the caller heard when they interrupt", () => {
+  /**
+   * `barged_in_at_ms` was null on every interruption on every real call. `commitHeard`
+   * ran on the first mark the carrier acknowledged and recorded the turn there, clearing
+   * `startedAtMs`, so `stopSpeaking`'s own call — the only one that knows where the
+   * caller cut in — found nothing left to stamp.
+   */
+  it("stamps how far the caller heard when they interrupt", () => {
     const r = recording();
     const h = setup({ recorder: r.recorder as unknown as CallRecorder, bargeInGuardMs: 0 });
 
-    h.listen.final("Tell me about my policy.");
+    // Greeting out of the way first, played and heard in full.
+    h.tts.last().done();
     h.stream.ackAll();
+
+    h.listen.final("Tell me about my policy.");
+    h.llm.last().emit("It renews in May. ");
+    // A second of the reply reaches the caller before they cut in.
+    h.tts.last().audio(1600);
+    h.stream.ackAll();
+
     h.listen.speechStart(5_000);
 
-    // How a turn ended is its most interesting property and is only knowable here, so
-    // every agent turn carries the field — null when it played out, a byte offset when
-    // the caller cut in. That a real interruption populates it is left to a live call;
-    // driving one through the fakes tests the harness more than the code.
-    const agent = r.turns.filter((t) => t.speaker === "agent");
-    expect(agent.length).toBeGreaterThan(0);
-    for (const t of agent) expect(t).toHaveProperty("bargedInAtMs");
+    const interrupted = r.turns.filter((t) => t.speaker === "agent" && t.bargedInAtMs !== null);
+    expect(interrupted.length, "no agent turn carries a barge offset").toBeGreaterThan(0);
+    for (const t of interrupted) expect(t.bargedInAtMs).toBeGreaterThan(0);
     assertInvariants(h);
+  });
+
+  it("records an agent turn once, not once per mark", () => {
+    const r = recording();
+    const h = setup({ recorder: r.recorder as unknown as CallRecorder });
+
+    // Several marks for one turn: the greeting is marked roughly every 200ms of audio.
+    h.tts.last().audio(4800);
+    h.tts.last().done();
+    h.stream.ackAll();
+    h.stream.ackAll();
+
+    const greeting = r.turns.filter((t) => t.speaker === "agent" && t.seq === 1);
+    expect(greeting).toHaveLength(1);
+    // It played out, so there is no barge offset on it.
+    expect(greeting[0]?.bargedInAtMs).toBeNull();
+    assertInvariants(h);
+  });
+
+  it("does not file the caller's turn as starting at our own echo", () => {
+    const r = recording();
+    const h = setup({ recorder: r.recorder as unknown as CallRecorder, bargeInGuardMs: 10_000 });
+    h.tts.last().audio(800);
+
+    // Our own audio coming back through the handset, suppressed by the guard.
+    h.listen.speechStart(1_000);
+    // The greeting plays out, so nothing is speaking and the guard no longer applies.
+    h.tts.last().done();
+    h.stream.ackAll();
+    // The caller, genuinely starting.
+    h.listen.speechStart(9_000);
+    h.listen.final("What are your opening hours?", 11_000);
+
+    const caller = r.turns.filter((t) => t.speaker === "caller");
+    expect(caller.map((t) => t.startedOffsetMs)).toEqual([9_000]);
   });
 
   it("does not record a turn for an agent that never spoke", () => {
