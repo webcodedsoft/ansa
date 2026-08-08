@@ -17,7 +17,15 @@ export type EscalationKind =
   | "asked-for-a-person"
   | "capture-failed"
   | "repeated-misunderstanding"
-  | "tool-failed";
+  | "tool-failed"
+  /**
+   * An irreversible tool was asked for (R5.3).
+   *
+   * Distinct from `tool-failed`, which is a connector that would not answer. Nothing
+   * failed here: the tier did exactly what it exists to do, and the caller should not be
+   * told the assistant could not reach something when it simply may not do it.
+   */
+  | "needs-a-person";
 
 export interface EscalationTrigger {
   readonly kind: EscalationKind;
@@ -171,6 +179,13 @@ export const createEscalationWatch = (options: EscalationWatchOptions = {}) => {
         kind: "capture-failed",
         detail: "the assistant could not get their details, by voice, spelling or keypad",
       }),
+
+    /**
+     * An irreversible tool was requested. Always a person, first time, no counter: the
+     * whole meaning of the tier is that this one does not execute here (R5.3).
+     */
+    needsAPerson: (detail: string): EscalationTrigger | null =>
+      once({ kind: "needs-a-person", detail }),
 
     toolFailed: (name: string, outcome: string): EscalationTrigger | null => {
       toolFailures += 1;

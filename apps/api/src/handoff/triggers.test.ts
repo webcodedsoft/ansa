@@ -73,6 +73,22 @@ describe("createEscalationWatch", () => {
     expect(watch.toolFailed("lookup_policy", "error")?.kind).toBe("tool-failed");
   });
 
+  it("always escalates when an irreversible tool is asked for", () => {
+    // R5.3. No counter and no threshold: the entire meaning of the tier is that this one
+    // does not execute here, so the first request is the transfer.
+    const watch = createEscalationWatch();
+    const trigger = watch.needsAPerson("a policy cancellation");
+
+    expect(trigger?.kind).toBe("needs-a-person");
+    expect(trigger?.detail).toBe("a policy cancellation");
+  });
+
+  it("keeps an irreversible tool distinct from a tool that would not answer", () => {
+    // Nothing failed when a tier does its job, and the caller should not be told the
+    // assistant could not reach something it simply may not do.
+    expect(createEscalationWatch().needsAPerson("x")?.kind).not.toBe("tool-failed");
+  });
+
   it("always escalates when capture has run out of ways to ask", () => {
     expect(createEscalationWatch().captureFailed()?.kind).toBe("capture-failed");
   });

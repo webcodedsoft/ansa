@@ -74,6 +74,10 @@ const departureLine = (trigger: EscalationTrigger): string => {
       return "I am not getting this right. Let me put you through to someone.";
     case "tool-failed":
       return "I cannot reach that from here. Let me put you through to someone who can.";
+    case "needs-a-person":
+      // Not "I cannot reach that": nothing was unreachable. The assistant is not allowed
+      // to do it, which is a different sentence and the caller can hear the difference.
+      return "That is not something I can do myself. Let me put you through to a colleague who can.";
   }
 };
 

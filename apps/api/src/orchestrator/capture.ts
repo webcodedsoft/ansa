@@ -820,6 +820,24 @@ const FALSE_NEGATIVES = /\bno (problem|worries|wahala)\b/gi;
 const HEDGED = /\b(but|however|although|though|except|actually|wait)\b|\?/i;
 
 /**
+ * Did the caller say yes, and mean it?
+ *
+ * Exported because a spoken confirmation is not only a readback's business any more: a
+ * write-tier tool is read back and then fired on a yes (R5.3), and that yes has to be
+ * judged by the same rules as this one. Two definitions of agreement in a codebase is one
+ * of them being wrong about "yeah, but…".
+ *
+ * All three clauses matter and each was earned. A hedge or a question is not agreement.
+ * A turn containing a rejection is not agreement even when it also contains "yes" —
+ * "yes, no, that's wrong" is a correction. And "no wahala" is agreement, so the Nigerian
+ * false negatives come out before the rejection is tested.
+ *
+ * `text` is the caller's turn as spoken; both patterns are case-insensitive.
+ */
+export const isAffirmative = (text: string): boolean =>
+  YES.test(text) && !HEDGED.test(text) && !NO.test(text.replace(FALSE_NEGATIVES, " "));
+
+/**
  * What the agent says while confirming, and it is deliberately short.
  *
  * The first version of this said "Let me make sure I have that right. Aditi. Have I got
@@ -1153,7 +1171,9 @@ const confirming = (
     };
   }
 
-  if (YES.test(text) && !HEDGED.test(text)) {
+  // The rejection branch above has already returned, so the "and not a no" clause inside
+  // isAffirmative is a no-op here. Called anyway, so there is one definition of yes.
+  if (isAffirmative(text)) {
     return {
       state: { kind: "confirmed", value: state.value, subject: state.subject },
       say: null,

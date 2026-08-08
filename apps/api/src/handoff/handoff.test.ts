@@ -97,6 +97,13 @@ describe("escalate", () => {
     const stuck = setup();
     await stuck.handoff.escalate({ kind: "repeated-misunderstanding", detail: "three turns" });
     expect(stuck.said[0]).toContain("not getting this right");
+
+    const barred = setup();
+    await barred.handoff.escalate({ kind: "needs-a-person", detail: "an irreversible change" });
+    // Not "I cannot reach that": nothing was unreachable, the assistant is not allowed to
+    // do it, and a caller can hear the difference.
+    expect(barred.said[0]).toContain("not something I can do myself");
+    expect(barred.said[0]).not.toContain("cannot reach");
   });
 
   it("hands the person answering a summary of what is already established", async () => {

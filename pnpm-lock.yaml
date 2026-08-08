@@ -44,6 +44,9 @@ importers:
       '@ansa/telephony':
         specifier: workspace:*
         version: link:../../packages/providers/telephony
+      '@ansa/tools':
+        specifier: workspace:*
+        version: link:../../packages/tools
       '@ansa/transcriber':
         specifier: workspace:*
         version: link:../../packages/providers/listen/transcriber

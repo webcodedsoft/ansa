@@ -1,12 +1,12 @@
 import { Buffer } from "node:buffer";
 
 import type { CallRecord, MetricEvent, RecordedTranscript, RecordedTurn } from "@ansa/db";
-import type { AudioChunk } from "@ansa/shared";
+import { asTenantId, type AudioChunk, type TenantId } from "@ansa/shared";
 
 import { chunkOf, fakeListen, fakeLlm, fakeStream, fakeTts, silentLog } from "../orchestrator/fakes";
 import { DEFAULT_SYSTEM_PROMPT } from "../prompts/compose";
 import type { CallRecorder } from "../telephony/event-log";
-import { runConversation } from "../orchestrator/orchestrator";
+import { runConversation, type OrchestratorDeps } from "../orchestrator/orchestrator";
 
 /**
  * A replayable conversation, driven through the orchestrator's own fakes.
@@ -27,6 +27,9 @@ import { runConversation } from "../orchestrator/orchestrator";
  */
 
 const GREETING = "Thank you for calling Ansa. How can I help you?";
+
+/** Any registered tenant. Nothing in these scenarios turns on which one. */
+const SCENARIO_TENANT = asTenantId("5c3d0a5e-1f6d-4f6f-9b3a-0f2d7c8a4e11");
 
 /** One rendered phrase per tier, so a scenario can exercise the thinking gap. */
 export const fillerSetup = (): {
@@ -79,6 +82,9 @@ export interface ScenarioOptions {
   readonly fillerAfterMs?: number;
   readonly transcriptWatchdogMs?: number;
   readonly minSpeechMs?: number;
+  /** Null is an unregistered number, which disables tool calling for the whole call. */
+  readonly tenantId?: TenantId | null;
+  readonly makeTools?: OrchestratorDeps["makeTools"];
 }
 
 export interface Scenario {
@@ -128,6 +134,9 @@ export const scenario = (options: ScenarioOptions = {}): Scenario => {
     log: silentLog,
     greeting: GREETING,
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
+    // A registered number. Tool calling still needs `makeTools`, which the scenarios that
+    // care about it supply; this only says the call belongs to somebody.
+    tenantId: SCENARIO_TENANT,
     // The real normaliser is @ansa/normalizer's forSpeech; the scenarios care about the
     // conversation, so this is the identity plus the one respelling that changes what a
     // transcriber would hear back.

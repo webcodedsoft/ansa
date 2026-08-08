@@ -1,8 +1,31 @@
-> **STEP 0 APPLIED 2026-08-08** in "The model can ask for a tool". Steps 1-5 are NOT
-> applied. They need `@ansa/tools` added to `apps/api/package.json`, which is a
-> dependency decision for a human, and the only registrable tool that exists is
-> `createInMemoryPolicyBook`, a fake — registering it would let the agent answer a real
-> caller from a policy book nobody wrote.
+> **APPLIED IN FULL, 2026-08-08.** Step 0 landed in "The model can ask for a tool"; steps
+> 1-5 landed with the platform tool set. `@ansa/tools` is on `apps/api/package.json`.
+> **Nothing below has been proven on a phone call.**
+>
+> The decision the blocker was waiting on: **ship only the non-data tools.**
+> `createInMemoryPolicyBook` is a fake and is registered nowhere on a real call — it is a
+> test fixture and `internal/policy.test.ts` is the only thing that builds it. An agent
+> answering confidently from a policy book nobody wrote is worse than one that says it
+> cannot check. What ships instead is `internal/call-control.ts`: `end_call`,
+> `transfer_to_human` and `business_hours`, none of which reads tenant data.
+>
+> **Four deviations from the text below, each deliberate:**
+>
+> 1. **No `deps.callId`.** `CallMediaStream.callId` is already a `CallId` and the
+>    orchestrator already holds the stream. A second copy could only ever disagree.
+> 2. **`deps.makeTools` is a factory, not a built `tools` / `toolRegistry` pair.** Step 5's
+>    "one ordering wrinkle" is resolved the preferred way and then some: the registry is
+>    per call as well as the dispatcher, because two of the three platform tools close over
+>    this call's own effects — a registry built once in the module could not hold them.
+> 3. **The registry is per call.** See above. Three map writes per call.
+> 4. **The model is told once, not twice.** Step 3 wrote `modelMessage(outcome)` into the
+>    conversation *and* then passed the summaries to `respondTo`, which adds them again.
+>    The notes are added once, by whichever branch runs: `respondTo` on the read path, the
+>    branch itself where no model turn follows.
+>
+> `isAffirmative` now exists. It is exported from `apps/api/src/orchestrator/capture.ts`
+> and is the same yes that a readback is judged by, so "yeah, but…" is not a yes for a
+> write either.
 
 # Wiring `@ansa/tools` into the call path
 

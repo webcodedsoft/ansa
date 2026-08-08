@@ -10,8 +10,7 @@
  * check away. Consent is evidence a tenant records; whether it is sufficient is ours.
  */
 
-/** Nigeria is UTC+1 year-round, with no daylight saving. */
-const WAT_OFFSET_MINUTES = 60;
+import { hourInWat } from "@ansa/shared";
 
 /**
  * How an organisation establishes it may call someone.
@@ -69,9 +68,6 @@ export type ConsentVerdict =
  */
 const DEFAULT_EARLIEST = 8;
 const DEFAULT_LATEST = 20;
-
-const hourInWat = (now: Date): number =>
-  new Date(now.getTime() + WAT_OFFSET_MINUTES * 60_000).getUTCHours();
 
 export const mayCall = (facts: ConsentFacts): ConsentVerdict => {
   // Suppression first. It outranks consent, because withdrawing by asking not to be

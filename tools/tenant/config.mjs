@@ -19,7 +19,14 @@
 // silently inherited half its values from the last one would make the history unreadable:
 //
 //   { "name": "...", "voiceId": null, "greeting": null,
-//     "persona": "...", "instructions": "...", "keyterms": ["..."] }
+//     "persona": "...", "instructions": "...", "keyterms": ["..."],
+//     "businessHours": { "opensAtHour": 9, "closesAtHour": 17, "openDays": [1,2,3,4,5] } }
+//
+// `businessHours` is in WAT and its days are ISO weekdays, 1 for Monday. Omit it and the
+// agent says it does not know the opening hours, which is the honest answer and is what
+// every tenant gets until somebody publishes some. The database refuses two thirds of a
+// window and refuses one that wraps past midnight, so a typo fails here rather than
+// telling a caller to ring back tomorrow.
 //
 // A note about validation, because its absence here is deliberate rather than forgotten.
 // Persona and instructions are filtered by apps/api/src/prompts/tenant-layer.ts on the
@@ -65,7 +72,8 @@ if (command === "show") {
   const { rows } =
     version === undefined
       ? await client.query(
-          `select name, voice_id, greeting, persona, instructions, keyterms, config_version
+          `select name, voice_id, greeting, persona, instructions, keyterms,
+                  business_open_hour, business_close_hour, business_days, config_version
              from tenants where id = $1`,
           [tenantId],
         )
@@ -92,8 +100,12 @@ if (command === "show") {
   if (!note) throw new Error("pass a note — a version with no reason explains nothing later");
 
   const config = JSON.parse(readFileSync(file, "utf8"));
+  // Absent and explicitly null mean the same thing: this tenant has not told us their
+  // hours. The three columns travel together because two thirds of a window cannot be
+  // reasoned about, and the CHECK constraint in 0012 says so too.
+  const hours = config.businessHours ?? {};
   const { rows } = await client.query(
-    "select app.publish_tenant_config($1, $2, $3, $4, $5, $6, $7, $8) as version",
+    "select app.publish_tenant_config($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) as version",
     [
       tenantId,
       config.name ?? null,
@@ -102,6 +114,9 @@ if (command === "show") {
       config.persona ?? null,
       config.instructions ?? null,
       config.keyterms ?? [],
+      hours.opensAtHour ?? null,
+      hours.closesAtHour ?? null,
+      hours.openDays ?? null,
       note,
     ],
   );

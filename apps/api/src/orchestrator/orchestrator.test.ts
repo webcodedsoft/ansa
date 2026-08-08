@@ -3,7 +3,14 @@ import { describe, expect, it } from "vitest";
 
 import type { AudioChunk } from "@ansa/shared";
 
-import { asCallId, asTenantId } from "@ansa/shared";
+import { asCallId, asTenantId, type BusinessHours, type TenantId } from "@ansa/shared";
+import {
+  callControlTools,
+  createToolDispatcher,
+  createToolRegistry,
+  registerInternalTools,
+  type InternalTool,
+} from "@ansa/tools";
 
 import { chunkOf, fakeListen, fakeLlm, fakeStream, fakeTts, silentLog } from "./fakes";
 import { createCallFacts, type CallFactsStore } from "../conversation/call-facts";
@@ -11,9 +18,12 @@ import { DEFAULT_SYSTEM_PROMPT } from "../prompts/compose";
 import type { Handoff } from "../handoff/handoff";
 import type { EscalationTrigger } from "../handoff/triggers";
 import type { CallRecorder } from "../telephony/event-log";
-import { runConversation } from "./orchestrator";
+import { runConversation, type OrchestratorDeps } from "./orchestrator";
 
 const GREETING = "Thank you for calling Ansa. How can I help you?";
+
+/** Any registered tenant. Only the tool tests below care which, and only that it is set. */
+const TENANT = asTenantId("5c3d0a5e-1f6d-4f6f-9b3a-0f2d7c8a4e11");
 
 /** One rendered phrase per tier, so the tiering itself is what is under test. */
 const fillerSetup = () => ({
@@ -37,6 +47,9 @@ const setup = (
     facts?: CallFactsStore;
     systemPrompt?: string;
     makeHandoff?: (say: (text: string) => Promise<void>) => Handoff;
+    /** Null is an unregistered number: tool calling is off for the whole call. */
+    tenantId?: TenantId | null;
+    makeTools?: OrchestratorDeps["makeTools"];
   } = {},
 ) => {
   const stream = fakeStream();
@@ -52,6 +65,7 @@ const setup = (
     log: silentLog,
     greeting: GREETING,
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
+    tenantId: TENANT,
     forSpeech: (t) => t.replace(/\bAnsa\b/g, "An-Sah"),
     // These tests drive transcripts directly to exercise turn logic and never fan in
     // audio, so the no-speech filter would discard every one of them. The filter has its
@@ -83,6 +97,34 @@ const assertInvariants = (h: ReturnType<typeof setup>): void => {
 
   // Two concurrent syntheses interleave at the carrier and are heard as garbled speech.
   expect(h.tts.live().length, "more than one synthesis in flight").toBeLessThanOrEqual(1);
+};
+
+/**
+ * Records what the handoff was asked to do and keeps hold of `say`, which is the seam.
+ *
+ * At module scope because the tool loop escalates too: an irreversible tool and a
+ * connector that will not answer both end at the same door, and a second spy would be a
+ * second opinion about what going through it looks like.
+ */
+const spyHandoff = () => {
+  const triggers: EscalationTrigger[] = [];
+  let say: ((text: string) => Promise<void>) | null = null;
+  const make = (s: (text: string) => Promise<void>): Handoff => {
+    say = s;
+    return {
+      escalate: async (trigger: EscalationTrigger): Promise<void> => {
+        triggers.push(trigger);
+      },
+    };
+  };
+  return {
+    make,
+    triggers,
+    sayWith: (): ((text: string) => Promise<void>) => {
+      if (say === null) throw new Error("the orchestrator never built the handoff");
+      return say;
+    },
+  };
 };
 
 describe("runConversation", () => {
@@ -935,23 +977,6 @@ describe("readback in the turn loop (R4.3)", () => {
 });
 
 describe("handing the call to a person (R6.4)", () => {
-  /** Records what it was asked to do and keeps hold of `say`, which is the seam. */
-  const spyHandoff = () => {
-    const triggers: EscalationTrigger[] = [];
-    let say: ((text: string) => Promise<void>) | null = null;
-    const make = (s: (text: string) => Promise<void>): Handoff => {
-      say = s;
-      return {
-        escalate: async (trigger: EscalationTrigger): Promise<void> => {
-          triggers.push(trigger);
-        },
-      };
-    };
-    return { make, triggers, sayWith: (): ((text: string) => Promise<void>) => {
-      if (say === null) throw new Error("the orchestrator never built the handoff");
-      return say;
-    } };
-  };
 
   /**
    * The ordering only a phone call punishes. `transferToNumber` replaces the carrier
@@ -1307,6 +1332,7 @@ describe("audio that arrived before the listener existed", () => {
       log: silentLog,
       greeting: GREETING,
       systemPrompt: DEFAULT_SYSTEM_PROMPT,
+      tenantId: TENANT,
       forSpeech: (t) => t,
       minSpeechMs: 0,
       initialAudio: early,
@@ -1330,6 +1356,7 @@ describe("audio that arrived before the listener existed", () => {
       log: silentLog,
       greeting: GREETING,
       systemPrompt: DEFAULT_SYSTEM_PROMPT,
+      tenantId: TENANT,
       forSpeech: (t) => t,
       minSpeechMs: 0,
       initialAudio: [{ data: Buffer.alloc(160, 0x01), offsetMs: 0 }],
@@ -1451,5 +1478,471 @@ describe("turns are written down", () => {
     const r = recording();
     setup({ recorder: r.recorder as unknown as CallRecorder, greetingAudio: null });
     expect(r.turns.filter((t) => t.speaker === "agent")).toHaveLength(0);
+  });
+});
+
+/**
+ * The tool loop, at the seam.
+ *
+ * `packages/tools` has its own tests and they prove the dispatcher. None of them prove
+ * that the model is offered anything, that a result reaches the next turn, that holding
+ * speech starts before the adapter runs, or that a caller who interrupts is not answered
+ * by a tool they talked over. Every serious bug on this project has been at a seam, and
+ * this is the seam.
+ */
+describe("tool calling", () => {
+  /** Lets the dispatcher's promise chain settle without pretending time passed. */
+  const settle = async (): Promise<void> => {
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
+  };
+
+  const READ_TOOL: InternalTool = {
+    definition: {
+      name: "opening_times",
+      description: "Reads something harmless.",
+      parameters: { type: "object", properties: {} },
+      riskTier: "read",
+      summarise: (result) => `The answer is ${String(result)}.`,
+    },
+    handler: async () => "forty two",
+  };
+
+  const BROKEN_TOOL: InternalTool = {
+    definition: {
+      name: "broken_lookup",
+      description: "Reads something from a system that is down.",
+      parameters: { type: "object", properties: {} },
+      riskTier: "read",
+      summarise: () => "unreachable",
+    },
+    handler: async () => {
+      throw new Error("the connector is down");
+    },
+  };
+
+  const WRITE_TOOL: InternalTool = {
+    definition: {
+      name: "change_something",
+      description: "Changes a stored value.",
+      parameters: { type: "object", properties: { value: { type: "string" } } },
+      riskTier: "write",
+      readback: (args) => `Changing it to ${String(args.value)}. Should I go ahead?`,
+      summarise: () => "Done, it is changed.",
+    },
+    handler: async ({ args }) => ({ value: args.value }),
+  };
+
+  const IRREVERSIBLE_TOOL: InternalTool = {
+    definition: {
+      name: "undo_everything",
+      description: "Cannot be taken back.",
+      parameters: { type: "object", properties: {} },
+      riskTier: "irreversible",
+      transferReason: "an irreversible change",
+    },
+    handler: async () => {
+      throw new Error("must never execute");
+    },
+  };
+
+  /**
+   * Wraps the orchestrator's own holding hook so the test can see when it fired without
+   * replacing it — the thing under test is that the real hook runs before the adapter.
+   */
+  const toolHarness = (
+    tools: readonly InternalTool[],
+  ): {
+    makeTools: NonNullable<OrchestratorDeps["makeTools"]>;
+    /** Holding-speech registers and adapter invocations, in the order they happened. */
+    events: string[];
+    ran: string[];
+  } => {
+    const events: string[] = [];
+    const ran: string[] = [];
+    const watched = tools.map((tool) => ({
+      definition: tool.definition,
+      handler: async (call: Parameters<typeof tool.handler>[0]) => {
+        events.push(`ran:${call.name}`);
+        ran.push(call.name);
+        return tool.handler(call);
+      },
+    }));
+
+    return {
+      events,
+      ran,
+      makeTools: (hooks) => {
+        const registry = createToolRegistry();
+        registerInternalTools(registry, watched);
+        return {
+          registry,
+          dispatcher: createToolDispatcher({
+            registry,
+            log: silentLog,
+            holding: {
+              start: (context) => {
+                events.push(`start:${context.name}`);
+                hooks.holding.start(context);
+              },
+              slow: (context) => {
+                events.push(`slow:${context.name}`);
+                hooks.holding.slow?.(context);
+              },
+              stop: (context) => {
+                events.push(`stop:${context.name}`);
+                hooks.holding.stop(context);
+              },
+            },
+          }),
+        };
+      },
+    };
+  };
+
+  const started = (h: ReturnType<typeof setup>) => {
+    h.tts.last().done();
+    h.stream.ackAll();
+  };
+
+  it("offers the registered tools to the model", () => {
+    const tools = toolHarness([READ_TOOL]);
+    const h = setup({ makeTools: tools.makeTools });
+    started(h);
+
+    h.listen.final("When do you open?");
+
+    expect(h.llm.last().request.tools?.map((t) => t.name)).toEqual(["opening_times"]);
+  });
+
+  // CLAUDE.md rule 3. An unregistered number may hold a conversation and must not reach
+  // anybody's systems.
+  it("offers nothing at all on a call with no tenant", () => {
+    const tools = toolHarness([READ_TOOL]);
+    const h = setup({ tenantId: null, makeTools: tools.makeTools });
+    started(h);
+
+    h.listen.final("When do you open?");
+
+    expect(h.llm.last().request.tools).toBeUndefined();
+  });
+
+  it("never builds a dispatcher on a call with no tenant", () => {
+    let built = 0;
+    setup({
+      tenantId: null,
+      makeTools: (hooks) => {
+        built += 1;
+        const registry = createToolRegistry();
+        registerInternalTools(registry, [READ_TOOL]);
+        return { registry, dispatcher: createToolDispatcher({ registry, log: silentLog, holding: hooks.holding }) };
+      },
+    });
+
+    expect(built).toBe(0);
+  });
+
+  it("makes a noise before the adapter runs, not after it returns", async () => {
+    const tools = toolHarness([READ_TOOL]);
+    const h = setup({ ...fillerSetup(), makeTools: tools.makeTools });
+    started(h);
+    h.listen.final("When do you open?");
+    const before = h.stream.bytesSent();
+
+    h.llm.last().callTools([{ name: "opening_times", args: {} }]);
+
+    // R5.4.2, and the ordering IS the requirement: by the time the promise settles the
+    // silence has already happened, so a hook that fired around the await would be too
+    // late however correct it looked.
+    expect(tools.events[0]).toBe("start:opening_times");
+    expect(tools.events[1]).toBe("ran:opening_times");
+    // Audio went out on the same tick as the dispatch, before any adapter returned.
+    expect(h.stream.bytesSent()).toBeGreaterThan(before);
+    // The progress register, not the acknowledgement one: "mm-hm" does not explain a
+    // pause that has a reason behind it.
+    expect(h.tts.texts()).not.toContain("Mm-hm.");
+
+    await settle();
+    expect(tools.events).toContain("stop:opening_times");
+  });
+
+  it("gives the model the result and speaks the reply it writes", async () => {
+    const tools = toolHarness([READ_TOOL]);
+    const h = setup({ makeTools: tools.makeTools });
+    started(h);
+    h.listen.final("When do you open?");
+    const asking = h.llm.completions.length;
+
+    h.llm.last().callTools([{ name: "opening_times", args: {} }]);
+    await settle();
+
+    expect(h.llm.completions.length).toBe(asking + 1);
+    const note = h.llm.lastMessages().at(-1);
+    expect(note?.role).toBe("user");
+    expect(note?.content).toContain("forty two");
+
+    h.llm.last().emit("We open at forty two. ");
+    h.llm.last().finish();
+    expect(h.tts.texts().at(-1)).toContain("forty two");
+    assertInvariants(h);
+  });
+
+  // The failure mode the charter names by name.
+  it("tells the model a failed tool failed, so the next sentence cannot claim it worked", async () => {
+    const tools = toolHarness([BROKEN_TOOL]);
+    const h = setup({ makeTools: tools.makeTools });
+    started(h);
+    h.listen.final("Check that for me.");
+
+    h.llm.last().callTools([{ name: "broken_lookup", args: {} }]);
+    await settle();
+
+    const note = h.llm.lastMessages().at(-1)?.content ?? "";
+    expect(note).toContain("FAILED");
+    expect(note).toContain("Do not tell the caller it worked");
+  });
+
+  it("hands over after the second tool failure rather than asking more questions", async () => {
+    const spy = spyHandoff();
+    const tools = toolHarness([BROKEN_TOOL]);
+    const h = setup({ makeTools: tools.makeTools, makeHandoff: spy.make });
+    started(h);
+
+    for (const attempt of ["Check that for me.", "Try again please."]) {
+      h.listen.final(attempt);
+      h.llm.last().callTools([{ name: "broken_lookup", args: {} }]);
+      await settle();
+    }
+
+    expect(spy.triggers.map((t) => t.kind)).toEqual(["tool-failed"]);
+  });
+
+  it("never runs an irreversible tool and asks for a person instead", async () => {
+    const spy = spyHandoff();
+    const tools = toolHarness([IRREVERSIBLE_TOOL]);
+    const h = setup({ makeTools: tools.makeTools, makeHandoff: spy.make });
+    started(h);
+    h.listen.final("Undo the whole thing.");
+
+    h.llm.last().callTools([{ name: "undo_everything", args: {} }]);
+    await settle();
+
+    expect(tools.ran).toEqual([]);
+    // The handoff module owns the transfer. A second path here would be a second answer
+    // to "what does the caller hear when it fails".
+    expect(spy.triggers.map((t) => t.kind)).toEqual(["needs-a-person"]);
+    expect(h.llm.lastMessages().at(-1)?.content).toContain("NOT run");
+  });
+
+  it("reads a write back and does not fire it", async () => {
+    const tools = toolHarness([WRITE_TOOL]);
+    const h = setup({ makeTools: tools.makeTools });
+    started(h);
+    h.listen.final("Change it for me.");
+
+    h.llm.last().callTools([{ name: "change_something", args: { value: "the new one" } }]);
+    await settle();
+
+    expect(tools.ran).toEqual([]);
+    // Spoken verbatim rather than paraphrased by the model (R4.3.1).
+    expect(h.tts.texts().at(-1)).toContain("Should I go ahead?");
+  });
+
+  it("fires the write once the caller says yes", async () => {
+    const tools = toolHarness([WRITE_TOOL]);
+    const h = setup({ makeTools: tools.makeTools });
+    started(h);
+    h.listen.final("Change it for me.");
+    h.llm.last().callTools([{ name: "change_something", args: { value: "the new one" } }]);
+    await settle();
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("Yes, go ahead.");
+    await settle();
+
+    expect(tools.ran).toEqual(["change_something"]);
+    expect(h.tts.texts().at(-1)).toContain("it is changed");
+  });
+
+  /** "Yeah, but…" is not a yes. Defaulting to no is the safe direction. */
+  const NOT_A_YES: readonly string[] = [
+    "No, leave it.",
+    "Yeah, but hold on.",
+    "Yes? What did you say?",
+    "Actually, yes — wait.",
+    "Nope.",
+    "Hmm, not right.",
+  ];
+
+  for (const answer of NOT_A_YES) {
+    it(`does not fire the write on ${JSON.stringify(answer)}`, async () => {
+      const tools = toolHarness([WRITE_TOOL]);
+      const h = setup({ makeTools: tools.makeTools });
+      started(h);
+      h.listen.final("Change it for me.");
+      h.llm.last().callTools([{ name: "change_something", args: { value: "the new one" } }]);
+      await settle();
+      h.tts.last().done();
+      h.stream.ackAll();
+
+      h.listen.final(answer);
+      await settle();
+
+      expect(tools.ran).toEqual([]);
+    });
+  }
+
+  it("answers a second yes as conversation, never as a second write", async () => {
+    const tools = toolHarness([WRITE_TOOL]);
+    const h = setup({ makeTools: tools.makeTools });
+    started(h);
+    h.listen.final("Change it for me.");
+    h.llm.last().callTools([{ name: "change_something", args: { value: "the new one" } }]);
+    await settle();
+    h.tts.last().done();
+    h.stream.ackAll();
+    h.listen.final("Yes.");
+    await settle();
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("Yes.");
+    await settle();
+
+    expect(tools.ran).toEqual(["change_something"]);
+  });
+
+  it("drops the outcome of a tool the caller talked over", async () => {
+    const tools = toolHarness([READ_TOOL]);
+    const h = setup({ bargeInGuardMs: 0, makeTools: tools.makeTools });
+    started(h);
+    h.listen.final("When do you open?");
+    h.llm.last().callTools([{ name: "opening_times", args: {} }]);
+
+    // The caller carries on before the tool comes back. The turn that asked is void.
+    h.listen.final("Actually, never mind.");
+    const after = h.llm.completions.length;
+    await settle();
+
+    // No follow-up turn was manufactured from a result nobody is waiting for.
+    expect(h.llm.completions.length).toBe(after);
+  });
+});
+
+/**
+ * `end_call`, `transfer_to_human` and `business_hours` as the call path actually gets
+ * them — the real definitions, not stand-ins.
+ */
+describe("the platform tools on a call", () => {
+  const settle = async (): Promise<void> => {
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
+  };
+
+  const platform = (businessHours: BusinessHours | null = null): NonNullable<OrchestratorDeps["makeTools"]> =>
+    (hooks) => {
+      const registry = createToolRegistry();
+      registerInternalTools(registry, callControlTools({ endCall: hooks.endCall, businessHours }));
+      return {
+        registry,
+        dispatcher: createToolDispatcher({ registry, log: silentLog, holding: hooks.holding }),
+      };
+    };
+
+  const started = (h: ReturnType<typeof setup>) => {
+    h.tts.last().done();
+    h.stream.ackAll();
+  };
+
+  it("offers exactly the three non-data tools", () => {
+    const h = setup({ makeTools: platform() });
+    started(h);
+    h.listen.final("Hello.");
+
+    expect(h.llm.last().request.tools?.map((t) => t.name).sort()).toEqual([
+      "business_hours",
+      "end_call",
+      "transfer_to_human",
+    ]);
+  });
+
+  it("does not hang up until the caller has heard the goodbye", async () => {
+    const h = setup({ makeTools: platform() });
+    started(h);
+    h.listen.final("That is everything, thanks.");
+
+    h.llm.last().callTools([{ name: "end_call", args: { reason: "the caller is done" } }]);
+    await settle();
+    expect(h.stream.hungUp).toBe(false);
+
+    h.llm.last().emit("Thanks for calling, goodbye. ");
+    h.llm.last().finish();
+    // Synthesised and queued. The carrier has not played a byte of it, and this is
+    // exactly where hanging up truncates the last words.
+    h.tts.last().audio(1600);
+    h.tts.last().done();
+    expect(h.stream.hungUp).toBe(false);
+
+    h.stream.ackAll();
+    expect(h.stream.hungUp).toBe(true);
+  });
+
+  it("does not hang up on a caller who starts speaking again", async () => {
+    const h = setup({ makeTools: platform() });
+    started(h);
+    h.listen.final("That is everything, thanks.");
+    h.llm.last().callTools([{ name: "end_call", args: {} }]);
+    await settle();
+
+    h.listen.final("Sorry, one more thing.");
+    h.llm.last().emit("Of course. ");
+    h.llm.last().finish();
+    h.tts.last().audio(1600);
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    expect(h.stream.hungUp).toBe(false);
+  });
+
+  it("routes transfer_to_human through the handoff module rather than a second path", async () => {
+    const spy = spyHandoff();
+    const h = setup({ makeTools: platform(), makeHandoff: spy.make });
+    started(h);
+    h.listen.final("I need someone who can actually help.");
+
+    h.llm.last().callTools([{ name: "transfer_to_human", args: {} }]);
+    await settle();
+
+    expect(spy.triggers.map((t) => t.kind)).toEqual(["needs-a-person"]);
+    expect(h.stream.hungUp).toBe(false);
+  });
+
+  it("answers the opening hours from tenant configuration", async () => {
+    const h = setup({
+      makeTools: platform({ opensAtHour: 9, closesAtHour: 17, openDays: [1, 2, 3, 4, 5] }),
+    });
+    started(h);
+    h.listen.final("Are you open?");
+
+    h.llm.last().callTools([{ name: "business_hours", args: {} }]);
+    await settle();
+
+    const note = h.llm.lastMessages().at(-1)?.content ?? "";
+    expect(note).toContain("business_hours returned:");
+    expect(note).toMatch(/open now|closed at the moment/);
+  });
+
+  it("says it does not know when the tenant has configured no hours", async () => {
+    const h = setup({ makeTools: platform(null) });
+    started(h);
+    h.listen.final("Are you open?");
+
+    h.llm.last().callTools([{ name: "business_hours", args: {} }]);
+    await settle();
+
+    expect(h.llm.lastMessages().at(-1)?.content).toContain("do not have the opening hours");
   });
 });

@@ -208,6 +208,77 @@ describe("a call that never passed through ingress", () => {
     expect(registry.cached(TENANT)?.name).toBe("Kano General");
   });
 
+  it("carries the tenant's opening hours through to the call path", async () => {
+    const log = silentLog();
+    const registry = createTenantRegistry({
+      dataSource: fakeDb({
+        config: [
+          {
+            id: TENANT,
+            name: "Kano General",
+            keyterms: [],
+            voice_id: null,
+            greeting: null,
+            persona: null,
+            business_open_hour: 8,
+            business_close_hour: 18,
+            business_days: [1, 2, 3, 4, 5, 6],
+            config_version: 9,
+          },
+        ],
+      }) as never,
+      log: log as never,
+    });
+
+    const tenant = await registry.resolve("+2348138178550");
+
+    expect(tenant.businessHours).toEqual({
+      opensAtHour: 8,
+      closesAtHour: 18,
+      openDays: [1, 2, 3, 4, 5, 6],
+    });
+  });
+
+  /**
+   * Migration 0012 has to be applied by hand as owner, exactly as 0003 did. Until it is,
+   * the config function returns the row without these columns at all — and the tool has
+   * to read that as "not configured" rather than as opening hours of NaN.
+   */
+  it("leaves the hours unset when the migration has not been applied", async () => {
+    const log = silentLog();
+    const registry = createTenantRegistry({
+      dataSource: configuredDb([]) as never,
+      log: log as never,
+    });
+
+    const tenant = await registry.resolve("+2348138178550");
+
+    expect(tenant.businessHours).toBeNull();
+  });
+
+  it("tells a registered tenant's model which tools it has", async () => {
+    const log = silentLog();
+    const registry = createTenantRegistry({
+      dataSource: configuredDb([]) as never,
+      log: log as never,
+    });
+
+    const tenant = await registry.resolve("+2348138178550");
+
+    for (const name of ["end_call", "transfer_to_human", "business_hours"]) {
+      expect(tenant.systemPrompt).toContain(name);
+    }
+  });
+
+  /**
+   * `tenantId: null` disables dispatch outright, so listing tools here would offer the
+   * model three things it would then be silently refused.
+   */
+  it("tells an unregistered number's model that it cannot look anything up", () => {
+    expect(UNKNOWN_TENANT.systemPrompt).not.toContain("end_call");
+    expect(UNKNOWN_TENANT.systemPrompt).toContain("can't look anything up");
+  });
+
   it("answers on defaults rather than failing when the load does not work", async () => {
     const log = silentLog();
     const registry = createTenantRegistry({

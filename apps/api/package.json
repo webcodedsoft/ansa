@@ -18,6 +18,7 @@
     "@ansa/openai-listen": "workspace:*",
     "@ansa/shared": "workspace:*",
     "@ansa/telephony": "workspace:*",
+    "@ansa/tools": "workspace:*",
     "@ansa/transcriber": "workspace:*",
     "@ansa/tts": "workspace:*",
     "@ansa/turn-detector": "workspace:*",

@@ -15,6 +15,12 @@ import type { LlmProvider } from "@ansa/llm";
 import { buildUrl, openDeepgramSession } from "@ansa/deepgram-listen";
 import { openListenSession } from "@ansa/openai-listen";
 import type { TtsProvider } from "@ansa/tts";
+import {
+  callControlTools,
+  createToolDispatcher,
+  createToolRegistry,
+  registerInternalTools,
+} from "@ansa/tools";
 import { Inject, Injectable, type OnApplicationShutdown } from "@nestjs/common";
 import { WebSocketServer, type WebSocket } from "ws";
 
@@ -398,6 +404,43 @@ export class MediaGateway implements OnApplicationShutdown {
     runConversation(stream, {
       listen,
       facts,
+      // Null for an unregistered number, and the orchestrator reads that as "no tools on
+      // this call at all". Such a caller may hold a conversation and must not reach
+      // anybody's systems (CLAUDE.md rule 3).
+      tenantId: tenant?.tenantId ?? null,
+      /**
+       * Built per call, given the two things only the orchestrator knows: when to make a
+       * noise while a tool runs, and when the caller has actually heard the goodbye.
+       *
+       * The registry is per call as well as the dispatcher, which is a deviation from
+       * `packages/tools/WIRING.md`. It has to be: two of the three platform tools close
+       * over this call's own effects, so a registry built once in the module could not
+       * hold them. Three map writes per call is not a cost worth an indirection.
+       *
+       * Only the platform tools are registered. The in-memory policy book is a fixture
+       * for tests and is deliberately not here — an agent answering a real caller from
+       * records nobody wrote is worse than one that says it cannot check.
+       */
+      makeTools: (hooks) => {
+        const registry = createToolRegistry();
+        registerInternalTools(
+          registry,
+          callControlTools({
+            endCall: hooks.endCall,
+            // Null until the tenant configures hours; the tool then says it does not know
+            // rather than inventing a nine to five (R6.5, migration 0012).
+            businessHours: tenant?.businessHours ?? null,
+          }),
+        );
+        return {
+          registry,
+          dispatcher: createToolDispatcher({
+            registry,
+            log: log.child({ tenantId: tenant?.tenantId ?? null }),
+            holding: hooks.holding,
+          }),
+        };
+      },
       // Built per call, and given `say` by the orchestrator: the departure line has to be
       // heard before `transferToNumber` replaces the carrier instruction and takes the
       // media stream with it.

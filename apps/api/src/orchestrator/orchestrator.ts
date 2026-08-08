@@ -1,9 +1,16 @@
 import type { LlmProvider } from "@ansa/llm";
 import type { TranscriberSession } from "@ansa/transcriber";
 import type { TurnSession } from "@ansa/turn-detector";
-import type { AudioChunk, Logger } from "@ansa/shared";
+import type { AudioChunk, Logger, TenantId } from "@ansa/shared";
 import type { CallMediaStream } from "@ansa/telephony";
 import { durationMs, type SynthesisStream, type TtsProvider } from "@ansa/tts";
+import {
+  modelMessage,
+  type HoldingSpeech,
+  type ToolArgs,
+  type ToolDispatcher,
+  type ToolRegistry,
+} from "@ansa/tools";
 
 import { createFillerPicker } from "../telephony/filler";
 import { classify } from "./action";
@@ -11,6 +18,7 @@ import {
   advance,
   confirmedUtterance,
   idle,
+  isAffirmative,
   logSafe,
   type CaptureState,
   type EntityKind,
@@ -47,6 +55,31 @@ export interface ListenSession {
   onFailure(listener: (reason: string) => void): void;
   onVendorError(listener: (message: string) => void): void;
   close(): void;
+}
+
+/**
+ * The two things a tool set needs that only the orchestrator can supply.
+ *
+ * Both are about timing rather than about tools. Holding speech has to begin when the
+ * tool is dispatched and not when it returns, and a call can only end once the caller has
+ * actually heard the goodbye — and the orchestrator is the only thing that knows when a
+ * sentence has been heard, because it is the only thing that sees the marks.
+ */
+export interface ToolHooks {
+  /** R5.4.2. Passed to the dispatcher, which calls it before the adapter runs. */
+  readonly holding: HoldingSpeech;
+  /**
+   * The caller is finished. Hangs up once the last words have played out, never
+   * immediately: audio queued at the carrier is measured at ~1.8s on this project's own
+   * calls, and hanging up on top of it deletes the goodbye.
+   */
+  readonly endCall: (reason: string) => void;
+}
+
+/** This call's registry and dispatcher. Both per call — see the note in `makeTools`. */
+export interface CallTools {
+  readonly registry: ToolRegistry;
+  readonly dispatcher: ToolDispatcher;
 }
 
 export interface OrchestratorDeps {
@@ -143,6 +176,28 @@ export interface OrchestratorDeps {
    * supplies everything else.
    */
   readonly makeHandoff?: (say: (text: string) => Promise<void>) => Handoff;
+  /**
+   * Who this call belongs to.
+   *
+   * Required and nullable, not optional. A tool dispatch without a tenant is a query that
+   * could return another tenant's row (CLAUDE.md rule 3), so null does not mean "look it
+   * up later" — it means an unregistered number, and **tool calling is disabled outright**
+   * for the whole call. Such a caller may hold a conversation and must not touch anybody's
+   * systems.
+   */
+  readonly tenantId: TenantId | null;
+  /**
+   * Builds this call's tools. Absent leaves the agent exactly as it was before tools
+   * existed, which is what every test that does not care about them gets.
+   *
+   * A factory rather than a built dispatcher, for two reasons that both come down to
+   * lifetime. The hooks above only exist inside a call. And the dispatcher must be per
+   * call rather than per process: it holds the confirmation store, and a shared one would
+   * let a "yes" given on one call redeem a write queued on another. `ConfirmationStore`
+   * binds the call id and would refuse it, but building one per call means the question
+   * never arises.
+   */
+  readonly makeTools?: (hooks: ToolHooks) => CallTools;
 }
 
 /**
@@ -526,6 +581,64 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     for (const timer of fillerTimers) timer.unref();
   };
 
+  /**
+   * R5.4.2. Holding speech for a tool is the filler scheduler, which already exists.
+   *
+   * A tool call is the thinking gap with a known cause, so it takes the same registers and
+   * skips the timer: `start` fires inside `dispatch()` before the adapter is invoked,
+   * which is the entire requirement — by the time the promise settles the silence has
+   * already happened.
+   *
+   * Below `playFiller` and `cancelFiller` on purpose. They are function expressions and do
+   * not hoist, so this cannot move above them.
+   */
+  const toolHolding: HoldingSpeech = {
+    start: () => {
+      cancelFiller();
+      // Tier 1 (acknowledgements) is wrong here. "Mm-hm" does not explain a two-second
+      // pause that has a reason behind it; progress does.
+      playFiller(deps.fillerTiers?.[1] ?? []);
+    },
+    slow: () => {
+      playFiller(deps.fillerTiers?.[2] ?? []);
+    },
+    stop: () => {
+      cancelFiller();
+    },
+  };
+
+  /**
+   * Why the call is ending, held until the caller has heard the last thing said to them.
+   *
+   * `end_call` cannot hang up when it returns. The tool runs while the model is still
+   * composing the goodbye, and even once the goodbye is synthesised the audio sits queued
+   * at the carrier — measured at ~1.8s on this project's own calls. Hanging up on the
+   * tool's return would truncate the last words of every call the agent ever ends. So the
+   * tool records the intent and `finishIfComplete` acts on it, on the mark.
+   */
+  let hangUpAfterSpeaking: string | null = null;
+
+  const endCallWhenHeard = (reason: string): void => {
+    // Idempotent. A model that asks twice — or asks again in the goodbye turn — must not
+    // queue two hangups, and the first reason is the true one.
+    if (hangUpAfterSpeaking !== null) return;
+    hangUpAfterSpeaking = reason;
+    log.info("the call will end once the caller has heard the goodbye", { reason });
+    record.event("end_call_requested", { reason });
+  };
+
+  /**
+   * This call's tenant, captured once.
+   *
+   * Null disables tool calling for the whole call rather than per dispatch: nothing is
+   * built, so there is no dispatcher to reach and no list to offer the model.
+   */
+  const toolTenantId = deps.tenantId;
+  const toolset: CallTools | null =
+    toolTenantId === null
+      ? null
+      : (deps.makeTools?.({ holding: toolHolding, endCall: endCallWhenHeard }) ?? null);
+
   const stageStart = new Map<string, number>();
   const mark = (stage: string): void => {
     stageStart.set(stage, Date.now());
@@ -818,6 +931,18 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     playedOut.delete(current.seq);
     turn = null;
     callState.apply({ kind: "agent.turn.completed", seq: current.seq });
+
+    // The caller asked to finish and has now heard the last of it. This is the only place
+    // `end_call` actually ends anything, and it is on the mark rather than on the tool's
+    // return for the reason recorded where the flag is declared.
+    if (hangUpAfterSpeaking !== null) {
+      const reason = hangUpAfterSpeaking;
+      hangUpAfterSpeaking = null;
+      log.info("ending the call, the goodbye has played out", { reason });
+      record.event("call ended by the agent", { reason });
+      callState.apply({ kind: "call.hangup.requested", reason });
+      stream.hangUp();
+    }
   };
 
   const enqueue = (current: AgentTurn, sentence: string): void => {
@@ -1107,7 +1232,26 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     enqueue(repeat, text);
   };
 
-  const respondTo = (callerText: string, forModel: string = callerText): void => {
+  /**
+   * A write the caller has been read and has not yet answered. One at a time.
+   *
+   * The arguments are kept beside the id because the dispatcher fingerprints them and
+   * refuses a confirmation whose arguments moved after the caller heard them (R4.3.1).
+   * Quoting the id back is proof the caller said yes to *something*; quoting the same
+   * arguments back is proof of what.
+   */
+  let pendingWrite: {
+    readonly confirmationId: string;
+    readonly name: string;
+    readonly args: ToolArgs;
+  } | null = null;
+
+  const respondTo = (
+    callerText: string,
+    forModel: string = callerText,
+    /** A tool result is not a caller turn, however it enters the conversation. */
+    from: "caller" | "tool" = "caller",
+  ): void => {
     // What the caller just did decides how long the reply may be. A fixed cap cannot be
     // right for both "is it still active?" and "how do I make a claim?" — people vary
     // turn length enormously by what was asked, and so must this.
@@ -1120,10 +1264,14 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     // assistant turn before the new caller message lands.
     if (turn !== null) stopSpeaking("superseded by caller turn");
 
-    measure("stt_final", { chars: callerText.length });
+    // Only for a real caller turn. The stage was marked at end-of-turn and consumed by
+    // the turn that asked for the tool; measuring it again on the follow-up would warn
+    // about a mark nobody set and attribute the tool's time to transcription.
+    if (from === "caller") measure("stt_final", { chars: callerText.length });
     conversation.addCaller(forModel);
-    // They have answered. Whatever we were waiting on is no longer outstanding.
-    deps.facts?.clear("pendingQuestion");
+    // They have answered. Whatever we were waiting on is no longer outstanding. A tool
+    // result answers nothing the agent asked the caller, so it does not clear it.
+    if (from === "caller") deps.facts?.clear("pendingQuestion");
 
     turnSeq += 1;
     const seq = turnSeq;
@@ -1167,6 +1315,13 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       // A guard against runaway generation, not a length control. A tight token cap
       // guillotines mid-clause and the caller hears a cut-off word.
       maxTokens: budget.maxTokens,
+      // Offering a tool is not permission to run it. The tier is enforced in the dispatch
+      // path (R5.3), so a tool listed here can still be refused, confirmed or transferred.
+      // Absent — an unregistered number — and the model may only speak.
+      tools:
+        toolset === null || toolTenantId === null
+          ? undefined
+          : toolset.registry.listFor(toolTenantId),
     });
     current.cancelLlm = () => {
       completion.cancel();
@@ -1272,6 +1427,121 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       // Nothing to say and nothing queued: without this a turn with no audio at all
       // would never close.
       finishIfComplete(current);
+    });
+
+    completion.onToolCall((calls) => {
+      // Barged in, so the request that produced this is void. Nothing may be dispatched
+      // on behalf of a turn the caller has already talked over.
+      if (turn?.seq !== seq) return;
+      if (calls.length === 0) return;
+
+      if (toolset === null || toolTenantId === null) {
+        // Unreachable while `tools` is only sent when a dispatcher exists, and handled
+        // rather than ignored: a silently dropped tool call leaves the turn open with
+        // nothing coming, and the caller hears four seconds of nothing before the
+        // watchdog rescues it.
+        log.error("the model asked for a tool on a call with no tenant", {
+          seq,
+          tools: calls.map((c) => c.name),
+        });
+        current.llmDone = true;
+        stopSpeaking("tool call with no tenant");
+        sayRecovery("tool call with no tenant");
+        return;
+      }
+
+      const tenantId = toolTenantId;
+      const dispatcher = toolset.dispatcher;
+      // The model asked instead of answering, so this turn produces no text of its own.
+      current.llmDone = true;
+      record.event("tool_batch", { tenantId, seq, tools: calls.map((c) => c.name) });
+      log.info("the model asked for tools", { seq, tools: calls.map((c) => c.name) });
+
+      void Promise.all(
+        // R5.4.4. Independent lookups run together; the tier gate is per tool, so a read
+        // and a write in the same batch still behave differently from each other.
+        // Holding speech starts inside dispatch, before any adapter runs.
+        calls.map((call) =>
+          dispatcher.dispatch({
+            tenantId,
+            callId: stream.callId,
+            name: call.name,
+            args: call.args,
+          }),
+        ),
+      ).then((outcomes) => {
+        if (turn?.seq !== seq) return;
+
+        for (const outcome of outcomes) {
+          record.event("tool_call", {
+            tenantId,
+            tool: outcome.name,
+            tier: outcome.tier,
+            outcome: outcome.kind,
+            latencyMs: outcome.latencyMs,
+          });
+        }
+
+        /**
+         * What the model is told. Never optional and never softened: a failed tool that
+         * reaches the model as silence becomes a success in the next sentence.
+         *
+         * Written here on the branches that do not go back to the model, and by
+         * `respondTo` on the one that does — the same string either way, added once.
+         */
+        const notes = outcomes.map(modelMessage).join("\n");
+        const remember = (): void => {
+          conversation.addCaller(notes);
+        };
+
+        // Two failures in a call means the thing the caller rang about cannot be done
+        // here, and asking them more questions about it wastes their time.
+        for (const outcome of outcomes) {
+          if (outcome.kind !== "failed") continue;
+          if (escalate(watch.toolFailed(outcome.name, outcome.reason))) {
+            remember();
+            return;
+          }
+        }
+
+        const transferAt = outcomes.findIndex((o) => o.kind === "transfer");
+        const transfer = outcomes[transferAt];
+        if (transfer !== undefined && transfer.kind === "transfer") {
+          remember();
+          // R5.3. Irreversible: the dispatcher already refused to run it. The handoff
+          // module owns everything that happens next — the departure line, waiting for
+          // the caller to hear it, the whisper, and apologising out loud if the carrier
+          // refuses. Going back to the model here would give it the chance to talk itself
+          // into an alternative.
+          if (escalate(watch.needsAPerson(transfer.reason))) return;
+          // Nothing configured to transfer to. Say the dispatcher's own line, which is
+          // honest about what will not happen.
+          sayNow(transfer.speech, "tool needs a human");
+          return;
+        }
+
+        const confirmAt = outcomes.findIndex((o) => o.kind === "confirm");
+        const confirm = outcomes[confirmAt];
+        const asked = calls[confirmAt];
+        if (confirm !== undefined && confirm.kind === "confirm" && asked !== undefined) {
+          remember();
+          // R4.3.1. The readback is spoken verbatim rather than paraphrased by the model,
+          // and `pendingWrite` is what the caller's next "yes" is matched against. The
+          // arguments travel with it because the dispatcher refuses a confirmation whose
+          // arguments moved after the caller heard them.
+          pendingWrite = {
+            confirmationId: confirm.confirmationId,
+            name: confirm.name,
+            args: asked.args,
+          };
+          sayNow(confirm.speech, "tool readback");
+          return;
+        }
+
+        // Reads, and writes the caller already agreed to. The model turns the notes into a
+        // reply; they are already sentences, so a failure here still degrades into speech.
+        respondTo("", notes, "tool");
+      });
     });
 
     completion.onError((error) => {
@@ -1530,6 +1800,14 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       log.info("transcript during agent audio", { text, spokenWindow });
     }
 
+    // They are still talking, so they are not finished. An `end_call` the model asked for
+    // before the caller's last word is not licence to hang up on them mid-sentence.
+    if (hangUpAfterSpeaking !== null) {
+      log.info("caller spoke again, so the call is not ending", { reason: hangUpAfterSpeaking });
+      record.event("end_call_cancelled", { reason: hangUpAfterSpeaking });
+      hangUpAfterSpeaking = null;
+    }
+
     // The caller did not hear us. Say it again rather than answering something else —
     // and do it without a model round trip, because they want it now.
     if (lastUtterance !== null && isRepairRequest(flat)) {
@@ -1588,6 +1866,78 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       // The ask belongs in the record; no model turn follows, because they are leaving.
       conversation.addCaller(whole);
       callState.apply({ kind: "caller.turn.dispatched" });
+      return;
+    }
+
+    // The answer to a readback for a write (R5.3). Before capture and before the
+    // continuation hold, because "yes" is a complete answer and a caller who has just
+    // been read their own details back must not be made to wait for a sentence they have
+    // already finished.
+    const awaiting = pendingWrite;
+    if (awaiting !== null) {
+      // Consumed either way. A yes fires one write, and anything else is a no.
+      pendingWrite = null;
+      conversation.addCaller(whole);
+      callState.apply({ kind: "caller.turn.dispatched" });
+
+      if (!isAffirmative(whole)) {
+        // Defaulting to no is the safe direction, and the dispatcher enforces it anyway:
+        // without the id, nothing fires. "Yeah, but…" lands here, which is correct.
+        log.info("the caller did not agree to the write", { tool: awaiting.name });
+        record.event("tool_confirmation_declined", { tool: awaiting.name });
+        sayNow("No problem, I have left it as it is.", "confirmation declined");
+        return;
+      }
+
+      if (toolset === null || toolTenantId === null) {
+        // Unreachable: nothing can be pending without a dispatcher. Says so rather than
+        // going quiet on a caller who just agreed to something.
+        log.error("a write was agreed to on a call with no dispatcher", { tool: awaiting.name });
+        sayRecovery("confirmed write with no dispatcher");
+        return;
+      }
+
+      const tenantId = toolTenantId;
+      const seqAtYes = turnSeq;
+      record.event("tool_confirmed", { tenantId, tool: awaiting.name });
+      void toolset.dispatcher
+        .dispatch({
+          tenantId,
+          callId: stream.callId,
+          name: awaiting.name,
+          // The same arguments, deliberately. The dispatcher fingerprints them and refuses
+          // a confirmation whose arguments moved after the caller heard them.
+          args: awaiting.args,
+          confirmationId: awaiting.confirmationId,
+        })
+        .then((done) => {
+          record.event("tool_call", {
+            tenantId,
+            tool: done.name,
+            tier: done.tier,
+            outcome: done.kind,
+            latencyMs: done.latencyMs,
+          });
+          // Recorded whatever happened next on the line: the write either fired or it did
+          // not, and the model must not be able to round that off.
+          conversation.addCaller(modelMessage(done));
+          // The caller started a new turn while the write was in flight. Interrupting
+          // them to announce it would be worse than letting the model mention it.
+          if (turnSeq !== seqAtYes) {
+            log.warn("the write finished after the caller had moved on", { tool: done.name });
+            return;
+          }
+          sayNow(done.speech, "write done");
+        })
+        .catch((error: unknown) => {
+          // `dispatch` is written not to reject. If it ever does, the caller has agreed to
+          // something and is owed a sentence rather than silence.
+          log.error("the dispatcher rejected, which it is not supposed to do", {
+            tool: awaiting.name,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          sayRecovery("dispatcher rejected");
+        });
       return;
     }
 

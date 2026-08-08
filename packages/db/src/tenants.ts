@@ -1,4 +1,4 @@
-import { asTenantId, type TenantId } from "@ansa/shared";
+import { asTenantId, type BusinessHours, type TenantId } from "@ansa/shared";
 import type { Db } from "./data-source";
 
 import { withTenant } from "./tenant-scope";
@@ -27,6 +27,14 @@ export interface TenantConfig {
    * psql is filtered exactly like one written through onboarding.
    */
   readonly instructions: string | null;
+  /**
+   * When their own line is staffed, in WAT (R6.5). Null until they say.
+   *
+   * Null is the honest default and not a gap to be filled with a plausible nine to five:
+   * the business-hours tool says it does not know, which is true, and an agent inventing
+   * opening hours is the same failure as one answering from records nobody wrote.
+   */
+  readonly businessHours: BusinessHours | null;
   /** Recorded on every call, so a call from three weeks ago can be explained (R7.5). */
   readonly configVersion: number;
 }
@@ -40,8 +48,25 @@ interface ConfigRow {
   greeting: string | null;
   persona: string | null;
   instructions: string | null;
+  business_open_hour: number | null;
+  business_close_hour: number | null;
+  business_days: number[] | null;
   config_version: number;
 }
+
+/**
+ * Three columns or none. The CHECK constraint in migration 0012 already refuses two of
+ * them, and this refuses them again — a database whose migration has not been applied
+ * returns the row without these columns at all, and `undefined` must read as "not
+ * configured" rather than as `NaN` opening hours.
+ */
+const toBusinessHours = (row: ConfigRow): BusinessHours | null => {
+  const opens = row.business_open_hour;
+  const closes = row.business_close_hour;
+  const days = row.business_days;
+  if (opens == null || closes == null || days == null) return null;
+  return { opensAtHour: opens, closesAtHour: closes, openDays: days };
+};
 
 const toConfig = (row: ConfigRow): TenantConfig => ({
   tenantId: asTenantId(row.id),
@@ -51,6 +76,7 @@ const toConfig = (row: ConfigRow): TenantConfig => ({
   greeting: row.greeting,
   persona: row.persona,
   instructions: row.instructions ?? null,
+  businessHours: toBusinessHours(row),
   configVersion: row.config_version,
 });
 

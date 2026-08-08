@@ -1,5 +1,6 @@
-import { type Logger, type TenantId } from "@ansa/shared";
+import { type BusinessHours, type Logger, type TenantId } from "@ansa/shared";
 import { loadTenantById, loadTenantForNumber, type Db, type TenantConfig } from "@ansa/db";
+import { CALL_CONTROL_DEFINITIONS } from "@ansa/tools";
 
 import { composeSystemPrompt, DEFAULT_SYSTEM_PROMPT } from "../prompts/compose";
 import { compileTenantLayer } from "../prompts/tenant-layer";
@@ -26,10 +27,32 @@ export interface CallTenant {
    * and is what proved the layering before the layering existed.
    */
   readonly systemPrompt: string;
+  /** When their line is staffed, in WAT. Null until they configure it (R6.5). */
+  readonly businessHours: BusinessHours | null;
   /** Recorded on every call so a call from weeks ago can still be explained (R7.5). */
   readonly configVersion: number;
 }
 
+/**
+ * What the model is told it can reach.
+ *
+ * Derived from the registered definitions rather than written out here, so the prompt
+ * cannot describe a tool the registry does not hold — the list in `@ansa/tools` is the
+ * single source of both.
+ */
+const AVAILABLE_TOOLS = CALL_CONTROL_DEFINITIONS.map((definition) => ({
+  name: definition.name,
+  description: definition.description,
+  riskTier: definition.riskTier,
+}));
+
+/**
+ * An unregistered number, and it keeps the empty tool list on purpose.
+ *
+ * `tenantId: null` disables tool dispatch outright, so a prompt listing tools here would
+ * offer the model three things it would then be silently refused. The empty case tells it
+ * the truth: on this call it cannot look anything up.
+ */
 export const UNKNOWN_TENANT: CallTenant = {
   tenantId: null,
   name: "unknown",
@@ -39,6 +62,7 @@ export const UNKNOWN_TENANT: CallTenant = {
   persona: null,
   instructions: null,
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
+  businessHours: null,
   configVersion: 0,
 };
 
@@ -113,9 +137,11 @@ const toCallTenant = (config: TenantConfig, log: Logger): CallTenant => {
     greeting: config.greeting,
     persona: config.persona,
     instructions: config.instructions,
-    // Empty until the tool registry exists (R5.2.0). The empty case is not a placeholder:
-    // it is what tells the agent it cannot look anything up, which is true today.
-    systemPrompt: composeSystemPrompt({ tenant: layer, tools: [] }),
+    // The platform tools, which every registered tenant gets. Nothing here is per-tenant
+    // yet: tenant-supplied tools arrive with the HTTP and MCP adapters (Slice 6), and
+    // when they do this is where their definitions join the list.
+    systemPrompt: composeSystemPrompt({ tenant: layer, tools: AVAILABLE_TOOLS }),
+    businessHours: config.businessHours,
     configVersion: config.configVersion,
   };
 };

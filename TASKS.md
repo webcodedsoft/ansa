@@ -55,10 +55,11 @@ What landed, in order:
    merely sent, before the transfer tears down the media stream.
 6. `viewer/WIRING.md` — nothing left to wire. Its seams were fixed by their owners, except
    `barged_in_at_ms`, which is below.
-7. `packages/tools/WIRING.md` — **step 0 only.** The LLM interface now has a tool surface
-   and the OpenAI adapter reassembles streamed tool calls, so the model can ask. Steps 1-5
-   are not applied: they need `@ansa/tools` on `apps/api`'s package.json, which is a
-   dependency decision, and the only registrable tool that exists is an in-memory fake.
+7. `packages/tools/WIRING.md` — **applied in full.** Step 0 landed first (the LLM
+   interface has a tool surface and the OpenAI adapter reassembles streamed tool calls);
+   steps 1-5 landed with the platform tool set. The blocker is resolved by shipping only
+   the non-data tools — `end_call`, `transfer_to_human`, `business_hours` — and leaving
+   the in-memory policy book in the tests where it belongs. See Slice 5 below.
 
 **Also fixed, with the tests that were missing:** `barged_in_at_ms` (the turn was written
 on the first acknowledged mark, so `stopSpeaking` had nothing left to stamp — it is now
@@ -78,9 +79,12 @@ It was never a leak.
    the new `call state` lines looking for a `-> UNDERSTANDING` that never leaves.
 2. **Decide `HANDOFF_TO_NUMBER`.** With no destination configured, escalation apologises
    and hangs up rather than transferring — honest, and not a handoff.
-3. **Decide tools.** Steps 1-5 of `packages/tools/WIRING.md` need the workspace dependency
-   approved and a real `PolicyBook`, or an explicit decision to ship the fake behind a
-   flag.
+3. **Apply migration `0012_business_hours.sql`** in the Supabase SQL editor as owner, and
+   publish hours for the tenant with `tools/tenant/config.mjs`. Until then `business_hours`
+   answers "I do not have the opening hours on file" on every call, which is honest and
+   is not the feature. Both `DATABASE_URL` and `DIRECT_URL` are `ansa_app`, which cannot
+   ALTER the table — the same wall migration 0003 hit.
+4. **Place a call that uses a tool.** Nothing in the tool loop has been near a phone.
 
 **Still open, unowned by this pass:**
 
@@ -165,7 +169,9 @@ against the code and a live call on the date above, not from memory.
   arrives as E. This is the transcription ceiling, not an orchestration bug, and no
   amount of readback logic fixes a name the transcriber never heard.
 - Latency ~1.1s against an 800ms budget, most of it Nigeria→US distance.
-- The agent still cannot look anything up. No tools, no knowledge base.
+- The agent still cannot look anything up. It can now end the call, ask for a person and
+  answer opening hours, and that is all — there is no knowledge base and no connector to
+  a tenant's own systems, which is Slice 6.
 
 **Next, in order:**
 
@@ -690,20 +696,78 @@ queue, and correcting them adds new entries to the eval corpus.
 
 **Goal:** The agent can do platform-owned things.
 
-- [ ] Tool registry with mandatory risk tier field, validated at registration (R5.3).
-- [ ] Tool dispatch in the orchestrator, results summarized before TTS (R5.4.3).
-- [ ] **Holding speech scheduler** (R5.4.2): filler audio starts the instant a tool is
-      dispatched. Build this with the first tool, not after the tenth.
-- [ ] Timeout handling — soft 1.5s, hard 3s, never silent (R5.4.1).
+- [x] Tool registry with mandatory risk tier field, validated at registration (R5.3).
+      *`packages/tools/src/registry.ts`. Validated against the runtime shape, not only the
+      type, because the tools that matter arrive as tenant configuration.*
+- [x] Tool dispatch in the orchestrator, results summarized before TTS (R5.4.3).
+      *One dispatch path. `summarise` is required and its output is checked — a summary
+      that starts with `{` is refused rather than spoken.*
+- [x] **Holding speech scheduler** (R5.4.2): filler audio starts the instant a tool is
+      dispatched. *The existing filler scheduler, in its progress register. `start` fires
+      inside `dispatch()` before the adapter is invoked, and the orchestrator test asserts
+      that order rather than the fact.*
+- [x] Timeout handling — soft 1.5s, hard 3s, never silent (R5.4.1).
+- [x] Escalation on three failed comprehension attempts (R6.4). *Was already done in the
+      handoff pass; tool failures now count into the same watch, at two rather than three.*
 - [ ] Implement: `end_call`, `search_knowledge_base`, `transfer_to_human`,
       `create_ticket`, `schedule_callback`, `send_sms`, `send_whatsapp`, `verify_caller`.
-- [ ] Warm transfer with context payload to the human agent.
+      **Three of eight, deliberately.** `end_call`, `transfer_to_human` and
+      `business_hours` ship — none of them reads tenant data. The other five all answer
+      from, or write to, a system that does not exist, and `createInMemoryPolicyBook` is a
+      fake that stays in the tests. An agent answering confidently from records nobody
+      wrote is worse than one that says it cannot check.
+- [ ] Warm transfer with context payload to the human agent. *The whisper already carries
+      the summary (handoff pass). Unproven on a call.*
 - [ ] Business-hours logic in WAT; out-of-hours → ticket or callback per tenant config
-      (R6.5).
-- [ ] Escalation on three failed comprehension attempts (R6.4).
+      (R6.5). **Half.** The hours half is done: `business_hours` reads
+      `tenants.business_open_hour/close_hour/business_days`, versioned, in WAT via the one
+      definition in `packages/shared/src/clock.ts`. Migration `0012_business_hours.sql`
+      **must be run as owner in the Supabase SQL editor** — until it is, every tenant's
+      hours read null and the agent says it does not know them, which is honest and
+      useless. The out-of-hours half needs `create_ticket` or `schedule_callback`, which
+      are exactly the tools held back above; today a tenant's own `instructions` layer is
+      the only place to say what should happen instead.
 
 **Done when:** you call, ask something the agent can't answer, and get transferred with
 context — or get a ticket, out of hours.
+
+**Session log**
+
+- *2026-08-08 — the tool loop is wired and no phone call has tested it.* 977 tests, lint
+  and typecheck green. `packages/tools/WIRING.md` steps 1-5 applied, with four deviations
+  recorded in its header.
+- **What is registered on a real call:** `end_call` (read), `transfer_to_human`
+  (irreversible), `business_hours` (read). Nothing else. `tenantId: null` — an unregistered
+  number — disables tool calling for the whole call: no registry is built, no dispatcher
+  exists, and the model is offered no tools at all.
+- **`end_call` hangs up on the mark, not on the tool's return.** The tool records the
+  intent; `finishIfComplete` acts on it once the carrier says the caller has heard the
+  goodbye. Hanging up when the tool returns would truncate the last words of every call
+  the agent ever ends — the same lesson as the greeting in Slice 1, and the reason
+  `mark()` exists. A caller who starts speaking again cancels it.
+- **`transfer_to_human` is irreversible tier and the tier IS the implementation.** "Never
+  executes, transfers to a human" looks like a contradiction for a tool that transfers to
+  a human; it is not. The adapter is a tripwire that throws, and the dispatcher's
+  irreversible branch returns a `transfer` outcome that the orchestrator routes into
+  `apps/api/src/handoff/`. Registering it lower would mean a second transfer path beside
+  the module that already owns the departure line, the whisper and the carrier call.
+- One new escalation kind, `needs-a-person`, because `tool-failed` says "I cannot reach
+  that from here" and nothing was unreachable — the assistant is simply not allowed to do
+  it, and a caller can hear the difference.
+- The prompt's task layer now lists what is registered, per tenant. It previously told
+  every model on every call that it could not look anything up, which would have argued
+  the model out of using tools it was being offered. `UNKNOWN_TENANT` keeps the empty
+  wording, and that is correct rather than an oversight.
+- **What a call has to prove**, in this order: ask for opening hours and hear a real
+  answer (needs 0012 applied and hours published); ask for a person and check the
+  departure line is heard in full before the transfer; say goodbye and check the last
+  word is not clipped; and listen for the progress filler landing during the tool call
+  rather than after it.
+- **Not fixed, found while wiring.** An `end_call` followed by an LLM failure speaks a
+  recovery line and then hangs up, which is an odd last thing to hear. `record.event`
+  writes tool calls to `call_events` rather than to the `tool_invocations` table, which
+  exists and is still empty. And there is no `search_knowledge_base`, so "I can't check
+  that" is still the answer to most real questions — Slice 6 is what ends that.
 
 ---
 

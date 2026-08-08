@@ -4,4 +4,5 @@ export * from "./registry";
 export * from "./dispatch";
 export * from "./redact";
 export * from "./internal/adapter";
+export * from "./internal/call-control";
 export * from "./internal/policy";

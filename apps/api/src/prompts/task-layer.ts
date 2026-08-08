@@ -55,7 +55,12 @@ export const taskLayer = (tools: readonly AvailableTool[]): string => {
   return [
     "You can look these up. Use one only when the caller has actually asked for it:",
     ...tools.map((t) => `- ${t.name}: ${t.description} (${TIER_NOTE[t.riskTier]})`),
-    "While one is running you'll be told to say something to fill the gap. Say it and",
-    "wait — don't invent the answer while you're waiting for it.",
+    // Describes what actually happens now that the loop is wired. The gap is covered by
+    // pre-rendered filler audio the model has no part in, so the earlier wording — "you'll
+    // be told to say something to fill the gap" — described a mechanism that does not
+    // exist and invited the model to narrate one.
+    "Ask for one instead of answering, and wait. The pause is covered for you.",
+    "You'll be told what came back, in plain words. Never say a lookup worked, or that",
+    "anything has been changed, until you have been told it did.",
   ].join("\n");
 };
