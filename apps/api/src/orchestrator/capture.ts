@@ -102,33 +102,50 @@ const FALSE_NEGATIVES = /\bno (problem|worries|wahala)\b/gi;
  */
 const HEDGED = /\b(but|however|although|though|except|actually|wait)\b|\?/i;
 
-const readback = (value: string, subject: CaptureSubject): string =>
-  subject === "name"
-    // A name is read back as a word, not spelled at the caller. Spelling it back before
-    // they have complained is both slower and faintly insulting.
-    ? forSpeech(`Let me make sure I have that right. ${value}. Have I got that?`)
-    : forSpeech(`Let me read that back to you. ${sayReference(value)}. Is that correct?`);
+/**
+ * What the agent says while confirming, and it is deliberately short.
+ *
+ * The first version of this said "Let me make sure I have that right. Aditi. Have I got
+ * that?" — every time, word for word, including when asking twice in a row. On a live
+ * call that turned a conversation into a form being read aloud, and the spelling prompt
+ * ran to seven and a half seconds of unbroken agent speech.
+ *
+ * A person confirming a name says the name and two or three words. They also do not
+ * repeat themselves verbatim: hearing the identical sentence again is how a caller
+ * learns they are talking to a machine, so the second attempt is phrased as a person
+ * would phrase it — shorter, and audibly a second attempt.
+ */
+const readback = (value: string, subject: CaptureSubject, attempt: number): string => {
+  const spoken = subject === "name" ? value : sayReference(value);
+  if (attempt <= 1) {
+    return forSpeech(
+      subject === "name" ? `${spoken} — have I got that right?` : `Let me read that back — ${spoken}. Is that right?`,
+    );
+  }
+  // Second time of asking. Shorter, and it acknowledges that it is the second time.
+  return forSpeech(`Sorry — ${spoken}. Is that right?`);
+};
 
 /**
- * Asks for a word per letter, because bare letters do not survive this channel.
+ * Asks for a spelling, and only explains how on the second attempt.
  *
- * B, C, D, E, G, P, T, V, Z and J all rhyme in English and 8kHz strips exactly the
- *high-frequency detail that separates them. On a live call a spelled J came back as E and
- * the name was confirmed one letter wrong. Naming a word per letter replaces a
- * one-phoneme distinction with a whole-word one, and the parser already reads it.
+ * Leading with the full instruction is what produced the seven-second monologue. Most
+ * callers just spell it; the ones who need the hint get it when they need it.
  */
-const spellPrompt = forSpeech(
-  "Sorry about that. Could you spell it for me? " +
-    "A word for each letter helps, like A for Abuja.",
-);
+const spellPromptFor = (attempt: number): string =>
+  attempt <= 0
+    ? forSpeech("Sorry about that. Could you spell it for me?")
+    // B, C, D, E, G, P, T, V, Z and J all rhyme, and 8kHz strips the high-frequency
+    // detail that separates them, so bare letters are what this channel is worst at. A
+    // word per letter replaces a one-phoneme distinction with a whole-word one.
+    : forSpeech("Take it slowly for me — a word for each letter, like A for Abuja.");
 
-const retry = forSpeech("Sorry, let's try again. Could you say it once more, slowly?");
+const keypadPrompt = forSpeech("Could you type it on your keypad, then press hash?");
 
-const keypadPrompt = forSpeech(
-  "Let's try the keypad instead. Please type it in now, then press the hash key.",
-);
+/** Asking again after a rejection. Short, because they already know what we want. */
+const retry = forSpeech("Sorry — once more, slowly?");
 
-const escalation = forSpeech("Let me put you through to a colleague who can help with this.");
+const escalation = forSpeech("Let me get a colleague for you.");
 
 /** How a caller introduces themselves. Deliberately explicit forms only. */
 const NAME_CUE = /\b(?:my name is|my name's|the name is|i am called|i'm called|call me)\s+(.*)$/i;
@@ -157,7 +174,7 @@ export const nameFrom = (text: string): string | null => {
 /** Begin a capture of a value the orchestrator has already decided is worth confirming. */
 export const beginCapture = (value: string, subject: CaptureSubject): CaptureResult => ({
   state: { kind: "confirming", value, attempt: 1, subject },
-  say: readback(value, subject),
+  say: readback(value, subject, 1),
   captured: null,
 });
 
@@ -180,7 +197,7 @@ const start = (text: string): CaptureResult => {
 /** Where a caller goes when speech has failed twice: keypad for a number, spelling for a name. */
 const fallbackFor = (subject: CaptureSubject): CaptureResult =>
   subject === "name"
-    ? { state: { kind: "spelling", attempt: 0 }, say: spellPrompt, captured: null }
+    ? { state: { kind: "spelling", attempt: 0 }, say: spellPromptFor(0), captured: null }
     : { state: { kind: "keypad", digits: "", attempt: 0 }, say: keypadPrompt, captured: null };
 
 const spelling = (
@@ -191,7 +208,7 @@ const spelling = (
   if (spelled !== null) {
     return {
       state: { kind: "confirming", value: spelled, attempt: 1, subject: "name" },
-      say: readback(spelled, "name"),
+      say: readback(spelled, "name", 1),
       captured: null,
     };
   }
@@ -202,7 +219,7 @@ const spelling = (
   }
   return {
     state: { kind: "spelling", attempt: state.attempt + 1 },
-    say: spellPrompt,
+    say: spellPromptFor(state.attempt + 1),
     captured: null,
   };
 };
@@ -233,7 +250,7 @@ const confirming = (
     // R4.3.1 does not exempt it.
     return {
       state: { kind: "confirming", value: said, attempt: state.attempt + 1, subject: state.subject },
-      say: readback(said, state.subject),
+      say: readback(said, state.subject, 1),
       captured: null,
     };
   }
@@ -264,7 +281,7 @@ const confirming = (
   if (state.attempt >= MAX_SPOKEN_ATTEMPTS) return fallbackFor(state.subject);
   return {
     state: { kind: "confirming", value: state.value, attempt: state.attempt + 1, subject: state.subject },
-    say: readback(state.value, state.subject),
+    say: readback(state.value, state.subject, state.attempt + 1),
     captured: null,
   };
 };

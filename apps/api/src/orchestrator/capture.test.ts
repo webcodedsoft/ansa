@@ -12,7 +12,7 @@ describe("readback", () => {
     // Nothing downstream may see the value yet. This is the whole requirement.
     expect(r.captured).toBeNull();
     expect(r.say).toContain("four one seven");
-    expect(r.say).toContain("Is that correct?");
+    expect(r.say).toContain("Is that right?");
   });
 
   it("does nothing when the caller said no number at all", () => {
@@ -242,5 +242,33 @@ describe("hedged answers are not agreement (2026-08-08, 11:07:32)", () => {
   it("still accepts a clean yes", () => {
     const asked = speak(idle, "four one seven two nine");
     expect(speak(asked.state, "Yes, that is correct").captured).toBe("41729");
+  });
+});
+
+describe("it has to sound like a person", () => {
+  it("never asks the identical question twice in a row", () => {
+    // 11:22:13 and 11:22:17 on a live call were the same sentence word for word.
+    // Hearing that is how a caller learns they are talking to a machine.
+    const first = speak(idle, "four one seven two nine");
+    const second = speak(first.state, "What was that?");
+    expect(second.say).not.toBe(first.say);
+  });
+
+  it("keeps a confirmation to something a person would actually say", () => {
+    const r = speak(idle, "My name is Aditi");
+    // "Let me make sure I have that right. Aditi. Have I got that?" was the old line.
+    expect((r.say ?? "").split(/\s+/).length).toBeLessThanOrEqual(8);
+    expect(r.say).toContain("Aditi");
+  });
+
+  it("does not explain how to spell until the caller has struggled once", () => {
+    const state = speak(idle, "My name is Aditi").state;
+    const asked = speak(state, "No");
+    // The full instruction ran to seven and a half seconds of unbroken agent speech.
+    expect(asked.say).toContain("spell");
+    expect(asked.say).not.toContain("Abuja");
+
+    const again = speak(asked.state, "I don't follow");
+    expect(again.say).toContain("Abuja");
   });
 });
