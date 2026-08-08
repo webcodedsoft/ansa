@@ -26,14 +26,17 @@ const ok = () => ({
 });
 
 const formOf = (fetch: ReturnType<typeof vi.fn>): URLSearchParams =>
-  new URLSearchParams((fetch.mock.calls[0]?.[1] as { body: string }).body);
+  new URLSearchParams((fetch.mock.calls[0]?.[1] as unknown as { body: string }).body);
 
 describe("placeCall", () => {
   it("posts to the account's Calls resource with basic auth", async () => {
     const p = provider(ok());
     await p.provider.placeCall({ to: "+2348138178550", from: "+18148592625", mediaStreamUrl: "wss://x/media" });
 
-    const [url, init] = p.fetch.mock.calls[0] as [string, { headers: Record<string, string> }];
+    const [url, init] = p.fetch.mock.calls[0] as unknown as [
+      string,
+      { headers: Record<string, string> },
+    ];
     expect(url).toBe(`https://carrier.test/2010-04-01/Accounts/${ACCOUNT}/Calls.json`);
     // Account SID is the username, which is what the REST API expects.
     const expected = Buffer.from(`${ACCOUNT}:secret-token`).toString("base64");
