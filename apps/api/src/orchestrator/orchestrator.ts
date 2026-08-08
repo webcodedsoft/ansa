@@ -99,6 +99,11 @@ export interface OrchestratorDeps {
   readonly recorder?: CallRecorder;
   /** Named on every transcript, so a corpus can tell which provider produced what. */
   readonly listenProvider?: string;
+  /**
+   * Model, language and endpointing, exactly as configured. Opaque on purpose: the
+   * orchestrator must not learn a vendor's settings vocabulary, it only has to record it.
+   */
+  readonly transcriptionConfig?: Readonly<Record<string, string | number | boolean>>;
 }
 
 /** A sentence that has been handed to TTS, and where its audio sits in the turn. */
@@ -483,6 +488,10 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
    */
   const record = deps.recorder ?? nullRecorder;
 
+  // The transcriber is already connected by the time the orchestrator runs; this marks
+  // when audio actually starts reaching it, which is the number that matters.
+  let audioSeen = false;
+
   /**
    * Turn numbering for the record, shared across both speakers.
    *
@@ -506,6 +515,11 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   let speechMsSinceTranscript = 0;
 
   const takeAudio = (chunk: AudioChunk): void => {
+    if (!audioSeen) {
+      audioSeen = true;
+      record.event("audio_received", { offsetMs: chunk.offsetMs }, chunk.offsetMs);
+      record.event("stt_start", {});
+    }
     if (speechGate.push(chunk.data).length > 0) speechMsSinceTranscript += FRAME_MS;
     deps.listen.write(chunk);
   };
@@ -585,6 +599,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     current.inFlight = { text: sentence, startByte };
 
     mark("tts_first_byte");
+    record.event("tts_start", { seq: current.seq });
     const synthesis = deps.tts.synthesize({
       text: deps.forSpeech(sentence),
       voiceId: deps.voiceId,
@@ -686,6 +701,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     if (current.queue.length > 0 || current.synthesis !== null) return;
     if (current.bytesHeard < current.bytesSent) return;
 
+    record.event("turn_complete", { seq: current.seq });
     log.info("agent turn played", {
       seq: current.seq,
       ms: Math.round(durationMs(current.bytesHeard, stream.format)),
@@ -955,6 +971,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     }, TURN_WATCHDOG_MS);
     watchdog.unref();
 
+    record.event("llm_start", { seq });
     mark("llm_first_token");
     const sentences = createSentenceBuffer();
     const completion = deps.llm.complete({
@@ -1114,6 +1131,10 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       record.event("escalated to a human", { text });
     }
 
+    if (capture.kind === "confirming") {
+      record.event("entity_candidate", { subject: capture.subject, value: capture.value });
+      record.event("confirmation_requested", { subject: capture.subject, attempt: capture.attempt });
+    }
     if (result.say !== null) sayNow(result.say, `readback:${capture.kind}`);
     return true;
   };
@@ -1141,6 +1162,13 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       return;
     }
     if (result.say !== null) sayNow(result.say, "keypad");
+  });
+
+  // Recorded but never acted on. K asks that the agent not answer partials, and the
+  // way to keep that honest is to be able to see how many arrived and that none of them
+  // moved the conversation.
+  deps.listen.transcripts.onInterim((transcript) => {
+    record.event("stt_partial", { chars: transcript.text.length }, transcript.offsetMs);
   });
 
   deps.listen.transcripts.onFinal((transcript) => {
@@ -1325,5 +1353,14 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     // is what hid the history bug: it was the one utterance added before it was spoken.
     enqueue(greetingTurn, deps.greeting);
   }
+  // Recorded once per call, because a transcript is uninterpretable without it. Two
+  // calls that disagree are only evidence if you know what differed between them, and
+  // until now nothing wrote down which model, format or endpointing produced a line.
+  record.event("call configuration", {
+    listenProvider: deps.listenProvider ?? "unknown",
+    encoding: stream.format.encoding,
+    sampleRate: stream.format.sampleRate,
+    ...(deps.transcriptionConfig ?? {}),
+  });
   log.info("conversation started");
 };

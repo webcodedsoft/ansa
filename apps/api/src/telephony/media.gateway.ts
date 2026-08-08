@@ -374,6 +374,22 @@ export class MediaGateway implements OnApplicationShutdown {
       initialAudio: drainEarlyAudio(),
       recorder,
       listenProvider: this.config.listenProvider,
+      transcriptionConfig:
+        this.config.listenProvider === "deepgram"
+          ? {
+              model: this.config.deepgramModel,
+              host: this.config.deepgramHost,
+              eotThreshold: this.config.deepgramEotThreshold,
+              eotTimeoutMs: this.config.deepgramEotTimeoutMs,
+              keyterms: keyterms.length,
+            }
+          : {
+              model: this.config.transcriptionModel,
+              language: "en",
+              turnDetection: this.config.turnDetectionMode,
+              eagerness: this.config.vadEagerness,
+              sendAsPcm: this.config.openAiSendPcm,
+            },
       llm: this.llm,
       tts: this.tts,
       voiceId: this.config.elevenLabsVoiceId,
