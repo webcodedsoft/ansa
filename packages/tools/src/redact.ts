@@ -8,7 +8,8 @@ import type { ToolArgs } from "./types";
  * Key-name matching, not value sniffing. A value-based heuristic passes anything it has
  * not seen before, and the first thing it will not have seen is the tenant's own scheme.
  */
-const SECRET_KEY = /(token|secret|password|passwd|auth|api[-_]?key|apikey|credential|bearer|pin|otp|cvv|ssn)/i;
+const SECRET_KEY =
+  /(token|secret|password|passwd|passphrase|auth|api[-_]?key|apikey|private[-_]?key|credential|bearer|cookie|session[-_]?id|signature|pin|otp|cvv|ssn)/i;
 
 const MAX_STRING = 200;
 
