@@ -12,7 +12,7 @@
  */
 
 /** Nigeria is UTC+1 year-round, with no daylight saving. */
-export const WAT_OFFSET_MINUTES = 60;
+const WAT_OFFSET_MINUTES = 60;
 
 export interface WatMoment {
   /** 0-23. */
