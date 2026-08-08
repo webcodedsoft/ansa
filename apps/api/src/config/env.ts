@@ -83,7 +83,35 @@ export interface AppConfig {
    * not yet enforced by anything. Turn it on to diagnose, off again afterwards.
    */
   readonly recordAudioDir: string | undefined;
+  /**
+   * The key that opens a tenant's stored credentials (R5.2.1). 32 bytes, base64.
+   *
+   * Optional, and null is a working configuration: without it, a tenant's tools that need
+   * a credential are not registered and the agent says it cannot check — rather than
+   * making an anonymous request to somebody's customer API. Tools with no credential at
+   * all still work.
+   *
+   * Never in the database. If it were, a database dump would be a credential leak and the
+   * encryption would be decoration.
+   */
+  readonly toolCredentialKey: Buffer | null;
 }
+
+/**
+ * 32 bytes or nothing, and it fails at boot rather than on a call.
+ *
+ * A key of the wrong length means every credential in the vault is unopenable, which
+ * would present as "the tenant's tools are all broken" three layers away from the cause.
+ */
+const credentialKey = (env: NodeJS.ProcessEnv): Buffer | null => {
+  const raw = env["TOOL_CREDENTIAL_KEY"];
+  if (raw === undefined || raw.trim() === "") return null;
+  const key = Buffer.from(raw.trim(), "base64");
+  if (key.length !== 32) {
+    throw new Error("TOOL_CREDENTIAL_KEY must be 32 bytes, base64 encoded (openssl rand -base64 32)");
+  }
+  return key;
+};
 
 const required = (env: NodeJS.ProcessEnv, key: string): string => {
   const value = env[key];
@@ -147,5 +175,6 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
     databaseUrl: optional(env, "DATABASE_URL"),
     viewerToken: optional(env, "VIEWER_TOKEN"),
     recordAudioDir: optional(env, "RECORD_AUDIO_DIR"),
+    toolCredentialKey: credentialKey(env),
   };
 };

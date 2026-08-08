@@ -82,7 +82,7 @@ export interface ConnectorConfig {
   readonly mcp: readonly McpServerConfig[];
 }
 
-export const EMPTY_CONNECTOR_CONFIG: ConnectorConfig = { egress: { allowedHosts: [] }, http: [], mcp: [] };
+const EMPTY_CONNECTOR_CONFIG: ConnectorConfig = { egress: { allowedHosts: [] }, http: [], mcp: [] };
 
 const TIERS: ReadonlySet<string> = new Set<RiskTier>(["read", "write", "irreversible"]);
 const METHODS: ReadonlySet<string> = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);

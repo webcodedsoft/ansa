@@ -189,10 +189,27 @@ describe("tenant isolation", () => {
     // FORCE is the one that survives code review while silently enforcing nothing if
     // it is ever dropped, so it is asserted per table rather than assumed.
     //
-    // The count is hardcoded on purpose: it is what makes adding a table without RLS
-    // fail here rather than in production. It went 8 -> 10 when outbound_consent and
-    // do_not_call landed, and this test is how that was noticed.
-    expect(rows).toHaveLength(10);
+    // This used to also assert a hardcoded count, on the grounds that it is what makes
+    // adding a table without RLS fail here. It does not: the query above returns *every*
+    // table in `public`, so a new unprotected one fails the loop below whatever the count
+    // says. What the number actually tracked was how many migrations a human had applied
+    // by hand in the Supabase editor, and it had been red since `tenant_prompt_versions`
+    // (0011) landed without it being updated — a red that says nothing about isolation.
+    //
+    // The core eight are named instead. That keeps the other thing the count was quietly
+    // doing, which is proving the query returned something at all.
+    for (const table of [
+      "tenants",
+      "calls",
+      "call_events",
+      "turns",
+      "transcripts",
+      "tool_invocations",
+      "latencies",
+      "audio_segments",
+    ]) {
+      expect(rows.map((row) => row.table)).toContain(table);
+    }
     for (const row of rows) {
       expect(row).toEqual({ table: row.table, enabled: true, forced: true, has_policy: true });
     }

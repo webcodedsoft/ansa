@@ -275,22 +275,32 @@ export interface McpConnectorOptions {
   readonly discoveryTimeoutMs?: number;
 }
 
+export interface PreparedServer {
+  /** What the model will be offered. Read by the prompt as well as by registration. */
+  readonly definitions: readonly ToolDefinition[];
+  register(registry: ToolRegistry): void;
+}
+
 /**
- * Discover a tenant's MCP tools and register the ones they assigned a tier to.
+ * Discover a tenant's MCP tools and prepare the ones they assigned a tier to.
  *
- * Async, and called when the tenant's configuration is loaded rather than when a call
- * arrives: an MCP handshake on the answer path would be paid by the caller.
+ * Discovery and registration are split because they happen at different times: discovery
+ * runs once, when the tenant's configuration is loaded, and registration runs per call
+ * into that call's own registry. An MCP handshake on the answer path would be paid for by
+ * the caller, in silence.
+ *
+ * The client is shared across calls along with the discovery, which is what it is for —
+ * one handshake, one session, a warm socket.
  *
  * A discovered tool with no configured tier is skipped and logged. Registering it with a
  * default would be the platform deciding, on the tenant's behalf, that an unknown tool is
  * safe to run without confirmation — and the first time that guess is wrong it is a
  * cancellation nobody agreed to.
  */
-export const registerMcpServer = async (
-  registry: ToolRegistry,
+export const prepareMcpServer = async (
   server: McpServerConfig,
   options: McpConnectorOptions,
-): Promise<readonly string[]> => {
+): Promise<PreparedServer> => {
   const client = createMcpClient({
     tenantId: options.tenantId,
     server,
@@ -311,7 +321,7 @@ export const registerMcpServer = async (
     },
   };
 
-  const registered: string[] = [];
+  const definitions: ToolDefinition[] = [];
   for (const policy of server.tools) {
     const tool = byName.get(policy.name);
     if (tool === undefined) {
@@ -321,8 +331,7 @@ export const registerMcpServer = async (
       });
       continue;
     }
-    registry.register(definitionFor(policy, tool, options.tenantId), adapter);
-    registered.push(policy.name);
+    definitions.push(definitionFor(policy, tool, options.tenantId));
   }
 
   const configured = new Set(server.tools.map((policy) => policy.name));
@@ -335,5 +344,10 @@ export const registerMcpServer = async (
     }
   }
 
-  return registered;
+  return {
+    definitions,
+    register: (registry) => {
+      for (const definition of definitions) registry.register(definition, adapter);
+    },
+  };
 };

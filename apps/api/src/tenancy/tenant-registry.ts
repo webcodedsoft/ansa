@@ -1,6 +1,11 @@
 import { type BusinessHours, type Logger, type TenantId } from "@ansa/shared";
 import { loadTenantById, loadTenantForNumber, type Db, type TenantConfig } from "@ansa/db";
-import { CALL_CONTROL_DEFINITIONS } from "@ansa/tools";
+import {
+  CALL_CONTROL_DEFINITIONS,
+  NO_CONNECTORS,
+  prepareConnectors,
+  type PreparedConnectors,
+} from "@ansa/tools";
 
 import { composeSystemPrompt, DEFAULT_SYSTEM_PROMPT } from "../prompts/compose";
 import { compileTenantLayer } from "../prompts/tenant-layer";
@@ -29,6 +34,15 @@ export interface CallTenant {
   readonly systemPrompt: string;
   /** When their line is staffed, in WAT. Null until they configure it (R6.5). */
   readonly businessHours: BusinessHours | null;
+  /**
+   * This tenant's own tools, discovered and prepared once (R5.2).
+   *
+   * A function rather than a list because the registry is built per call: the platform
+   * tools close over that call's own effects, so the tenant's tools have to join them
+   * there. Everything expensive — parsing, the egress guard, the vault, an MCP handshake —
+   * already happened when this configuration was loaded.
+   */
+  readonly connectors: PreparedConnectors;
   /** Recorded on every call so a call from weeks ago can still be explained (R7.5). */
   readonly configVersion: number;
 }
@@ -38,9 +52,11 @@ export interface CallTenant {
  *
  * Derived from the registered definitions rather than written out here, so the prompt
  * cannot describe a tool the registry does not hold — the list in `@ansa/tools` is the
- * single source of both.
+ * single source of both. The tenant's own tools are appended from what was actually
+ * prepared, for the same reason: a tool whose MCP server was unreachable at config load is
+ * not offered, rather than offered and then refused.
  */
-const AVAILABLE_TOOLS = CALL_CONTROL_DEFINITIONS.map((definition) => ({
+const PLATFORM_TOOLS = CALL_CONTROL_DEFINITIONS.map((definition) => ({
   name: definition.name,
   description: definition.description,
   riskTier: definition.riskTier,
@@ -63,6 +79,7 @@ export const UNKNOWN_TENANT: CallTenant = {
   instructions: null,
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   businessHours: null,
+  connectors: NO_CONNECTORS,
   configVersion: 0,
 };
 
@@ -112,7 +129,11 @@ const mergeKeyterms = (
  *     (R6.2), and the guarantees hold in the dispatch paths regardless of what the prompt
  *     says, so the safe thing and the available thing are the same thing here.
  */
-const toCallTenant = (config: TenantConfig, log: Logger): CallTenant => {
+const toCallTenant = async (
+  config: TenantConfig,
+  log: Logger,
+  credentialKey: Buffer | null,
+): Promise<CallTenant> => {
   const { layer, violations } = compileTenantLayer({
     name: config.name,
     persona: config.persona,
@@ -129,6 +150,17 @@ const toCallTenant = (config: TenantConfig, log: Logger): CallTenant => {
     });
   }
 
+  // Discovery and the MCP handshake happen here, once per configuration load, rather than
+  // per call. `prepareConnectors` never throws: a tenant whose endpoint is unreachable
+  // gets fewer tools, never a failed call (R6.2).
+  const connectors = await prepareConnectors({
+    tenantId: config.tenantId,
+    config: config.toolConfig,
+    credentialKey,
+    sealedCredentials: config.sealedCredentials,
+    log,
+  });
+
   return {
     tenantId: config.tenantId,
     name: config.name,
@@ -137,11 +169,15 @@ const toCallTenant = (config: TenantConfig, log: Logger): CallTenant => {
     greeting: config.greeting,
     persona: config.persona,
     instructions: config.instructions,
-    // The platform tools, which every registered tenant gets. Nothing here is per-tenant
-    // yet: tenant-supplied tools arrive with the HTTP and MCP adapters (Slice 6), and
-    // when they do this is where their definitions join the list.
-    systemPrompt: composeSystemPrompt({ tenant: layer, tools: AVAILABLE_TOOLS }),
+    // The platform tools every registered tenant gets, plus this tenant's own. Both come
+    // from what is actually registered, so the prompt cannot promise a lookup the
+    // dispatcher would refuse.
+    systemPrompt: composeSystemPrompt({
+      tenant: layer,
+      tools: [...PLATFORM_TOOLS, ...connectors.tools],
+    }),
     businessHours: config.businessHours,
+    connectors,
     configVersion: config.configVersion,
   };
 };
@@ -157,6 +193,8 @@ export interface TenantRegistryOptions {
   /** How long config is reused before it is read again. */
   readonly ttlMs?: number;
   readonly now?: () => number;
+  /** R5.2.1. Null disables every tenant tool that needs a credential; see `env.ts`. */
+  readonly credentialKey?: Buffer | null;
 }
 
 /**
@@ -175,6 +213,7 @@ export interface TenantRegistryOptions {
 export const createTenantRegistry = (options: TenantRegistryOptions) => {
   const { dataSource, log } = options;
   const ttlMs = options.ttlMs ?? 600_000;
+  const credentialKey = options.credentialKey ?? null;
   const now = options.now ?? Date.now;
 
   const byNumber = new Map<string, Entry>();
@@ -202,7 +241,7 @@ export const createTenantRegistry = (options: TenantRegistryOptions) => {
           log.warn("dialled number is not registered to a tenant", { dialled });
           return remember(dialled, UNKNOWN_TENANT);
         }
-        return remember(dialled, toCallTenant(config, log));
+        return remember(dialled, await toCallTenant(config, log, credentialKey));
       } catch (error) {
         // A database that is down must cost the caller a personalised greeting, not the
         // call. Deliberately not cached: retry on the next call rather than serving
@@ -242,7 +281,7 @@ export const createTenantRegistry = (options: TenantRegistryOptions) => {
           return null;
         }
 
-        const tenant = toCallTenant(config, log);
+        const tenant = await toCallTenant(config, log, credentialKey);
         // Cached by id only: this call never had a dialled number to key on.
         byTenant.set(tenantId, { tenant, expiresAt: now() + ttlMs });
         return tenant;

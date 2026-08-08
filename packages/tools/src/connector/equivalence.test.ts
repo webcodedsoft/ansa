@@ -12,7 +12,7 @@ import type { DispatchOutcome } from "../types";
 import { parseConnectorConfig } from "./config";
 import type { EgressGuard } from "./egress";
 import { registerHttpTools } from "./http";
-import { registerMcpServer } from "./mcp";
+import { prepareMcpServer } from "./mcp";
 import { createTransport } from "./transport";
 import { createInMemoryVault, sealCredential } from "./vault";
 
@@ -354,7 +354,8 @@ beforeAll(async () => {
 
   const first = mcpConfig.mcp[0];
   if (first === undefined) throw new Error("no mcp server configured");
-  await registerMcpServer(registry, first, { tenantId: MCP_TENANT, transport, vault, log: recorder.log });
+  const preparedMcp = await prepareMcpServer(first, { tenantId: MCP_TENANT, transport, vault, log: recorder.log });
+  preparedMcp.register(registry);
 
   heard = [];
   const holding: HoldingSpeech = {

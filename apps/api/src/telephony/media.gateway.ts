@@ -17,6 +17,7 @@ import { openListenSession } from "@ansa/openai-listen";
 import type { TtsProvider } from "@ansa/tts";
 import {
   callControlTools,
+  createCircuitBreaker,
   createToolDispatcher,
   createToolRegistry,
   registerInternalTools,
@@ -69,6 +70,13 @@ export class MediaGateway implements OnApplicationShutdown {
   private greetingAudio: readonly AudioChunk[] | null = null;
   /** Keyed by phrase so the orchestrator picks a register, not a queue position. */
   private fillers: ReadonlyMap<string, readonly AudioChunk[]> = new Map();
+  /**
+   * R5.2.3. Per process, and keyed inside by tenant and tool.
+   *
+   * It has to outlive a call to be worth anything — the point is that the fourth call to
+   * a dead endpoint does not wait three seconds like the first three did.
+   */
+  private readonly toolBreaker = createCircuitBreaker();
 
   constructor(
     @Inject(TELEPHONY_PROVIDER) private readonly telephony: TelephonyProvider,
@@ -417,9 +425,11 @@ export class MediaGateway implements OnApplicationShutdown {
        * over this call's own effects, so a registry built once in the module could not
        * hold them. Three map writes per call is not a cost worth an indirection.
        *
-       * Only the platform tools are registered. The in-memory policy book is a fixture
-       * for tests and is deliberately not here — an agent answering a real caller from
-       * records nobody wrote is worse than one that says it cannot check.
+       * The platform tools, plus whatever this tenant has configured of their own — the
+       * same registry and the same dispatcher for both, which is the whole of R5.2.0 at
+       * the call site. A tenant with nothing configured registers nothing and the call is
+       * exactly what Slice 5 left: an agent that can end the call, ask for a person and
+       * read the clock.
        */
       makeTools: (hooks) => {
         const registry = createToolRegistry();
@@ -432,12 +442,18 @@ export class MediaGateway implements OnApplicationShutdown {
             businessHours: tenant?.businessHours ?? null,
           }),
         );
+        // Prepared when the tenant's configuration was loaded, so this is map writes
+        // rather than a handshake on the answer path.
+        tenant?.connectors.register(registry);
         return {
           registry,
           dispatcher: createToolDispatcher({
             registry,
             log: log.child({ tenantId: tenant?.tenantId ?? null }),
             holding: hooks.holding,
+            // R5.2.3, and the one thing here that outlives the call. A breaker built per
+            // call would have nothing to remember and would never open.
+            breaker: this.toolBreaker,
           }),
         };
       },

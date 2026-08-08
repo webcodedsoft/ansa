@@ -35,6 +35,22 @@ export interface TenantConfig {
    * opening hours is the same failure as one answering from records nobody wrote.
    */
   readonly businessHours: BusinessHours | null;
+  /**
+   * The tenant's own tools: endpoints, schemas, risk tiers (R5.2). Null until they
+   * configure some, which is every tenant today.
+   *
+   * Deliberately `unknown`. Its shape belongs to `@ansa/tools`, which validates it on the
+   * way into the registry; parsing it here would put the same rules in two places and
+   * point the dependency the wrong way.
+   */
+  readonly toolConfig: unknown;
+  /**
+   * Sealed credential values by reference name (R5.2.1).
+   *
+   * Ciphertext, and this package cannot open it — the key is held by the API process. A
+   * database dump therefore is not a credential leak, and neither is this map.
+   */
+  readonly sealedCredentials: ReadonlyMap<string, string>;
   /** Recorded on every call, so a call from three weeks ago can be explained (R7.5). */
   readonly configVersion: number;
 }
@@ -51,8 +67,27 @@ interface ConfigRow {
   business_open_hour: number | null;
   business_close_hour: number | null;
   business_days: number[] | null;
+  tool_config: unknown;
+  credentials: Record<string, unknown> | null;
   config_version: number;
 }
+
+/**
+ * Ciphertext only, and non-strings dropped.
+ *
+ * The column is jsonb, so the type system has nothing to say about what is in it. A value
+ * that is not a string cannot be a sealed credential, and passing it on would surface as
+ * a decryption error on a call rather than as a configuration mistake here.
+ */
+const toSealed = (row: ConfigRow): ReadonlyMap<string, string> => {
+  const raw = row.credentials;
+  if (raw == null) return new Map();
+  const sealed = new Map<string, string>();
+  for (const [ref, value] of Object.entries(raw)) {
+    if (typeof value === "string") sealed.set(ref, value);
+  }
+  return sealed;
+};
 
 /**
  * Three columns or none. The CHECK constraint in migration 0012 already refuses two of
@@ -77,6 +112,11 @@ const toConfig = (row: ConfigRow): TenantConfig => ({
   persona: row.persona,
   instructions: row.instructions ?? null,
   businessHours: toBusinessHours(row),
+  // `undefined` when migration 0013 has not been applied — the row comes back without the
+  // column at all — and that has to read as "no tools configured" rather than reaching
+  // the parser as a value.
+  toolConfig: row.tool_config ?? null,
+  sealedCredentials: toSealed(row),
   configVersion: row.config_version,
 });
 

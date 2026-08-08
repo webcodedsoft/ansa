@@ -91,9 +91,9 @@ import { VoiceController } from "./voice.controller";
     },
     {
       provide: TENANT_REGISTRY,
-      inject: [DATA_SOURCE, LOGGER],
-      useFactory: (dataSource: Db | null, log: Logger) =>
-        createTenantRegistry({ dataSource, log }),
+      inject: [DATA_SOURCE, LOGGER, APP_CONFIG],
+      useFactory: (dataSource: Db | null, log: Logger, config: AppConfig) =>
+        createTenantRegistry({ dataSource, log, credentialKey: config.toolCredentialKey }),
     },
     {
       // One registry per process, not per call: the carrier fetches the summary from
