@@ -10,28 +10,8 @@
 export const GREETING_TEXT = "Thank you for calling Ansa. How can I help you?";
 
 /**
- * The brand is "Ansa" everywhere a human reads it. TTS is handed "An-Sah" instead,
- * because the telephone channel destroys the name otherwise.
- *
- * /s/ carries most of its energy above 4kHz. The telephony passband ends near 3.4kHz and
- * μ-law discards the rest, so between a nasal and a vowel the stripped fricative is heard
- * as its voiced neighbour and callers hear "Anza". Confirmed by A/B on a real call: the
- * same sentence at pcm_24000 is a correct "Ansa", at ulaw_8000 it is not — the model is
- * right and the channel is wrong. The respelling makes the model produce a longer, harder
- * fricative, so enough survives the band-pass to be heard correctly.
- *
- * This is a normalizer rule wearing a temporary disguise. When packages/normalizer lands
- * in Slice 4 it moves there and applies to every utterance — CLAUDE.md: nothing reaches
- * TTS unnormalized. The orchestrator already routes every utterance through it.
+ * Re-exported so the speech path keeps one import, but the implementation now lives in
+ * packages/normalizer. Nothing reaches TTS unnormalized — greetings included, since a
+ * static string today becomes a per-tenant template with a number in it tomorrow.
  */
-export const forSpeech = (text: string): string =>
-  text
-    // The model emits markdown despite being told not to, and a caller should never
-    // hear "asterisk asterisk". Strips leading list and quote markers, emphasis and
-    // code ticks. This belongs in packages/normalizer in Slice 4 along with the
-    // respelling below.
-    .replace(/^[ \t]*[#>*-]+[ \t]+/gm, "")
-    .replace(/\*\*|__|[*_`]/g, "")
-    .replace(/\bAnsa\b/g, "An-Sah")
-    .replace(/[ \t]{2,}/g, " ")
-    .trim();
+export { forSpeech } from "@ansa/normalizer";

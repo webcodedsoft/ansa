@@ -50,9 +50,11 @@ describe("forSpeech markdown stripping", () => {
     expect(forSpeech("- Your policy renews in May")).toBe("Your policy renews in May");
   });
 
-  it("leaves ordinary punctuation alone", () => {
+  it("says a decimal quantity rather than leaving the caller to read it", () => {
+    // This asserted the opposite until the normalizer existed: forSpeech used to leave
+    // "1.5" alone, and a caller heard the TTS engine's guess at it.
     expect(forSpeech("It's 1.5 million naira, isn't it?")).toBe(
-      "It's 1.5 million naira, isn't it?",
+      "It's one point five million naira, isn't it?",
     );
   });
 });

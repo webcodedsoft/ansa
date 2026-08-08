@@ -32,6 +32,9 @@ importers:
       '@ansa/llm':
         specifier: workspace:*
         version: link:../../packages/providers/llm
+      '@ansa/normalizer':
+        specifier: workspace:*
+        version: link:../../packages/normalizer
       '@ansa/openai-listen':
         specifier: workspace:*
         version: link:../../packages/providers/listen/openai
@@ -133,6 +136,24 @@ importers:
       '@types/pg':
         specifier: ^8.11.10
         version: 8.20.4
+      eslint:
+        specifier: 10.8.0
+        version: 10.8.0
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.2.1(@types/node@24.13.3)(terser@5.49.2))
+
+  packages/normalizer:
+    devDependencies:
+      '@ansa/config':
+        specifier: workspace:*
+        version: link:../config
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
       eslint:
         specifier: 10.8.0
         version: 10.8.0
