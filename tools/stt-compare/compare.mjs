@@ -37,15 +37,30 @@ console.log(`${file}: ${audio.length} bytes = ${(audio.length / 8000).toFixed(1)
 
 const FRAME = 160; // 20ms, exactly as the carrier delivers it
 
+// The trailing pad has to sound like a line, not like a file.
+//
+// 0xff decodes to exactly zero amplitude. No phone call ever contains that: a quiet
+// moment on a real line still carries a noise floor. Padding with 0xff measured as a
+// difference between providers that does not exist on a call — OpenAI's semantic_vad
+// under audio/pcmu emitted speech_started and then never speech_stopped, so the run
+// reported "0 turns" for audio it transcribes correctly the moment the pad has a hiss
+// in it. A harness that manufactures a provider difference is worse than no harness.
+const comfortNoiseFrame = () => {
+  const frame = Buffer.alloc(FRAME);
+  // mu-law codes just below 0xff are the quietest non-zero levels available.
+  for (let i = 0; i < FRAME; i += 1) frame[i] = 0xf0 + Math.floor(Math.random() * 15);
+  return frame;
+};
+
 // Real time, because a turn detector decides on silence and a burst has none.
 const pace = async (send) => {
   for (let i = 0; i < audio.length; i += FRAME) {
     send(audio.subarray(i, i + FRAME));
     await new Promise((r) => setTimeout(r, 20));
   }
-  // Trailing silence, or the last turn never commits.
+  // Trailing quiet, or the last turn never commits.
   for (let i = 0; i < 100; i += 1) {
-    send(Buffer.alloc(FRAME, 0xff));
+    send(comfortNoiseFrame());
     await new Promise((r) => setTimeout(r, 20));
   }
 };
@@ -53,10 +68,30 @@ const pace = async (send) => {
 const openai = ({ asPcm }) =>
   new Promise((resolve) => {
     const finals = [];
+    // Why a run produced nothing matters as much as that it did. An empty result can mean
+    // the provider heard silence, refused the session, or heard speech and never decided
+    // the turn had ended — three different causes with three different fixes, and the
+    // first version of this harness reported all of them as "0 turn(s)".
+    const notes = [];
+    let sawSpeechStart = false;
+    // Resolved when the server confirms the format change. See the note at its use.
+    let onSessionUpdated;
+    const sessionUpdated = new Promise((r) => { onSessionUpdated = r; });
     const ws = new WebSocket("wss://api.openai.com/v1/realtime?intent=transcription", {
       headers: { Authorization: `Bearer ${env.OPENAI_API_KEY}` },
     });
-    const done = () => { try { ws.close(); } catch { /* gone */ } resolve(finals); };
+    let settled = false;
+    const done = () => {
+      // Called by the watchdog, by the post-pace timer and by the error handler, so it
+      // has to be idempotent or the diagnostics arrive in duplicate.
+      if (settled) return;
+      settled = true;
+      if (finals.length === 0 && sawSpeechStart) {
+        notes.push("speech detected but no turn ever committed — endpointing, not hearing");
+      }
+      try { ws.close(); } catch { /* gone */ }
+      resolve({ finals, notes });
+    };
     setTimeout(done, (audio.length / 8000) * 1000 + 25_000);
 
     ws.on("open", async () => {
@@ -71,7 +106,16 @@ const openai = ({ asPcm }) =>
           } },
         },
       }));
-      await new Promise((r) => setTimeout(r, 500));
+      // Wait for the server to confirm the format, do not sleep and hope.
+      //
+      // A fresh session defaults to audio/pcm at 24kHz. Sleeping 500ms and starting to
+      // send made the mu-law run a race: whenever session.updated landed late, 8kHz
+      // mu-law bytes were fed to a session still decoding them as 24kHz PCM, the buffer
+      // filled with noise, and the run reported zero turns. The PCM run never showed it
+      // because there the default already matches what we want — so the harness invented
+      // a mu-law-versus-PCM difference that a direct probe could not reproduce. That is
+      // precisely the wrong conclusion this tool exists to prevent.
+      await Promise.race([sessionUpdated, new Promise((r) => setTimeout(r, 5000))]);
       await pace((frame) => {
         const out = asPcm ? muLawToPcm(frame, 8000, 24000) : frame;
         ws.send(JSON.stringify({ type: "input_audio_buffer.append", audio: out.toString("base64") }));
@@ -81,13 +125,26 @@ const openai = ({ asPcm }) =>
     ws.on("message", (raw) => {
       const e = JSON.parse(raw.toString("utf8"));
       if (e.type?.endsWith("input_audio_transcription.completed") && e.transcript) finals.push(e.transcript);
+      else if (e.type === "session.updated") {
+        const applied = e.session?.audio?.input?.format;
+        const want = asPcm ? "audio/pcm" : "audio/pcmu";
+        if (applied?.type !== want) notes.push(`server applied ${JSON.stringify(applied)}, asked for ${want}`);
+        onSessionUpdated();
+      }
+      else if (e.type === "input_audio_buffer.speech_started") sawSpeechStart = true;
+      // A server-side error arrives as a message, not as a socket error, so without this
+      // a rejected session is indistinguishable from a caller who said nothing.
+      else if (e.type === "error") notes.push(`server error: ${JSON.stringify(e.error).slice(0, 200)}`);
+      else if (e.type?.endsWith("transcription.failed")) notes.push(`transcription failed: ${JSON.stringify(e).slice(0, 200)}`);
     });
-    ws.on("error", (e) => { finals.push(`<error: ${e.message}>`); done(); });
+    ws.on("error", (e) => { notes.push(`socket error: ${e.message}`); done(); });
   });
 
 const deepgram = ({ keyterms }) =>
   new Promise((resolve) => {
     const finals = [];
+    const notes = [];
+    let sawSpeechStart = false;
     const url = buildUrl({
       format: { encoding: "mulaw", sampleRate: 8000 },
       model: env.DEEPGRAM_MODEL ?? "flux-general-en",
@@ -97,7 +154,16 @@ const deepgram = ({ keyterms }) =>
       host: env.DEEPGRAM_HOST ?? "api.deepgram.com",
     });
     const ws = new WebSocket(url, { headers: { Authorization: `Token ${env.DEEPGRAM_API_KEY}` } });
-    const done = () => { try { ws.close(); } catch { /* gone */ } resolve(finals); };
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      if (finals.length === 0 && sawSpeechStart) {
+        notes.push("speech detected but no turn ever committed — endpointing, not hearing");
+      }
+      try { ws.close(); } catch { /* gone */ }
+      resolve({ finals, notes });
+    };
     setTimeout(done, (audio.length / 8000) * 1000 + 25_000);
 
     ws.on("open", async () => {
@@ -107,8 +173,15 @@ const deepgram = ({ keyterms }) =>
     ws.on("message", (raw) => {
       const e = JSON.parse(raw.toString("utf8"));
       if (e.type === "TurnInfo" && e.event === "EndOfTurn" && e.transcript) finals.push(e.transcript);
+      else if (e.type === "TurnInfo" && e.event === "StartOfTurn") sawSpeechStart = true;
+      else if (e.type === "Error" || e.type === "Fatal") notes.push(`server error: ${JSON.stringify(e).slice(0, 200)}`);
     });
-    ws.on("error", (e) => { finals.push(`<error: ${e.message}>`); done(); });
+    // A 4401 close is the Bearer/Token mistake and says so in the reason, which is worth
+    // printing rather than silently counting as zero turns.
+    ws.on("close", (code, reason) => {
+      if (code !== 1000 && code !== 1005) notes.push(`closed ${code}: ${reason?.toString() ?? ""}`.trim());
+    });
+    ws.on("error", (e) => { notes.push(`socket error: ${e.message}`); done(); });
   });
 
 const KEYTERMS = ["Ansa", "policy", "policy number", "premium", "naira", "claim", "renewal"];
@@ -123,16 +196,17 @@ const runs = [
 const results = [];
 for (const [label, run] of runs) {
   process.stdout.write(`${label} … `);
-  const finals = await run();
-  console.log(`${finals.length} turn(s)`);
-  results.push([label, finals]);
+  const { finals, notes } = await run();
+  console.log(`${finals.length} turn(s)${notes.length > 0 ? `  [${notes.length} note(s)]` : ""}`);
+  results.push([label, finals, notes]);
 }
 
 console.log("\n=== transcripts, same audio ===");
-for (const [label, finals] of results) {
+for (const [label, finals, notes] of results) {
   console.log(`\n${label.trim()}`);
   if (finals.length === 0) console.log("  (nothing)");
   for (const t of finals) console.log(`  ${JSON.stringify(t)}`);
+  for (const n of notes) console.log(`  ! ${n}`);
 }
 
 console.log("\n=== how to read this ===");

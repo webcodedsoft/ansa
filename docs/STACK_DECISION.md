@@ -441,3 +441,108 @@ Nigerian-line half — real Nigerian carriers, real line conditions, real latenc
 
 **This must close before Slice 7** (first real design-partner tenant). It does not block
 Slices 2–6, all of which are exercised over any working number.
+
+---
+
+## 2026-08-08 — First run of the STT comparison harness (synthetic control)
+
+`tools/stt-compare/compare.mjs` had been built and never run. It has now been run, on a
+**synthetic control**, because `recordings/` was empty and a real call was not available.
+This section separates what that measured from what it cannot.
+
+### What the audio is, and what it therefore cannot tell us
+
+ElevenLabs, `output_format=ulaw_8000`, raw mu-law 8kHz, saved to `recordings/` (gitignored):
+
+> "Good afternoon, my name is Sikiru. My policy number is P M 8 5 9 2 6 2 5."
+
+Two files, identical speech, differing only in the noise floor: `control-sikiru.ulaw` has
+true digital silence in the gaps, `control-sikiru-noisy.ulaw` has a soft hiss where a
+carrier would put one.
+
+**This audio is not a phone call and is not Nigerian-accented.** It is clean, studio-grade
+and synthesised by a model trained to be intelligible. **It cannot reproduce the name
+problem, and nothing below should be read as evidence about accented speech.** What it can
+do — and what nothing else available could — is hold the waveform fixed so that a
+difference between two runs is a difference in configuration and nothing else. The three
+earlier provider comparisons on this project were wrong precisely because each used a
+different call.
+
+### Measured
+
+Identical waveform (`control-sikiru-noisy.ulaw`), four configurations, one run each:
+
+| Configuration | Transcript |
+|---|---|
+| openai mu-law 8k | `Good afternoon, my name is Sikiru. My policy number is PM8592625.` |
+| openai pcm 24k | `Good afternoon, my name is Sikiru. My policy number is PM8592625.` |
+| deepgram mu-law 8k | `Good afternoon. My name is Akiru. My policy number is p m eight five nine two six two five.` |
+| deepgram + keyterms | `Good afternoon. My name is Akiru. My policy number is p m eight five nine two six two five.` |
+
+**1. mu-law versus PCM 24k made no difference to OpenAI, on this audio.** Byte-identical
+transcripts. The open question in `protocol.ts` — the provider documents `audio/pcm` at
+24kHz and merely *accepts* `audio/pcmu`, and whether that costs accuracy — is **not**
+answered for a real line, but on clean audio the transcoding hop buys nothing. It also
+costs: end-of-turn latency was measured at **278ms under pcmu against 1367ms under pcm
+24k** on the same waveform. That is the opposite of the direction the PCM hypothesis
+assumed. `OPENAI_SEND_PCM` remains off and this measurement gives no reason to turn it on.
+
+**2. Deepgram keyterm boosting corrupts a name that is not in the keyterm list.** On
+`control-sikiru.ulaw`, three runs each way, perfectly deterministic:
+
+- without keyterms: `My name is Sikiru` (3/3)
+- with keyterms: `My name is Akiro` (3/3)
+
+The keyterm list contained **no personal names** — only `Ansa, policy, policy number,
+premium, naira, claim, renewal`. The existing rule "never boost personal names" is
+therefore **not strong enough**. Boosting domain vocabulary was sufficient to damage an
+adjacent proper noun. This extends the Ikeja finding rather than repeating it.
+
+**3. The two providers format numbers differently, and downstream must not care.** OpenAI
+returns `PM8592625`; Deepgram returns `p m eight five nine two six two five`. Both are
+correct. Any parser that reads one shape and not the other is provider-coupled.
+
+**4. Digital silence prevents OpenAI from ever ending a turn under `audio/pcmu`.** On
+`control-sikiru.ulaw`, `speech_started` fires and `speech_stopped` never does; the run
+yields nothing. The same speech with a noise floor transcribes fine. `audio/pcm` at 24kHz
+endpoints normally on both. Reproduced four times. A real line always carries a noise
+floor, so this is most likely an artifact of synthetic audio — but it is **unproven on a
+real call**, and it is the correct first suspect if a live call ever goes permanently
+silent mid-turn under pcmu.
+
+### Two defects found in the harness itself, both fixed
+
+Worth recording because both would have produced a confident wrong answer, which is the
+one outcome this tool exists to prevent.
+
+- **It padded with `0xff`** — exactly zero amplitude, which no phone line produces. Now
+  pads with comfort noise.
+- **It slept 500ms instead of waiting for `session.updated`.** A fresh OpenAI session
+  defaults to `audio/pcm` at 24kHz, so a late confirmation meant mu-law bytes were fed to
+  a session still decoding them as PCM. This corrupted **only** the mu-law run, and the
+  harness reported it as "mu-law produced no transcript" — a fabricated mu-law-versus-PCM
+  difference, the exact conclusion the tool was built to rule out. It now waits for the
+  server to confirm the format. **The production adapter never had this bug**: it buffers
+  audio until `session.updated` and flushes on `ready` (`listen-session.ts`, `protocol.ts`).
+
+It also now distinguishes "heard nothing" from "heard speech and never committed a turn"
+from "the server returned an error", which were all previously reported as `0 turn(s)`.
+
+### Unknown, pending a real call
+
+Everything that actually matters for the name problem:
+
+- **Whether the providers differ on Nigerian-accented speech.** They agreed on clean
+  synthetic English. That is not evidence either way about accented speech, and nothing
+  here should be cited as if it were.
+- **Whether mu-law versus PCM 24k matters on a real line.** Measured as irrelevant on
+  clean audio; an 8kHz channel with real line noise is the case the hypothesis was about.
+- **Whether Twilio's encoding or the line is degrading the audio before any provider sees
+  it.** Untestable without carrier audio; this is the single largest open question.
+- **Whether keyterm boosting helps at all.** It was measured to *harm* an unlisted name.
+  Whether it improves the domain words it targets is unmeasured.
+- **The cause of the name problem.** Still unmeasured. The charter's "done when" is not
+  met and should not be recorded as met.
+
+**The blocking action is unchanged: dial the number.** `RECORD_AUDIO_DIR=recordings` is
+set, so the next real call produces a `.ulaw`, and the harness now runs correctly on it.
