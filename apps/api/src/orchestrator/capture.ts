@@ -92,6 +92,16 @@ const NO = /\b(no|nope|nah|wrong|incorrect|not (right|correct|it)|mistake)\b/i;
 /** Agreement that merely contains a "no". Nigerian English uses all three. */
 const FALSE_NEGATIVES = /\bno (problem|worries|wahala)\b/gi;
 
+/**
+ * Signals that whatever agreement is in the turn is qualified, and so is not agreement.
+ *
+ * On a live call the caller answered a readback with "Yeah. You tried. But what about
+ * the security?" — "yeah" matched, and a name the caller was plainly querying was
+ * confirmed and then used to their face. A hedge or a question means ask again; the cost
+ * of one more question is nothing beside acting on the wrong value.
+ */
+const HEDGED = /\b(but|however|although|though|except|actually|wait)\b|\?/i;
+
 const readback = (value: string, subject: CaptureSubject): string =>
   subject === "name"
     // A name is read back as a word, not spelled at the caller. Spelling it back before
@@ -99,8 +109,17 @@ const readback = (value: string, subject: CaptureSubject): string =>
     ? forSpeech(`Let me make sure I have that right. ${value}. Have I got that?`)
     : forSpeech(`Let me read that back to you. ${sayReference(value)}. Is that correct?`);
 
+/**
+ * Asks for a word per letter, because bare letters do not survive this channel.
+ *
+ * B, C, D, E, G, P, T, V, Z and J all rhyme in English and 8kHz strips exactly the
+ *high-frequency detail that separates them. On a live call a spelled J came back as E and
+ * the name was confirmed one letter wrong. Naming a word per letter replaces a
+ * one-phoneme distinction with a whole-word one, and the parser already reads it.
+ */
 const spellPrompt = forSpeech(
-  "Sorry about that. Could you spell it for me, one letter at a time?",
+  "Sorry about that. Could you spell it for me? " +
+    "A word for each letter helps, like A for Abuja.",
 );
 
 const retry = forSpeech("Sorry, let's try again. Could you say it once more, slowly?");
@@ -232,7 +251,7 @@ const confirming = (
     };
   }
 
-  if (YES.test(text)) {
+  if (YES.test(text) && !HEDGED.test(text)) {
     return {
       state: { kind: "confirmed", value: state.value },
       say: null,

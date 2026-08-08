@@ -325,6 +325,22 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     watchdog = null;
   };
 
+  /**
+   * A caller turn that ended mid-sentence, held back until they finish or the wait
+   * expires. See completeness.ts for what this cost before it existed.
+   *
+   * The wait stays well under the two-second silence rule: 1100ms plus the 450ms filler
+   * delay means sound within 1.55s, and only on turns that were syntactically impossible
+   * to answer anyway.
+   */
+  let pending: { text: string; forModel: string; timer: NodeJS.Timeout } | null = null;
+
+  const clearPending = (): void => {
+    if (pending === null) return;
+    clearTimeout(pending.timer);
+    pending = null;
+  };
+
   const cancelFiller = (): void => {
     for (const timer of fillerTimers) clearTimeout(timer);
     fillerTimers = [];
@@ -337,6 +353,12 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
    * it coming back.
    */
   const playFiller = (tier: readonly string[]): void => {
+    // Never while a turn is being held for a continuation. The filler fires 450ms after
+    // end-of-turn regardless of why we are silent, so on a live call the agent said
+    // "Alright." into the pause it was deliberately leaving for the caller to finish
+    // their name — the exact interruption the wait exists to prevent.
+    if (pending !== null) return;
+
     const rendered = deps.fillers;
     if (rendered === undefined || rendered.size === 0) return;
 
@@ -675,22 +697,6 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
    * caller gets speech instead of a dead line. Routed through enqueue like any other
    * utterance so it is normalised, marked and remembered identically.
    */
-  /**
-   * A caller turn that ended mid-sentence, held back until they finish or the wait
-   * expires. See completeness.ts for what this cost before it existed.
-   *
-   * The wait has to stay well under the two-second silence rule: 1100ms here plus the
-   * 450ms filler delay means the caller hears something within 1.55s of stopping, and
-   * only on turns that were syntactically impossible to answer anyway.
-   */
-  let pending: { text: string; forModel: string; timer: NodeJS.Timeout } | null = null;
-
-  const clearPending = (): void => {
-    if (pending === null) return;
-    clearTimeout(pending.timer);
-    pending = null;
-  };
-
   /**
    * Readback state (R4.3.1). Lives for the whole call: a caller gives a policy number
    * early and a phone number later, and each has to be confirmed on its own terms.
@@ -1072,6 +1078,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     // complete answers, and a caller correcting a digit must not be made to wait.
     if (capture.kind === "idle" && endsMidThought(normalise(whole))) {
       log.info("caller has not finished, waiting", { text: whole });
+      cancelFiller();
       const timer = setTimeout(() => {
         pending = null;
         log.info("caller did not continue, answering what we have", { text: whole });

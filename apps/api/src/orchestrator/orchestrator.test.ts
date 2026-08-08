@@ -880,3 +880,18 @@ describe("a turn the detector cut in half", () => {
     assertInvariants(h);
   });
 });
+
+describe("the filler must not interrupt a deliberate pause", () => {
+  it("stays silent while a turn is held for a continuation", async () => {
+    const h = setup({ ...fillerSetup(), fillerAfterMs: 100 });
+    const before = h.stream.sent.length;
+
+    // 2026-08-08, 11:06:25. The agent said "Alright." into the pause it was deliberately
+    // leaving for the caller to finish their name.
+    h.listen.final("Hi. Good morning. My name is.");
+    await new Promise((r) => setTimeout(r, 300));
+
+    expect(h.stream.sent.length, "audio played during the wait").toBe(before);
+    assertInvariants(h);
+  });
+});

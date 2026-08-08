@@ -224,3 +224,23 @@ describe("names (2026-08-08 call: Sikiru -> Hill -> Sequium -> Security)", () =>
     expect(r.state).toMatchObject({ subject: "number" });
   });
 });
+
+describe("hedged answers are not agreement (2026-08-08, 11:07:32)", () => {
+  it("does not confirm when the caller qualifies their yes", () => {
+    // "Yeah. You tried. But what about the security?" confirmed a name the caller was
+    // plainly querying, and the agent then used it to their face.
+    const asked = speak(idle, "My name is Anita Security");
+    const hedged = speak(asked.state, "Yeah. You tried. But what about the security?");
+    expect(hedged.captured).toBeNull();
+  });
+
+  it("does not confirm when the answer contains a question", () => {
+    const asked = speak(idle, "four one seven two nine");
+    expect(speak(asked.state, "Yes, but can you check the last digit?").captured).toBeNull();
+  });
+
+  it("still accepts a clean yes", () => {
+    const asked = speak(idle, "four one seven two nine");
+    expect(speak(asked.state, "Yes, that is correct").captured).toBe("41729");
+  });
+});
