@@ -683,8 +683,31 @@ answer is spoken correctly in each, and the security tests pass against both.
 
 - [ ] Versioned tenant config (R7.5): persona, voice, greeting, knowledge base,
       registered tools, escalation rules, business hours, keyterm vocabulary.
-- [ ] Config version recorded on every call.
+      **Half done.** Migration 0011 adds `tenant_prompt_versions` — append-only, RLS'd,
+      `ansa_app` has no UPDATE or DELETE on it — plus `app.publish_tenant_config`, which
+      bumps and snapshots in one transaction, and `app.tenant_config_at_version` to read
+      an old one back. `tenants` stays the current values so the hot path keeps its one
+      round trip (0004, 0005). Persona, instructions, voice, greeting and keyterms are
+      versioned; knowledge base, tools and escalation rules are not, because nothing
+      reads them yet. `tools/tenant/config.mjs` is the hand-onboarding path.
+- [x] Config version recorded on every call. It has been written since Slice 2 and
+      pointed at nothing until 0011 gave it a row to point at.
 - [ ] Phone number → tenant resolution at ingress (R7.3).
+- [ ] **Prompt layering (§21, `docs/MULTI_TENANT_ARCHITECTURE.md` §3).** Built in
+      `apps/api/src/prompts/`: base, locale, tenant, task, and the turn layer that already
+      existed in `turn-budget.ts`. Base, locale, task and turn are live —
+      `orchestrator/system-prompt.ts` re-exports the composition, so every call today runs
+      it. The tenant layer is composed onto `CallTenant.systemPrompt` and **nothing reads
+      it yet**: two lines in `orchestrator.ts` and `media.gateway.ts`, both owned by other
+      agents this week, written down in `apps/api/src/prompts/WIRING.md`. Unproven on a
+      phone call.
+      **One content change went with it, and it is a real change:** the locale layer no
+      longer lists the insurance words that get misheard, or the ordinary words they come
+      back as. The rule stayed, the instances went. A model handed a list of words to
+      reach for reaches for them, which is the same mechanism that made the keyterm list
+      corrupt an unrelated surname 3/3 on Deepgram. Domain vocabulary is per-tenant
+      keyterms' job. Watch the next calls for "policy" going back to being misheard —
+      that list was doing real work and this is not free.
 - [ ] Per-tenant rate limits and quotas (R7.4).
 - [ ] Knowledge base ingestion + retrieval, scoped per tenant.
 - [ ] Onboarding runbook — the manual process we follow for tenants 1 through 10.

@@ -1,6 +1,8 @@
 import { type Logger, type TenantId } from "@ansa/shared";
-import { loadTenantById, loadTenantForNumber, type Db } from "@ansa/db";
+import { loadTenantById, loadTenantForNumber, type Db, type TenantConfig } from "@ansa/db";
 
+import { composeSystemPrompt, DEFAULT_SYSTEM_PROMPT } from "../prompts/compose";
+import { compileTenantLayer } from "../prompts/tenant-layer";
 
 import { BASE_KEYTERMS, MAX_KEYTERMS } from "./defaults";
 
@@ -14,6 +16,16 @@ export interface CallTenant {
   readonly voiceId: string | null;
   readonly greeting: string | null;
   readonly persona: string | null;
+  readonly instructions: string | null;
+  /**
+   * The five-layer system prompt with this tenant's layer already in it.
+   *
+   * Composed here, once per config load, rather than per turn: the layers below the turn
+   * budget do not change during a call, and the string is a couple of hundred tokens.
+   * The turn layer is appended per turn by the orchestrator, which is how it works today
+   * and is what proved the layering before the layering existed.
+   */
+  readonly systemPrompt: string;
   /** Recorded on every call so a call from weeks ago can still be explained (R7.5). */
   readonly configVersion: number;
 }
@@ -25,6 +37,8 @@ export const UNKNOWN_TENANT: CallTenant = {
   voiceId: null,
   greeting: null,
   persona: null,
+  instructions: null,
+  systemPrompt: DEFAULT_SYSTEM_PROMPT,
   configVersion: 0,
 };
 
@@ -55,6 +69,55 @@ const mergeKeyterms = (
     dropped: merged.slice(MAX_KEYTERMS),
   });
   return merged.slice(0, MAX_KEYTERMS);
+};
+
+/**
+ * Config as stored, turned into config as the call path uses it.
+ *
+ * The prompt is composed here rather than at the call site for the same reason keyterms
+ * are merged here: it is the one place that has the tenant's stored values, and doing it
+ * anywhere else means doing it twice and getting it different the second time.
+ *
+ * A tenant's persona or instructions that try to weaken a §1 guarantee are dropped, and
+ * the call proceeds on the remaining layers. Two deliberate choices in that sentence:
+ *
+ *   - dropped, not honoured. `compileTenantLayer` is the only way to produce the value
+ *     `composeSystemPrompt` accepts, so this is not a check that could be forgotten at
+ *     a call site — there is no other route in.
+ *   - proceeds, not fails. A configuration problem must never become silence on the line
+ *     (R6.2), and the guarantees hold in the dispatch paths regardless of what the prompt
+ *     says, so the safe thing and the available thing are the same thing here.
+ */
+const toCallTenant = (config: TenantConfig, log: Logger): CallTenant => {
+  const { layer, violations } = compileTenantLayer({
+    name: config.name,
+    persona: config.persona,
+    instructions: config.instructions,
+  });
+
+  if (violations.length > 0) {
+    // Loud, and with the version, because the fix is a new config version rather than a
+    // code change and whoever published it needs to know which one to correct.
+    log.error("tenant config tried to weaken a guarantee; those fields were dropped", {
+      tenantId: config.tenantId,
+      configVersion: config.configVersion,
+      violations,
+    });
+  }
+
+  return {
+    tenantId: config.tenantId,
+    name: config.name,
+    keyterms: mergeKeyterms(config.keyterms, log, config.tenantId),
+    voiceId: config.voiceId,
+    greeting: config.greeting,
+    persona: config.persona,
+    instructions: config.instructions,
+    // Empty until the tool registry exists (R5.2.0). The empty case is not a placeholder:
+    // it is what tells the agent it cannot look anything up, which is true today.
+    systemPrompt: composeSystemPrompt({ tenant: layer, tools: [] }),
+    configVersion: config.configVersion,
+  };
 };
 
 interface Entry {
@@ -113,17 +176,7 @@ export const createTenantRegistry = (options: TenantRegistryOptions) => {
           log.warn("dialled number is not registered to a tenant", { dialled });
           return remember(dialled, UNKNOWN_TENANT);
         }
-        const tenantId = config.tenantId;
-
-        return remember(dialled, {
-          tenantId,
-          name: config.name,
-          keyterms: mergeKeyterms(config.keyterms, log, tenantId),
-          voiceId: config.voiceId,
-          greeting: config.greeting,
-          persona: config.persona,
-          configVersion: config.configVersion,
-        });
+        return remember(dialled, toCallTenant(config, log));
       } catch (error) {
         // A database that is down must cost the caller a personalised greeting, not the
         // call. Deliberately not cached: retry on the next call rather than serving
@@ -163,15 +216,7 @@ export const createTenantRegistry = (options: TenantRegistryOptions) => {
           return null;
         }
 
-        const tenant: CallTenant = {
-          tenantId,
-          name: config.name,
-          keyterms: mergeKeyterms(config.keyterms, log, tenantId),
-          voiceId: config.voiceId,
-          greeting: config.greeting,
-          persona: config.persona,
-          configVersion: config.configVersion,
-        };
+        const tenant = toCallTenant(config, log);
         // Cached by id only: this call never had a dialled number to key on.
         byTenant.set(tenantId, { tenant, expiresAt: now() + ttlMs });
         return tenant;

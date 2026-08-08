@@ -18,9 +18,41 @@ export interface TenantConfig {
   readonly voiceId: string | null;
   readonly greeting: string | null;
   readonly persona: string | null;
+  /**
+   * The tenant's own rules — hours, what to do when unsure, who to transfer to.
+   *
+   * Bounded free text that is layered ON the base prompt and can never replace it. What
+   * "bounded" means is enforced in `apps/api/src/prompts/tenant-layer.ts`, on the way
+   * into the prompt rather than on the way into this column, so a row written by hand in
+   * psql is filtered exactly like one written through onboarding.
+   */
+  readonly instructions: string | null;
   /** Recorded on every call, so a call from three weeks ago can be explained (R7.5). */
   readonly configVersion: number;
 }
+
+/** The row shape the three `app.tenant_config_*` functions all return. */
+interface ConfigRow {
+  id: string;
+  name: string;
+  keyterms: string[] | null;
+  voice_id: string | null;
+  greeting: string | null;
+  persona: string | null;
+  instructions: string | null;
+  config_version: number;
+}
+
+const toConfig = (row: ConfigRow): TenantConfig => ({
+  tenantId: asTenantId(row.id),
+  name: row.name,
+  keyterms: row.keyterms ?? [],
+  voiceId: row.voice_id,
+  greeting: row.greeting,
+  persona: row.persona,
+  instructions: row.instructions ?? null,
+  configVersion: row.config_version,
+});
 
 
 
@@ -35,30 +67,12 @@ export const loadTenantForNumber = async (
   dataSource: Db,
   dialledNumber: string,
 ): Promise<TenantConfig | null> => {
-  const rows = (await dataSource.query(
-    "select * from app.tenant_config_for_number($1)",
-    [dialledNumber],
-  )) as {
-    id: string;
-    name: string;
-    keyterms: string[] | null;
-    voice_id: string | null;
-    greeting: string | null;
-    persona: string | null;
-    config_version: number;
-  }[];
+  const rows = (await dataSource.query("select * from app.tenant_config_for_number($1)", [
+    dialledNumber,
+  ])) as ConfigRow[];
 
   const row = rows[0];
-  if (row === undefined) return null;
-  return {
-    tenantId: asTenantId(row.id),
-    name: row.name,
-    keyterms: row.keyterms ?? [],
-    voiceId: row.voice_id,
-    greeting: row.greeting,
-    persona: row.persona,
-    configVersion: row.config_version,
-  };
+  return row === undefined ? null : toConfig(row);
 };
 
 /**
@@ -74,28 +88,23 @@ export const loadTenantById = async (
 ): Promise<TenantConfig | null> => {
   const rows = (await dataSource.query("select * from app.tenant_config_for_id($1)", [
     tenantId,
-  ])) as {
-    id: string;
-    name: string;
-    keyterms: string[] | null;
-    voice_id: string | null;
-    greeting: string | null;
-    persona: string | null;
-    config_version: number;
-  }[];
+  ])) as ConfigRow[];
 
   const row = rows[0];
-  if (row === undefined) return null;
-  return {
-    tenantId: asTenantId(row.id),
-    name: row.name,
-    keyterms: row.keyterms ?? [],
-    voiceId: row.voice_id,
-    greeting: row.greeting,
-    persona: row.persona,
-    configVersion: row.config_version,
-  };
+  return row === undefined ? null : toConfig(row);
 };
+
+/*
+ * Reading an OLD config version back — `app.tenant_config_at_version(tenant, version)`,
+ * added by migration 0011 — deliberately has no function here yet.
+ *
+ * `calls.config_version` has been recorded on every call since Slice 2 and has never been
+ * readable back: the version was a number pointing at nothing, because `tenants` only
+ * held the current values. 0011 gives it something to point at. Nothing in the API reads
+ * it yet, and an export nothing calls fails `pnpm lint` for good reasons, so the audit
+ * path is `tools/tenant/config.mjs show <version>` until the call viewer wants it — at
+ * which point this is a six-line function over the same SECURITY INVOKER function.
+ */
 
 /** The evidence the consent policy needs. Reading only; the verdict is not ours to make. */
 export interface ConsentRecord {
