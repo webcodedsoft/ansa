@@ -11,7 +11,7 @@ import {
 } from "@nestjs/common";
 import { asCallId } from "@ansa/shared";
 import type { Logger } from "@ansa/shared";
-import type { TelephonyProvider } from "@ansa/telephony";
+import { wasAnswered, type TelephonyProvider } from "@ansa/telephony";
 
 import type { AppConfig } from "../config/env";
 import type { TenantRegistry } from "../tenancy/tenant-registry";
@@ -19,6 +19,7 @@ import {
   APP_CONFIG,
   LOGGER,
   AMD_WEBHOOK_PATH,
+  STATUS_WEBHOOK_PATH,
   MEDIA_STREAM_PATH,
   TELEPHONY_PROVIDER,
   TENANT_PARAM,
@@ -135,5 +136,57 @@ export class VoiceController {
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  /**
+   * Where a call got to.
+   *
+   * Inbound is answered by definition, so this exists for outbound: busy, no-answer,
+   * failed and canceled all happen with no media stream, and without them a call that
+   * rang out is indistinguishable from one that was never placed. Until today that was
+   * literally true — we placed calls and could not tell whether they connected.
+   *
+   * Signature-verified like every other carrier webhook. It is a public URL and the
+   * events it carries will drive retry decisions, so an unauthenticated one lets anyone
+   * tell us a call failed that did not.
+   */
+  @Post("status")
+  @HttpCode(HttpStatus.OK)
+  callStatus(
+    @Body() body: unknown,
+    @Headers("x-twilio-signature") signature: string | undefined,
+  ): void {
+    const verified = this.telephony.verifyWebhook({
+      url: `${this.config.publicBaseUrl}${STATUS_WEBHOOK_PATH}`,
+      params: body,
+      signature: signature ?? null,
+    });
+    if (!verified) {
+      this.log.warn("rejected unsigned call status webhook");
+      throw new ForbiddenException();
+    }
+
+    const event = this.telephony.parseCallStatus(body);
+    if (event === null) {
+      // A carrier that adds a status must not take the process down, but it must not be
+      // silent either — an unrecognised terminal state would look like a call still ringing.
+      this.log.warn("unrecognised call status callback");
+      return;
+    }
+
+    const log = this.log.child({ callId: event.callId });
+    const terminal = ["completed", "busy", "no-answer", "failed", "canceled"].includes(event.status);
+
+    // Deliberately logged at warn when an outbound call never reached anyone: this is the
+    // signal a campaign would retry on, and info would bury it among the ringing events.
+    const missed = terminal && event.direction === "outbound" && !wasAnswered(event);
+    const line = { status: event.status, direction: event.direction,
+      durationSeconds: event.durationSeconds, sipCode: event.sipCode };
+
+    if (missed) log.warn("outbound call reached nobody", line);
+    else log.info("call status", line);
+
+    // Slice 2's event log is where these belong once it is wired; R7.5 wants the whole
+    // lifecycle recoverable per tenant, not just the part that produced audio.
   }
 }

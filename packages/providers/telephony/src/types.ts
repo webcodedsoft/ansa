@@ -66,6 +66,43 @@ export interface PlacedCall {
   readonly status: string;
 }
 
+/**
+ * Where a call got to.
+ *
+ * The four terminal values that are not "completed" are the whole reason this exists:
+ * they happen with no media stream, so without them a call that rang out is
+ * indistinguishable from one that was never placed.
+ */
+export type CallOutcome =
+  | "initiated"
+  | "ringing"
+  | "in-progress"
+  | "completed"
+  | "busy"
+  | "no-answer"
+  | "failed"
+  | "canceled";
+
+export interface CallStatusEvent {
+  readonly callId: CallId;
+  readonly status: CallOutcome;
+  readonly direction: CallDirection;
+  /** Billable seconds, present once the call is over. */
+  readonly durationSeconds: number | null;
+  /** Set when the carrier explains a failure. 486 is busy, 480 unavailable. */
+  readonly sipCode: number | null;
+}
+
+/**
+ * Whether the call ever reached a person.
+ *
+ * "completed" alone is not enough: a call that rings out and one that was answered and
+ * hung up both end, and only one of them is worth retrying.
+ */
+export const wasAnswered = (event: CallStatusEvent): boolean =>
+  event.status === "in-progress" ||
+  (event.status === "completed" && (event.durationSeconds ?? 0) > 0);
+
 /** Where the carrier should open the bidirectional media socket for this call. */
 export interface AnswerInstruction {
   readonly mediaStreamUrl: string;
@@ -163,6 +200,11 @@ export interface TelephonyProvider {
   placeCall(request: PlaceCallRequest): Promise<PlacedCall>;
   /** Hang up a call in progress. Used when the thing that answered was a voicemail. */
   endCall(callId: CallId): Promise<void>;
+  /**
+   * Read a call lifecycle callback. Null when the payload is not one, rather than
+   * throwing: a carrier that adds a field must not take the process down.
+   */
+  parseCallStatus(payload: unknown): CallStatusEvent | null;
   /** Adopt a media socket the carrier has just opened. */
   attachMediaStream(socket: MediaSocket, handlers: MediaStreamHandlers): void;
 }

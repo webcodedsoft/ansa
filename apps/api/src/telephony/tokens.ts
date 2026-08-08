@@ -16,3 +16,6 @@ export const TENANT_PARAM = "tenantId";
 
 /** Path the carrier POSTs the answering-machine verdict to. */
 export const AMD_WEBHOOK_PATH = "/telephony/amd";
+
+/** Path the carrier POSTs call lifecycle events to. */
+export const STATUS_WEBHOOK_PATH = "/telephony/status";

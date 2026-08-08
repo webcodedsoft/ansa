@@ -40,6 +40,7 @@ const placed = await provider.placeCall({
   from: env.OUTBOUND_FROM ?? "+18148592625",
   mediaStreamUrl: `${wsOrigin}/telephony/media`,
   amdCallbackUrl: `${env.PUBLIC_BASE_URL}/telephony/amd`,
+  statusCallbackUrl: `${env.PUBLIC_BASE_URL}/telephony/status`,
   // Outbound already knows whose call this is; it travels out here rather than being
   // re-derived from caller ID on the way back in.
   ...(tenantId === undefined ? {} : { parameters: { tenantId } }),

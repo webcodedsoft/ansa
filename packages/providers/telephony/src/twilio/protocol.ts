@@ -209,3 +209,46 @@ export const renderConnectStream = (
     '<?xml version="1.0" encoding="UTF-8"?>' + `<Response><Connect>${stream}</Connect></Response>`
   );
 };
+
+const OUTCOMES = new Set([
+  "initiated", "ringing", "in-progress", "completed", "busy", "no-answer", "failed", "canceled",
+]);
+
+/**
+ * Reads a Twilio call status callback.
+ *
+ * Twilio reports direction as "outbound-api" or "outbound-dial" depending on how the
+ * call was created; both are outbound as far as anything above the adapter is concerned,
+ * and leaking that distinction upward would be a vendor word in orchestration code.
+ */
+export const parseStatusCallback = (
+  payload: unknown,
+): {
+  callSid: string;
+  status: string;
+  outbound: boolean;
+  durationSeconds: number | null;
+  sipCode: number | null;
+} | null => {
+  if (!isRecord(payload)) return null;
+
+  const callSid = readString(payload["CallSid"]);
+  const status = readString(payload["CallStatus"]);
+  if (callSid === null || status === null || !OUTCOMES.has(status)) return null;
+
+  // CallDuration on the completed callback, Duration elsewhere; absent while in flight.
+  const rawDuration = readString(payload["CallDuration"]) ?? readString(payload["Duration"]);
+  const duration = rawDuration === null ? null : Number.parseInt(rawDuration, 10);
+
+  const rawSip = readString(payload["SipResponseCode"]);
+  const sipCode = rawSip === null ? null : Number.parseInt(rawSip, 10);
+
+  return {
+    callSid,
+    status,
+    outbound: (readString(payload["Direction"]) ?? "inbound").startsWith("outbound"),
+    durationSeconds: duration !== null && Number.isFinite(duration) ? duration : null,
+    sipCode: sipCode !== null && Number.isFinite(sipCode) ? sipCode : null,
+  };
+};
+

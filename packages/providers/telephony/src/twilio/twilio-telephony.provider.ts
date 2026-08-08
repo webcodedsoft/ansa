@@ -5,6 +5,8 @@ import { asCallId } from "@ansa/shared";
 import type { CallId } from "@ansa/shared";
 
 import type {
+  CallOutcome,
+  CallStatusEvent,
   AnswerInstruction,
   CarrierResponse,
   InboundCall,
@@ -15,7 +17,12 @@ import type {
   PlaceCallRequest,
   PlacedCall,
 } from "../types";
-import { parseFrame, renderConnectStream, toAudioEncoding } from "./protocol";
+import {
+  parseFrame,
+  parseStatusCallback,
+  renderConnectStream,
+  toAudioEncoding,
+} from "./protocol";
 import { TwilioMediaStream } from "./twilio-media-stream";
 
 export interface TwilioProviderOptions {
@@ -151,6 +158,18 @@ export const createTwilioTelephonyProvider = (
       const detail = await response.text().catch(() => "");
       throw new Error(`Could not end call ${callId} (${response.status}): ${detail.slice(0, 200)}`);
     }
+  },
+
+  parseCallStatus: (payload: unknown): CallStatusEvent | null => {
+    const parsed = parseStatusCallback(payload);
+    if (parsed === null) return null;
+    return {
+      callId: asCallId(parsed.callSid),
+      status: parsed.status as CallOutcome,
+      direction: parsed.outbound ? "outbound" : "inbound",
+      durationSeconds: parsed.durationSeconds,
+      sipCode: parsed.sipCode,
+    };
   },
 
   placeCall: async (request: PlaceCallRequest): Promise<PlacedCall> => {
