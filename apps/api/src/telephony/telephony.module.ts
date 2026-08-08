@@ -18,6 +18,7 @@ import {
   TENANT_REGISTRY,
   TTS_PROVIDER,
 } from "./tokens";
+import { ViewerController } from "../viewer/viewer.controller";
 import { VoiceController } from "./voice.controller";
 
 /**
@@ -25,7 +26,7 @@ import { VoiceController } from "./voice.controller";
  * and nothing else — which is the whole point of the adapter boundary.
  */
 @Module({
-  controllers: [VoiceController],
+  controllers: [VoiceController, ViewerController],
   providers: [
     { provide: APP_CONFIG, useFactory: (): AppConfig => loadConfig() },
     { provide: LOGGER, useFactory: (): Logger => createLogger({ component: "api" }) },
@@ -92,6 +93,6 @@ import { VoiceController } from "./voice.controller";
     },
     MediaGateway,
   ],
-  exports: [MediaGateway, APP_CONFIG, LOGGER],
+  exports: [MediaGateway, APP_CONFIG, LOGGER, DATA_SOURCE],
 })
 export class TelephonyModule {}

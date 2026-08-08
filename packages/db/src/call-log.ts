@@ -199,3 +199,124 @@ export const recordTurns = async (
   });
 };
 
+// ---------------------------------------------------------------------------
+// Reading calls back — the viewer's half (R8.1)
+// ---------------------------------------------------------------------------
+
+export interface CallSummary {
+  readonly id: string;
+  readonly carrierCallId: string;
+  readonly direction: string;
+  readonly dialled: string;
+  readonly caller: string | null;
+  readonly answeredAt: Date | null;
+  readonly endedAt: Date | null;
+  readonly endReason: string | null;
+  readonly durationSeconds: number | null;
+  readonly turnCount: number;
+}
+
+/** Most recent first, because a reviewer wants the call that just went wrong. */
+export const listCalls = async (
+  dataSource: Db,
+  tenantId: TenantId,
+  limit = 50,
+): Promise<readonly CallSummary[]> =>
+  withTenant(dataSource, tenantId, async (scope) => {
+    const rows = await scope.query<Record<string, unknown>>(
+      `select c.id, c.carrier_call_id, c.direction, c.dialled, c.caller,
+              c.answered_at, c.ended_at, c.end_reason, c.duration_seconds,
+              (select count(*) from turns t where t.call_id = c.id) as turn_count
+         from calls c
+        order by c.created_at desc
+        limit $1`,
+      [Math.min(limit, 200)],
+    );
+    return rows.map((r) => ({
+      id: String(r["id"]),
+      carrierCallId: String(r["carrier_call_id"]),
+      direction: String(r["direction"]),
+      dialled: String(r["dialled"]),
+      caller: r["caller"] === null ? null : String(r["caller"]),
+      answeredAt: (r["answered_at"] as Date | null) ?? null,
+      endedAt: (r["ended_at"] as Date | null) ?? null,
+      endReason: r["end_reason"] === null ? null : String(r["end_reason"]),
+      durationSeconds: r["duration_seconds"] === null ? null : Number(r["duration_seconds"]),
+      turnCount: Number(r["turn_count"] ?? 0),
+    }));
+  });
+
+export interface CallDetail {
+  readonly summary: CallSummary;
+  readonly events: readonly { kind: string; offsetMs: number | null; detail: unknown; at: Date }[];
+  readonly transcripts: readonly {
+    text: string;
+    correctedText: string | null;
+    confidence: number | null;
+    offsetMs: number;
+    provider: string;
+  }[];
+}
+
+/**
+ * One call, everything about it.
+ *
+ * Scoped like every other read: a viewer that could show another tenant's transcripts
+ * would be the most damaging leak in the product, since transcripts are the one place
+ * callers say their policy numbers out loud.
+ */
+export const loadCall = async (
+  dataSource: Db,
+  tenantId: TenantId,
+  callId: string,
+): Promise<CallDetail | null> =>
+  withTenant(dataSource, tenantId, async (scope) => {
+    const calls = await scope.query<Record<string, unknown>>(
+      `select c.id, c.carrier_call_id, c.direction, c.dialled, c.caller,
+              c.answered_at, c.ended_at, c.end_reason, c.duration_seconds,
+              (select count(*) from turns t where t.call_id = c.id) as turn_count
+         from calls c where c.id = $1`,
+      [callId],
+    );
+    const r = calls[0];
+    if (r === undefined) return null;
+
+    const events = await scope.query<Record<string, unknown>>(
+      "select kind, offset_ms, detail, at from call_events where call_id = $1 order by id",
+      [callId],
+    );
+    const transcripts = await scope.query<Record<string, unknown>>(
+      `select text, corrected_text, confidence, offset_ms, provider
+         from transcripts where call_id = $1 order by offset_ms`,
+      [callId],
+    );
+
+    return {
+      summary: {
+        id: String(r["id"]),
+        carrierCallId: String(r["carrier_call_id"]),
+        direction: String(r["direction"]),
+        dialled: String(r["dialled"]),
+        caller: r["caller"] === null ? null : String(r["caller"]),
+        answeredAt: (r["answered_at"] as Date | null) ?? null,
+        endedAt: (r["ended_at"] as Date | null) ?? null,
+        endReason: r["end_reason"] === null ? null : String(r["end_reason"]),
+        durationSeconds: r["duration_seconds"] === null ? null : Number(r["duration_seconds"]),
+        turnCount: Number(r["turn_count"] ?? 0),
+      },
+      events: events.map((e) => ({
+        kind: String(e["kind"]),
+        offsetMs: e["offset_ms"] === null ? null : Number(e["offset_ms"]),
+        detail: e["detail"],
+        at: e["at"] as Date,
+      })),
+      transcripts: transcripts.map((t) => ({
+        text: String(t["text"]),
+        correctedText: t["corrected_text"] === null ? null : String(t["corrected_text"]),
+        confidence: t["confidence"] === null ? null : Number(t["confidence"]),
+        offsetMs: Number(t["offset_ms"]),
+        provider: String(t["provider"]),
+      })),
+    };
+  });
+

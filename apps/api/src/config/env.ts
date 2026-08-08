@@ -70,6 +70,11 @@ export interface AppConfig {
    * is unreachable at boot. Must be the `ansa_app` role, never `postgres` (see 0002).
    */
   readonly databaseUrl: string | undefined;
+  /**
+   * Shared secret for the internal call viewer. Unset disables the viewer entirely rather
+   * than disabling its authentication.
+   */
+  readonly viewerToken: string | undefined;
 }
 
 const required = (env: NodeJS.ProcessEnv, key: string): string => {
@@ -132,5 +137,6 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
     deepgramEotTimeoutMs: Number(env["DEEPGRAM_EOT_TIMEOUT_MS"] ?? 3000),
 
     databaseUrl: optional(env, "DATABASE_URL"),
+    viewerToken: optional(env, "VIEWER_TOKEN"),
   };
 };
