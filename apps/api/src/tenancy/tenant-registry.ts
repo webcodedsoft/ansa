@@ -1,5 +1,5 @@
 import { type Logger, type TenantId } from "@ansa/shared";
-import { loadTenantConfig, resolveTenantByNumber, type Db } from "@ansa/db";
+import { loadTenantForNumber, type Db } from "@ansa/db";
 
 
 import { BASE_KEYTERMS, MAX_KEYTERMS } from "./defaults";
@@ -85,7 +85,7 @@ export interface TenantRegistryOptions {
  */
 export const createTenantRegistry = (options: TenantRegistryOptions) => {
   const { dataSource, log } = options;
-  const ttlMs = options.ttlMs ?? 60_000;
+  const ttlMs = options.ttlMs ?? 600_000;
   const now = options.now ?? Date.now;
 
   const byNumber = new Map<string, Entry>();
@@ -108,20 +108,12 @@ export const createTenantRegistry = (options: TenantRegistryOptions) => {
       if (dataSource === null) return UNKNOWN_TENANT;
 
       try {
-        const tenantId = await resolveTenantByNumber(dataSource, dialled);
-        if (tenantId === null) {
+        const config = await loadTenantForNumber(dataSource, dialled);
+        if (config === null) {
           log.warn("dialled number is not registered to a tenant", { dialled });
           return remember(dialled, UNKNOWN_TENANT);
         }
-
-        const config = await loadTenantConfig(dataSource, tenantId);
-        if (config === null) {
-          // The resolution function bypasses RLS by design; loading the row does not. A
-          // gap between the two means the policy is doing something unexpected, which is
-          // a security signal, not a missing-config signal.
-          log.error("tenant resolved but its config is unreadable", { tenantId, dialled });
-          return remember(dialled, UNKNOWN_TENANT);
-        }
+        const tenantId = config.tenantId;
 
         return remember(dialled, {
           tenantId,

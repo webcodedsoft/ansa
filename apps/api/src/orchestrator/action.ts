@@ -128,6 +128,26 @@ const readsOutANumber = (words: readonly string[]): boolean =>
 const hasCue = (text: string, cues: readonly string[]): boolean =>
   cues.some((cue) => text.includes(cue));
 
+/**
+ * The caller is asking for something to happen, not asking a question about a fact.
+ *
+ * Only unambiguous directive forms. "Can you" is deliberately absent: "can you hear me"
+ * is a real yes/no question and far more common on a bad line than "can you take my
+ * details".
+ */
+const REQUEST_CUES: readonly string[] = [
+  "i want",
+  "i need",
+  "i would like",
+  "i d like",
+  "i m calling",
+  "i am calling",
+  "please can",
+  "please could",
+  "help me",
+  "could you please",
+];
+
 const wordCount = (text: string): number => (text.length === 0 ? 0 : text.split(" ").length);
 
 /**
@@ -163,6 +183,11 @@ export const classify = (text: string): CallerAction => {
   // Long, no question in it, and carrying trouble lexis: the caller is telling you
   // something is wrong. The right reply is short — acknowledge, then ask one thing.
   if (words > 20 && hasCue(flat, TROUBLES_CUES)) return "troubles";
+
+  // A request is not a yes/no question, however short it is. On a live call "I want
+  // you to definitely take my policy number" was nine words, fell through to polar, and
+  // got answered in five - the caller asked for something and was brushed off.
+  if (hasCue(flat, REQUEST_CUES)) return "statement";
 
   if (words <= 12) return "polar";
   return "statement";

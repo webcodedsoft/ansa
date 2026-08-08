@@ -21,8 +21,8 @@ const silentLog = () => {
  */
 const fakeDb = (rows: { resolve?: unknown[]; config?: unknown[] }) => ({
   query: vi.fn(async (sql: string) => {
-    if (sql.includes("tenant_for_number")) return rows.resolve ?? [{ id: null }];
-    if (sql.includes("select id, name")) return rows.config ?? [];
+    // One round trip now: resolution and configuration come back together (0004).
+    if (sql.includes("tenant_config_for_number")) return rows.config ?? [];
     return [];
   }),
   // withTenant opens a transaction and sets app.tenant_id inside it, so the fake has
@@ -46,7 +46,6 @@ const TENANT = "11111111-1111-4111-8111-111111111111";
 
 const configuredDb = (keyterms: string[]) =>
   fakeDb({
-    resolve: [{ id: TENANT }],
     config: [
       {
         id: TENANT,
@@ -142,7 +141,7 @@ describe("tenant registry", () => {
   it("warns and uses defaults when the number is not registered", async () => {
     const log = silentLog();
     const registry = createTenantRegistry({
-      dataSource: fakeDb({ resolve: [{ id: null }] }) as never,
+      dataSource: fakeDb({ config: [] }) as never,
       log: log as never,
     });
 

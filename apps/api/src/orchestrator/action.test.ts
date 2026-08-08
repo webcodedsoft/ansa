@@ -96,3 +96,17 @@ describe("classify", () => {
     expect(of("   ")).toBe("statement");
   });
 });
+
+describe("requests are not yes/no questions", () => {
+  it("gives a request room to be answered", () => {
+    // 2026-08-08, live call. Nine words, fell through to polar, answered in five.
+    expect(classify("i want you to definitely take my policy number")).toBe("statement");
+    expect(classify("i need to renew my cover")).toBe("statement");
+    expect(classify("i am calling about my premium")).toBe("statement");
+  });
+
+  it("still treats a real short question as polar", () => {
+    expect(classify("is my policy still active")).toBe("polar");
+    expect(classify("can you hear me")).toBe("polar");
+  });
+});

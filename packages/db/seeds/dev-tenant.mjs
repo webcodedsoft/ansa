@@ -20,18 +20,25 @@ const client = new Client({ connectionString: url, ssl: { rejectUnauthorized: fa
 await client.connect();
 
 // Terms on top of the base list in apps/api/src/tenancy/defaults.ts, not instead of it.
+//
+// Place and person names were here - Ikeja, Yaba, Lekki, Adebayo, Chukwu, Olabisi - and
+// they were actively harmful. On a live call the caller said their own name and the
+// transcript came back "Hi. My name is Ikeja." Boosting is a bias, not a hint: it makes
+// the listed token WIN ties against everything unlisted, so a name the tenant never
+// hears beats the name the caller actually said.
+//
+// The rule this bought: boost vocabulary that is closed and repeated, never vocabulary
+// that competes with what callers say freely. Products, coverage types and the company
+// name qualify. Personal names never do, because the caller's name is unknown by
+// definition and is exactly what a boosted name will swallow.
 const keyterms = [
   "Kano General",
   "third party",
   "comprehensive",
   "motor cover",
   "fire and special perils",
-  "Ikeja",
-  "Yaba",
-  "Lekki",
-  "Adebayo",
-  "Chukwu",
-  "Olabisi",
+  "no claims discount",
+  "certificate",
 ];
 
 const { rows } = await client.query(

@@ -73,3 +73,40 @@ export const loadTenantConfig = async (
       configVersion: row.config_version,
     };
   });
+
+/**
+ * Resolution and configuration in one round trip (R7.3).
+ *
+ * The two-step version cost two seconds on the answer path, because loading the config
+ * under RLS means opening a transaction to set the tenant context — six round trips to
+ * a remote database before the carrier gets its TwiML. See migration 0004.
+ */
+export const loadTenantForNumber = async (
+  dataSource: Db,
+  dialledNumber: string,
+): Promise<TenantConfig | null> => {
+  const rows = (await dataSource.query(
+    "select * from app.tenant_config_for_number($1)",
+    [dialledNumber],
+  )) as {
+    id: string;
+    name: string;
+    keyterms: string[] | null;
+    voice_id: string | null;
+    greeting: string | null;
+    persona: string | null;
+    config_version: number;
+  }[];
+
+  const row = rows[0];
+  if (row === undefined) return null;
+  return {
+    tenantId: asTenantId(row.id),
+    name: row.name,
+    keyterms: row.keyterms ?? [],
+    voiceId: row.voice_id,
+    greeting: row.greeting,
+    persona: row.persona,
+    configVersion: row.config_version,
+  };
+};
