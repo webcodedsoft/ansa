@@ -2,7 +2,9 @@ import {
   recordCallEnded,
   recordCallEvents,
   recordCallStarted,
+  recordTranscripts,
   type Db,
+  type RecordedTranscript,
   type StartedCall,
 } from "@ansa/db";
 import type { Logger } from "@ansa/shared";
@@ -26,6 +28,14 @@ export interface CallRecorder {
   /** Fire and forget. Every later call is a no-op until this resolves. */
   started(call: StartedCall): void;
   event(kind: string, detail?: Readonly<Record<string, unknown>>, offsetMs?: number): void;
+  /**
+   * A final transcript, as the transcriber produced it.
+   *
+   * Its own table rather than an event, because this is where the R9.2 loop lives:
+   * `corrected_text` alongside it is a human's correction, and the pair is what turns one
+   * caller's mishearing into a keyterm and a test case for every tenant.
+   */
+  transcript(transcript: RecordedTranscript): void;
   ended(reason: string, carrierStatus?: string | null, durationSeconds?: number | null): void;
 }
 
@@ -33,6 +43,7 @@ export interface CallRecorder {
 export const nullRecorder: CallRecorder = {
   started: () => undefined,
   event: () => undefined,
+  transcript: () => undefined,
   ended: () => undefined,
 };
 
@@ -53,11 +64,25 @@ export const createCallRecorder = (deps: {
   // call are the ones worth having, and dropping them because the row did not exist yet
   // would lose the greeting and the first caller turn every time.
   let buffer: { kind: string; offsetMs?: number | null; detail?: Readonly<Record<string, unknown>> }[] = [];
+  let transcripts: RecordedTranscript[] = [];
   let timer: NodeJS.Timeout | null = null;
   let closed = false;
 
   const flush = (): void => {
-    if (callRowId === null || tenantId === null || buffer.length === 0) return;
+    if (callRowId === null || tenantId === null) return;
+
+    if (transcripts.length > 0) {
+      const words = transcripts;
+      transcripts = [];
+      void recordTranscripts(dataSource, tenantId, callRowId, words).catch((error: unknown) => {
+        log.error("could not write transcripts", {
+          dropped: words.length,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
+
+    if (buffer.length === 0) return;
     const batch = buffer;
     buffer = [];
     void recordCallEvents(dataSource, tenantId, callRowId, batch).catch((error: unknown) => {
@@ -99,6 +124,15 @@ export const createCallRecorder = (deps: {
       // failed, must not accumulate for its whole duration.
       if (buffer.length > FLUSH_AT * 4) buffer = buffer.slice(-FLUSH_AT * 4);
       if (buffer.length >= FLUSH_AT) flush();
+      else arm();
+    },
+
+    transcript: (t) => {
+      if (closed) return;
+      transcripts.push(t);
+      // Same bound as events: a call whose row never appeared must not accumulate.
+      if (transcripts.length > FLUSH_AT * 4) transcripts = transcripts.slice(-FLUSH_AT * 4);
+      if (transcripts.length >= FLUSH_AT) flush();
       else arm();
     },
 

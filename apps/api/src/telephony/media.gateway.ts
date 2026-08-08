@@ -319,6 +319,7 @@ export class MediaGateway implements OnApplicationShutdown {
       // between the buffer closing and the orchestrator subscribing.
       initialAudio: drainEarlyAudio(),
       recorder,
+      listenProvider: this.config.listenProvider,
       llm: this.llm,
       tts: this.tts,
       voiceId: this.config.elevenLabsVoiceId,

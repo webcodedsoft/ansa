@@ -147,4 +147,53 @@ describe("call recorder", () => {
 
     expect(() => r.ended("done")).not.toThrow();
   });
+
+  it("writes final transcripts to their own table", async () => {
+    const db = fakeDb((sql) => (sql.includes("insert into calls") ? [{ id: "row-1" }] : []));
+    const r = createCallRecorder({ dataSource: db.ds as never, log: silentLog() as never });
+    r.started(started);
+    await settle();
+
+    r.transcript({ text: "my policy number", confidence: 0.82, offsetMs: 1200, provider: "openai" });
+    r.ended("carrier sent stop");
+    await settle();
+
+    // Its own table, not an event: corrected_text sits beside it, and that pair is the
+    // R9.2 loop.
+    expect(db.seen.some((s) => s.includes("insert into transcripts"))).toBe(true);
+  });
+
+  it("does not lose a transcript when the event buffer is empty", async () => {
+    // flush() used to return early on an empty event buffer, which would have stranded
+    // every transcript on a call that produced no other events.
+    const db = fakeDb((sql) => (sql.includes("insert into calls") ? [{ id: "row-1" }] : []));
+    const r = createCallRecorder({ dataSource: db.ds as never, log: silentLog() as never });
+    r.started(started);
+    await settle();
+
+    r.transcript({ text: "hello", confidence: null, offsetMs: 0, provider: "openai" });
+    r.ended("done");
+    await settle();
+
+    expect(db.seen.some((s) => s.includes("insert into transcripts"))).toBe(true);
+  });
+
+  it("survives a transcript write failing", async () => {
+    const log = silentLog();
+    const db = fakeDb((sql) => {
+      if (sql.includes("insert into calls")) return [{ id: "row-1" }];
+      if (sql.includes("insert into transcripts")) throw new Error("column gone");
+      return [];
+    });
+    const r = createCallRecorder({ dataSource: db.ds as never, log: log as never });
+    r.started(started);
+    await settle();
+
+    expect(() => {
+      r.transcript({ text: "x", confidence: null, offsetMs: 0, provider: "openai" });
+      r.ended("done");
+    }).not.toThrow();
+    await settle();
+    expect(log.error).toHaveBeenCalled();
+  });
 });

@@ -97,6 +97,8 @@ export interface OrchestratorDeps {
    * behaves exactly as before and every existing test stays valid.
    */
   readonly recorder?: CallRecorder;
+  /** Named on every transcript, so a corpus can tell which provider produced what. */
+  readonly listenProvider?: string;
 }
 
 /** A sentence that has been handed to TTS, and where its audio sits in the turn. */
@@ -1169,6 +1171,12 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     log.info("caller said", { text, offsetMs: transcript.offsetMs });
     // The raw text, never the repaired one: this is the eval corpus ground truth (R9.2.3).
     record.event("caller said", { text, corrections: heard.corrections }, transcript.offsetMs);
+    record.transcript({
+      text,
+      confidence: transcript.confidence,
+      offsetMs: transcript.offsetMs,
+      provider: deps.listenProvider ?? "unknown",
+    });
     if (heard.corrections.length > 0) {
       log.info("repaired a known mishearing", { corrections: heard.corrections });
     }

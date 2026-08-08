@@ -123,3 +123,75 @@ export const recordCallEnded = async (dataSource: Db, call: EndedCall): Promise<
     );
   });
 };
+
+export interface RecordedTranscript {
+  readonly text: string;
+  readonly confidence: number | null;
+  readonly offsetMs: number;
+  readonly provider: string;
+}
+
+/**
+ * Final transcripts, batched.
+ *
+ * Only finals. Interims exist to make the agent feel responsive and are superseded
+ * within a second; storing them would multiply the table by an order of magnitude for
+ * text nobody will ever review.
+ *
+ * This table is where the R9.2 loop actually lives: `corrected_text` is a human's
+ * correction of what the transcriber heard, and the pair of columns is what turns one
+ * caller's mishearing into a test case and a keyterm for every tenant.
+ */
+export const recordTranscripts = async (
+  dataSource: Db,
+  tenantId: TenantId,
+  callRowId: string,
+  transcripts: readonly RecordedTranscript[],
+): Promise<void> => {
+  if (transcripts.length === 0) return;
+  await withTenant(dataSource, tenantId, async (scope) => {
+    const values: unknown[] = [];
+    const tuples = transcripts.map((t, i) => {
+      const b = i * 6;
+      values.push(tenantId, callRowId, t.text, t.confidence, t.offsetMs, t.provider);
+      return `($${b + 1}, $${b + 2}, 'final', $${b + 3}, $${b + 4}, $${b + 5}, $${b + 6})`;
+    });
+    await scope.query(
+      `insert into transcripts (tenant_id, call_id, kind, text, confidence, offset_ms, provider)
+       values ${tuples.join(", ")}`,
+      values,
+    );
+  });
+};
+
+export interface RecordedTurn {
+  readonly seq: number;
+  readonly speaker: "caller" | "agent";
+  readonly startedOffsetMs: number;
+  readonly endedOffsetMs: number | null;
+  readonly bargedInAtMs: number | null;
+}
+
+export const recordTurns = async (
+  dataSource: Db,
+  tenantId: TenantId,
+  callRowId: string,
+  turns: readonly RecordedTurn[],
+): Promise<void> => {
+  if (turns.length === 0) return;
+  await withTenant(dataSource, tenantId, async (scope) => {
+    const values: unknown[] = [];
+    const tuples = turns.map((t, i) => {
+      const b = i * 6;
+      values.push(tenantId, callRowId, t.seq, t.speaker, t.startedOffsetMs, t.endedOffsetMs);
+      return `($${b + 1}, $${b + 2}, $${b + 3}, $${b + 4}, $${b + 5}, $${b + 6})`;
+    });
+    await scope.query(
+      `insert into turns (tenant_id, call_id, seq, speaker, started_offset_ms, ended_offset_ms)
+       values ${tuples.join(", ")}
+       on conflict do nothing`,
+      values,
+    );
+  });
+};
+
