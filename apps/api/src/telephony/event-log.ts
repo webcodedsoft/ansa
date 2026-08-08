@@ -79,6 +79,34 @@ export const createCallRecorder = (deps: {
   let turns: RecordedTurn[] = [];
   let timer: NodeJS.Timeout | null = null;
   let closed = false;
+  /**
+   * An ending that arrived before the call row existed.
+   *
+   * Found by driving the real recorder against the real database: a call that ends before
+   * the insert returns had its ending dropped outright — no end_reason, no duration, the
+   * row left open forever. Unit tests missed it because they waited for the insert first,
+   * which is exactly the kindness a test should not extend.
+   *
+   * On a normal call the insert wins the race easily. The calls that lose it are the short
+   * ones — rang out, hung up immediately, database slow — and those are precisely the
+   * calls worth being able to explain afterwards.
+   */
+  let pendingEnd: Parameters<CallRecorder["ended"]> | null = null;
+
+  const closeRow = (reason: string, carrierStatus?: string | null, durationSeconds?: number | null): void => {
+    if (callRowId === null || tenantId === null) return;
+    void recordCallEnded(dataSource, {
+      tenantId,
+      callRowId,
+      endReason: reason,
+      carrierStatus: carrierStatus ?? null,
+      durationSeconds: durationSeconds ?? null,
+    }).catch((error: unknown) => {
+      log.error("could not close the call record", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  };
 
   const flush = (): void => {
     if (callRowId === null || tenantId === null) return;
@@ -132,6 +160,12 @@ export const createCallRecorder = (deps: {
         .then((id) => {
           callRowId = id;
           flush();
+          // The call may already be over. Apply the ending that had nowhere to go.
+          if (pendingEnd !== null) {
+            const [reason, carrierStatus, durationSeconds] = pendingEnd;
+            pendingEnd = null;
+            closeRow(reason, carrierStatus, durationSeconds);
+          }
         })
         .catch((error: unknown) => {
           log.error("could not record the call, so nothing about it will be stored", {
@@ -171,18 +205,12 @@ export const createCallRecorder = (deps: {
       closed = true;
       if (timer !== null) clearTimeout(timer);
       flush();
-      if (callRowId === null || tenantId === null) return;
-      void recordCallEnded(dataSource, {
-        tenantId,
-        callRowId,
-        endReason: reason,
-        carrierStatus: carrierStatus ?? null,
-        durationSeconds: durationSeconds ?? null,
-      }).catch((error: unknown) => {
-        log.error("could not close the call record", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
+      if (callRowId === null) {
+        // Held rather than dropped. The insert is still in flight and will apply this.
+        pendingEnd = [reason, carrierStatus, durationSeconds];
+        return;
+      }
+      closeRow(reason, carrierStatus, durationSeconds);
     },
   };
 };

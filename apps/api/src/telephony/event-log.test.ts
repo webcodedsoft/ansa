@@ -196,4 +196,28 @@ describe("call recorder", () => {
     await settle();
     expect(log.error).toHaveBeenCalled();
   });
+
+  it("closes a call that ended before its row existed", async () => {
+    // Found by driving the real recorder against the real database, not by a unit test:
+    // the ending was dropped outright and the row stayed open forever. Every other test
+    // here awaited the insert first, which is the kindness that hid it.
+    let resolveInsert: (v: unknown) => void = () => undefined;
+    const db = fakeDb((sql) =>
+      sql.includes("insert into calls")
+        ? new Promise((res) => { resolveInsert = res; })
+        : [],
+    );
+    const r = createCallRecorder({ dataSource: db.ds as never, log: silentLog() as never });
+
+    r.started(started);
+    r.event("conversation started");
+    r.ended("carrier sent stop", "completed", 37);
+
+    await settle();
+    resolveInsert([{ id: "row-1" }]);
+    await settle();
+
+    const update = db.seen.find((s) => s.includes("update calls"));
+    expect(update, "the call was never closed").toBeDefined();
+  });
 });
