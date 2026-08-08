@@ -1,5 +1,6 @@
 import type { CallId, Logger, TenantId } from "@ansa/shared";
 
+import { breakerKey, type CircuitBreaker } from "./breaker";
 import { createConfirmationStore, fingerprintArgs } from "./confirmation";
 import { CONFIRMATION_TTL_MS, HARD_TIMEOUT_MS, SOFT_TIMEOUT_MS } from "./limits";
 import { redactArgs } from "./redact";
@@ -38,6 +39,21 @@ export interface DispatcherOptions {
   readonly softTimeoutMs?: number;
   readonly hardTimeoutMs?: number;
   readonly confirmationTtlMs?: number;
+  /**
+   * R5.2.3. Shared across calls, unlike everything else here — a breaker that lived as
+   * long as one call would have nothing to remember and would never open. The dispatcher
+   * is per call; this is passed in from the process that owns several.
+   */
+  readonly breaker?: CircuitBreaker;
+  /**
+   * Extra attempts for a read that fails, inside the same hard ceiling.
+   *
+   * Reads only, and that is not a tuning choice. A write that timed out may well have
+   * been applied — the response is what was lost, not necessarily the effect — so retrying
+   * it risks doing it twice, and doing somebody's bank transfer twice is not a latency
+   * problem.
+   */
+  readonly readRetries?: number;
 }
 
 export interface ToolDispatcher {
@@ -50,6 +66,11 @@ const FAILURE_SPEECH: Readonly<Record<FailureReason, string>> = {
   // pretend the call is still in flight and it does not go quiet.
   timeout: "Sorry, that's taking longer than it should. Let me take your details and follow up.",
   "adapter-error": "Sorry, I couldn't get that just now.",
+  // Deliberately not "the system is down": the caller does not need our diagnosis, and
+  // the honest content is the same as a timeout — it did not happen, and here is what
+  // happens instead.
+  "circuit-open":
+    "Sorry, I can't reach that at the moment. Let me take your details and someone will follow up.",
   "stale-confirmation": "Sorry, let me go over that once more before I change anything.",
   "confirmation-mismatch": "Sorry, let me go over that once more before I change anything.",
 };
@@ -99,18 +120,28 @@ export const modelMessage = (outcome: DispatchOutcome): string => {
 };
 
 export const createToolDispatcher = (options: DispatcherOptions): ToolDispatcher => {
-  const { registry, log, holding } = options;
+  const { registry, log, holding, breaker } = options;
   const now = options.now ?? Date.now;
   const softMs = options.softTimeoutMs ?? SOFT_TIMEOUT_MS;
   const hardMs = options.hardTimeoutMs ?? HARD_TIMEOUT_MS;
+  const readRetries = options.readRetries ?? 1;
   const confirmations = createConfirmationStore(options.confirmationTtlMs ?? CONFIRMATION_TTL_MS);
 
   /**
-   * Runs the adapter under both ceilings. The only place in the codebase that calls
-   * `adapter.execute` — a second call site here would be the second dispatch path
-   * R5.2.0 exists to prevent.
+   * Runs the adapter under both ceilings, retrying a read inside the same deadline.
+   *
+   * The only place in the codebase that calls `adapter.execute` — a second call site here
+   * would be the second dispatch path R5.2.0 exists to prevent. Everything a tenant's own
+   * endpoint needs (ceilings, retry, holding speech, cancellation) is therefore true of
+   * the platform tools too, and neither route can drift from the other.
    */
-  const run = async (registration: Registration, call: ToolCall, context: HoldContext): Promise<Settled> => {
+  const run = async (
+    registration: Registration,
+    call: ToolCall,
+    context: HoldContext,
+    ceilingMs: number,
+    attempts: number,
+  ): Promise<Settled> => {
     const controller = new AbortController();
     let softTimer: ReturnType<typeof setTimeout> | null = null;
     let hardTimer: ReturnType<typeof setTimeout> | null = null;
@@ -118,31 +149,42 @@ export const createToolDispatcher = (options: DispatcherOptions): ToolDispatcher
     // Before the await, before execute. This ordering is the requirement.
     holding?.start(context);
 
-    try {
-      const work = registration.adapter.execute({
-        tenantId: call.tenantId,
-        callId: call.callId,
-        name: call.name,
-        args: call.args,
-        signal: controller.signal,
-      });
+    /**
+     * Attempts share one AbortController and one deadline, so a retry cannot buy the
+     * caller a second three seconds of silence. Whatever remains of the ceiling is all
+     * the second attempt gets, and the hard timer below ends the race either way.
+     */
+    const attemptAll = async (): Promise<Settled> => {
+      let last: unknown;
+      for (let attempt = 1; attempt <= attempts; attempt += 1) {
+        try {
+          const value = await registration.adapter.execute({
+            tenantId: call.tenantId,
+            callId: call.callId,
+            name: call.name,
+            args: call.args,
+            signal: controller.signal,
+          });
+          return { state: "value", value };
+        } catch (error) {
+          last = error;
+          if (controller.signal.aborted) break;
+        }
+      }
+      return { state: "error", error: last };
+    };
 
+    try {
       return await Promise.race<Settled>([
-        work.then(
-          (value) => ({ state: "value" as const, value }),
-          (error: unknown) => ({ state: "error" as const, error }),
-        ),
+        attemptAll(),
         new Promise<Settled>((resolve) => {
-          softTimer = setTimeout(() => holding?.slow?.(context), Math.min(softMs, hardMs));
+          softTimer = setTimeout(() => holding?.slow?.(context), Math.min(softMs, ceilingMs));
           hardTimer = setTimeout(() => {
             controller.abort();
             resolve({ state: "timeout" });
-          }, hardMs);
+          }, ceilingMs);
         }),
       ]);
-    } catch (error) {
-      // execute() threw synchronously rather than rejecting. Same outcome either way.
-      return { state: "error", error };
     } finally {
       if (softTimer !== null) clearTimeout(softTimer);
       if (hardTimer !== null) clearTimeout(hardTimer);
@@ -237,10 +279,33 @@ export const createToolDispatcher = (options: DispatcherOptions): ToolDispatcher
         if (redeemed === "mismatch") return fail("confirmation-mismatch", tier);
       }
 
-      const settled = await run(registration, call, context);
+      /**
+       * R5.2.3, and the last gate before anything is executed.
+       *
+       * Deliberately after the tier branches and after the confirmation is redeemed: the
+       * caller's yes is still consumed, so a write is not silently re-armed, and an
+       * irreversible tool still transfers rather than reporting an outage.
+       *
+       * Also deliberately before `run`, which is what starts holding speech — "let me pull
+       * that up for you" followed immediately by an apology is worse than the apology.
+       */
+      const key = breakerKey(call.tenantId, call.name);
+      if (breaker !== undefined && !breaker.allows(key)) return fail("circuit-open", tier);
 
-      if (settled.state === "timeout") return fail("timeout", tier, `over ${hardMs}ms`);
-      if (settled.state === "error") return fail("adapter-error", tier, describe(settled.error));
+      // A tenant may ask for less than the platform ceiling but never more; registration
+      // has already refused anything above it (R5.4.1).
+      const ceilingMs = Math.min(hardMs, definition.timeoutMs ?? hardMs);
+      const settled = await run(registration, call, context, ceilingMs, tier === "read" ? 1 + readRetries : 1);
+
+      if (settled.state === "timeout") {
+        breaker?.failed(key);
+        return fail("timeout", tier, `over ${ceilingMs}ms`);
+      }
+      if (settled.state === "error") {
+        breaker?.failed(key);
+        return fail("adapter-error", tier, describe(settled.error));
+      }
+      breaker?.succeeded(key);
 
       let summary: unknown;
       try {

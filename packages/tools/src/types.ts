@@ -104,6 +104,8 @@ export type FailureReason =
   | "unknown-tool"
   | "timeout"
   | "adapter-error"
+  /** R5.2.3. This tool has failed repeatedly for this tenant and is being left alone. */
+  | "circuit-open"
   /** The confirmation id is unknown, expired, or already spent. */
   | "stale-confirmation"
   /** The id is good but the arguments moved since the caller heard them. */
