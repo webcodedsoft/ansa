@@ -16,22 +16,7 @@
  * cost — silence is most of a call — and latency, since the model is no longer working
  * through long spans of nothing.
  */
-
-/**
- * G.711 mu-law to linear PCM.
- *
- * Needed because mu-law is logarithmic: the byte value has no useful relationship to
- * loudness, so RMS over raw mu-law bytes measures nothing. Silence is 0xFF, which is a
- * large byte.
- */
-export const muLawToLinear = (byte: number): number => {
-  const u = ~byte & 0xff;
-  const sign = u & 0x80;
-  const exponent = (u >> 4) & 0x07;
-  const mantissa = u & 0x0f;
-  const magnitude = (((mantissa << 3) + 0x84) << exponent) - 0x84;
-  return sign !== 0 ? -magnitude : magnitude;
-};
+import { muLawToLinear } from "@ansa/shared";
 
 export const frameEnergy = (frame: Buffer): number => {
   if (frame.length === 0) return 0;

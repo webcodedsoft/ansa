@@ -1,7 +1,9 @@
 import { Buffer } from "node:buffer";
 import { describe, expect, it } from "vitest";
 
-import { createSpeechGate, frameEnergy, muLawToLinear } from "./speech-gate";
+import { muLawToLinear } from "@ansa/shared";
+
+import { createSpeechGate, frameEnergy } from "./speech-gate";
 
 /** mu-law silence is 0xFF, which is a large byte and near-zero amplitude. */
 const silence = (frames: number): Buffer[] =>
