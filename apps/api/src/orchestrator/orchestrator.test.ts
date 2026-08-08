@@ -822,3 +822,61 @@ describe("readback in the turn loop (R4.3)", () => {
     assertInvariants(h);
   });
 });
+
+describe("a turn the detector cut in half", () => {
+  it("does not answer a sentence that has not finished", () => {
+    const h = setup();
+    const before = h.llm.completions.length;
+
+    // 2026-08-08, 10:54:19. The detector committed here, the agent replied, and it
+    // talked straight over the name the caller was in the middle of saying.
+    h.listen.final("Hi. Good morning. My name is.");
+
+    expect(h.llm.completions.length).toBe(before);
+    assertInvariants(h);
+  });
+
+  it("answers both halves as one turn once the caller finishes", () => {
+    const h = setup();
+
+    h.listen.final("Hi. Good morning. My name is.");
+    h.listen.final("Adebayo. How are you doing?");
+
+    const lastCaller = [...h.llm.lastMessages()].reverse().find((m) => m.role === "user");
+    // One reply to the whole thing, not a reply to the half that arrived last.
+    expect(lastCaller?.content).toContain("My name is");
+    expect(lastCaller?.content).toContain("Adebayo");
+    assertInvariants(h);
+  });
+
+  it("answers anyway if the caller never continues", async () => {
+    const h = setup();
+    h.listen.final("Hi. Good morning. My name is.");
+
+    await new Promise((r) => setTimeout(r, 1300));
+
+    // Waiting forever would be a worse failure than answering half a sentence.
+    expect(h.llm.completions.length).toBeGreaterThan(0);
+    assertInvariants(h);
+  });
+
+  it("never makes a caller wait mid-readback", async () => {
+    const h = setup();
+    h.listen.final("My policy number is four one seven two nine.");
+    const readbacks = h.tts.texts().length;
+
+    // "No" ends on nothing danglable, but the guard matters for turns that do — a
+    // correction must never be held back while a number is being confirmed.
+    h.listen.final("No. It is four one eight.");
+
+    expect(h.tts.texts().length).toBeGreaterThan(readbacks);
+    assertInvariants(h);
+  });
+
+  it("still answers a complete turn immediately", () => {
+    const h = setup();
+    h.listen.final("I want to renew my policy.");
+    expect(h.llm.completions.length).toBeGreaterThan(0);
+    assertInvariants(h);
+  });
+});

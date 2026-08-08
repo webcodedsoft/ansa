@@ -8,6 +8,7 @@ import { durationMs, type SynthesisStream, type TtsProvider } from "@ansa/tts";
 import { createFillerPicker } from "../telephony/filler";
 import { classify } from "./action";
 import { advance, idle, worthConfirming, type CaptureState } from "./capture";
+import { endsMidThought } from "./completeness";
 import { parseSpokenDigits } from "@ansa/normalizer";
 import { createConversation } from "./conversation";
 import { interpret, normalise } from "./hearing";
@@ -149,6 +150,14 @@ const RECOVERY_LINE = "Sorry, I did not catch that. Could you say it again?";
  * silence, because a timer that re-arms on every quiet moment eventually fires while
  * the caller is mid-thought, which is worse than the gap it was closing.
  */
+/**
+ * How long to wait for a caller to finish a sentence the detector cut short.
+ *
+ * Bounded by the no-silence rule: this plus the filler delay must stay under two
+ * seconds, and it only ever applies to a turn that could not be answered sensibly.
+ */
+const CONTINUATION_WAIT_MS = 1_100;
+
 const TURN_WATCHDOG_MS = 4_000;
 
 /**
@@ -667,6 +676,22 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
    * utterance so it is normalised, marked and remembered identically.
    */
   /**
+   * A caller turn that ended mid-sentence, held back until they finish or the wait
+   * expires. See completeness.ts for what this cost before it existed.
+   *
+   * The wait has to stay well under the two-second silence rule: 1100ms here plus the
+   * 450ms filler delay means the caller hears something within 1.55s of stopping, and
+   * only on turns that were syntactically impossible to answer anyway.
+   */
+  let pending: { text: string; forModel: string; timer: NodeJS.Timeout } | null = null;
+
+  const clearPending = (): void => {
+    if (pending === null) return;
+    clearTimeout(pending.timer);
+    pending = null;
+  };
+
+  /**
    * Readback state (R4.3.1). Lives for the whole call: a caller gives a policy number
    * early and a phone number later, and each has to be confirmed on its own terms.
    */
@@ -1022,14 +1047,38 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       log.info("repaired a known mishearing", { corrections: heard.corrections });
     }
 
+    // Rejoin a turn the detector split. The fragments are concatenated rather than
+    // answered separately, because the caller said one thing and a reply to half of it
+    // is a reply to something they did not say.
+    const carried = pending;
+    clearPending();
+    const whole = carried === null ? text : `${carried.text} ${text}`;
+    const wholeForModel =
+      carried === null ? heard.forModel : `${carried.forModel} ${heard.forModel}`;
+
+    // Never hold a turn back while a number is being confirmed. "No" and "yes" are
+    // complete answers, and a caller correcting a digit must not be made to wait.
+    if (capture.kind === "idle" && endsMidThought(normalise(whole))) {
+      log.info("caller has not finished, waiting", { text: whole });
+      const timer = setTimeout(() => {
+        pending = null;
+        log.info("caller did not continue, answering what we have", { text: whole });
+        if (!captureHandled(whole, wholeForModel)) respondTo(whole, wholeForModel);
+      }, CONTINUATION_WAIT_MS);
+      timer.unref();
+      pending = { text: whole, forModel: wholeForModel, timer };
+      return;
+    }
+
     // Before the model, never after. R4.3.1 is a gate, and a gate the model can answer
     // around is not a gate.
-    if (captureHandled(text, heard.forModel)) return;
+    if (captureHandled(whole, wholeForModel)) return;
 
-    respondTo(text, heard.forModel);
+    respondTo(whole, wholeForModel);
   });
 
   stream.onClosed((reason) => {
+    clearPending();
     cancelFiller();
     cancelWatchdog();
     echoSegments.clear();
