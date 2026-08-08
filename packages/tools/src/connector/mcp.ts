@@ -246,6 +246,7 @@ const definitionFor = (
     parameters: discovered.parameters,
     tenantId,
     timeoutMs: policy.timeoutMs,
+    identifiers: policy.identifiers,
   };
 
   if (policy.riskTier === "irreversible") {

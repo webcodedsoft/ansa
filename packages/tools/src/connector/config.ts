@@ -37,6 +37,16 @@ interface ConnectorToolBase {
   readonly readback?: string;
   /** Required for irreversible: what the human who picks up is told. */
   readonly transferReason?: string;
+  /**
+   * Arguments that identify a person, mapped to the call fact each must match — for
+   * example `{ "policyNumber": "policyNumber" }`.
+   *
+   * Optional, and a tenant who omits it gets a tool that will look anybody up by whatever
+   * the transcriber heard. That is the right default for a tool keyed on something that
+   * is not a person (an order reference the caller reads out, a branch, a product) and
+   * the wrong one for anything keyed on who is calling.
+   */
+  readonly identifiers?: Readonly<Record<string, string>>;
 }
 
 export interface HttpToolConfig extends ConnectorToolBase {
@@ -66,6 +76,8 @@ export interface McpToolPolicy {
   readonly speech?: SpeechConfig;
   readonly readback?: string;
   readonly transferReason?: string;
+  /** Same meaning as on an HTTP tool: R5.2.0 does not admit a control on one route only. */
+  readonly identifiers?: Readonly<Record<string, string>>;
 }
 
 export interface McpServerConfig {
@@ -115,6 +127,17 @@ const asSpeech = (value: unknown, where: string): SpeechConfig => {
     throw new Error(`tool config: ${where}.template has no {placeholders}; it would say the same thing every time`);
   }
   return { template, fallback };
+};
+
+const asIdentifiers = (value: unknown, where: string): Readonly<Record<string, string>> | undefined => {
+  if (value === undefined || value === null) return undefined;
+  const raw = asRecord(value, `${where}.identifiers`);
+  return Object.fromEntries(
+    Object.entries(raw).map(([argument, fact]) => [
+      asText(argument, `${where}.identifiers key`),
+      asText(fact, `${where}.identifiers.${argument}`),
+    ]),
+  );
 };
 
 const asTier = (value: unknown, where: string): RiskTier => {
@@ -196,6 +219,7 @@ const parseHttpTool = (value: unknown, index: number): HttpToolConfig => {
     method: method as HttpToolConfig["method"],
     send,
     credentialRef: asOptionalText(raw.credentialRef, `${where}.credentialRef`),
+    identifiers: asIdentifiers(raw.identifiers, where),
     ...tierFields(raw, tier, where, true),
   };
 };
@@ -220,6 +244,7 @@ const parseMcpServer = (value: unknown, index: number): McpServerConfig => {
         name: asText(toolRaw.name, `${toolWhere}.name`),
         riskTier: tier,
         timeoutMs: asTimeout(toolRaw.timeoutMs, toolWhere),
+        identifiers: asIdentifiers(toolRaw.identifiers, toolWhere),
         ...tierFields(toolRaw, tier, toolWhere, false),
       };
     }),

@@ -35,7 +35,7 @@ import { withHandoffJournal } from "../handoff/journal";
 import type { HandoffDestination } from "../handoff/destination";
 import { HANDOFF_DESTINATION, WHISPER_REGISTRY } from "../handoff/tokens";
 import type { WhisperRegistry } from "../handoff/whisper";
-import { createCallFacts } from "../conversation/call-facts";
+import { confirmedFact, createCallFacts } from "../conversation/call-facts";
 import { createCallRecorder } from "./event-log";
 import type { Db } from "@ansa/db";
 import { BASE_KEYTERMS } from "../tenancy/defaults";
@@ -451,6 +451,35 @@ export class MediaGateway implements OnApplicationShutdown {
             registry,
             log: log.child({ tenantId: tenant?.tenantId ?? null }),
             holding: hooks.holding,
+            /**
+             * Who the caller has been confirmed to be, read live rather than snapshotted:
+             * a value confirmed three turns into the call has to open the tool that was
+             * refused on turn one.
+             *
+             * `confirmedFact` is the only door to a value, and this is the second place
+             * that matters — the first is the readback. Without `facts` (an unregistered
+             * number) nothing is ever confirmed, which is the right answer for a call
+             * that has no tenant to look anything up in anyway.
+             */
+            identity: {
+              confirmed: (fact) => {
+                const snapshot = facts?.facts;
+                if (snapshot === undefined) return null;
+                switch (fact) {
+                  case "callerName":
+                    return confirmedFact(snapshot.callerName);
+                  case "policyNumber":
+                    return confirmedFact(snapshot.policyNumber);
+                  case "customerId":
+                    return confirmedFact(snapshot.customerId);
+                  default:
+                    // A fact name this call does not know is never confirmed, so a typo
+                    // in a tenant's configuration disables the tool rather than opening
+                    // it.
+                    return null;
+                }
+              },
+            },
             // R5.2.3, and the one thing here that outlives the call. A breaker built per
             // call would have nothing to remember and would never open.
             breaker: this.toolBreaker,

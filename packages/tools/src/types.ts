@@ -55,6 +55,22 @@ interface DefinitionBase {
   readonly tenantId?: TenantId | null;
   /** Capped at HARD_TIMEOUT_MS at registration time. */
   readonly timeoutMs?: number;
+  /**
+   * Arguments that identify a person, and the call fact each one must match.
+   *
+   * `{ policyNumber: "policyNumber" }` means: this tool may not run until the caller has
+   * confirmed their policy number, and the value the model passes must be the confirmed
+   * one. The key is the argument name the model uses; the value names a fact that the
+   * dispatcher's identity gate resolves — an unrecognised name is never confirmed, so a
+   * typo here disables the tool rather than opening it.
+   *
+   * This exists because of a measured failure rather than a hypothetical one. The
+   * transcriber returns a stable wrong name for a Nigerian caller — six runs out of six,
+   * the same wrong name each time — and no amount of tool plumbing fixes that. What it
+   * can do is refuse to look somebody up by a value nobody has agreed to, because a
+   * lookup on a misheard name does not fail: it confidently returns the wrong customer.
+   */
+  readonly identifiers?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -109,7 +125,9 @@ export type FailureReason =
   /** The confirmation id is unknown, expired, or already spent. */
   | "stale-confirmation"
   /** The id is good but the arguments moved since the caller heard them. */
-  | "confirmation-mismatch";
+  | "confirmation-mismatch"
+  /** The tool identifies a person and the caller has not confirmed who they are. */
+  | "unconfirmed-identity";
 
 interface OutcomeBase {
   readonly name: string;

@@ -133,6 +133,7 @@ const definitionFor = (config: HttpToolConfig, tenantId: TenantId): ToolDefiniti
     parameters: config.parameters,
     tenantId,
     timeoutMs: config.timeoutMs,
+    identifiers: config.identifiers,
   };
 
   if (config.riskTier === "irreversible") {

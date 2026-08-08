@@ -31,6 +31,29 @@ export interface HoldingSpeech {
   stop(context: HoldContext): void;
 }
 
+/**
+ * What the call knows about who is on it, as the dispatcher needs it.
+ *
+ * An interface, and a narrow one: `packages/tools` must not learn what a call fact is,
+ * how it is promoted, or which fields exist. It asks one question — is there a confirmed
+ * value for this name — and treats "I do not recognise that name" and "not confirmed" as
+ * the same answer, which is the safe direction for both.
+ */
+export interface IdentityGate {
+  confirmed(fact: string): string | null;
+}
+
+/**
+ * Two values are the same identifier if they differ only in how they were written down.
+ *
+ * Spelling, punctuation and case are exactly what a caller and a transcriber disagree
+ * about on an 8kHz line, and refusing "AB-1234" against a confirmed "ab 1234" would send
+ * the caller round the confirmation loop for nothing. What it does NOT do is treat two
+ * different values as the same one, which is the property that matters.
+ */
+const sameIdentifier = (a: string, b: string): boolean =>
+  a.replace(/[^a-z0-9]/gi, "").toLowerCase() === b.replace(/[^a-z0-9]/gi, "").toLowerCase();
+
 export interface DispatcherOptions {
   readonly registry: ToolRegistry;
   readonly log: Logger;
@@ -54,6 +77,12 @@ export interface DispatcherOptions {
    * problem.
    */
   readonly readRetries?: number;
+  /**
+   * Who the caller has been confirmed to be. Absent means no tool declaring an identifier
+   * can run at all, which is the safe default: a dispatcher with no way to check identity
+   * is not a dispatcher that should be looking people up.
+   */
+  readonly identity?: IdentityGate;
 }
 
 export interface ToolDispatcher {
@@ -73,6 +102,9 @@ const FAILURE_SPEECH: Readonly<Record<FailureReason, string>> = {
     "Sorry, I can't reach that at the moment. Let me take your details and someone will follow up.",
   "stale-confirmation": "Sorry, let me go over that once more before I change anything.",
   "confirmation-mismatch": "Sorry, let me go over that once more before I change anything.",
+  // Not an apology for a fault, because nothing faulted. The caller is being asked for a
+  // detail before their record is touched, which is a reasonable thing to hear.
+  "unconfirmed-identity": "Before I check that, let me take that detail from you and read it back.",
 };
 
 const TRANSFER_SPEECH =
@@ -115,12 +147,17 @@ export const modelMessage = (outcome: DispatchOutcome): string => {
     case "transfer":
       return `${outcome.name} has NOT run and will not run — it needs a human (${outcome.reason}). Hand over. Do not tell the caller it is done.`;
     case "failed":
+      if (outcome.reason === "unconfirmed-identity") {
+        // The model needs to know what to do next, not merely that something failed —
+        // otherwise it apologises, offers an alternative, and never asks for the detail.
+        return `${outcome.name} has NOT run: the caller has not confirmed the detail it identifies them by. Ask for it, read it back, and try again once they have agreed it. Do not guess it from earlier in the conversation.`;
+      }
       return `${outcome.name} FAILED (${outcome.reason}) and had no effect. Do not tell the caller it worked.`;
   }
 };
 
 export const createToolDispatcher = (options: DispatcherOptions): ToolDispatcher => {
-  const { registry, log, holding, breaker } = options;
+  const { registry, log, holding, breaker, identity } = options;
   const now = options.now ?? Date.now;
   const softMs = options.softTimeoutMs ?? SOFT_TIMEOUT_MS;
   const hardMs = options.hardTimeoutMs ?? HARD_TIMEOUT_MS;
@@ -244,18 +281,47 @@ export const createToolDispatcher = (options: DispatcherOptions): ToolDispatcher
         return outcome;
       }
 
+      /**
+       * Who the caller is, before anything is looked up in their name.
+       *
+       * Below the irreversible branch on purpose — a transfer is the safer outcome and
+       * should not be replaced by a request for a detail nobody will use — and above the
+       * write readback, because reading back a change to an account we have not
+       * established belongs to this caller is worse than not offering it.
+       *
+       * The argument is canonicalised to the confirmed value when the two are the same
+       * identifier written differently. It is never substituted when they differ: the
+       * model may be asking about a genuinely different record, and silently redirecting
+       * that to the caller's own is its own kind of wrong answer.
+       */
+      let args_ = call.args;
+      const identifiers = definition.identifiers;
+      if (identifiers !== undefined && Object.keys(identifiers).length > 0) {
+        const canonical: Record<string, unknown> = { ...call.args };
+        for (const [argument, fact] of Object.entries(identifiers)) {
+          const supplied = call.args[argument];
+          const agreed = identity?.confirmed(fact) ?? null;
+          if (agreed === null || typeof supplied !== "string" || !sameIdentifier(supplied, agreed)) {
+            return fail("unconfirmed-identity", tier, `${argument} is not a confirmed ${fact}`);
+          }
+          canonical[argument] = agreed;
+        }
+        args_ = canonical;
+      }
+      const checked: ToolCall = args_ === call.args ? call : { ...call, args: args_ };
+
       if (tier === "write") {
         const subject = {
           tenantId: call.tenantId,
           callId: call.callId,
           name: call.name,
-          fingerprint: fingerprintArgs(call.args),
+          fingerprint: fingerprintArgs(checked.args),
         };
 
         if (call.confirmationId === undefined) {
           let readback: string;
           try {
-            readback = definition.readback(call.args);
+            readback = definition.readback(checked.args);
           } catch (error) {
             return fail("adapter-error", tier, `readback threw: ${describe(error)}`);
           }
@@ -295,7 +361,7 @@ export const createToolDispatcher = (options: DispatcherOptions): ToolDispatcher
       // A tenant may ask for less than the platform ceiling but never more; registration
       // has already refused anything above it (R5.4.1).
       const ceilingMs = Math.min(hardMs, definition.timeoutMs ?? hardMs);
-      const settled = await run(registration, call, context, ceilingMs, tier === "read" ? 1 + readRetries : 1);
+      const settled = await run(registration, checked, context, ceilingMs, tier === "read" ? 1 + readRetries : 1);
 
       if (settled.state === "timeout") {
         breaker?.failed(key);

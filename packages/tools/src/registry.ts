@@ -72,6 +72,22 @@ const validate = (definition: ToolDefinition): void => {
     );
   }
 
+  const identifiers = raw.identifiers;
+  if (identifiers !== undefined) {
+    const bad =
+      identifiers === null ||
+      typeof identifiers !== "object" ||
+      Array.isArray(identifiers) ||
+      Object.entries(identifiers as Record<string, unknown>).some(
+        ([argument, fact]) => argument.trim() === "" || !isNonEmptyString(fact),
+      );
+    if (bad) {
+      throw new Error(
+        `tool registration: ${name} identifiers must map an argument name to the call fact it must match`,
+      );
+    }
+  }
+
   const timeout = raw.timeoutMs;
   if (timeout !== undefined) {
     const bad =
