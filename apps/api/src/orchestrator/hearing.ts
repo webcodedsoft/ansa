@@ -64,9 +64,23 @@ const HALLUCINATIONS = new Set([
  * noise when it is several words long and made of almost nothing but one repeated word.
  * "you you you you" fails it; anything with real content after the emphasis does not.
  */
+/**
+ * Words that are worth hearing however many times they are said.
+ *
+ * A caller repeating "no" is not a stuck transcriber, it is the most emphatic thing they
+ * can do — and during a readback it is the difference between the right number and the
+ * wrong one. "No. No. No. No. No." was discarded as a repeated token on a live call,
+ * immediately before the readback confirmed a value the caller was rejecting.
+ */
+const DECISION_WORDS = new Set([
+  "no", "nope", "nah", "yes", "yeah", "yep", "stop", "wait", "wrong", "correct",
+]);
+
 const isJustRepetition = (words: readonly string[]): boolean => {
   if (words.length < 4) return false;
-  return new Set(words).size <= 2;
+  const distinct = new Set(words);
+  if (distinct.size > 2) return false;
+  return ![...distinct].every((word) => DECISION_WORDS.has(word));
 };
 
 const isMostlyNonLatin = (text: string): boolean => {

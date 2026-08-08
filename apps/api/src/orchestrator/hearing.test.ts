@@ -125,3 +125,20 @@ describe("interpret — repairing known mishearings", () => {
     ]);
   });
 });
+
+describe("a repeated decision word is speech, not noise", () => {
+  it("keeps an emphatic refusal", () => {
+    // 2026-08-08, 10:34:40. Discarded as a repeated token, fifteen seconds before the
+    // readback confirmed a value the caller was rejecting.
+    const heard = interpret("No. No. No. No. No.");
+    expect(heard.kind).toBe("speech");
+  });
+
+  it("keeps an emphatic agreement", () => {
+    expect(interpret("Yes. Yes. Yes. Yes.").kind).toBe("speech");
+  });
+
+  it("still discards a genuinely stuck transcriber", () => {
+    expect(interpret("the the the the the").kind).toBe("noise");
+  });
+});

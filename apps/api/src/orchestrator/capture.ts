@@ -60,17 +60,24 @@ export const worthConfirming = (value: string, text: string): boolean =>
   REFERENCE_CUE.test(text);
 
 /**
- * Agreement, including the Nigerian forms. "Na so" and "correct" are as common as "yes",
- * and an agent that only recognises "yes" makes the caller repeat themselves.
+ * Agreement, including the Nigerian forms. "Na so" is as common as "yes", and an agent
+ * that only recognises "yes" makes the caller repeat themselves.
+ *
+ * Bare "right" and bare "okay" were here and were removed. Both are discourse markers
+ * before they are agreement — a caller opened a turn with "Right? What'd be good?" on a
+ * live call — and treating them as confirmation of a number is not a risk worth taking.
  */
 const YES =
-  /\b(yes|yeah|yep|yup|correct|right|exactly|that'?s? (it|right|correct)|na so|sure|ok(ay)?|perfect)\b/i;
+  /\b(yes|yeah|yep|yup|correct|exactly|perfect|that'?s? (it|right|correct)|na so|sure|spot on)\b/i;
 
 /**
  * Disagreement. "Nope" and "wrong" matter, and so does a bare "no" — which the noise
  * filter used to discard and which is the single most important word in this exchange.
  */
 const NO = /\b(no|nope|nah|wrong|incorrect|not (right|correct|it)|mistake)\b/i;
+
+/** Agreement that merely contains a "no". Nigerian English uses all three. */
+const FALSE_NEGATIVES = /\bno (problem|worries|wahala)\b/gi;
 
 const readback = (value: string): string =>
   forSpeech(`Let me read that back to you. ${sayReference(value)}. Is that correct?`);
@@ -103,7 +110,14 @@ const confirming = (
   // Order matters. A caller correcting a digit usually says "no, it's four one eight" —
   // rejection and correction in one breath. Checking for a value first would accept the
   // correction silently; checking for "no" first and stopping would throw it away.
-  const rejected = NO.test(text) && !YES.test(text);
+  //
+  // Rejection then beats agreement outright. This was `NO.test(text) && !YES.test(text)`
+  // and it confirmed a number on a live call: "No. No. That's not correct." matches NO,
+  // but "correct" also matched YES, so the guard cancelled the rejection and the value
+  // went through. The costs are not symmetric — a false rejection asks once more, a
+  // false confirmation is the wrong number acted on, which is the whole failure R4.3.1
+  // exists to prevent — so anything that sounds like "no" is a no.
+  const rejected = NO.test(text.replace(FALSE_NEGATIVES, " "));
 
   if (said !== null && said !== state.value) {
     // A different value, whether or not they said "no", is a correction. It restarts the

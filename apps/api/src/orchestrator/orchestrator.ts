@@ -694,7 +694,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       sentenceAudioAt: null,
     };
     turn = direct;
-    log.info("speaking without the model", { reason, seq: direct.seq });
+    log.info("speaking without the model", { reason, seq: direct.seq, text });
     enqueue(direct, text);
   };
 

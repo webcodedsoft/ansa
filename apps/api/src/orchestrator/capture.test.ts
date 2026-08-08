@@ -114,3 +114,43 @@ describe("readback", () => {
     expect(r.say).toContain("oh eight one three");
   });
 });
+
+describe("readback regressions from live calls", () => {
+  it("does not confirm a value the caller is rejecting", () => {
+    // 2026-08-08, 10:34:55. "No. No. That's not correct." confirmed the number, because
+    // "correct" matched agreement and cancelled the rejection guard. The worst possible
+    // outcome for this state machine.
+    const asked = speak(idle, "eight four nine two six two five six");
+    const rejected = speak(asked.state, "No. No. That's not correct.");
+
+    expect(rejected.captured).toBeNull();
+    expect(rejected.state.kind).not.toBe("confirmed");
+  });
+
+  it("treats every phrasing of 'that is not right' as a rejection", () => {
+    for (const said of [
+      "No, that's not correct",
+      "that is not right",
+      "no that's wrong",
+      "nope, incorrect",
+      "no, that's a mistake",
+    ]) {
+      const asked = speak(idle, "four one seven two nine");
+      expect(speak(asked.state, said).captured, said).toBeNull();
+    }
+  });
+
+  it("still hears agreement that happens to contain 'no'", () => {
+    // Nigerian English uses all three, and none of them is a rejection.
+    for (const said of ["Yes, no problem", "Correct, no worries", "Yes now, no wahala"]) {
+      const asked = speak(idle, "four one seven two nine");
+      expect(speak(asked.state, said).captured, said).toBe("41729");
+    }
+  });
+
+  it("does not take a bare discourse marker as confirmation", () => {
+    // "Right? What'd be good?" opened a caller turn on the same call.
+    const asked = speak(idle, "four one seven two nine");
+    expect(speak(asked.state, "Right?").captured).toBeNull();
+  });
+});
