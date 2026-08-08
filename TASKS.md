@@ -646,6 +646,27 @@ reaches this. Slice 0 tested the *providers* on real conversation. This tests th
 
 ---
 
+## Slice 4 — numbers and names (in progress)
+
+- [x] **Per-tenant keyterms.** Resolved at ingress via `app.tenant_for_number`
+      (SECURITY DEFINER, returns only an id — RLS cannot answer "which tenant?" when the
+      tenant is the question). Travels to the media socket as a TwiML `<Parameter>`.
+      Tenant terms merge on top of the base, never replace it.
+      **Blocked on:** migration `0003_tenant_config.sql` must be run in the Supabase SQL
+      editor as owner — both DATABASE_URL and DIRECT_URL are `ansa_app`, which cannot
+      ALTER the table. Until then every number answers on base vocabulary, by design.
+- [x] **`packages/normalizer`.** 27 tests. Nigerian "oh" for zero, 0813 817 8550
+      grouping, British "and", naira written as ₦ and as bare N, kobo only when present,
+      quantity-vs-sequence heuristic, dates day-first, markdown, Ansa respelling.
+      Wired into the speech path: `greeting.ts` re-exports it, orchestrator and prerender
+      already injected it.
+- [ ] **Mandatory readback (R4.3.1/R4.3.2).** The other half, and the actual blocker.
+      Saying a number correctly is not confirming it. Must be in the dispatch path, not
+      the prompt, and must have no confidence threshold that skips it — confidence is not
+      correctness on 8kHz audio.
+- [ ] **DTMF fallback (R4.3.3)** after two failed captures.
+- [ ] Prove it on a phone call. Not done until then.
+
 ## The multi-tenant shape
 
 `docs/MULTI_TENANT_ARCHITECTURE.md` records the design for the platform Ansa is meant to
