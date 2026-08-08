@@ -646,6 +646,21 @@ reaches this. Slice 0 tested the *providers* on real conversation. This tests th
 
 ---
 
+## The multi-tenant shape
+
+`docs/MULTI_TENANT_ARCHITECTURE.md` records the design for the platform Ansa is meant to
+become: a strong opinionated base, thin per-tenant configuration injected from the database.
+
+Two principles from it bear on every slice below:
+
+- **Guarantees live in code, not in the prompt.** A tenant's instructions must never be
+  able to switch off readback, a risk tier, or AI disclosure. Prompts can be talked out of
+  things; dispatch paths cannot. In a multi-tenant system that stops being a quality
+  argument and becomes a safety boundary.
+- **Edge cases are captured, not imagined.** Every failure worth fixing today came from
+  dialling the number, not from foresight. That makes the review loop (R9.2) the actual
+  moat, and the event log its prerequisite rather than housekeeping.
+
 ## Not now
 
 **Outbound calling is the big one, and it has a named gate.** Do not start it until Slice
