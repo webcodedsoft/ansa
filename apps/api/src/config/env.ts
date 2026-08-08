@@ -43,6 +43,11 @@ export interface AppConfig {
    * turn boundaries. They are different problems with different winners, which is why
    * Transcriber and TurnDetector were separate interfaces from the start.
    */
+  /**
+   * Send OpenAI 24kHz PCM instead of the carrier's mu-law. Their docs specify PCM;
+   * mu-law is accepted but undocumented. A hypothesis under measurement, not a default.
+   */
+  readonly openAiSendPcm: boolean;
   readonly listenWords: string;
   readonly listenTurns: string;
   readonly deepgramApiKey: string;
@@ -110,6 +115,7 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
     vadSilenceMs: Number(env["VAD_SILENCE_MS"] ?? 900),
 
     listenProvider: optional(env, "LISTEN_PROVIDER") ?? "openai",
+    openAiSendPcm: env["OPENAI_SEND_PCM"] === "true",
     listenWords: optional(env, "LISTEN_WORDS") ?? "openai",
     listenTurns: optional(env, "LISTEN_TURNS") ?? "deepgram",
     // Only required when actually selected, so an OpenAI-only deployment needs no key.

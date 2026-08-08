@@ -1,8 +1,9 @@
+import { muLawToPcm } from "@ansa/shared";
 import type { AudioChunk, AudioFormat } from "@ansa/shared";
 import type { Transcript, TranscriberSession } from "@ansa/transcriber";
 import type { TurnEvent, TurnSession } from "@ansa/turn-detector";
 
-import { encodeAudioAppend, encodeSessionUpdate, parseEvent, type TurnDetection } from "./protocol";
+import { encodeAudioAppend, encodeSessionUpdate, parseEvent, type TurnDetection, PCM_RATE } from "./protocol";
 
 /**
  * A duplex text-frame transport. Injected so the session can be tested without a
@@ -22,6 +23,14 @@ export interface ListenConnectOptions {
   readonly model: string;
   readonly turnDetection: TurnDetection;
   readonly keyterms: readonly string[];
+  /**
+   * Transcode the carrier's mu-law to 24kHz PCM before sending.
+   *
+   * The provider documents audio/pcm at 24kHz and merely accepts audio/pcmu. Off by
+   * default: this is a hypothesis about an already-poor channel, and Gate A settles it
+   * with a measurement rather than a preference.
+   */
+  readonly sendAsPcm?: boolean;
 }
 
 /**
@@ -200,12 +209,25 @@ export const openListenSession = (
     }
   });
 
+  /**
+   * Carrier bytes to wire bytes. Identity unless the session was opened asking for PCM,
+   * in which case every frame is decoded and resampled on the way out.
+   */
+  const toWire = (data: Buffer): Buffer =>
+    options.sendAsPcm === true ? muLawToPcm(data, options.format.sampleRate, PCM_RATE) : data;
+
   const write = (chunk: AudioChunk): void => {
     if (closed) return;
+
+    // Byte accounting stays in CARRIER bytes, always. It is how offsets and durations are
+    // derived, and PCM at 24kHz is six times the size — counting those would silently
+    // multiply every timing in the call by six.
     bytesWritten += chunk.data.length;
+
+    const outgoing = toWire(chunk.data);
     if (!ready) {
-      pending.push(chunk.data);
-      pendingBytes += chunk.data.length;
+      pending.push(outgoing);
+      pendingBytes += outgoing.length;
       // Drop the oldest audio rather than grow without bound if readiness never comes.
       while (pendingBytes > MAX_PENDING_BYTES) {
         const dropped = pending.shift();
@@ -214,7 +236,7 @@ export const openListenSession = (
       }
       return;
     }
-    socket.send(encodeAudioAppend(chunk.data));
+    socket.send(encodeAudioAppend(outgoing));
   };
 
   const close = (): void => {

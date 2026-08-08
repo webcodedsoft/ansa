@@ -141,7 +141,10 @@ export class MediaGateway implements OnApplicationShutdown {
       return openDeepgramSession(openDeepgramSocket(url, this.config.deepgramApiKey));
     }
 
-    this.log.info("listening via openai", { model: this.config.transcriptionModel });
+    this.log.info("listening via openai", {
+      model: this.config.transcriptionModel,
+      sendAsPcm: this.config.openAiSendPcm,
+    });
     return openListenSession(openListenSocket(this.config.openAiApiKey), {
       format,
       model: this.config.transcriptionModel,
@@ -154,6 +157,7 @@ export class MediaGateway implements OnApplicationShutdown {
             },
       // Carried for interface parity; this provider cannot act on them.
       keyterms,
+      sendAsPcm: this.config.openAiSendPcm,
     });
   }
 

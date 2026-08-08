@@ -6,9 +6,24 @@ import type { AudioFormat } from "@ansa/shared";
  * lives under `session.audio.input`.
  */
 
-export const toInputFormat = (format: AudioFormat): { type: string } => {
+/** The rate this provider's documentation specifies for PCM input. */
+export const PCM_RATE = 24_000;
+
+/**
+ * What we tell the provider we are sending.
+ *
+ * `pcm24` transcodes the carrier's mu-law on the way out. The documentation specifies
+ * audio/pcm at 24kHz; audio/pcmu is accepted but undocumented, and whether that costs
+ * accuracy on an already-poor channel is a measurement rather than an argument — hence
+ * a flag rather than a decision.
+ */
+export const toInputFormat = (
+  format: AudioFormat,
+  asPcm = false,
+): { type: string; rate?: number } => {
+  if (asPcm) return { type: "audio/pcm", rate: PCM_RATE };
   if (format.encoding === "mulaw" && format.sampleRate === 8000) return { type: "audio/pcmu" };
-  if (format.encoding === "linear16") return { type: "audio/pcm" };
+  if (format.encoding === "linear16") return { type: "audio/pcm", rate: format.sampleRate };
   throw new Error(`No realtime input format for ${format.encoding}@${format.sampleRate}Hz`);
 };
 
@@ -40,6 +55,8 @@ export interface SessionOptions {
    * provider may honour it.
    */
   readonly keyterms: readonly string[];
+  /** Transcode mu-law to 24kHz PCM before sending. See toInputFormat. */
+  readonly sendAsPcm?: boolean;
 }
 
 export const encodeSessionUpdate = (options: SessionOptions): string =>
@@ -49,7 +66,7 @@ export const encodeSessionUpdate = (options: SessionOptions): string =>
       type: "transcription",
       audio: {
         input: {
-          format: toInputFormat(options.format),
+          format: toInputFormat(options.format, options.sendAsPcm ?? false),
           // NOTE: no `prompt` here, deliberately.
           //
           // Whisper-family models regurgitate their prompt when fed silence or noise.

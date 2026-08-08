@@ -42,13 +42,14 @@ const fakeSocket = () => {
   };
 };
 
-const connect = () => {
+const connect = (extra: { sendAsPcm?: boolean } = {}) => {
   const f = fakeSocket();
   const session = openListenSession(f.socket, {
     format: TELEPHONY_AUDIO,
     model: "gpt-4o-transcribe",
     turnDetection: { type: "server_vad", silenceMs: 500 },
     keyterms: ["Ansa"],
+    ...extra,
   });
   return { ...f, session };
 };
@@ -313,5 +314,39 @@ describe("configuration failures", () => {
     expect(reasons).toEqual([]);
     f.emit({ type: "session.updated" });
     expect(reasons).toEqual([]);
+  });
+});
+
+describe("sending PCM instead of mu-law", () => {
+  it("declares 24kHz PCM when asked, which is what the docs specify", () => {
+    // audio/pcmu is accepted but undocumented; audio/pcm at 24kHz is the documented path.
+    const f = connect({ sendAsPcm: true });
+    f.open();
+
+    const update = JSON.parse(f.sent[0] as string);
+    expect(update.session.audio.input.format).toEqual({ type: "audio/pcm", rate: 24_000 });
+  });
+
+  it("sends the carrier's bytes untouched by default", () => {
+    const f = connect();
+    f.open();
+    f.emit({ type: "session.updated" });
+    f.session.write(chunk(160));
+
+    const appended = Buffer.from(f.appends()[0].audio as string, "base64");
+    expect(appended.length).toBe(160);
+  });
+
+  it("sends six times the bytes as PCM", () => {
+    // 160 mu-law bytes at 8kHz become 480 samples at 24kHz, two bytes each. Byte
+    // accounting stays in carrier bytes regardless, or every offset in the call would be
+    // multiplied by six.
+    const f = connect({ sendAsPcm: true });
+    f.open();
+    f.emit({ type: "session.updated" });
+    f.session.write(chunk(160));
+
+    const appended = Buffer.from(f.appends()[0].audio as string, "base64");
+    expect(appended.length).toBe(960);
   });
 });
