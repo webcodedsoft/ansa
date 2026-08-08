@@ -63,15 +63,17 @@ export class ViewerController {
   @Get()
   @Header("Content-Type", "text/html; charset=utf-8")
   @Header("Cache-Control", "no-store")
+  @Header("Referrer-Policy", "no-referrer")
   async index(@Query("token") token?: string, @Query("tenant") tenant?: string): Promise<string> {
     this.authorise(token);
     const { db, tenantId } = this.scope(tenant);
-    return renderCallList(await listCalls(db, tenantId));
+    return renderCallList(await listCalls(db, tenantId), { token: token ?? "", tenant: tenant ?? "" });
   }
 
   @Get(":id")
   @Header("Content-Type", "text/html; charset=utf-8")
   @Header("Cache-Control", "no-store")
+  @Header("Referrer-Policy", "no-referrer")
   async call(
     @Param("id") id: string,
     @Query("token") token?: string,
@@ -83,6 +85,6 @@ export class ViewerController {
     // Indistinguishable from another tenant's call, on purpose: a viewer that told you a
     // call existed but was not yours would leak exactly what RLS is there to hide.
     if (detail === null) throw new NotFoundException();
-    return renderCall(detail);
+    return renderCall(detail, { token: token ?? "", tenant: tenant ?? "" });
   }
 }

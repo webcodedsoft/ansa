@@ -23,6 +23,22 @@ const esc = (value: unknown): string =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
+/**
+ * Credentials that have to survive every link.
+ *
+ * There is no session here — the token and tenant live in the query string, so a link
+ * that drops them is a link to a 403. The first version used a relative href and lost
+ * both, and lost the /viewer prefix as well: "./id" against "/viewer" resolves to "/id".
+ */
+export interface ViewerLink {
+  readonly token: string;
+  readonly tenant: string;
+}
+
+const href = (link: ViewerLink, path = ""): string =>
+  `/viewer${path === "" ? "" : `/${encodeURIComponent(path)}`}` +
+  `?token=${encodeURIComponent(link.token)}&tenant=${encodeURIComponent(link.tenant)}`;
+
 const secs = (ms: number | null): string => (ms === null ? "—" : `${(ms / 1000).toFixed(2)}s`);
 
 const page = (title: string, body: string): string =>
@@ -39,7 +55,7 @@ const page = (title: string, body: string): string =>
     .muted{color:#777}
   </style></head><body>${body}</body></html>`;
 
-export const renderCallList = (calls: readonly CallSummary[]): string =>
+export const renderCallList = (calls: readonly CallSummary[], link: ViewerLink): string =>
   page(
     "Calls",
     `<h1>Calls</h1>` +
@@ -55,13 +71,13 @@ export const renderCallList = (calls: readonly CallSummary[]): string =>
                 `<td>${esc(c.caller ?? "—")}` +
                 `<td>${esc(c.turnCount)}` +
                 `<td>${esc(c.endReason ?? "in progress")}` +
-                `<td><a href="./${esc(c.id)}">open</a></tr>`,
+                `<td><a href="${esc(href(link, c.id))}">open</a></tr>`,
             )
             .join("") +
           "</table>"),
   );
 
-export const renderCall = (call: CallDetail): string => {
+export const renderCall = (call: CallDetail, link: ViewerLink): string => {
   const s = call.summary;
 
   // Transcripts and events on one timeline, ordered by when they happened. A reviewer is
@@ -89,7 +105,7 @@ export const renderCall = (call: CallDetail): string => {
 
   return page(
     `Call ${s.carrierCallId}`,
-    `<p><a href="./">&larr; all calls</a></p>` +
+    `<p><a href="${esc(href(link))}">&larr; all calls</a></p>` +
       `<h1>${esc(s.direction)} · ${esc(s.dialled)}</h1>` +
       `<p class=muted>${esc(s.carrierCallId)} · caller ${esc(s.caller ?? "withheld")} · ` +
       `${esc(s.durationSeconds ?? "—")}s · ended: ${esc(s.endReason ?? "in progress")}</p>` +
