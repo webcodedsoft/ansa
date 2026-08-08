@@ -272,3 +272,61 @@ describe("it has to sound like a person", () => {
     expect(again.say).toContain("Abuja");
   });
 });
+
+describe("one STT result must not drive a decision (2026-08-08 call)", () => {
+  it("never offers a value the caller has already rejected", () => {
+    // The symptom: "TK — have I got that right?" / "No" / "Sorry — TK. Is that right?"
+    // A rejected value is the one thing we know for certain is wrong.
+    const asked = speak(idle, "My name is TK");
+    const no = speak(asked.state, "No");
+    expect(no.say ?? "").not.toContain("TK");
+  });
+
+  it("takes a fresh name offered instead of a rejection as the new candidate", () => {
+    // The caller answered the readback with "My name is Kim Woo" — a correction the old
+    // rule discarded, because it refused to re-read a name from free speech at all.
+    const asked = speak(idle, "My name is TK");
+    const corrected = speak(asked.state, "My name is Kim Woo");
+    expect(corrected.say).toContain("Kim Woo");
+    expect(corrected.captured).toBeNull();
+  });
+
+  it("prefers the candidate heard twice over the one heard once", () => {
+    // Two independent results agreeing is much stronger evidence than one arriving
+    // loudly. It still gets read back — agreement is not correctness.
+    let state = speak(idle, "My name is Sikiru").state;
+    state = speak(state, "My name is Shukri").state;
+    const third = speak(state, "My name is Sikiru");
+    expect(third.say).toContain("Sikiru");
+    expect(third.captured).toBeNull();
+  });
+
+  it("does not resurrect a rejected value through repetition", () => {
+    // Counting alone would let a mishearing win by frequency. Rejection outranks it.
+    let state = speak(idle, "My name is TK").state;
+    state = speak(state, "No").state;
+    const again = speak(state, "TK");
+    expect(again.say ?? "").not.toContain("TK");
+  });
+
+  it("hands over rather than asking a fourth time with nothing new", () => {
+    let state = speak(idle, "four one seven two nine").state;
+    state = speak(state, "No").state;
+    state = speak(state, "No").state;
+    expect(["keypad", "spelling", "escalate"]).toContain(state.kind);
+  });
+
+  it("carries rejections into spelling, so a spelling cannot repeat one", () => {
+    let state = speak(idle, "My name is Sikir").state;
+    state = speak(state, "No").state;
+    expect(state.kind).toBe("spelling");
+    // Spelling out the value already rejected is not a correction.
+    const same = speak(state, "S I K I R");
+    expect(same.say ?? "").not.toContain("Sikir —");
+  });
+
+  it("still confirms cleanly when the caller agrees first time", () => {
+    const asked = speak(idle, "four one seven two nine");
+    expect(speak(asked.state, "Yes, that is correct").captured).toBe("41729");
+  });
+});

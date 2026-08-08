@@ -32,8 +32,26 @@ export type CaptureState =
       readonly value: string;
       readonly attempt: number;
       readonly subject: CaptureSubject;
+      /**
+       * Every candidate heard for this entity, in order, including repeats.
+       *
+       * A single STT result is not evidence. Two independent results agreeing is much
+       * stronger than one arriving loudly, so the value offered is the most-repeated
+       * candidate rather than the most recent. It never skips the readback — R4.3.1 has
+       * no confidence threshold and agreement is not correctness — it only decides which
+       * value is worth putting to the caller.
+       */
+      readonly heard: readonly string[];
+      /**
+       * Values the caller has already said no to.
+       *
+       * On a live call the agent asked "TK — have I got that right?", was told no, and
+       * asked "Sorry — TK. Is that right?". A rejected value is the one thing we know for
+       * certain is wrong, and offering it again is worse than having no candidate at all.
+       */
+      readonly rejected: readonly string[];
     }
-  | { readonly kind: "spelling"; readonly attempt: number }
+  | { readonly kind: "spelling"; readonly attempt: number; readonly rejected: readonly string[] }
   | { readonly kind: "keypad"; readonly digits: string; readonly attempt: number }
   | { readonly kind: "confirmed"; readonly value: string }
   | { readonly kind: "escalate" };
@@ -171,9 +189,36 @@ export const nameFrom = (text: string): string | null => {
   return null;
 };
 
+/**
+ * The candidate worth offering: most agreed-upon first, never one already rejected.
+ *
+ * This is the whole answer to "do not trust a single STT result". Nothing here decides a
+ * value is correct — only which of several guesses to put to the caller next.
+ */
+const bestCandidate = (
+  heard: readonly string[],
+  rejected: readonly string[],
+): string | null => {
+  const counts = new Map<string, number>();
+  for (const value of heard) {
+    if (rejected.includes(value)) continue;
+    counts.set(value, (counts.get(value) ?? 0) + 1);
+  }
+  let best: string | null = null;
+  let bestCount = 0;
+  for (const [value, count] of counts) {
+    // Ties go to the earlier candidate: the caller said it first and has not corrected it.
+    if (count > bestCount) {
+      best = value;
+      bestCount = count;
+    }
+  }
+  return best;
+};
+
 /** Begin a capture of a value the orchestrator has already decided is worth confirming. */
 const beginCapture = (value: string, subject: CaptureSubject): CaptureResult => ({
-  state: { kind: "confirming", value, attempt: 1, subject },
+  state: { kind: "confirming", value, attempt: 1, subject, heard: [value], rejected: [] },
   say: readback(value, subject, 1),
   captured: null,
 });
@@ -195,19 +240,31 @@ const start = (text: string): CaptureResult => {
 };
 
 /** Where a caller goes when speech has failed twice: keypad for a number, spelling for a name. */
-const fallbackFor = (subject: CaptureSubject): CaptureResult =>
+const fallbackFor = (
+  subject: CaptureSubject,
+  rejected: readonly string[],
+): CaptureResult =>
   subject === "name"
-    ? { state: { kind: "spelling", attempt: 0 }, say: spellPromptFor(0), captured: null }
+    ? { state: { kind: "spelling", attempt: 0, rejected }, say: spellPromptFor(0), captured: null }
     : { state: { kind: "keypad", digits: "", attempt: 0 }, say: keypadPrompt, captured: null };
 
 const spelling = (
-  state: { readonly attempt: number },
+  state: { readonly attempt: number; readonly rejected: readonly string[] },
   text: string,
 ): CaptureResult => {
   const spelled = parseSpelledName(text);
-  if (spelled !== null) {
+  // A spelling that reproduces something already rejected is not a correction, and
+  // offering it back would restart the loop the caller is trying to escape.
+  if (spelled !== null && !state.rejected.includes(spelled)) {
     return {
-      state: { kind: "confirming", value: spelled, attempt: 1, subject: "name" },
+      state: {
+        kind: "confirming",
+        value: spelled,
+        attempt: 1,
+        subject: "name",
+        heard: [spelled],
+        rejected: state.rejected,
+      },
       say: readback(spelled, "name", 1),
       captured: null,
     };
@@ -218,52 +275,84 @@ const spelling = (
     return { state: { kind: "escalate" }, say: escalation, captured: null };
   }
   return {
-    state: { kind: "spelling", attempt: state.attempt + 1 },
+    state: { kind: "spelling", attempt: state.attempt + 1, rejected: state.rejected },
     say: spellPromptFor(state.attempt + 1),
     captured: null,
   };
 };
 
 const confirming = (
-  state: { readonly value: string; readonly attempt: number; readonly subject: CaptureSubject },
+  state: {
+    readonly value: string;
+    readonly attempt: number;
+    readonly subject: CaptureSubject;
+    readonly heard: readonly string[];
+    readonly rejected: readonly string[];
+  },
   text: string,
 ): CaptureResult => {
-  // A name is never re-read from free speech: the transcriber already proved it cannot
-  // hear it, and re-parsing produces a third wrong spelling rather than a correction.
-  const said = state.subject === "name" ? null : parseSpokenDigits(text);
-
-  // Order matters. A caller correcting a digit usually says "no, it's four one eight" —
-  // rejection and correction in one breath. Checking for a value first would accept the
-  // correction silently; checking for "no" first and stopping would throw it away.
-  //
-  // Rejection then beats agreement outright. This was `NO.test(text) && !YES.test(text)`
-  // and it confirmed a number on a live call: "No. No. That's not correct." matches NO,
-  // but "correct" also matched YES, so the guard cancelled the rejection and the value
-  // went through. The costs are not symmetric — a false rejection asks once more, a
-  // false confirmation is the wrong number acted on, which is the whole failure R4.3.1
-  // exists to prevent — so anything that sounds like "no" is a no.
+  // Parsed for names as well as numbers now. The previous rule refused to re-read a name
+  // from free speech at all, to stop a third wrong spelling — and it threw away a genuine
+  // correction: the caller answered "TK — have I got that right?" with "My name is Kim
+  // Woo", a new candidate, and the agent asked about TK again. The narrower rule that
+  // actually holds is below: never offer a value the caller has already rejected.
+  const said = state.subject === "name" ? nameFrom(text) : parseSpokenDigits(text);
   const rejected = NO.test(text.replace(FALSE_NEGATIVES, " "));
 
-  if (said !== null && said !== state.value) {
-    // A different value, whether or not they said "no", is a correction. It restarts the
-    // readback rather than being taken at face value — the correction is speech too, and
-    // R4.3.1 does not exempt it.
-    return {
-      state: { kind: "confirming", value: said, attempt: state.attempt + 1, subject: state.subject },
-      say: readback(said, state.subject, 1),
-      captured: null,
-    };
-  }
+  // Rejection first, so the value being rejected is recorded before anything replaces it.
+  const rejectedNow = rejected ? [...state.rejected, state.value] : state.rejected;
 
-  if (rejected) {
-    // A rejected name goes straight to spelling. Asking someone to say it again slowly
-    // is what produced "Hill", then "Sequium", then "Security security security".
-    if (state.subject === "name" || state.attempt >= MAX_SPOKEN_ATTEMPTS) {
-      return fallbackFor(state.subject);
+  // Order matters. A caller correcting usually says "no, it's four one eight" — rejection
+  // and correction in one breath. Taking the number first would accept it silently;
+  // stopping at "no" would throw it away.
+  const heard =
+    said !== null && !rejectedNow.includes(said) ? [...state.heard, said] : state.heard;
+
+  // A correction the caller just spoke breaks ties in its own favour: they said it
+  // most recently and deliberately. Repetition still wins outright, so two agreeing
+  // results beat one fresh one — but one fresh one beats a stale tie, which is what
+  // "my name is Kim Woo" was and what the earlier-wins rule threw away.
+  const agreed = bestCandidate(heard, rejectedNow);
+  const timesHeard = (value: string | null): number =>
+    value === null ? -1 : heard.filter((h) => h === value && !rejectedNow.includes(h)).length;
+  const next =
+    said !== null && !rejectedNow.includes(said) && timesHeard(said) >= timesHeard(agreed)
+      ? said
+      : agreed;
+
+  if (rejected || (said !== null && said !== state.value)) {
+    if (next === null || next === state.value) {
+      // Nothing left worth offering. Asking again with the same value is what the caller
+      // is already tired of, so hand over to spelling or the keypad instead.
+      if (state.subject === "name" || state.attempt >= MAX_SPOKEN_ATTEMPTS) {
+        return fallbackFor(state.subject, rejectedNow);
+      }
+      return {
+        state: {
+          kind: "confirming",
+          value: state.value,
+          attempt: state.attempt + 1,
+          subject: state.subject,
+          heard,
+          rejected: rejectedNow,
+        },
+        say: retry,
+        captured: null,
+      };
     }
+
+    // A different value, whether or not "no" was said, is a correction. It is read back
+    // rather than trusted: a correction is speech too, and R4.3.1 does not exempt it.
     return {
-      state: { kind: "confirming", value: state.value, attempt: state.attempt + 1, subject: state.subject },
-      say: retry,
+      state: {
+        kind: "confirming",
+        value: next,
+        attempt: state.attempt + 1,
+        subject: state.subject,
+        heard,
+        rejected: rejectedNow,
+      },
+      say: readback(next, state.subject, 1),
       captured: null,
     };
   }
@@ -276,12 +365,20 @@ const confirming = (
     };
   }
 
-  // Neither agreement nor a value: the caller said something else entirely. Ask again
-  // rather than guessing, and count it, so an unanswerable exchange still terminates.
-  if (state.attempt >= MAX_SPOKEN_ATTEMPTS) return fallbackFor(state.subject);
+  // Neither agreement nor a new value. Ask again — but with the best candidate we hold,
+  // which repetition may have changed under us, and never with a rejected one.
+  if (state.attempt >= MAX_SPOKEN_ATTEMPTS) return fallbackFor(state.subject, rejectedNow);
+  const offer = next ?? state.value;
   return {
-    state: { kind: "confirming", value: state.value, attempt: state.attempt + 1, subject: state.subject },
-    say: readback(state.value, state.subject, state.attempt + 1),
+    state: {
+      kind: "confirming",
+      value: offer,
+      attempt: state.attempt + 1,
+      subject: state.subject,
+      heard,
+      rejected: rejectedNow,
+    },
+    say: readback(offer, state.subject, offer === state.value ? state.attempt + 1 : 1),
     captured: null,
   };
 };
