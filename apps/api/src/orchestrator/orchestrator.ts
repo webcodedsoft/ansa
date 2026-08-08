@@ -6,8 +6,10 @@ import type { CallMediaStream } from "@ansa/telephony";
 import { durationMs, type SynthesisStream, type TtsProvider } from "@ansa/tts";
 
 import { createFillerPicker } from "../telephony/filler";
+import { classify } from "./action";
 import { createConversation } from "./conversation";
 import { interpret, normalise } from "./hearing";
+import { budgetFor, budgetMs } from "./turn-budget";
 import { createSentenceBuffer } from "./sentences";
 import { SYSTEM_PROMPT } from "./system-prompt";
 
@@ -152,13 +154,6 @@ const TURN_WATCHDOG_MS = 4_000;
 const TRANSCRIPT_WATCHDOG_MS = 5_000;
 
 /**
- * R6.3, enforced where it cannot be argued with. The prompt asks for two sentences and
- * the model will drift past it; this caps the turn regardless, and caps worst-case tail
- * latency at the same time.
- */
-const MAX_SENTENCES_PER_TURN = 2;
-
-/**
  * Backchannel: the noises a listener makes to show they are still there.
  *
  * A person saying "mm-hm" while you speak is not taking the floor, and a speaker who
@@ -207,6 +202,13 @@ const REPAIR_PHRASES: readonly string[] = [
   "can t hear you",
   "cant hear you",
   "i missed that",
+  // Pidgin, distinctive enough to match inside a longer turn.
+  "wetin you talk",
+  "wetin you say",
+  "talk am again",
+  "say am again",
+  "i no hear you",
+  "i no hear",
 ];
 
 /**
@@ -214,16 +216,26 @@ const REPAIR_PHRASES: readonly string[] = [
  * me" is a question; "what?" is a request to repeat.
  */
 const REPAIR_ALONE = new Set([
-  "sorry",
+  // NOT bare "sorry". In Nigerian English it is a sympathy token — "sorry o" to someone
+  // who stubbed their toe — not an apology or a request to repeat. Treating it as repair
+  // meant: agent refuses, caller says "sorry" meaning "that's a shame", and the agent
+  // re-says the refusal they heard perfectly well.
   "sorry what",
   "pardon",
   "pardon me",
   "excuse me",
   "what",
+  // "huh" is deliberately in BOTH this set and BACKCHANNEL, and the split is correct:
+  // BACKCHANNEL is only consulted while the agent is speaking, so "huh" over the agent
+  // is listening and "huh" into silence is repair.
   "huh",
-  "eh",
   "again",
   "come again",
+  // Pidgin repair. "wetin" alone is a repair; "wetin be my balance" is a question, which
+  // is why it belongs here and not in the substring list.
+  "wetin",
+  "you say",
+  "come again jare",
 ]);
 
 /** `text` must already be normalised: lower case, punctuation stripped. */
@@ -235,6 +247,22 @@ const isRepairRequest = (text: string): boolean => {
 const BACKCHANNEL = new Set([
   "mm", "mmm", "mhm", "mmhm", "hmm", "hm", "uh", "uh huh", "uhhuh", "huh",
   "yeah", "yep", "yes", "ok", "okay", "right", "sure", "aha", "ah", "oh", "i see",
+  // Measured from ICE-Nigeria phone calls rather than assumed. Their real top tokens are
+  // mhm, okay, yeah, yes, erm, eh, aha — and "uh-huh", which was in this list on the
+  // strength of American intuition, does not appear in the top forty at all.
+  "erm", "eh", "ehen", "eh heh", "ehen now", "na so", "no wahala", "okay o", "oya",
+  "yes now", "correct", "true", "oh ho",
+]);
+
+/**
+ * Nigerian pragmatic particles, whole-utterance only.
+ *
+ * "o" alone accounts for around a tenth of all question tags in the ICE-Nigeria spoken
+ * corpus. Before this, a bare particle fell through to the model and burned a whole turn
+ * — plus its latency — answering a token with no propositional content in it.
+ */
+const NIGERIAN_PARTICLES = new Set([
+  "o", "sha", "abi", "sef", "ba", "na so", "no be so", "shey", "abeg",
 ]);
 
 export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps): void => {
@@ -682,6 +710,10 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   };
 
   const respondTo = (callerText: string, forModel: string = callerText): void => {
+    // What the caller just did decides how long the reply may be. A fixed cap cannot be
+    // right for both "is it still active?" and "how do I make a claim?" — people vary
+    // turn length enormously by what was asked, and so must this.
+    const budget = budgetFor(classify(normalise(forModel)));
     // A transcript can arrive while the agent is still speaking — the echo guard
     // suppresses the speech-start but not the transcript behind it. Without this the
     // old turn is orphaned: its LLM and TTS keep streaming and billing, and the audio
@@ -721,13 +753,12 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     mark("llm_first_token");
     const sentences = createSentenceBuffer();
     const completion = deps.llm.complete({
-      system: SYSTEM_PROMPT,
+      // The instruction is the soft half. The word cap below is the half that holds.
+      system: `${SYSTEM_PROMPT}\n\n${budget.instruction}`,
       messages: conversation.messages,
-      // Measured on a live call: replies ran a 4.6s median and 7.4s at worst, against
-      // the 1-3s a person actually holds the floor for on the phone. At ~17 characters
-      // per second of speech, 80 tokens buys seven seconds of monologue. 45 lands a
-      // one-to-two sentence reply near three seconds, which is the target.
-      maxTokens: 45,
+      // A guard against runaway generation, not a length control. A tight token cap
+      // guillotines mid-clause and the caller hears a cut-off word.
+      maxTokens: budget.maxTokens,
     });
     current.cancelLlm = () => {
       completion.cancel();
@@ -735,6 +766,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
 
     let firstToken = true;
     let sentencesSpoken = 0;
+    let wordsSpoken = 0;
     completion.onDelta((token) => {
       if (turn?.seq !== seq) return;
       if (firstToken) {
@@ -742,13 +774,22 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         measure("llm_first_token", { seq });
       }
       for (const sentence of sentences.push(token)) {
-        if (sentencesSpoken >= MAX_SENTENCES_PER_TURN) {
-          log.info("capped an over-long turn", { seq, sentences: sentencesSpoken });
+        // Words, not tokens, and not sentences alone: one long sentence is still too
+        // long. Enforced here rather than asked for in the prompt, because prompts can
+        // be talked out of things and dispatch paths cannot.
+        if (sentencesSpoken >= budget.maxUnits || wordsSpoken >= budget.maxWords) {
+          log.info("turn capped", {
+            seq,
+            action: budget.action,
+            wordsSpoken,
+            budgetWords: budget.maxWords,
+          });
           current.llmDone = true;
           current.cancelLlm?.();
           return;
         }
         sentencesSpoken += 1;
+        wordsSpoken += sentence.split(/\s+/).filter((w) => w.length > 0).length;
         enqueue(current, sentence);
       }
     });
@@ -760,13 +801,25 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       // A tail with no terminal punctuation is a truncated fragment, not a sentence.
       // Speaking it means the caller hears the reply stop mid-word.
       const isFragment = tail.length < 15 && !/[.!?]$/.test(tail);
-      if (tail.length > 0 && !isFragment && sentencesSpoken < MAX_SENTENCES_PER_TURN) {
+      if (
+        tail.length > 0 &&
+        !isFragment &&
+        sentencesSpoken < budget.maxUnits &&
+        wordsSpoken < budget.maxWords
+      ) {
         enqueue(current, tail);
       }
       lastUtterance = full.trim().length > 0 ? full.trim() : lastUtterance;
       // The text, not just its length. Judging whether a call felt human is impossible
       // from a character count, and Slice 4a's review loop needs the words anyway.
-      log.info("agent turn", { seq, chars: full.length, text: full.trim() });
+      log.info("agent turn", {
+        seq,
+        text: full.trim(),
+        words: full.trim().split(/\s+/).filter((w) => w.length > 0).length,
+        action: budget.action,
+        budgetWords: budget.maxWords,
+        budgetMs: budgetMs(budget, 15),
+      });
       // Nothing to say and nothing queued: without this a turn with no audio at all
       // would never close.
       finishIfComplete(current);
@@ -799,9 +852,18 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       return;
     }
 
+    const flat = normalise(text);
+
     // Backchannel while the agent is speaking is listening, not interrupting.
-    if (turn !== null && BACKCHANNEL.has(normalise(text))) {
+    if (turn !== null && BACKCHANNEL.has(flat)) {
       log.debug("ignored backchannel", { text });
+      return;
+    }
+
+    // A bare particle carries no proposition to answer. Checked before repair, because
+    // "eh" as a continuer used to fall through and make the agent repeat itself.
+    if (NIGERIAN_PARTICLES.has(flat)) {
+      log.debug("ignored bare particle", { text, speaking: turn !== null });
       return;
     }
 
@@ -809,7 +871,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     // the rest by content — but only against our own recent words, never as a blanket
     // "ignore transcripts while speaking", which would swallow real barge-in.
     if (turn !== null) {
-      const heardBack = normalise(text);
+      const heardBack = flat;
       if (heardBack.length > 0 && normalise(spokenWindow).includes(heardBack)) {
         log.info("ignored transcript matching our own speech", { text });
         return;
@@ -821,7 +883,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
 
     // The caller did not hear us. Say it again rather than answering something else —
     // and do it without a model round trip, because they want it now.
-    if (lastUtterance !== null && isRepairRequest(normalise(text))) {
+    if (lastUtterance !== null && isRepairRequest(flat)) {
       log.info("caller asked us to repeat", { text });
       conversation.addCaller(text);
       repeatLast();
