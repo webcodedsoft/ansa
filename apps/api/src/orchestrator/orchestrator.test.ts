@@ -689,3 +689,54 @@ describe("runConversation", () => {
     expect(h.listen.closed).toBe(true);
   });
 });
+
+describe("reply length adapts to what was asked", () => {
+  const askAndCount = (h: ReturnType<typeof setup>, question: string, reply: string) => {
+    h.tts.last().done();
+    h.stream.ackAll();
+    h.listen.final(question);
+    const completion = h.llm.last();
+    for (const token of reply.split(/(?<=[.!?])\s+/)) completion.emit(`${token} `);
+    completion.finish();
+
+    // Sentences synthesise one at a time, so the queue only advances as each finishes.
+    // Without draining, every scenario would look like a one-sentence reply.
+    for (let i = 0; i < 10; i += 1) {
+      const live = h.tts.live()[0];
+      if (live === undefined) break;
+      live.audio(400);
+      live.done();
+    }
+    return h.tts.texts().slice(1).join(" ").split(/\s+/).filter((w) => w.length > 0).length;
+  };
+
+  // The pair the whole mechanism exists for: same code path, opposite budgets.
+  it("keeps a yes/no answer short", () => {
+    const spoken = askAndCount(
+      setup(),
+      "Is my policy still active?",
+      "Yes, it is. It renews in May and your premium has not changed at all this year.",
+    );
+    expect(spoken).toBeLessThanOrEqual(10);
+  });
+
+  it("lets an explanation run longer", () => {
+    const spoken = askAndCount(
+      setup(),
+      "How do I make a claim?",
+      "Call us within five days. We will send you a form to complete. Then an assessor visits.",
+    );
+    expect(spoken).toBeGreaterThan(12);
+  });
+
+  // Three turns in ten were cut off at a single word because the model opened with
+  // "Okay." and the sentence cap treated that interjection as the whole turn.
+  it("does not end a turn on a one-word opener", () => {
+    const spoken = askAndCount(
+      setup(),
+      "Is my policy still active?",
+      "Okay. Yes, it is active until May.",
+    );
+    expect(spoken).toBeGreaterThan(3);
+  });
+});

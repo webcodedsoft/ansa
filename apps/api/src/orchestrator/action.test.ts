@@ -47,6 +47,21 @@ describe("classify", () => {
     expect(of("My policy number is 85932514.")).toBe("readback");
   });
 
+  // A caller reading a number aloud produces words, not digits. Missing this meant every
+  // spoken number on a live call was typed as a short question and answered rather than
+  // read back, so the caller repeated it three times.
+  it.each([
+    "eight five nine two six two five",
+    "Okay so if I put the number I use, eight five nine two six two five",
+    "It is zero eight one three, eight one seven",
+  ])("treats the spoken number %j as a readback", (text) => {
+    expect(of(text)).toBe("readback");
+  });
+
+  it("does not mistake an ordinary sentence with one number for a readback", () => {
+    expect(of("I have one policy with you")).not.toBe("readback");
+  });
+
   it("recognises a caller reporting a problem rather than asking anything", () => {
     expect(
       of(

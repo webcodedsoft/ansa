@@ -111,6 +111,20 @@ const CLOSINGS = new Set([
 /** Four or more digits in a row is a policy or phone number being read out. */
 const DIGIT_RUN = /\d{4,}/;
 
+/**
+ * A caller reading a number aloud produces WORDS, not digits: "eight five nine two six".
+ * Only checking for digit runs missed every spoken number on a live call, so the turn was
+ * typed as a short question and answered instead of read back.
+ */
+const NUMBER_WORDS = new Set([
+  "zero", "oh", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+  "ten", "double", "triple",
+]);
+
+/** Four or more number words, however scattered, is someone reading something out. */
+const readsOutANumber = (words: readonly string[]): boolean =>
+  words.filter((w) => NUMBER_WORDS.has(w)).length >= 4;
+
 const hasCue = (text: string, cues: readonly string[]): boolean =>
   cues.some((cue) => text.includes(cue));
 
@@ -136,7 +150,8 @@ export const classify = (text: string): CallerAction => {
   // Before wh, because "what do i need to claim" is an explanation, not a fact lookup.
   if (hasCue(flat, EXPLANATION_CUES)) return "explanation";
 
-  if (DIGIT_RUN.test(flat)) return "readback";
+  const tokens = flat.split(" ");
+  if (DIGIT_RUN.test(flat) || readsOutANumber(tokens)) return "readback";
 
   const words = wordCount(flat);
   const looksLikeQuestion = WH_CUES.some(

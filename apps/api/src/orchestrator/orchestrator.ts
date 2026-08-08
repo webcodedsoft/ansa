@@ -120,6 +120,12 @@ const DEFAULT_BARGE_IN_GUARD_MS = 400;
  */
 const CHARS_PER_SECOND = 13;
 
+/** At most this many words is an opener ("Okay.", "Yes, it is."), not a whole answer. */
+const INTERJECTION_WORDS = 3;
+
+const countWords = (text: string): number =>
+  text.split(/\s+/).filter((w) => w.length > 0).length;
+
 /** First acknowledgement. Early enough that the caller never hears a full second of nothing. */
 const DEFAULT_FILLER_AFTER_MS = 450;
 /** Progress, not another acknowledgement. R6.2's two-second rule, made literal. */
@@ -777,7 +783,25 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         // Words, not tokens, and not sentences alone: one long sentence is still too
         // long. Enforced here rather than asked for in the prompt, because prompts can
         // be talked out of things and dispatch paths cannot.
-        if (sentencesSpoken >= budget.maxUnits || wordsSpoken >= budget.maxWords) {
+        // Words govern; sentences are only a secondary brake.
+        //
+        // Capping on the unit count alone cut three turns in ten off at a single word,
+        // because the model opened with "Okay." and that interjection consumed the whole
+        // allowance. A sentence boundary may only end a turn that has already said
+        // enough to be an answer.
+        const sentenceWords = countWords(sentence);
+
+        // The decision is made with the whole sentence in hand, because a sentence
+        // cannot be truncated mid-way without the caller hearing a cut-off word. So the
+        // question is whether to speak this sentence at all, not where to stop inside it.
+        //
+        // The first sentence always goes: cutting a turn to nothing is worse than any
+        // length. After that both limits must allow it, and the word check includes THIS
+        // sentence — letting a 14-word sentence follow a 3-word one produced a 17-word
+        // answer to a yes/no question.
+        const wouldExceedWords = wordsSpoken + sentenceWords > budget.maxWords;
+        const outOfUnits = sentencesSpoken >= budget.maxUnits;
+        if (wordsSpoken > 0 && (wouldExceedWords || outOfUnits)) {
           log.info("turn capped", {
             seq,
             action: budget.action,
@@ -788,8 +812,11 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
           current.cancelLlm?.();
           return;
         }
-        sentencesSpoken += 1;
-        wordsSpoken += sentence.split(/\s+/).filter((w) => w.length > 0).length;
+
+        // "Okay." or "Sure." is an opener, not an answer, so it does not consume a unit.
+        // Three turns in ten were cut off at a single word because it did.
+        if (sentenceWords > INTERJECTION_WORDS) sentencesSpoken += 1;
+        wordsSpoken += sentenceWords;
         enqueue(current, sentence);
       }
     });
