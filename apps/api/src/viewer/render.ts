@@ -1,4 +1,4 @@
-import type { CallDetail, CallSummary, CorpusEntry } from "@ansa/db";
+import type { CallDetail, CallSummary, CorpusEntry, DeliveryRecord } from "@ansa/db";
 
 import { wordErrorRate, type QualityMetrics } from "./metrics";
 
@@ -82,7 +82,8 @@ export const renderCallList = (calls: readonly CallSummary[], link: ViewerLink):
     "Calls",
     `<h1>Calls</h1>` +
       `<p><a href="${esc(href(link, "metrics"))}">metrics</a> · ` +
-      `<a href="${esc(href(link, "corpus.jsonl"))}">corpus (jsonl)</a></p>` +
+      `<a href="${esc(href(link, "corpus.jsonl"))}">corpus (jsonl)</a> · ` +
+      `<a href="${esc(href(link, "deliveries"))}">event deliveries</a></p>` +
       (calls.length === 0
         ? "<p class=muted>No calls recorded yet.</p>"
         : `<table><tr><th>When<th>Dir<th>Dialled<th>Caller<th>Turns<th>Ended<th></tr>` +
@@ -267,3 +268,50 @@ export const renderCorpusJsonl = (entries: readonly CorpusEntry[]): string =>
       }),
     )
     .join("\n");
+
+/**
+ * The event delivery log (Slice 6a).
+ *
+ * The question this page exists to answer is not "did a request happen" but "what did you
+ * send me, and when". So the body is here, in full, rather than a status code and a
+ * shrug — it is the bytes that were signed and posted, which is the only thing that
+ * settles the argument.
+ *
+ * It is a transcript, so it is escaped like everything else on this tool and served with
+ * the same no-store headers.
+ */
+export const renderDeliveries = (
+  deliveries: readonly DeliveryRecord[],
+  link: ViewerLink,
+): string =>
+  page(
+    "Event deliveries",
+    `<h1>Event deliveries</h1>` +
+      `<p><a href="${esc(href(link))}">calls</a></p>` +
+      (deliveries.length === 0
+        ? "<p class=muted>Nothing queued. No receiver is configured for this tenant, " +
+          "or no call has ended since one was.</p>"
+        : `<table><tr><th>Queued<th>Event<th>To<th>Call<th>Cfg<th>Status<th>Tries<th>Last<th>Sent</tr>` +
+          deliveries
+            .map((d) => {
+              const tone =
+                d.status === "delivered" ? "good" : d.status === "failed" ? "warn" : "muted";
+              const last =
+                d.status === "delivered"
+                  ? `${d.lastStatus ?? ""}`
+                  : `${d.lastStatus ?? ""} ${d.lastError ?? ""}`.trim();
+              return (
+                `<tr><td>${esc(d.createdAt.toISOString())}` +
+                `<td>${esc(d.eventType)}` +
+                `<td>${esc(d.subscription)}` +
+                `<td>${esc(d.carrierCallId ?? "—")}` +
+                `<td class=num>${esc(d.configVersion ?? "—")}` +
+                `<td class=${tone}>${esc(d.status)}` +
+                `<td class=num>${esc(d.attempts)}` +
+                `<td>${esc(last === "" ? "—" : last)}` +
+                `<td><details><summary>body</summary><pre>${esc(d.body ?? "")}</pre></details></tr>`
+              );
+            })
+            .join("") +
+          `</table>`),
+  );

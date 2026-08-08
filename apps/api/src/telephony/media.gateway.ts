@@ -10,7 +10,7 @@ import {
   type AudioFormat,
   type Logger,
 } from "@ansa/shared";
-import type { CallMediaStream, TelephonyProvider } from "@ansa/telephony";
+import type { CallDirection, CallMediaStream, TelephonyProvider } from "@ansa/telephony";
 import type { LlmProvider } from "@ansa/llm";
 import { buildUrl, openDeepgramSession } from "@ansa/deepgram-listen";
 import { openListenSession } from "@ansa/openai-listen";
@@ -32,6 +32,7 @@ import { createAudioCache } from "./prerender";
 import { composeListen } from "./composite-listen";
 import { createHandoff } from "../handoff/handoff";
 import { withHandoffJournal } from "../handoff/journal";
+import { withEventPublisher } from "../events/publisher";
 import type { HandoffDestination } from "../handoff/destination";
 import { HANDOFF_DESTINATION, WHISPER_REGISTRY } from "../handoff/tokens";
 import type { WhisperRegistry } from "../handoff/whisper";
@@ -364,6 +365,25 @@ export class MediaGateway implements OnApplicationShutdown {
       keyterms: keyterms.length,
     });
 
+    const direction: CallDirection =
+      stream.parameters[DIRECTION_PARAM] === "outbound" ? "outbound" : "inbound";
+
+    // Only when the tenant resolved. A call on an unconfigured number is already running
+    // with base vocabulary and recording nothing; there is nothing to scope state to and
+    // CLAUDE.md rule 3 does not admit a placeholder tenant.
+    //
+    // Created before the recorder, because the event publisher below reads it when a call
+    // ends: the identifiers a call established are both part of the payload and the
+    // strongest signal a tenant's redaction has to work with.
+    const facts =
+      tenant?.tenantId == null
+        ? undefined
+        : createCallFacts({
+            tenantId: tenant.tenantId,
+            callId: asCallId(stream.callId),
+            callDirection: direction,
+          });
+
     // Created here rather than at stream start: the tenant is what scopes every row,
     // and until the lookup above returned there was nothing to scope them to.
     const recorder = createCallRecorder({ dataSource: this.dataSource, log });
@@ -371,16 +391,50 @@ export class MediaGateway implements OnApplicationShutdown {
     // few seconds of a call — the ones that caused the escalation — are not in the table
     // yet when the transfer is dialled.
     const journal = withHandoffJournal(recorder);
+    const openedAt = Date.now();
+
+    /**
+     * A second tee, outside the journal, that queues an event webhook when the call ends
+     * or is handed to a person (Slice 6a).
+     *
+     * Returns the journal's recorder unchanged unless this tenant has configured a
+     * receiver, so on every call today this line does nothing. When it does do something,
+     * all it does is write a row: no request is made on the call path and no receiver's
+     * outage can reach a conversation.
+     *
+     * Outside the journal rather than inside so the summary it sends is built from exactly
+     * the events the person answering the phone was given.
+     */
+    const record =
+      tenant?.tenantId == null
+        ? journal.recorder
+        : withEventPublisher(journal.recorder, {
+            dataSource: this.dataSource,
+            log,
+            tenantId: tenant.tenantId,
+            events: tenant.events,
+            call: {
+              callId: stream.callId,
+              direction,
+              dialled: stream.parameters[DIALLED_PARAM] ?? null,
+              caller: stream.parameters[CALLER_PARAM] ?? null,
+              startedAt: new Date(openedAt).toISOString(),
+              configVersion: tenant.configVersion,
+            },
+            facts: () => facts?.facts ?? null,
+            journal: journal.events,
+            callerNumber: stream.parameters[CALLER_PARAM] ?? null,
+          });
+
     if (tenant?.tenantId != null) {
-      recorder.started({
+      record.started({
         tenantId: tenant.tenantId,
         carrierCallId: stream.callId,
-        direction: stream.parameters[DIRECTION_PARAM] === "outbound" ? "outbound" : "inbound",
+        direction,
         dialled: stream.parameters[DIALLED_PARAM] ?? "unknown",
         caller: stream.parameters[CALLER_PARAM] ?? null,
         configVersion: tenant.configVersion,
       });
-      const openedAt = Date.now();
       stream.onClosed((reason) => {
         // Our own duration, not the carrier's. Inbound calls recorded none at all: a
         // status callback is configured on the number rather than set in TwiML, so
@@ -388,24 +442,9 @@ export class MediaGateway implements OnApplicationShutdown {
         // know — and it is conversation time rather than billing time, which is the more
         // useful of the two for a reviewer anyway. The carrier's own figure still
         // overwrites it when the status callback arrives.
-        recorder.ended(reason, null, Math.round((Date.now() - openedAt) / 1000));
+        record.ended(reason, null, Math.round((Date.now() - openedAt) / 1000));
       });
     }
-
-    // Only when the tenant resolved. A call on an unconfigured number is already running
-    // with base vocabulary and recording nothing; there is nothing to scope state to and
-    // CLAUDE.md rule 3 does not admit a placeholder tenant. The direction ternary is the
-    // one `recorder.started` uses above, so the two cannot disagree about which way the
-    // call went.
-    const facts =
-      tenant?.tenantId == null
-        ? undefined
-        : createCallFacts({
-            tenantId: tenant.tenantId,
-            callId: asCallId(stream.callId),
-            callDirection:
-              stream.parameters[DIRECTION_PARAM] === "outbound" ? "outbound" : "inbound",
-          });
 
     const listen = this.openListen(stream.format, keyterms);
 
@@ -497,7 +536,7 @@ export class MediaGateway implements OnApplicationShutdown {
           callerNumber: stream.parameters[CALLER_PARAM] ?? null,
           destination: this.destination,
           events: journal.events,
-          record: journal.recorder,
+          record,
           log,
           say,
           hangUp: () => {
@@ -511,7 +550,7 @@ export class MediaGateway implements OnApplicationShutdown {
       initialAudio: drainEarlyAudio(),
       // The teed recorder, not the bare one: everything the orchestrator records has to
       // reach both the table and the summary the person answering will hear.
-      recorder: journal.recorder,
+      recorder: record,
       listenProvider: this.config.listenProvider,
       transcriptionConfig:
         this.config.listenProvider === "deepgram"

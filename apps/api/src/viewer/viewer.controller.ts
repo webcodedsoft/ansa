@@ -3,6 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import {
   exportCorpus,
   listCalls,
+  listEventDeliveries,
   loadCall,
   loadCallRecords,
   recordTranscriptCorrection,
@@ -33,6 +34,7 @@ import {
   renderCallList,
   renderCorpus,
   renderCorpusJsonl,
+  renderDeliveries,
   renderMetrics,
 } from "./render";
 
@@ -115,6 +117,28 @@ export class ViewerController {
       { token: token ?? "", tenant: tenant ?? "" },
       { calls: records.length },
     );
+  }
+
+  /**
+   * What we pushed to this tenant's own systems, and what happened to it (Slice 6a).
+   *
+   * Declared before `:id` for the same reason `metrics` is: Nest matches in declaration
+   * order and `deliveries` would otherwise be read as a call id.
+   */
+  @Get("deliveries")
+  @Header("Content-Type", "text/html; charset=utf-8")
+  @Header("Cache-Control", "no-store")
+  @Header("Referrer-Policy", "no-referrer")
+  async deliveries(
+    @Query("token") token?: string,
+    @Query("tenant") tenant?: string,
+  ): Promise<string> {
+    this.authorise(token);
+    const { db, tenantId } = this.scope(tenant);
+    return renderDeliveries(await listEventDeliveries(db, tenantId), {
+      token: token ?? "",
+      tenant: tenant ?? "",
+    });
   }
 
   @Get("corpus")

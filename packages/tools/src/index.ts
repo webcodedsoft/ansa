@@ -3,7 +3,15 @@ export * from "./limits";
 export * from "./registry";
 export * from "./dispatch";
 export * from "./redact";
+export * from "./redaction";
 export * from "./breaker";
+// Event webhooks: the platform pushing an organisation its own data at a lifecycle point.
+// Not tools — see events/config.ts for why registering them as tools would be wrong in
+// both directions — but below the seam they share the connector layer entirely.
+export * from "./events/config";
+export * from "./events/signature";
+export * from "./events/delivery";
+export * from "./events/prepare";
 // Tenant-supplied tools: the organisation hosts the endpoint, we are the client. Two
 // transports, one registry, one dispatch path (R5.2.0).
 export * from "./connector/config";

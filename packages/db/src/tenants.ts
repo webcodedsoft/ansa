@@ -45,6 +45,14 @@ export interface TenantConfig {
    */
   readonly toolConfig: unknown;
   /**
+   * Which of the tenant's own systems get pushed a record of a call, and what is masked on
+   * the way (Slice 6a, R5.2.4). Null until they configure some, which is every tenant.
+   *
+   * `unknown` for the same reason `toolConfig` is: the shape belongs to `@ansa/tools`,
+   * which validates it, and parsing it here would put the same rules in two places.
+   */
+  readonly eventConfig: unknown;
+  /**
    * Sealed credential values by reference name (R5.2.1).
    *
    * Ciphertext, and this package cannot open it — the key is held by the API process. A
@@ -68,6 +76,7 @@ interface ConfigRow {
   business_close_hour: number | null;
   business_days: number[] | null;
   tool_config: unknown;
+  event_config: unknown;
   credentials: Record<string, unknown> | null;
   config_version: number;
 }
@@ -116,6 +125,7 @@ const toConfig = (row: ConfigRow): TenantConfig => ({
   // column at all — and that has to read as "no tools configured" rather than reaching
   // the parser as a value.
   toolConfig: row.tool_config ?? null,
+  eventConfig: row.event_config ?? null,
   sealedCredentials: toSealed(row),
   configVersion: row.config_version,
 });

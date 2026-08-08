@@ -3,8 +3,11 @@ import { loadTenantById, loadTenantForNumber, type Db, type TenantConfig } from 
 import {
   CALL_CONTROL_DEFINITIONS,
   NO_CONNECTORS,
+  NO_EVENTS,
   prepareConnectors,
+  prepareEvents,
   type PreparedConnectors,
+  type PreparedEvents,
 } from "@ansa/tools";
 
 import { composeSystemPrompt, DEFAULT_SYSTEM_PROMPT } from "../prompts/compose";
@@ -43,6 +46,15 @@ export interface CallTenant {
    * already happened when this configuration was loaded.
    */
   readonly connectors: PreparedConnectors;
+  /**
+   * Where this organisation wants a record of the call pushed, and what it wants masked
+   * on the way (Slice 6a). Empty for every tenant until one configures a receiver.
+   *
+   * Prepared here beside the connectors because it needs the same three things — the
+   * egress allowlist, the vault and the transport — and because resolving a signing secret
+   * is not work to do while a call is ending.
+   */
+  readonly events: PreparedEvents;
   /** Recorded on every call so a call from weeks ago can still be explained (R7.5). */
   readonly configVersion: number;
 }
@@ -80,6 +92,7 @@ export const UNKNOWN_TENANT: CallTenant = {
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   businessHours: null,
   connectors: NO_CONNECTORS,
+  events: NO_EVENTS,
   configVersion: 0,
 };
 
@@ -161,6 +174,16 @@ const toCallTenant = async (
     log,
   });
 
+  // Same treatment and the same promise as the connectors: never throws, and a tenant
+  // whose event configuration is wrong gets no deliveries rather than a failed call.
+  const events = await prepareEvents({
+    tenantId: config.tenantId,
+    config: config.eventConfig,
+    credentialKey,
+    sealedCredentials: config.sealedCredentials,
+    log,
+  });
+
   return {
     tenantId: config.tenantId,
     name: config.name,
@@ -178,6 +201,7 @@ const toCallTenant = async (
     }),
     businessHours: config.businessHours,
     connectors,
+    events,
     configVersion: config.configVersion,
   };
 };

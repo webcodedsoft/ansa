@@ -17,6 +17,7 @@
 //   TENANT_ID=... node tools/tenant/config.mjs credential partner_api bearer <token>
 //   TENANT_ID=... node tools/tenant/config.mjs credential partner_api header X-Key <value>
 //   TENANT_ID=... node tools/tenant/config.mjs credential partner_api basic <user> <password>
+//   TENANT_ID=... node tools/tenant/config.mjs credential crm_hook signing <shared-secret>
 //
 // The JSON is the tenant's whole configuration, not a patch — publishing a version that
 // silently inherited half its values from the last one would make the history unreadable:
@@ -45,6 +46,25 @@
 //                            "credentialRef": "partner_api",
 //                            "speech": { "template": "Order {id} is {state}.",
 //                                        "fallback": "I can't find that order." } } ] } }
+//
+// `events` is where the organisation asks for its own data to be pushed back to it
+// (Slice 6a). It travels with the version for the same reason `tools` does, and for one
+// more: the version records which redaction rules were in force when a payload left.
+//
+//   { "events": { "egress": { "allowedHosts": ["hooks.example.com"] },
+//                 "subscriptions": [ { "name": "crm",
+//                                      "url": "https://hooks.example.com/ansa",
+//                                      "events": ["call.ended", "call.transferred"],
+//                                      "signingSecretRef": "crm_hook" } ] } }
+//
+// **Nothing is redacted unless you ask for it.** The payload is a record of a conversation
+// your own agent had, with your own customer, and it goes complete by default. Add a
+// `redaction` block — at the top of `events` for every receiver, or inside one subscription
+// for that receiver alone — to mask free text. What each category catches and, more
+// importantly, what none of them can catch, is in docs/EVENT_WEBHOOKS.md. Read that before
+// switching it on, because the limits are the part that matters.
+//
+//   { "events": { "redaction": { "categories": ["captured-identifier", "card-number"] } } }
 //
 // The credential itself never goes in that file. `credential` seals it with
 // TOOL_CREDENTIAL_KEY and writes ciphertext; the plaintext is never stored and is not
@@ -114,7 +134,7 @@ if (command === "show") {
       ? await client.query(
           `select name, voice_id, greeting, persona, instructions, keyterms,
                   business_open_hour, business_close_hour, business_days, tool_config,
-                  config_version
+                  event_config, config_version
              from tenants where id = $1`,
           [tenantId],
         )
@@ -146,7 +166,9 @@ if (command === "show") {
   }
 } else if (command === "credential") {
   const [ref, scheme, ...rest] = args;
-  if (!ref || !scheme) throw new Error("usage: credential <ref> <bearer|header|basic> <value...>");
+  if (!ref || !scheme) {
+    throw new Error("usage: credential <ref> <bearer|header|basic|signing> <value...>");
+  }
 
   const material =
     scheme === "bearer"
@@ -155,10 +177,21 @@ if (command === "show") {
         ? { kind: "header", header: rest[0], value: rest[1] }
         : scheme === "basic"
           ? { kind: "basic", username: rest[0], password: rest[1] }
-          : null;
+          : // What a webhook receiver verifies our signature with. Its own scheme, and the
+            // vault refuses to use it as an auth credential or to sign with an auth one:
+            // the receiver holds this value, and it must never turn out to be the token
+            // that opens the tenant's own API.
+            scheme === "signing"
+            ? { kind: "signing", secret: rest[0] }
+            : null;
   if (material === null) throw new Error(`unknown scheme: ${scheme}`);
   if (Object.values(material).some((v) => v === undefined || v === "")) {
     throw new Error(`the ${scheme} scheme needs all of its values`);
+  }
+  if (material.kind === "signing" && material.secret.length < 16) {
+    // The same floor the vault enforces. A four-character "secret" is a signature anybody
+    // can forge, and it is cheaper to refuse it here than to explain it afterwards.
+    throw new Error("a signing secret must be at least 16 characters");
   }
 
   const keyBase64 = env.TOOL_CREDENTIAL_KEY;
@@ -187,7 +220,7 @@ if (command === "show") {
   // reasoned about, and the CHECK constraint in 0012 says so too.
   const hours = config.businessHours ?? {};
   const { rows } = await client.query(
-    "select app.publish_tenant_config($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) as version",
+    "select app.publish_tenant_config($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) as version",
     [
       tenantId,
       config.name ?? null,
@@ -203,6 +236,8 @@ if (command === "show") {
       // tools, which is the same rule voice_id and greeting already follow. It is not a
       // way to leave the last one in place.
       config.tools == null ? null : JSON.stringify(config.tools),
+      // Same rule again: omitting `events` publishes a version that delivers nothing.
+      config.events == null ? null : JSON.stringify(config.events),
       note,
     ],
   );
