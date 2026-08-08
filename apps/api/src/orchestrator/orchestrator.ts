@@ -1038,6 +1038,10 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       lastUtterance = full.trim().length > 0 ? full.trim() : lastUtterance;
       // The text, not just its length. Judging whether a call felt human is impossible
       // from a character count, and Slice 4a's review loop needs the words anyway.
+      // Recorded, not merely logged. Without this the stored call is one-sided: every
+      // caller turn present and no reply to any of them, which is not a conversation
+      // anyone can review.
+      record.event("agent said", { seq, text: full.trim(), action: budget.action });
       log.info("agent turn", {
         seq,
         text: full.trim(),

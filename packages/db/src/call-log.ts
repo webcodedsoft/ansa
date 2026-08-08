@@ -297,3 +297,22 @@ export const loadCall = async (
     };
   });
 
+/**
+ * Records the carrier's own verdict on a call, from a webhook with no tenant context.
+ *
+ * See migration 0009 for why this bypasses RLS and why that is safe: one row, found by an
+ * identifier the carrier issued, nothing returned.
+ */
+export const closeCallByCarrierId = async (
+  dataSource: Db,
+  carrierCallId: string,
+  status: string,
+  durationSeconds: number | null,
+): Promise<void> => {
+  await dataSource.query("select app.close_call_by_carrier_id($1, $2, $3)", [
+    carrierCallId,
+    status,
+    durationSeconds,
+  ]);
+};
+

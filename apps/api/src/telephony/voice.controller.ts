@@ -9,6 +9,7 @@ import {
   Post,
   Res,
 } from "@nestjs/common";
+import { closeCallByCarrierId, type Db } from "@ansa/db";
 import { asCallId } from "@ansa/shared";
 import type { Logger } from "@ansa/shared";
 import { wasAnswered, type TelephonyProvider } from "@ansa/telephony";
@@ -23,6 +24,7 @@ import {
   DIALLED_PARAM,
   DIRECTION_PARAM,
   STATUS_WEBHOOK_PATH,
+  DATA_SOURCE,
   MEDIA_STREAM_PATH,
   TELEPHONY_PROVIDER,
   TENANT_PARAM,
@@ -42,6 +44,7 @@ export class VoiceController {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(LOGGER) private readonly log: Logger,
     @Inject(TENANT_REGISTRY) private readonly tenants: TenantRegistry,
+    @Inject(DATA_SOURCE) private readonly dataSource: Db | null,
   ) {}
 
   @Post("voice")
@@ -193,6 +196,21 @@ export class VoiceController {
 
     if (missed) log.warn("outbound call reached nobody", line);
     else log.info("call status", line);
+
+    // Stored, not just logged. The callback was firing correctly and carrier_status stayed
+    // null on every call, because logging it is not recording it.
+    if (terminal && this.dataSource !== null) {
+      void closeCallByCarrierId(
+        this.dataSource,
+        event.callId,
+        event.status,
+        event.durationSeconds,
+      ).catch((error: unknown) => {
+        log.error("could not store the carrier's call status", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
 
     // Slice 2's event log is where these belong once it is wired; R7.5 wants the whole
     // lifecycle recoverable per tenant, not just the part that produced audio.
