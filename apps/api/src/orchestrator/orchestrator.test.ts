@@ -954,3 +954,19 @@ describe("transcripts invented from silence", () => {
     assertInvariants(h);
   });
 });
+
+describe("the filler must not interrupt the agent itself", () => {
+  it("stays silent once real audio has gone out", async () => {
+    const h = setup({ ...fillerSetup(), fillerAfterMs: 50 });
+
+    // A readback consults no model, so nothing was cancelling the timers armed at
+    // end-of-turn: the agent talked over its own question and then heard it back.
+    h.listen.final("My policy number is four one seven two nine.");
+    const afterReadback = h.stream.sent.length;
+
+    await new Promise((r) => setTimeout(r, 400));
+
+    expect(h.stream.sent.length, "filler played over the readback").toBe(afterReadback);
+    assertInvariants(h);
+  });
+});

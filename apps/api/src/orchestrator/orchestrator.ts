@@ -383,6 +383,18 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
    * it coming back.
    */
   const playFiller = (tier: readonly string[]): void => {
+    // Never while the agent is already speaking.
+    //
+    // A filler is a thinking noise: it covers the gap before a reply exists. Once any
+    // real audio has gone out it is not covering anything, it is interrupting. On a live
+    // call the agent said "Let me make sure I have that right. Aditi. Have I got that?"
+    // and then, mid-utterance, "Okay." and "One moment." — and promptly heard its own
+    // filler back as a caller turn.
+    //
+    // The timers are armed at end-of-turn and a turn that never consults the model, like
+    // a readback, was never cancelling them.
+    if (turn !== null && turn.bytesSent > 0) return;
+
     // Never while a turn is being held for a continuation. The filler fires 450ms after
     // end-of-turn regardless of why we are silent, so on a live call the agent said
     // "Alright." into the pause it was deliberately leaving for the caller to finish
@@ -769,6 +781,8 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       sentenceAudioAt: null,
     };
     turn = direct;
+    // No model round trip is coming, so there is no gap for a filler to cover.
+    cancelFiller();
     log.info("speaking without the model", { reason, seq: direct.seq, text });
     enqueue(direct, text);
   };
