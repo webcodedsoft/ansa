@@ -7,6 +7,7 @@ import { asCallId, asTenantId } from "@ansa/shared";
 
 import { chunkOf, fakeListen, fakeLlm, fakeStream, fakeTts, silentLog } from "./fakes";
 import { createCallFacts, type CallFactsStore } from "../conversation/call-facts";
+import { DEFAULT_SYSTEM_PROMPT } from "../prompts/compose";
 import type { CallRecorder } from "../telephony/event-log";
 import { runConversation } from "./orchestrator";
 
@@ -32,6 +33,7 @@ const setup = (
     minSpeechMs?: number;
     recorder?: CallRecorder;
     facts?: CallFactsStore;
+    systemPrompt?: string;
   } = {},
 ) => {
   const stream = fakeStream();
@@ -46,6 +48,7 @@ const setup = (
     voiceId: "voice-ng",
     log: silentLog,
     greeting: GREETING,
+    systemPrompt: DEFAULT_SYSTEM_PROMPT,
     forSpeech: (t) => t.replace(/\bAnsa\b/g, "An-Sah"),
     // These tests drive transcripts directly to exercise turn logic and never fan in
     // audio, so the no-speech filter would discard every one of them. The filter has its
@@ -885,6 +888,23 @@ describe("readback in the turn loop (R4.3)", () => {
   });
 });
 
+describe("the prompt the call was configured with", () => {
+  it("sends the tenant's composed prompt, not the default one", () => {
+    // A tenant's persona has been loaded, validated and composed on every config load
+    // since the prompt layers landed, and the orchestrator used the default anyway.
+    const tenantPrompt = "You are answering for a tenant whose own layer is in this text.";
+    const h = setup({ systemPrompt: tenantPrompt });
+
+    h.listen.final("What are your opening hours?");
+
+    const system = h.llm.last().request.system;
+    expect(system.startsWith(tenantPrompt)).toBe(true);
+    // The turn budget still lands last, which is how the layering already worked.
+    expect(system.length).toBeGreaterThan(tenantPrompt.length);
+    assertInvariants(h);
+  });
+});
+
 describe("what the agent knows about the call (§10)", () => {
   const newFacts = (): CallFactsStore =>
     createCallFacts({
@@ -1117,6 +1137,7 @@ describe("audio that arrived before the listener existed", () => {
       voiceId: "voice-ng",
       log: silentLog,
       greeting: GREETING,
+      systemPrompt: DEFAULT_SYSTEM_PROMPT,
       forSpeech: (t) => t,
       minSpeechMs: 0,
       initialAudio: early,
@@ -1139,6 +1160,7 @@ describe("audio that arrived before the listener existed", () => {
       voiceId: "voice-ng",
       log: silentLog,
       greeting: GREETING,
+      systemPrompt: DEFAULT_SYSTEM_PROMPT,
       forSpeech: (t) => t,
       minSpeechMs: 0,
       initialAudio: [{ data: Buffer.alloc(160, 0x01), offsetMs: 0 }],

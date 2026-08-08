@@ -24,7 +24,6 @@ import { createConversation } from "./conversation";
 import { interpret, normalise } from "./hearing";
 import { budgetFor, budgetMs } from "./turn-budget";
 import { createSentenceBuffer } from "./sentences";
-import { SYSTEM_PROMPT } from "./system-prompt";
 import { createCallState } from "./call-state/machine";
 
 /**
@@ -55,6 +54,15 @@ export interface OrchestratorDeps {
   readonly voiceId: string;
   readonly log: Logger;
   readonly greeting: string;
+  /**
+   * The composed system prompt for this call — base, locale, tenant, task. The turn layer
+   * is appended per turn below, which is how it already worked.
+   *
+   * Required, not defaulted. A tenant's persona has been loaded, validated and composed on
+   * every config load since the prompt layers landed, and the orchestrator used the
+   * default anyway; a field with a fallback is how that happens again quietly.
+   */
+  readonly systemPrompt: string;
   /** Applied to everything spoken. Slice 4 replaces this with packages/normalizer. */
   readonly forSpeech: (text: string) => string;
   /**
@@ -1054,7 +1062,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       // then how long this particular reply may be — the per-turn instruction sits nearest
       // the generation because it is the one that changes every turn. The instruction is
       // the soft half; the word cap below is the half that holds.
-      system: [SYSTEM_PROMPT, known, budget.instruction].filter((s) => s !== "").join("\n\n"),
+      system: [deps.systemPrompt, known, budget.instruction].filter((s) => s !== "").join("\n\n"),
       messages: conversation.messages,
       // A guard against runaway generation, not a length control. A tight token cap
       // guillotines mid-clause and the caller hears a cut-off word.

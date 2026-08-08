@@ -27,7 +27,7 @@ import { createCallFacts } from "../conversation/call-facts";
 import { createCallRecorder } from "./event-log";
 import type { Db } from "@ansa/db";
 import { BASE_KEYTERMS } from "../tenancy/defaults";
-import type { TenantRegistry } from "../tenancy/tenant-registry";
+import { UNKNOWN_TENANT, type TenantRegistry } from "../tenancy/tenant-registry";
 import { runConversation, type ListenSession } from "../orchestrator/orchestrator";
 import { openDeepgramSocket } from "./ws-deepgram-socket";
 import { openListenSocket } from "./ws-listen-socket";
@@ -413,6 +413,10 @@ export class MediaGateway implements OnApplicationShutdown {
       voiceId: this.config.elevenLabsVoiceId,
       log: this.log,
       greeting: GREETING_TEXT,
+      // The tenant's own persona and instructions, already composed and cached at config
+      // load. An unregistered number gets UNKNOWN_TENANT's, which is the default
+      // composition and so exactly what every call got before this line existed.
+      systemPrompt: tenant?.systemPrompt ?? UNKNOWN_TENANT.systemPrompt,
       forSpeech,
       greetingAudio: this.greetingAudio,
       fillers: this.fillers,

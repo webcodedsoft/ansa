@@ -51,10 +51,17 @@ export const composeSystemPrompt = (input: CallPrompt): string =>
   ].join("\n\n");
 
 /**
- * What an unregistered number gets, and what `orchestrator/system-prompt.ts` re-exports
- * as `SYSTEM_PROMPT`.
+ * What an unregistered number gets. A call that resolves a tenant uses
+ * `CallTenant.systemPrompt` instead, which is these layers with theirs in the middle.
  *
  * Computed once at module load rather than per call: it has no inputs, and the composed
  * string is a couple of hundred tokens the LLM adapter sends on every turn.
+ *
+ * To change the wording:
+ *   phone-call conduct        -> prompts/base.ts
+ *   Nigerian English, numbers -> prompts/locale.ts
+ *   what a tenant may say     -> prompts/tenant-layer.ts
+ *   tools and capabilities    -> prompts/task-layer.ts
+ *   the non-negotiables       -> prompts/guarantees.ts  (and read the comment first)
  */
 export const DEFAULT_SYSTEM_PROMPT = composeSystemPrompt({ tenant: null, tools: [] });

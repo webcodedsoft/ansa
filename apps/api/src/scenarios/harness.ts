@@ -4,6 +4,7 @@ import type { CallRecord, MetricEvent, RecordedTranscript, RecordedTurn } from "
 import type { AudioChunk } from "@ansa/shared";
 
 import { chunkOf, fakeListen, fakeLlm, fakeStream, fakeTts, silentLog } from "../orchestrator/fakes";
+import { DEFAULT_SYSTEM_PROMPT } from "../prompts/compose";
 import type { CallRecorder } from "../telephony/event-log";
 import { runConversation } from "../orchestrator/orchestrator";
 
@@ -126,6 +127,7 @@ export const scenario = (options: ScenarioOptions = {}): Scenario => {
     voiceId: "voice-ng",
     log: silentLog,
     greeting: GREETING,
+    systemPrompt: DEFAULT_SYSTEM_PROMPT,
     // The real normaliser is @ansa/normalizer's forSpeech; the scenarios care about the
     // conversation, so this is the identity plus the one respelling that changes what a
     // transcriber would hear back.
