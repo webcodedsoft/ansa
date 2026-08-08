@@ -110,3 +110,40 @@ export const loadTenantForNumber = async (
     configVersion: row.config_version,
   };
 };
+
+/**
+ * Configuration for a tenant we already hold the id of, in one round trip.
+ *
+ * The counterpart to loadTenantForNumber, and it exists for the same reason: the RLS
+ * path opens a transaction to set the tenant context, which is six round trips and was
+ * measured at 1.74 seconds on the media socket. See migration 0005.
+ */
+export const loadTenantById = async (
+  dataSource: Db,
+  tenantId: TenantId,
+): Promise<TenantConfig | null> => {
+  const rows = (await dataSource.query("select * from app.tenant_config_for_id($1)", [
+    tenantId,
+  ])) as {
+    id: string;
+    name: string;
+    keyterms: string[] | null;
+    voice_id: string | null;
+    greeting: string | null;
+    persona: string | null;
+    config_version: number;
+  }[];
+
+  const row = rows[0];
+  if (row === undefined) return null;
+  return {
+    tenantId: asTenantId(row.id),
+    name: row.name,
+    keyterms: row.keyterms ?? [],
+    voiceId: row.voice_id,
+    greeting: row.greeting,
+    persona: row.persona,
+    configVersion: row.config_version,
+  };
+};
+

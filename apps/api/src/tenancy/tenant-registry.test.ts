@@ -21,8 +21,10 @@ const silentLog = () => {
  */
 const fakeDb = (rows: { resolve?: unknown[]; config?: unknown[] }) => ({
   query: vi.fn(async (sql: string) => {
-    // One round trip now: resolution and configuration come back together (0004).
+    // One round trip either way: by number at ingress (0004), by id for outbound,
+    // which meets its tenant on the media socket and has no number to key on (0005).
     if (sql.includes("tenant_config_for_number")) return rows.config ?? [];
+    if (sql.includes("tenant_config_for_id")) return rows.config ?? [];
     return [];
   }),
   // withTenant opens a transaction and sets app.tenant_id inside it, so the fake has

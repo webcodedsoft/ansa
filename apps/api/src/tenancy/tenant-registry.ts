@@ -1,5 +1,5 @@
 import { type Logger, type TenantId } from "@ansa/shared";
-import { loadTenantConfig, loadTenantForNumber, type Db } from "@ansa/db";
+import { loadTenantById, loadTenantForNumber, type Db } from "@ansa/db";
 
 
 import { BASE_KEYTERMS, MAX_KEYTERMS } from "./defaults";
@@ -157,7 +157,7 @@ export const createTenantRegistry = (options: TenantRegistryOptions) => {
       if (dataSource === null) return null;
 
       try {
-        const config = await loadTenantConfig(dataSource, tenantId);
+        const config = await loadTenantById(dataSource, tenantId);
         if (config === null) {
           log.error("tenant id on the media socket has no config", { tenantId });
           return null;

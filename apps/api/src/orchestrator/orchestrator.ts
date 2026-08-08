@@ -82,6 +82,15 @@ export interface OrchestratorDeps {
    * logic and never fan in audio at all.
    */
   readonly minSpeechMs?: number;
+  /**
+   * Audio the carrier delivered before this conversation was constructed.
+   *
+   * Outbound meets its tenant on the media socket and has to load configuration before a
+   * listen session can be opened with the right vocabulary. Frames arriving in that
+   * window used to be dropped: a fast lookup makes the window small, but "small" is not
+   * "cannot lose a word", and only replaying them makes that true.
+   */
+  readonly initialAudio?: readonly AudioChunk[];
 }
 
 /** A sentence that has been handed to TTS, and where its audio sits in the turn. */
@@ -463,10 +472,21 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   const speechGate = createSpeechGate();
   let speechMsSinceTranscript = 0;
 
-  stream.onAudio((chunk) => {
+  const takeAudio = (chunk: AudioChunk): void => {
     if (speechGate.push(chunk.data).length > 0) speechMsSinceTranscript += FRAME_MS;
     deps.listen.write(chunk);
-  });
+  };
+
+  // Replayed in order and through the same path, so the speech gate's noise floor and
+  // the hallucination filter see the start of the call rather than beginning mid-stream.
+  for (const chunk of deps.initialAudio ?? []) takeAudio(chunk);
+  if ((deps.initialAudio?.length ?? 0) > 0) {
+    log.info("replayed audio buffered before the listener opened", {
+      frames: deps.initialAudio?.length ?? 0,
+    });
+  }
+
+  stream.onAudio(takeAudio);
 
   // ---- speaking ------------------------------------------------------------
   /**

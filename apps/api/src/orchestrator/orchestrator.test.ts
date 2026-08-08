@@ -970,3 +970,52 @@ describe("the filler must not interrupt the agent itself", () => {
     assertInvariants(h);
   });
 });
+
+describe("audio that arrived before the listener existed", () => {
+  it("replays buffered frames into the listen session", () => {
+    const stream = fakeStream();
+    const listen = fakeListen();
+    const early = [
+      { data: Buffer.alloc(160, 0x01), offsetMs: 0 },
+      { data: Buffer.alloc(160, 0x02), offsetMs: 20 },
+    ];
+
+    runConversation(stream.stream, {
+      listen: listen.session,
+      llm: fakeLlm().provider,
+      tts: fakeTts().provider,
+      voiceId: "voice-ng",
+      log: silentLog,
+      greeting: GREETING,
+      forSpeech: (t) => t,
+      minSpeechMs: 0,
+      initialAudio: early,
+    });
+
+    // Outbound loads its tenant on the socket; frames arriving in that window used to be
+    // dropped outright.
+    expect(listen.written).toHaveLength(2);
+    expect(listen.written[0]?.data[0]).toBe(0x01);
+  });
+
+  it("keeps replayed frames ahead of live ones", () => {
+    const stream = fakeStream();
+    const listen = fakeListen();
+
+    runConversation(stream.stream, {
+      listen: listen.session,
+      llm: fakeLlm().provider,
+      tts: fakeTts().provider,
+      voiceId: "voice-ng",
+      log: silentLog,
+      greeting: GREETING,
+      forSpeech: (t) => t,
+      minSpeechMs: 0,
+      initialAudio: [{ data: Buffer.alloc(160, 0x01), offsetMs: 0 }],
+    });
+    stream.audioIn({ data: Buffer.alloc(160, 0x09), offsetMs: 20 });
+
+    // Order matters: the speech gate's noise floor is built from the start of the call.
+    expect(listen.written.map((c) => c.data[0])).toEqual([0x01, 0x09]);
+  });
+});

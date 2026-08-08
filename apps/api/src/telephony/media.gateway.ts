@@ -236,8 +236,20 @@ export class MediaGateway implements OnApplicationShutdown {
     // cache, so this is a map read. If it somehow missed, the call proceeds on the base
     // vocabulary rather than waiting on a database — configuration must never become
     // silence on the line (R6.2).
+    // Buffering starts now, not after the tenant lookup. The carrier begins delivering
+    // frames immediately and the conversation cannot exist until configuration is known,
+    // so without this the gap between the two is simply deaf.
+    const early: AudioChunk[] = [];
+    let buffering = true;
+    stream.onAudio((chunk) => {
+      if (buffering) early.push(chunk);
+    });
+
     const tenantId = stream.parameters[TENANT_PARAM];
-    void this.startConversation(stream, log, tenantId);
+    void this.startConversation(stream, log, tenantId, () => {
+      buffering = false;
+      return early;
+    });
   }
 
   /**
@@ -256,6 +268,8 @@ export class MediaGateway implements OnApplicationShutdown {
     stream: CallMediaStream,
     log: Logger,
     tenantId: string | undefined,
+    /** Stops buffering and hands over whatever arrived while we were looking up config. */
+    drainEarlyAudio: () => readonly AudioChunk[],
   ): Promise<void> {
     const tenant =
       tenantId === undefined
@@ -277,6 +291,9 @@ export class MediaGateway implements OnApplicationShutdown {
 
     runConversation(stream, {
       listen,
+      // Drained last, immediately before the conversation starts, so no frame can slip
+      // between the buffer closing and the orchestrator subscribing.
+      initialAudio: drainEarlyAudio(),
       llm: this.llm,
       tts: this.tts,
       voiceId: this.config.elevenLabsVoiceId,
