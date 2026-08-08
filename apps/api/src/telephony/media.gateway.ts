@@ -306,8 +306,15 @@ export class MediaGateway implements OnApplicationShutdown {
         caller: stream.parameters[CALLER_PARAM] ?? null,
         configVersion: tenant.configVersion,
       });
+      const openedAt = Date.now();
       stream.onClosed((reason) => {
-        recorder.ended(reason);
+        // Our own duration, not the carrier's. Inbound calls recorded none at all: a
+        // status callback is configured on the number rather than set in TwiML, so
+        // nothing reported one. This is the media stream's lifetime, which we always
+        // know — and it is conversation time rather than billing time, which is the more
+        // useful of the two for a reviewer anyway. The carrier's own figure still
+        // overwrites it when the status callback arrives.
+        recorder.ended(reason, null, Math.round((Date.now() - openedAt) / 1000));
       });
     }
 

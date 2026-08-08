@@ -488,7 +488,13 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
    *
    * Separate from turnSeq, which counts the agent's turns and skips the caller's. The
    * table is unique on (call, seq), so a shared counter is the only numbering that cannot
-   * collide — and it also makes the stored order the order they actually happened in.
+   * collide.
+   *
+   * It is an insertion counter and NOT a chronology. A caller turn is numbered when its
+   * transcript lands, which can be seconds after the caller started speaking and after an
+   * agent turn has already been recorded — a live call produced #11 starting at 57.7s
+   * immediately before #12 starting at 49.8s. Anything ordering turns must sort on
+   * started_offset_ms, which is when they actually began.
    */
   let recordedTurns = 0;
   const streamStartedAt = Date.now();
@@ -712,8 +718,11 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     cancelWatchdog();
     stream.clear();
 
-    commitHeard(current);
+    // Before commitHeard, which records the turn itself and would claim it with a null
+    // barge offset. Every barge-in on a live call came back with barged_in_at_ms empty
+    // because this ran second.
     recordAgentTurn(current, Math.round(durationMs(current.bytesHeard, stream.format)));
+    commitHeard(current);
     record.event("barge-in", { reason, seq: current.seq });
     log.info("barge-in", {
       reason,
