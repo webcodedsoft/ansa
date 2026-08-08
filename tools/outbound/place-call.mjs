@@ -25,6 +25,9 @@ const to = process.argv[2];
 if (!to?.startsWith("+")) throw new Error("Pass the destination in E.164, e.g. +2348138178550");
 
 const { createTwilioTelephonyProvider } = require(`${root}packages/providers/telephony/dist/index.js`);
+const { createDataSource } = require(`${root}packages/db/dist/index.js`);
+const { placeOutboundCall, ConsentError } = require(`${root}apps/api/dist/outbound/place.js`);
+const { createLogger } = require(`${root}packages/shared/dist/index.js`);
 
 const provider = createTwilioTelephonyProvider({
   authToken: env.TWILIO_AUTH_TOKEN,
@@ -34,18 +37,37 @@ const provider = createTwilioTelephonyProvider({
 
 const wsOrigin = env.PUBLIC_BASE_URL.replace(/^http/, "ws");
 const tenantId = process.env.TENANT_ID;
+if (tenantId === undefined) throw new Error("TENANT_ID is required: consent is per tenant");
 
-const placed = await provider.placeCall({
-  to,
-  from: env.OUTBOUND_FROM ?? "+18148592625",
-  mediaStreamUrl: `${wsOrigin}/telephony/media`,
-  amdCallbackUrl: `${env.PUBLIC_BASE_URL}/telephony/amd`,
-  statusCallbackUrl: `${env.PUBLIC_BASE_URL}/telephony/status`,
-  // Outbound already knows whose call this is; it travels out here rather than being
-  // re-derived from caller ID on the way back in.
-  ...(tenantId === undefined ? {} : { parameters: { tenantId } }),
-});
+const dataSource = await createDataSource({ url: env.DATABASE_URL }).initialize();
 
-// Queued is not answered. Nothing has rung yet.
-console.log(JSON.stringify(placed, null, 2));
-console.log("\nqueued, not answered — watch the API log for the media stream");
+try {
+  // Through the gate, not around it. Going straight to provider.placeCall would work and
+  // would be the whole problem: one door, so the check cannot be on one path and not
+  // another.
+  const placed = await placeOutboundCall(
+    { dataSource, telephony: provider, log: createLogger({ component: "outbound" }) },
+    {
+      tenantId,
+      to,
+      from: env.OUTBOUND_FROM ?? "+18148592625",
+      mediaStreamUrl: `${wsOrigin}/telephony/media`,
+      amdCallbackUrl: `${env.PUBLIC_BASE_URL}/telephony/amd`,
+      statusCallbackUrl: `${env.PUBLIC_BASE_URL}/telephony/status`,
+    },
+  );
+
+  // Queued is not answered. Nothing has rung yet.
+  console.log(JSON.stringify(placed, null, 2));
+  console.log("\nqueued, not answered — watch the API log for the media stream");
+} catch (error) {
+  if (error instanceof ConsentError) {
+    console.error(`refused: ${error.message}`);
+    console.error("\nRecord consent first — see tools/outbound/grant-consent.mjs");
+    process.exitCode = 2;
+  } else {
+    throw error;
+  }
+} finally {
+  await dataSource.destroy();
+}

@@ -147,3 +147,42 @@ export const loadTenantById = async (
   };
 };
 
+/** The evidence the consent policy needs. Reading only; the verdict is not ours to make. */
+export interface ConsentRecord {
+  readonly grantedAt: Date;
+  readonly revokedAt: Date | null;
+}
+
+/**
+ * Consent and suppression for one tenant and one number.
+ *
+ * Runs inside the tenant's own scope under RLS, so a tenant cannot read another's consent
+ * records — and cannot borrow them either, which is the more interesting failure.
+ * Suppression deliberately includes global rows: someone who asks not to be called should
+ * not have to ask each tenant separately.
+ */
+export const loadConsentFacts = async (
+  dataSource: Db,
+  tenantId: TenantId,
+  phoneNumber: string,
+): Promise<{ consent: ConsentRecord | null; suppressed: boolean }> =>
+  withTenant(dataSource, tenantId, async (scope) => {
+    const consents = await scope.query<{ granted_at: Date; revoked_at: Date | null }>(
+      `select granted_at, revoked_at from outbound_consent
+        where tenant_id = $1 and phone_number = $2
+        order by granted_at desc limit 1`,
+      [tenantId, phoneNumber],
+    );
+    const suppressions = await scope.query<{ n: string }>(
+      `select count(*) as n from do_not_call
+        where phone_number = $1 and (tenant_id = $2 or tenant_id is null)`,
+      [phoneNumber, tenantId],
+    );
+
+    const row = consents[0];
+    return {
+      consent: row === undefined ? null : { grantedAt: row.granted_at, revokedAt: row.revoked_at },
+      suppressed: Number(suppressions[0]?.n ?? 0) > 0,
+    };
+  });
+

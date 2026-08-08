@@ -188,9 +188,33 @@ describe("tenant isolation", () => {
 
     // FORCE is the one that survives code review while silently enforcing nothing if
     // it is ever dropped, so it is asserted per table rather than assumed.
-    expect(rows).toHaveLength(8);
+    //
+    // The count is hardcoded on purpose: it is what makes adding a table without RLS
+    // fail here rather than in production. It went 8 -> 10 when outbound_consent and
+    // do_not_call landed, and this test is how that was noticed.
+    expect(rows).toHaveLength(10);
     for (const row of rows) {
       expect(row).toEqual({ table: row.table, enabled: true, forced: true, has_policy: true });
     }
+  });
+
+  it("keeps one tenant's suppression list out of another's reach", async () => {
+    const number = `+234900${Date.now() % 1000000}`;
+
+    await asTenant(TENANT_A, async (c) => {
+      await c.query(
+        "insert into do_not_call (tenant_id, phone_number, reason) values ($1, $2, 'test')",
+        [TENANT_A, number],
+      );
+    });
+
+    const bSees = await asTenant(TENANT_B, async (c) =>
+      (await c.query("select 1 from do_not_call where phone_number = $1", [number])).rows,
+    );
+    expect(bSees).toEqual([]);
+
+    // The global case — tenant_id null, visible to everyone by design so a person need
+    // not ask each tenant separately — is not covered here: inserting one needs the owner
+    // role, which this suite connects as ansa_app precisely to avoid.
   });
 });
