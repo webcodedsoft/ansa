@@ -1,5 +1,7 @@
 import type { CallDetail, CallSummary, CorpusEntry, DeliveryRecord } from "@ansa/db";
 
+import type { alertsFor } from "./alerts";
+import type { CallCost } from "./cost";
 import { wordErrorRate, type QualityMetrics } from "./metrics";
 
 /**
@@ -169,13 +171,61 @@ export const renderMetrics = (
   metrics: QualityMetrics,
   link: ViewerLink,
   window: { readonly calls: number },
+  /** What the numbers above say is wrong, and what the calls cost. Both read the same log. */
+  breaches: ReturnType<typeof alertsFor>,
+  cost: CallCost,
 ): string => {
   const row = (name: string, value: string, meaning: string): string =>
     `<tr><td>${esc(name)}<td class=num>${esc(value)}<td class=muted>${esc(meaning)}</tr>`;
 
+  /**
+   * Above the scoreboard, deliberately. Something being wrong is not a row in a table of
+   * fourteen rows — it is the reason the page was opened.
+   */
+  const alarms = breaches.sampleTooSmall
+    ? `<p class=muted>Too few calls in the window to judge anything. Thresholds are held ` +
+      `until there are enough.</p>`
+    : breaches.alerts.length === 0
+      ? `<p class=good>Every threshold met.</p>`
+      : `<table><tr><th>Breached<th>Now<th>Threshold<th>What it means</tr>` +
+        breaches.alerts
+          .map(
+            (a) =>
+              `<tr><td class=warn>${esc(a.name)}` +
+              `<td class="num warn">${esc(a.unit === "ms" ? ms(a.observed) : percent(a.observed))}` +
+              `<td class=num>${esc(a.unit === "ms" ? ms(a.threshold) : percent(a.threshold))}` +
+              `<td class=muted>${esc(a.meaning)}</tr>`,
+          )
+          .join("") +
+        `</table>`;
+
+  const money = (amount: number | null): string =>
+    amount === null ? "—" : `${cost.currency} ${amount.toFixed(4)}`.trim();
+
+  const spend =
+    `<table><tr><th>Component<th>Used<th>Cost<th>Note</tr>` +
+    cost.lines
+      .map(
+        (l) =>
+          `<tr><td>${esc(l.label)}` +
+          `<td class=num>${esc(Math.round(l.quantity))} ${esc(l.unit)}` +
+          `<td class=num>${esc(money(l.amount))}` +
+          `<td class=muted>${esc(l.note)}</tr>`,
+      )
+      .join("") +
+    `<tr><td><b>Total</b><td class=num>${esc(window.calls)} calls` +
+    `<td class=num><b>${esc(money(cost.total))}</b>` +
+    `<td class=muted>${esc(
+      cost.total === null
+        ? "held back until every component can be priced — a partial total is not a number"
+        : `${money(cost.perCall)} per call`,
+    )}</tr></table>`;
+
   return page(
     "Metrics",
     `<p><a href="${esc(href(link))}">&larr; all calls</a></p>` +
+      `<h1>Thresholds</h1>` +
+      alarms +
       `<h1>Quality</h1>` +
       `<p class=muted>Over the last ${esc(window.calls)} calls · ` +
       `${esc(metrics.callerTurns)} caller turns · ${esc(metrics.agentTurns)} agent turns</p>` +
@@ -208,7 +258,21 @@ export const renderMetrics = (
         String(metrics.hallucinationsDiscarded),
         "transcripts invented from silence and thrown away — any at all is worth reading",
       ) +
-      `</table>`,
+      row(
+        "Silence recovered",
+        percent(metrics.recoveryRate),
+        `caller turns that produced nothing and needed an apology (${metrics.recoveryLines} of them)`,
+      ) +
+      row(
+        "Tool failure rate",
+        percent(metrics.toolFailureRate),
+        `tool calls that timed out or errored (${metrics.toolCalls} dispatched)`,
+      ) +
+      `</table>` +
+      `<h1>Cost</h1>` +
+      `<p class=muted>Usage is measured; prices are whatever this deployment was ` +
+      `configured with. An unpriced line means no rate is set for it, never that it is free.</p>` +
+      spend,
   );
 };
 

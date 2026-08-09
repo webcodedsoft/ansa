@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { alertsFor } from "./alerts";
+import { priceUsage, readCostRates, usageOverCalls } from "./cost";
 import { scoreCalls } from "./metrics";
 import {
   renderCall,
@@ -172,6 +174,9 @@ describe("recording a correction (R9.2.3)", () => {
 });
 
 describe("the metrics page", () => {
+  /** No rates configured, which is the default deployment and the interesting one. */
+  const noCost = priceUsage(usageOverCalls([]), readCostRates({}));
+
   const metrics = scoreCalls([
     {
       callId: "c1",
@@ -190,14 +195,15 @@ describe("the metrics page", () => {
   it("puts the definition next to the number", () => {
     // A metric whose meaning lives in someone's head is a number two people read
     // differently.
-    const html = renderMetrics(metrics, LINK, { calls: 1 });
+    const html = renderMetrics(metrics, LINK, { calls: 1 }, alertsFor(metrics), noCost);
     expect(html).toContain("Response latency p50");
     expect(html).toContain("900ms");
     expect(html).toContain("caller stopped");
   });
 
   it("shows an em dash rather than a zero for a metric with no samples", () => {
-    const empty = renderMetrics(scoreCalls([]), LINK, { calls: 0 });
+    const none = scoreCalls([]);
+    const empty = renderMetrics(none, LINK, { calls: 0 }, alertsFor(none), noCost);
     expect(empty).toContain("—");
     expect(empty).not.toContain("0.0%");
   });

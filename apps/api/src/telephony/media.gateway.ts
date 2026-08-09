@@ -639,8 +639,16 @@ export class MediaGateway implements OnApplicationShutdown {
       // reach both the table and the summary the person answering will hear.
       recorder: record,
       listenProvider: this.config.listenProvider,
-      transcriptionConfig:
-        this.config.listenProvider === "deepgram"
+      transcriptionConfig: {
+        // R4.1.9. Which vendors this call actually opened a connection to, recorded
+        // whenever the two are not the same one. Composite runs two sessions and two
+        // bills, and "composite" alone in the log cannot be attributed to either of them —
+        // the whole point of tracking listen cost per provider is deciding whether the
+        // second connection earns what it costs.
+        ...(this.config.listenProvider === "composite"
+          ? { listenWords: this.config.listenWords, listenTurns: this.config.listenTurns }
+          : {}),
+        ...(this.config.listenProvider === "deepgram"
           ? {
               model: this.config.deepgramModel,
               host: this.config.deepgramHost,
@@ -654,7 +662,8 @@ export class MediaGateway implements OnApplicationShutdown {
               turnDetection: this.config.turnDetectionMode,
               eagerness: this.config.vadEagerness,
               sendAsPcm: this.config.openAiSendPcm,
-            },
+            }),
+      },
       llm: this.llm,
       tts: this.tts,
       voiceId: settings.voiceId,

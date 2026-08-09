@@ -810,9 +810,14 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     current.inFlight = { text: sentence, startByte };
 
     mark("tts_first_byte");
-    record.event("tts_start", { seq: current.seq });
+    // The normalised text, not the raw sentence: characters are what a voice provider
+    // bills for and this is the string actually sent, respellings and all. It is also the
+    // only place the number exists — a retry after a failure is a second charge for the
+    // same sentence, and the log has to show both.
+    const spoken = deps.forSpeech(sentence);
+    record.event("tts_start", { seq: current.seq, chars: spoken.length });
     const synthesis = deps.tts.synthesize({
-      text: deps.forSpeech(sentence),
+      text: spoken,
       voiceId: deps.voiceId,
       format: stream.format,
     });
@@ -1333,18 +1338,30 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     }, TURN_WATCHDOG_MS);
     watchdog.unref();
 
-    record.event("llm_start", { seq });
     mark("llm_first_token");
     const sentences = createSentenceBuffer();
     // Empty until something is known, so turn one is byte-for-byte the prompt that was
     // sent before this existed.
     const known = deps.facts === undefined ? "" : renderFacts(deps.facts.facts);
+    // Order is deliberate. Standing instructions, then what is known about this call, then
+    // how long this particular reply may be — the per-turn instruction sits nearest the
+    // generation because it is the one that changes every turn. The instruction is the soft
+    // half; the word cap below is the half that holds.
+    const system = [deps.systemPrompt, known, budget.instruction].filter((s) => s !== "").join("\n\n");
+    /**
+     * What this turn costs to ask, in characters.
+     *
+     * Characters and not tokens, and the difference is not cosmetic: the vendor bills
+     * tokens and the interface does not report them, so this is a proxy that moves with
+     * the real number rather than the real number. It is recorded because the growth is
+     * the interesting part — history is resent whole every turn, so turn twelve of a call
+     * costs several times what turn one did, and nothing until now could show that.
+     */
+    const promptChars =
+      system.length + conversation.messages.reduce((n, m) => n + m.content.length, 0);
+    record.event("llm_start", { seq, promptChars, messages: conversation.messages.length });
     const completion = deps.llm.complete({
-      // Order is deliberate. Standing instructions, then what is known about this call,
-      // then how long this particular reply may be — the per-turn instruction sits nearest
-      // the generation because it is the one that changes every turn. The instruction is
-      // the soft half; the word cap below is the half that holds.
-      system: [deps.systemPrompt, known, budget.instruction].filter((s) => s !== "").join("\n\n"),
+      system,
       messages: conversation.messages,
       // A guard against runaway generation, not a length control. A tight token cap
       // guillotines mid-clause and the caller hears a cut-off word.

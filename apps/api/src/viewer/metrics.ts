@@ -69,6 +69,29 @@ export interface QualityMetrics {
 
   /** Transcripts the speech gate threw away as invented. Not a rate: any at all is news. */
   readonly hallucinationsDiscarded: number;
+
+  /**
+   * Turns that produced nothing and had to be covered with an apology.
+   *
+   * The nearest thing the event log has to R10's "calls where the agent went silent" — each
+   * one is a moment a caller was owed a reply that no part of the pipeline produced, and
+   * only a watchdog saved the line. The reason travels with the event, which is what makes
+   * it actionable: a run of `no transcript` is a listening problem and a run of `llm failed`
+   * is not.
+   */
+  readonly recoveryLines: number;
+  /** Recovery lines over caller turns. A caller who had to be apologised to for asking. */
+  readonly recoveryRate: number | null;
+
+  /** Tool dispatches that reached an adapter or a ceiling, however they came out. */
+  readonly toolCalls: number;
+  /**
+   * Share of them that failed outright — timeout, adapter error, open circuit.
+   *
+   * Confirmations and transfers are not failures: they are the tier gate working, and
+   * counting them here would make a correctly refused irreversible tool look like an outage.
+   */
+  readonly toolFailureRate: number | null;
 }
 
 const rate = (numerator: number, denominator: number): number | null =>
@@ -150,6 +173,9 @@ export const scoreCalls = (records: readonly CallRecord[]): QualityMetrics => {
   let transferred = 0;
   let abandoned = 0;
   let hallucinations = 0;
+  let recoveryLines = 0;
+  let toolCalls = 0;
+  let toolFailures = 0;
   const latencies: number[] = [];
 
   for (const call of records) {
@@ -194,6 +220,14 @@ export const scoreCalls = (records: readonly CallRecord[]): QualityMetrics => {
         case "hallucination discarded":
           hallucinations += 1;
           break;
+        case "recovery_line":
+          recoveryLines += 1;
+          break;
+        case "tool_call": {
+          toolCalls += 1;
+          if (detail["outcome"] === "failed") toolFailures += 1;
+          break;
+        }
         default:
           break;
       }
@@ -217,5 +251,9 @@ export const scoreCalls = (records: readonly CallRecord[]): QualityMetrics => {
     transferRate: rate(transferred, records.length),
     abandonmentRate: rate(abandoned, records.length),
     hallucinationsDiscarded: hallucinations,
+    recoveryLines,
+    recoveryRate: rate(recoveryLines, callerTurns),
+    toolCalls,
+    toolFailureRate: rate(toolFailures, toolCalls),
   };
 };

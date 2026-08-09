@@ -28,6 +28,8 @@ import {
 
 import type { AppConfig } from "../config/env";
 import { APP_CONFIG, DATA_SOURCE, LOGGER } from "../telephony/tokens";
+import { alertsFor } from "./alerts";
+import { priceUsage, readCostRates, usageOverCalls } from "./cost";
 import { scoreCalls } from "./metrics";
 import {
   renderCall,
@@ -112,10 +114,16 @@ export class ViewerController {
     this.authorise(token);
     const { db, tenantId } = this.scope(tenant);
     const records = await loadCallRecords(db, tenantId, METRIC_WINDOW);
+    // One pass over one set of records, feeding all three. Quality, what is outside its
+    // threshold, and what the window cost are three readings of the same event log, and
+    // computing any of them from a different source is how two of them start disagreeing.
+    const metrics = scoreCalls(records);
     return renderMetrics(
-      scoreCalls(records),
+      metrics,
       { token: token ?? "", tenant: tenant ?? "" },
       { calls: records.length },
+      alertsFor(metrics),
+      priceUsage(usageOverCalls(records), readCostRates(process.env)),
     );
   }
 

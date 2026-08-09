@@ -1106,15 +1106,71 @@ reaches this. Slice 0 tested the *providers* on real conversation. This tests th
 
 ## Slice 8 — Hardening before anyone depends on it
 
-- [ ] Load test: 50 concurrent calls, latency targets held (R5.5).
-- [ ] Failure drills: STT provider down, LLM timeout, TTS failure, tenant endpoint
-      hanging. Every one degrades gracefully with speech, never silence.
+- [x] **The application boots.** `apps/api/src/boot.test.ts`. Nothing in this repo had ever
+      built the Nest container except the real process — every test constructs its
+      collaborators by hand — so the missing `TENANT_REGISTRY` export shipped through two
+      slices with lint, typecheck and 1,246 tests green. It resolves `AppModule` in both
+      supported configurations (no `DATABASE_URL`, and a `DATABASE_URL` that refuses
+      connections), plus a real database when the environment has one, and reaches for the
+      three providers that live across the module boundary that broke. A canary beside it
+      rebuilds the defect and asserts the container refuses, so a pass means something.
+
+      Booting it explained the silence. Nest's default on a resolution error is
+      `process.abort()`, taken before `bootstrap()`'s promise settles, so main.ts's own
+      `catch` had never run once. `abortOnError: false` now, and that handler exits 1 with
+      the reason in the structured log.
+
+- [x] **Failure drills.** `apps/api/src/scenarios/failure.test.ts`, 20 of them, through the
+      existing scenario harness rather than a third one. Listen socket dies (idle,
+      mid-sentence, and mid-continuation); model hangs forever, errors before a token, and
+      errors mid-sentence; TTS fails on the first byte and mid-stream, once and twice, with
+      and without more to say; a tenant's endpoint accepts and never answers, through the
+      real dispatcher at the real 3s ceiling; the database rejects every write mid-call;
+      the carrier drops the socket, including while a tool is in flight.
+
+      Two degraded into silence and are fixed:
+      - A turn held for a continuation kept its timer through a listen failure, so a second
+        after the goodbye the call opened a new turn and billed an LLM request on a line it
+        had already asked the carrier to hang up.
+      - A sentence that failed synthesis twice mid-word left the caller with a fragment and
+        recorded `turn_complete` — indistinguishable, to every metric and to the review
+        queue, from a turn that played out. It stays a fragment deliberately (the only
+        provider that could apologise has just failed twice) but it is named now.
+
+      `listen_failed`, `tts_failed`, `tts_sentence_dropped` and `recovery_line` are new
+      event kinds. None of those four failures reached the event log at all before.
+
+- [x] **Cost tracking per call.** `apps/api/src/viewer/cost.ts`, pure arithmetic over the
+      same `CallRecord[]` `scoreCalls` reads. Telephony seconds, listen seconds **per
+      provider** (R4.1.9 — a composite call opens two connections and both are metered, and
+      `call configuration` now records which two), TTS characters including a retry after a
+      failure, LLM turns and prompt characters.
+
+      Rates come from the environment and there are no defaults: usage is a fact, price is
+      a contract with a vendor. Unset shows units and no money, which is honest; it never
+      shows zero. **The model is not priced at all** — the vendor bills tokens,
+      `CompletionStream` does not report them, and a per-character figure would be
+      invention. Closing that needs usage on the completion stream.
+
+- [x] **Alerting thresholds.** `apps/api/src/viewer/alerts.ts`, reading `QualityMetrics` —
+      no second metrics path. p50/p95 response latency (PRD §5.5: 800ms / 1.5s), silence
+      recovered (PRD §10: under 1% of turns, measured per turn rather than per call
+      deliberately), transfer rate (PRD §10: at most half), tool failure rate. `scoreCalls`
+      gained `recoveryRate` and `toolFailureRate` to serve them, and both are on the
+      metrics page. Nothing fires below 20 calls. The tool-failure threshold is the only
+      one not from the PRD and says so where it is defined.
+
+      **Displayed, not delivered.** It renders at the top of `/viewer/metrics`; nothing
+      pages anyone. Wiring it to a channel is the next step and was not taken.
+
+- [ ] Load test: 50 concurrent calls, latency targets held (R5.5). **Not started.** Needs
+      a load generator against a real carrier or a fake one that can hold 50 media sockets,
+      and the number it would produce is meaningless without the real providers behind it.
 - [ ] Eval harness rerun in CI; number-accuracy regression blocks merge (R9.3).
-- [ ] Alerting on p95 latency, silence events, transfer rate, tool failure rate.
 - [ ] NDPR review: call recording consent, retention, redaction, data residency.
-- [ ] Emotional-distress classifier and low-friction human path (R6.6).
-- [ ] Cost tracking per call: STT + LLM + TTS + telephony minutes. You need this before
-      pricing.
+      **Not started**, deliberately: it is a legal review, not an engineering task, and
+      half of one is worse than none.
+- [ ] Emotional-distress classifier and low-friction human path (R6.6). **Not started.**
 
 ---
 
