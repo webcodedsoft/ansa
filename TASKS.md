@@ -1154,6 +1154,52 @@ Two principles from it bear on every slice below:
   dialling the number, not from foresight. That makes the review loop (R9.2) the actual
   moat, and the event log its prerequisite rather than housekeeping.
 
+## Slice 9 — The tenant dashboard API
+
+**Goal:** an organisation configures itself, without us. PRD §1.2 lists a self-serve
+builder as a v1 non-goal; that was changed deliberately on 2026-08-09, not drifted into.
+
+**Decisions, made and not to be relitigated:**
+
+- **Audience:** tenant organisations, self-service.
+- **Auth:** our own session layer, reusing `withTenant`. Not Supabase Auth, not a
+  third-party provider. One isolation mechanism across the whole product — the same
+  transaction the call path already uses.
+- **Shape:** REST with OpenAPI, client generated from the spec, spec generated from code.
+
+**The constraint that outranks the rest.** `withTenant` was chosen knowing its weakness:
+it depends on every route remembering to use it. So a handler must not be able to obtain
+an unscoped connection at all — a route that omits the guard fails closed rather than
+querying as nobody. Slice 7 is the argument for taking this seriously: four leaks, none
+of them RLS, all in the layer above it, including one that would have dialled a caller to
+another organisation's staff and read them a summary of a conversation they had no
+relationship with.
+
+| # | Endpoint area | Depends on |
+|---|---|---|
+| 1 | Auth, organisations, teams, invitations, the scoping guard | — |
+| 2 | Agent configuration: persona, greeting, voice, keyterms, hours, consent | 1 |
+| 3 | Tools and event webhooks: registration, tiers, credentials, redaction | 1 |
+| 4 | Calls, transcripts, corrections, metrics | 1 |
+| 5 | Numbers and onboarding readiness | 1 |
+
+**Suggested, not requested** — recorded so they are not mistaken for scope:
+
+- **6 · Test-call button.** Configure, press, your phone rings. The gap between "I changed
+  a prompt" and "I know if it is better" is where every defect this project has found was
+  hiding.
+- **7 · A correction queue rather than a call browser.** The event log already flags
+  discarded hallucinations, escalations and repeated confirmations. Rank by those instead
+  of making someone read calls hunting.
+- **8 · Config diff and rollback.** `config_version` is on every call and the version
+  table is append-only, so the data exists. Answers "it was working yesterday", which
+  matters more for a voice agent because the regression is heard, not seen.
+- **9 · Tool sandbox.** Fire a registered endpoint with test arguments and see the raw
+  response, the summary, and what the agent would say — before a caller hears it.
+
+**Known constraint on 5:** Twilio does not sell Nigerian numbers. "Claim a number" is the
+first thing a Nigerian organisation needs and the one thing we cannot currently give them.
+
 ## Not now
 
 **Outbound calling is the big one, and it has a named gate.** Do not start it until Slice
