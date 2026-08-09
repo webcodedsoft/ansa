@@ -107,8 +107,8 @@ export const loadOnboardingFacts = async (scope: TenantScope): Promise<Onboardin
   );
 
   const deliveries = await scope.query<{ failed: number; pending: number }>(
-    `select count(*) filter (where status = 'failed')::int  as failed,
-            count(*) filter (where status = 'pending')::int as pending
+    `select (count(*) filter (where status = 'failed'))::int  as failed,
+            (count(*) filter (where status = 'pending'))::int as pending
        from event_deliveries`,
   );
 
