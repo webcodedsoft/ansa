@@ -557,6 +557,36 @@ everything that actually breaks a live system: hesitation, self-correction, rest
 fillers, talking over the agent, trailing off, code-switching mid-sentence. A stack chosen
 on clean read-aloud will look 10–20 points better than it performs.
 
+### 2026-08-09 — deliberately partial, and why
+
+**Gate A is NOT closed and nothing below should be read as done.** Two of its rules were
+extracted and shipped early, in `eval/`, because both were broken *today* on the audio that
+already exists:
+
+1. **Ground truth is required and the match is exact.** The caller said Sikiru; six runs of
+   six returned Chike. The trial that was meant to catch it asserted "a name-shaped token
+   followed 'my name is'" — it passed 6/6 while being wrong 6/6, because ground truth was
+   known and unused. `eval/verdict.py` takes a truth string or refuses to produce a number.
+   Names and identifiers are exact match, never WER: "Chike" against "Sikiru" is ~60%
+   character overlap, and the metric that calls that partial credit is the metric that hid
+   this for a day.
+2. **Three trials, or no verdict.** Four provider comparisons here were each decided from a
+   single run and each reversed by the next; one enabled and reverted `OPENAI_SEND_PCM` the
+   same day. Fewer than three trials, trials that disagree, or a configuration whose
+   settings were not written down all produce a refusal rather than a number.
+
+**Everything else waits on audio.** We have five recordings of **one speaker**; Gate A wants
+8–10, mixed line quality, human-labelled turn boundaries, and consensus adjudication
+(R9.1.4) which needs at least two candidates over a shared corpus. Building the corpus
+format, the category breakdown and the WER machinery now would produce code exercised by
+nothing until that audio arrives. Deferred, not dropped — the reasoning and the full
+outstanding list are in `eval/README.md`.
+
+**Labelled today:** the caller's name on `CAa280584f…ulaw`. **Not labelled:** the policy
+number on that same recording, every prose transcript, and the other four recordings
+entirely. Nothing was derived from a transcriber's output — label that recording from any
+of the six available runs and the corpus would assert the caller is called Chike.
+
 - [ ] Git repo + remote, pushed. Do this literally first.
 
 **Tier 1 — number strings (half a day, still worth it)**
@@ -584,8 +614,12 @@ on clean read-aloud will look 10–20 points better than it performs.
       ground truth from one provider's output.
 - [ ] Scoring script: WER per category for prose, **exact match** for number strings.
       Report `disfluent` and `interruption` separately — that gap is what read-aloud
-      hides. *(Harness exists: `eval/`. Run `python3 selftest.py` first to see the
-      metrics working on synthetic data, then replace with real recordings.)*
+      hides. **Partial — the exact-match half ships, the WER half does not.**
+      `eval/verdict.py` scores names and identifiers by exact match against written-down
+      ground truth, refuses when there is none, and refuses to summarise fewer than three
+      trials or trials that disagree. `python3 eval/selftest.py` — 54 checks, offline, no
+      key and no audio. Per-category WER is deliberately absent: no hand transcript of any
+      recording exists, so there is nothing to compute it against.
 
 **Turn-taking scoring (separate from transcription — R9.1.6)**
 

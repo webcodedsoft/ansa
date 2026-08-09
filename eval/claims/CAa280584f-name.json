@@ -1,0 +1,87 @@
+{
+  "claim": "Does the caller's name survive transcription? (recording of 2026-08-08)",
+  "audio": "recordings/CAa280584f1950d96432524e37c314968d.ulaw",
+
+  "_provenance": [
+    "37s of a Nigerian caller on a live Twilio line, inbound track only, mu-law 8kHz.",
+    "The audio is gitignored and stays that way: it is a person saying their own name and",
+    "an identifier aloud. This file holds the transcript side and no audio, which is why",
+    "the two are stored apart.",
+    "",
+    "The name is recorded in docs/STACK_DECISION.md (2026-08-08, third run) and in TASKS.md.",
+    "Six runs out of six — both encodings, harness and production adapter — returned",
+    "\"Chike\". That is the thing this claim is here to keep measurable."
+  ],
+
+  "expected": [
+    {
+      "id": "caller-name",
+      "kind": "name",
+      "truth": "Sikiru",
+      "source": "the caller; docs/STACK_DECISION.md 2026-08-08 third run"
+    }
+  ],
+
+  "unlabelled": [
+    {
+      "id": "policy-number",
+      "kind": "identifier",
+      "reason": "the caller reads a policy number on this recording and the digits were never written down. Deriving them from a transcriber's output would seed ground truth from a candidate, which R9.1.4 forbids. Someone has to listen to the audio and write down what was said."
+    },
+    {
+      "id": "full-turn-text",
+      "kind": "prose",
+      "reason": "no hand transcript of the call exists, so there is nothing to compute WER against. Prose scoring is deferred with the rest of Gate A — see README.md."
+    }
+  ],
+
+  "_configurations_note": [
+    "These describe the four runs tools/stt-compare/compare.mjs performs and are filled in",
+    "from that file and from .env as of 2026-08-09. CHECK THEM AGAINST YOUR OWN .env BEFORE",
+    "TRUSTING A RUN — the tool reads TRANSCRIPTION_MODEL, DEEPGRAM_MODEL,",
+    "DEEPGRAM_EOT_THRESHOLD and DEEPGRAM_EOT_TIMEOUT_MS at run time and prints none of them,",
+    "so this file is the only record that the numbers had a configuration at all.",
+    "Blank out any field you have not verified: a missing field is refused, which is the",
+    "correct outcome for a result nobody can reproduce."
+  ],
+
+  "configurations": {
+    "openai mu-law 8k": {
+      "provider": "openai-realtime",
+      "model": "gpt-4o-transcribe",
+      "encoding": "mulaw",
+      "sample_rate": 8000,
+      "language": "en",
+      "endpointing": "semantic_vad/auto",
+      "keyterms": []
+    },
+    "openai pcm 24k": {
+      "provider": "openai-realtime",
+      "model": "gpt-4o-transcribe",
+      "encoding": "linear16",
+      "sample_rate": 24000,
+      "language": "en",
+      "endpointing": "semantic_vad/auto",
+      "keyterms": [],
+      "transcode": "mulaw 8k -> pcm16 24k, linear interpolation, in the harness"
+    },
+    "deepgram mu-law 8k": {
+      "provider": "deepgram-flux",
+      "model": "flux-general-en",
+      "encoding": "mulaw",
+      "sample_rate": 8000,
+      "language": "en",
+      "endpointing": "eot_threshold=0.8, eot_timeout_ms=3000",
+      "keyterms": []
+    },
+    "deepgram + keyterms": {
+      "provider": "deepgram-flux",
+      "model": "flux-general-en",
+      "encoding": "mulaw",
+      "sample_rate": 8000,
+      "language": "en",
+      "endpointing": "eot_threshold=0.8, eot_timeout_ms=3000",
+      "keyterms": ["Ansa", "policy", "policy number", "premium", "naira", "claim", "renewal"]
+    }
+  }
+}

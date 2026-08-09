@@ -1,0 +1,9 @@
+# Saved transcriber output. It is a caller's own words — their name, and on at least one
+# recording their policy number. `recordings/` is gitignored for the same reason; the
+# transcript side of the same call does not get an exemption for being text.
+runs/
+results/
+
+# Claims that carry a real identifier as ground truth. `claims/*.json` is committed so the
+# format and the known gaps are shared; anything with a live policy number in it goes here.
+claims/local/
