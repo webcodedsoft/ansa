@@ -111,6 +111,9 @@ import { VoiceController } from "./voice.controller";
     },
     MediaGateway,
   ],
-  exports: [MediaGateway, APP_CONFIG, LOGGER, DATA_SOURCE, WHISPER_REGISTRY, HANDOFF_DESTINATION],
+  exports: [MediaGateway, APP_CONFIG, LOGGER, DATA_SOURCE, WHISPER_REGISTRY, HANDOFF_DESTINATION,
+    // EventsModule injects the registry to resolve a call's webhook subscriptions.
+    // Providing it without exporting it is a boot failure, not a lint error.
+    TENANT_REGISTRY],
 })
 export class TelephonyModule {}

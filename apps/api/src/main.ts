@@ -28,7 +28,11 @@ setGlobalDispatcher(
 const bootstrap = async (): Promise<void> => {
   // Nest's own logger is off: every line this process writes is structured JSON from
   // @ansa/shared, so a call can be reconstructed from logs alone.
-  const app = await NestFactory.create(AppModule, { logger: false });
+  // Nest's logger stays off — ours is the structured one. But its startup errors are
+  // the only thing that explains a failed boot, so they are surfaced explicitly: with
+  // `logger: false` alone, a missing provider export exits 1 and prints nothing at all,
+  // which is an hour of bisecting to find a one-line fix.
+  const app = await NestFactory.create(AppModule, { logger: ["error", "warn"] });
   app.enableShutdownHooks();
 
   const config = app.get<AppConfig>(APP_CONFIG);
