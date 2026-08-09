@@ -859,6 +859,9 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       // A stale turn must stop walking its queue, the same guard onAudio and onDone have.
       if (turn?.seq !== current.seq) return;
       log.error("tts failed", { seq: current.seq, error: error.message, attempt });
+      // The voice failing left no trace in the event log whatsoever, so a call where the
+      // caller heard half an answer scored identically to one that went perfectly.
+      record.event("tts_failed", { seq: current.seq, attempt, error: error.message });
       current.synthesis = null;
       current.inFlight = null;
 
@@ -872,6 +875,18 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       }
 
       attempts.delete(sentence);
+      // Twice is enough; this sentence is not going to be said.
+      //
+      // Where it hurts is the middle of a turn: the caller has heard a fragment, the queue
+      // moves on, and `finishIfComplete` closes the turn as though it played out. That is
+      // recorded as `turn_complete` and is indistinguishable from success — so a truncated
+      // answer is invisible to every metric and to the review queue. It is named here.
+      //
+      // Deliberately NOT rescued with a spoken apology: the provider that would have to
+      // synthesise it has just failed twice, which is the same reasoning as the branch
+      // below. The caller is left with a partial sentence rather than a dead line, and the
+      // next thing they say is answered normally.
+      record.event("tts_sentence_dropped", { seq: current.seq, chars: sentence.length });
       speakNext(current);
       if (current.bytesSent === 0 && current.queue.length === 0 && current.synthesis === null) {
         // Nothing was said and nothing can be: do not synthesise a fallback through the
@@ -1080,6 +1095,20 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   // Commit 6 upgrades this to apologise first.
   deps.listen.onFailure((reason) => {
     log.error("listen connection lost, ending the call", { reason });
+    // Recorded, not merely logged. Going deaf is the single most expensive thing that can
+    // happen to a call and until now it left no trace in the event log at all, so no
+    // metric could count it and the review queue could not surface the calls it ruined.
+    record.event("listen_failed", { reason });
+
+    // Everything armed on behalf of a conversation that is now over.
+    //
+    // Found by drilling it: a turn held back for a continuation kept its 1.1s timer, so
+    // roughly a second after the goodbye the call started an LLM request and opened a new
+    // turn — on a line it had already asked the carrier to hang up. The filler timers are
+    // the same shape of bug pointed at the audio path.
+    clearPending();
+    cancelFiller();
+    cancelWatchdog();
     stopSpeaking("listen connection lost");
     // Say something before going: an open line the agent cannot hear is worse than a
     // clean ending, but ending mid-air with no explanation is worse than either.
@@ -1193,6 +1222,11 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     callState.apply({ kind: "agent.turn.started", seq: recovery.seq, reason: "recovery" });
     const line = pickRecovery.next(RECOVERY_LINES) ?? RECOVERY_LINES[0] ?? "";
     log.warn("speaking a recovery line", { reason, seq: recovery.seq, line });
+    // Every one of these is a turn that produced nothing and had to be covered with an
+    // apology — the closest thing the event log has to "the caller nearly heard silence".
+    // The reason is the whole value of it: a call full of `no transcript` is a listening
+    // problem and a call full of `llm failed` is not, and a log line cannot be counted.
+    record.event("recovery_line", { reason, seq: recovery.seq });
     enqueue(recovery, line);
     // A turn that went nowhere. Three of these and the caller gets a person (R6.4) — the
     // counter resets on any turn that produced real speech, so three scattered failures

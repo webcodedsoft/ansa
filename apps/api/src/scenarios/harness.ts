@@ -96,6 +96,19 @@ export interface ScenarioOptions {
   readonly greeting?: string;
   readonly systemPrompt?: string;
   readonly voiceId?: string;
+  /**
+   * A second recorder, teed alongside the scenario's own.
+   *
+   * For the failure drills, which need a *hostile* recorder — one backed by a database
+   * that rejects every write — while still being able to read the event log the scenario
+   * produced. Teeing rather than replacing means a drill can assert both that the call
+   * carried on and what it recorded while it did.
+   *
+   * Deliberately not wrapped in a try/catch. The production recorder is written never to
+   * throw and the point of the drill is to prove that, so swallowing here would prove
+   * nothing except that the harness is forgiving.
+   */
+  readonly alsoRecordTo?: CallRecorder;
 }
 
 export interface Scenario {
@@ -130,12 +143,40 @@ export interface Scenario {
   asRecord(): CallRecord;
 }
 
+/** The scenario's own log first, so a second recorder that throws cannot hide the evidence. */
+const tee = (first: CallRecorder, second: CallRecorder | undefined): CallRecorder =>
+  second === undefined
+    ? first
+    : {
+        started: (c) => {
+          first.started(c);
+          second.started(c);
+        },
+        event: (kind, detail, offsetMs) => {
+          first.event(kind, detail, offsetMs);
+          second.event(kind, detail, offsetMs);
+        },
+        transcript: (t) => {
+          first.transcript(t);
+          second.transcript(t);
+        },
+        turn: (t) => {
+          first.turn(t);
+          second.turn(t);
+        },
+        ended: (reason, carrierStatus, durationSeconds) => {
+          first.ended(reason, carrierStatus, durationSeconds);
+          second.ended(reason, carrierStatus, durationSeconds);
+        },
+      };
+
 export const scenario = (options: ScenarioOptions = {}): Scenario => {
   const stream = fakeStream();
   const listen = fakeListen();
   const llm = fakeLlm();
   const tts = fakeTts();
   const log = recordingRecorder();
+  const { alsoRecordTo, ...overrides } = options;
 
   runConversation(stream.stream, {
     listen: listen.session,
@@ -155,9 +196,11 @@ export const scenario = (options: ScenarioOptions = {}): Scenario => {
     // Transcripts are driven directly, so nothing fans audio in and the no-speech filter
     // would discard every one of them. The scenarios that care about it set it.
     minSpeechMs: 0,
-    recorder: log.recorder,
     listenProvider: "fake",
-    ...options,
+    ...overrides,
+    // After the spread, deliberately: `alsoRecordTo` is a scenario option rather than an
+    // orchestrator dependency, so the recorder has to be composed once the options are known.
+    recorder: tee(log.recorder, alsoRecordTo),
   });
 
   /** A loud frame: alternating extremes, which is what the speech gate measures. */

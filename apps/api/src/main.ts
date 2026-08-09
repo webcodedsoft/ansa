@@ -32,7 +32,16 @@ const bootstrap = async (): Promise<void> => {
   // the only thing that explains a failed boot, so they are surfaced explicitly: with
   // `logger: false` alone, a missing provider export exits 1 and prints nothing at all,
   // which is an hour of bisecting to find a one-line fix.
-  const app = await NestFactory.create(AppModule, { logger: ["error", "warn"] });
+  // `abortOnError: false` is the other half of the same fix. Nest's default on a failed
+  // dependency resolution is `process.abort()` — a native core dump, taken before the
+  // promise this function returns is ever settled, so the `catch` at the bottom of this
+  // file has never once run. That is why a one-line missing export presented as a silent
+  // exit with an empty log. Off, the same failure arrives here as an ordinary rejection
+  // and is written down in the structured format everything else in this process uses.
+  const app = await NestFactory.create(AppModule, {
+    logger: ["error", "warn"],
+    abortOnError: false,
+  });
   app.enableShutdownHooks();
 
   const config = app.get<AppConfig>(APP_CONFIG);
@@ -67,6 +76,12 @@ process.on("uncaughtException", (error: Error) => {
 bootstrap().catch((error: unknown) => {
   createLogger({ component: "api" }).error("api failed to start", {
     error: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack : undefined,
   });
-  process.exitCode = 1;
+  // Exits, unlike the two handlers above, and the distinction is the point. They fire on a
+  // live process where killing it would drop every call in progress; this one fires before
+  // anything is listening, so there is nothing to protect and a half-started process
+  // holding an open database pool would sit there looking healthy. `exitCode` alone was not
+  // enough — a pool opened before the failure keeps the event loop alive indefinitely.
+  process.exit(1);
 });
