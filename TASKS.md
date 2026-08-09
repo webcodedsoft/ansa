@@ -1183,6 +1183,66 @@ relationship with.
 | 4 | Calls, transcripts, corrections, metrics | 1 |
 | 5 | Numbers and onboarding readiness | 1 |
 
+### 1 · Auth, organisations, memberships, invitations, the scoping guard — done
+
+*2026-08-09. The pipeline every other row in that table inherits. `apps/api/src/api/`,
+migration `0016_api_accounts.sql`, conventions in `apps/api/src/api/README.md`.*
+
+- [x] `users`, `memberships`, `sessions`, `invitations`. RLS enabled, **forced** and one
+      policy each — checked against `pg_class` for all 17 tables. No `organisations`
+      table: an organisation is a `tenants` row, and a parallel one would be a second
+      answer to "who is this customer". `users` has no `tenant_id`, so it isolates on a
+      membership join instead: inside an organisation's scope you see exactly its people.
+- [x] Sessions revocable, invitations expiring and single-use — the second enforced in one
+      `update … where accepted_at is null` rather than a read followed by a write.
+      Passwords on `node:crypto` scrypt, parameters stored with the hash.
+- [x] Deny-by-default `APP_GUARD`, capability map, request-scoped `TenantContext.tx()`,
+      schema validation, RFC 9457 errors, keyset pagination, rate limits on public routes.
+- [x] OpenAPI generated from the same `@Endpoint` decorators the guard and interceptor
+      read. `apps/api/openapi.json` committed; a test fails when it is stale. Client
+      generator in `apps/api/src/api/openapi/client.ts`.
+- [x] Worked references: `auth.controller.ts` (public + authenticated + write),
+      `calls.controller.ts` (capability-gated paginated read of a call-path table).
+- [x] `routes.test.ts` — structural, no database. `isolation.test.ts` — 14 adversarial
+      tests over real HTTP against real Postgres.
+- [ ] Not built, deliberately: mail (the invitation token is returned once and passed on
+      by hand), password reset, a session list, self-serve organisation creation.
+      `tools/tenant/owner.mjs` invites the first owner, as the operator.
+
+**How a route is stopped from leaving its tenant.** The session token is
+`ansa_s.<tenant>.<secret>`. The tenant in it is an unverified claim, and it is safe to act
+on before verifying because the request opens a scope for the *claimed* tenant and looks
+the session up inside it under RLS — a token naming someone else's organisation finds no
+row. The forgery destroys the credential rather than redirecting it, and nothing compares
+the claim to anything, so there is no comparison to forget. Above that: `TenantContext.tx()`
+has no tenant parameter, every query function takes a `TenantScope` rather than
+`(db, tenantId)`, `TenantGateway` is the only holder of a database handle, and a route
+under `/api/v1` with no `@Endpoint` is refused rather than guessed at.
+
+**Session log**
+
+- **A real isolation defect, found by the adversarial test and invisible to review.**
+  TypeORM's Postgres driver returns `[rows, affectedCount]` for `update` and `delete`, and
+  the plain rows for everything else — so
+  `(await scope.query("update … returning id")).length > 0` is **always true**. "Change a
+  member of another organisation" answered 200 while changing nothing: RLS matched zero
+  rows exactly as designed and the code above it could not tell. Fixed by adding
+  `scope.mutate()` to `TenantScope`, which unwraps it. **Any other `update … returning`
+  going through `scope.query` in this repo has the same bug.**
+- Authentication cannot run inside a tenant scope, because which tenant is the answer
+  rather than the question. Instead of a general unscoped connection the API layer would
+  then be one careless line from using, the whole pre-authentication surface is three
+  `security definer` functions with fixed bodies (`0016`).
+- The eslint rule that would express "only `api/tenancy` may hold a database handle" could
+  not be added: this repo's hooks refuse edits to `eslint.config.mjs`. A source scan in
+  `routes.test.ts` stands in and fails the same build. **Convert it to lint if that hook is
+  ever relaxed.**
+- Observed once, not reproduced in two further runs: `@ansa/db`'s suite failed with an
+  `audio_segments_tenant_id_fkey` violation while the new API suite ran alongside it. Its
+  three files share one database and delete tenants in `afterAll`; the extra load changed
+  their interleaving. Pre-existing, worth pinning down before there is CI.
+
+
 **Suggested, not requested** — recorded so they are not mistaken for scope:
 
 - **6 · Test-call button.** Configure, press, your phone rings. The gap between "I changed

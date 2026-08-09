@@ -12,8 +12,34 @@ import type { DataSource, EntityManager } from "typeorm";
 export interface TenantScope {
   readonly tenantId: TenantId;
   query<T = unknown>(sql: string, params?: readonly unknown[]): Promise<T[]>;
+  /**
+   * `update` or `delete` with a `returning` clause. Use this, not `query`, for those two.
+   *
+   * TypeORM's Postgres driver returns the rows for a `select`, and `[rows, affectedCount]`
+   * for an `update` or a `delete` — a two-element array whether or not anything matched.
+   * So `(await scope.query("update … returning id")).length > 0` is **always true**, and
+   * the shape of that bug is a handler that reports success for a row it did not touch.
+   *
+   * Found by the adversarial API test: "change a member of another organisation" answered
+   * 200 while changing nothing, because RLS correctly matched zero rows and the check for
+   * zero rows could not see it. RLS held; the code above it drew the wrong conclusion.
+   */
+  mutate<T = unknown>(sql: string, params?: readonly unknown[]): Promise<T[]>;
   readonly manager: EntityManager;
 }
+
+/** Unwraps the `[rows, affectedCount]` an update or delete comes back as. */
+const returnedRows = <T>(result: unknown): T[] => {
+  if (
+    Array.isArray(result) &&
+    result.length === 2 &&
+    Array.isArray(result[0]) &&
+    typeof result[1] === "number"
+  ) {
+    return result[0] as T[];
+  }
+  return Array.isArray(result) ? (result as T[]) : [];
+};
 
 /**
  * Runs `work` in a transaction scoped to one tenant.
@@ -43,6 +69,8 @@ export const withTenant = async <T>(
       tenantId: tenant,
       query: async <R = unknown>(sql: string, params: readonly unknown[] = []): Promise<R[]> =>
         (await runner.query(sql, [...params])) as R[],
+      mutate: async <R = unknown>(sql: string, params: readonly unknown[] = []): Promise<R[]> =>
+        returnedRows<R>(await runner.query(sql, [...params])),
       manager: runner.manager,
     });
 
