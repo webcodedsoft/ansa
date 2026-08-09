@@ -1382,6 +1382,63 @@ the field a reviewer corrects, and nowhere else.
   and passed in isolation immediately after. Same shared-database interleaving already
   noted under area 1; still worth pinning down before there is CI.
 
+### 3 · Tools and event webhooks: registration, tiers, credentials, redaction — done
+
+*2026-08-09. `apps/api/src/api/tools/` — three controllers, a store, a vault wrapper and
+one file (`refusals.ts`) whose whole job is to reach `@ansa/tools`' existing refusals.*
+
+- [x] `GET`/`PUT /tools` — the organisation's HTTP connectors and MCP servers, whole
+      document, `expectedVersion` in and a new `config_version` out. `GET`/`PUT
+      /event-subscriptions` the same for receivers and redaction.
+- [x] **Every dangerous configuration is refused by the code the call path runs, not by a
+      copy of it.** `PUT` builds the candidate document, runs `parseConnectorConfig`, then
+      registers every tool into a throwaway `createToolRegistry()` that already holds
+      `CALL_CONTROL_DEFINITIONS`. That is what refuses a missing tier, a write tool with no
+      readback, a speech template with no holes, a timeout over `HARD_TIMEOUT_MS`, a tenant
+      tool named `transfer_to_human`, and a URL outside the tenant's own `allowedHosts`.
+      Delete `refusals.ts` and every one of them still holds on the phone call.
+- [x] Two publication-time additions, both using the guard's own exported functions rather
+      than a second opinion: an `allowedHosts` entry or a URL that is a literal blocked
+      address (`isBlockedAddress`), and a plaintext `http://` URL without
+      `allowPlaintextHttp`. Both would otherwise register and fail every caller.
+- [x] `GET`/`PUT`/`DELETE /credentials/{ref}`. **Write-only.** The response carries the
+      name, the two dates, whether the configuration points at it, and whether it is an
+      `auth` or a `signing` value — never the value, in any form, including masked.
+      `DELETE` is 409 while a configuration still names it, read off the raw JSON so it
+      keeps working on a document that does not validate.
+- [x] A configuration naming a credential that is missing, unopenable, or the *other kind*
+      is refused at publish. A signing secret used as a bearer token used to surface as a
+      delivery failing at 3am.
+- [x] 44 tests, no database: the refusals, the credential kinds (including a ciphertext
+      moved between tenants, which the AAD stops opening), and a `GET`→`PUT` round trip that
+      pins nested JSON Schema, identifier maps and per-receiver redaction inheritance.
+- [ ] Not proven, and it needs a real tenant endpoint: that a tool published here answers a
+      caller. Everything below the seam is Slice 6's and already dialled; what is untested
+      end to end is dashboard → column → `prepareConnectors` → phone call.
+
+**Redaction still defaults to nothing, and the API does not lean on it.** The organisation
+is the data controller and the payload records a conversation their own agent had.
+`GET` reports a receiver's rules only when the tenant wrote them — reporting the resolved
+value would freeze inheritance on the next save, and a receiver added afterwards would
+quietly stop picking up the default. Credential-shaped keys are stripped unconditionally
+and are not a field here in either direction.
+
+**Session log**
+
+- **`parameters` is a JSON string on the wire, and that is a decision.** It is handed to the
+  model untouched and nothing in this product interprets it, so describing it as a fixed set
+  of fields would make `GET` then `PUT` silently destroy a schema `tools/tenant/config.mjs`
+  wrote. The round-trip test is the thing that keeps a whole-document `PUT` safe to build a
+  screen on.
+- Publishing means reading the other twelve config columns and handing them straight back,
+  because `app.publish_tenant_config` rewrites everything it takes. `store.ts` does that in
+  one transaction. **The agent-configuration endpoints need the same function**, and there
+  are now two copies of it — merge them into `@ansa/db` before a third appears.
+- `routes.test.ts`'s source scan caught two files passing a tenant id positionally. Both
+  were crypto arguments rather than query arguments — a registry key and an AES-GCM
+  authentication tag — and the fix was to borrow `registry.ts`'s own name, `owner`, rather
+  than loosen a heuristic that is right to be blunt.
+
 **Suggested, not requested** — recorded so they are not mistaken for scope:
 
 - **6 · Test-call button.** Configure, press, your phone rings. The gap between "I changed
