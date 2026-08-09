@@ -13,10 +13,28 @@
       "name": "calls"
     },
     {
+      "name": "config"
+    },
+    {
+      "name": "credentials"
+    },
+    {
+      "name": "event-subscriptions"
+    },
+    {
       "name": "invitations"
     },
     {
       "name": "members"
+    },
+    {
+      "name": "numbers"
+    },
+    {
+      "name": "readiness"
+    },
+    {
+      "name": "tools"
     }
   ],
   "paths": {
@@ -1455,6 +1473,2307 @@
         }
       }
     },
+    "/api/v1/config": {
+      "get": {
+        "operationId": "config.current",
+        "tags": [
+          "config"
+        ],
+        "summary": "The configuration the agent is answering on right now",
+        "description": "The live values, which are what calls run on, with the history row for them alongside and the vocabulary they resolve to. `operatorManaged` is read-only and has no counterpart in the publish body.",
+        "x-ansa-capability": "config:read",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "config": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120
+                        },
+                        "voiceId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 200
+                        },
+                        "greeting": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 500
+                        },
+                        "persona": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 400
+                        },
+                        "instructions": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 2000
+                        },
+                        "keyterms": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                          },
+                          "maxItems": 100
+                        },
+                        "businessHours": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "opensAtHour": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 23
+                            },
+                            "closesAtHour": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 24
+                            },
+                            "openDays": {
+                              "type": "array",
+                              "items": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 7
+                              },
+                              "maxItems": 7
+                            }
+                          },
+                          "required": [
+                            "opensAtHour",
+                            "closesAtHour",
+                            "openDays"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "escalation": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "toNumber": {
+                              "type": "string",
+                              "maxLength": 16,
+                              "pattern": "^\\+[1-9][0-9]{6,14}$"
+                            },
+                            "fromNumber": {
+                              "type": "string",
+                              "maxLength": 16,
+                              "pattern": "^\\+[1-9][0-9]{6,14}$"
+                            },
+                            "ringSeconds": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 5,
+                              "maximum": 120
+                            }
+                          },
+                          "required": [
+                            "toNumber",
+                            "fromNumber",
+                            "ringSeconds"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "voiceId",
+                        "greeting",
+                        "persona",
+                        "instructions",
+                        "keyterms",
+                        "businessHours",
+                        "escalation"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "published": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "version": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 500
+                        },
+                        "publishedBy": {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        "publishedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "note",
+                        "publishedBy",
+                        "publishedAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "vocabulary": {
+                      "type": "object",
+                      "properties": {
+                        "base": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 100
+                          }
+                        },
+                        "effective": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 100
+                          }
+                        },
+                        "cap": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "required": [
+                        "base",
+                        "effective",
+                        "cap"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "operatorManaged": {
+                      "type": "object",
+                      "properties": {
+                        "dialledNumber": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 32
+                        },
+                        "audioRetentionDays": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "consent": {
+                          "type": "object",
+                          "properties": {
+                            "policy": {
+                              "type": "string",
+                              "maxLength": 64
+                            },
+                            "basis": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 500
+                            },
+                            "callingEarliestHour": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0,
+                              "maximum": 23
+                            },
+                            "callingLatestHour": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0,
+                              "maximum": 24
+                            }
+                          },
+                          "required": [
+                            "policy",
+                            "basis",
+                            "callingEarliestHour",
+                            "callingLatestHour"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "dialledNumber",
+                        "audioRetentionDays",
+                        "consent"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "config",
+                    "published",
+                    "vocabulary",
+                    "operatorManaged"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/calls/{callId}": {
+      "get": {
+        "operationId": "config.forCall",
+        "tags": [
+          "config"
+        ],
+        "summary": "The configuration that served one call",
+        "description": "R7.5 asked from the useful end: not 'what is version 4' but 'what was the agent working from when it said that'. Answers with the snapshot rather than the number.",
+        "x-ansa-capability": "config:read",
+        "parameters": [
+          {
+            "name": "callId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "callId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "configVersion": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "version": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "version": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 500
+                        },
+                        "publishedBy": {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        "publishedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "config": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120
+                            },
+                            "voiceId": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 200
+                            },
+                            "greeting": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 500
+                            },
+                            "persona": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 400
+                            },
+                            "instructions": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 2000
+                            },
+                            "keyterms": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              },
+                              "maxItems": 100
+                            },
+                            "businessHours": {
+                              "type": [
+                                "object",
+                                "null"
+                              ],
+                              "properties": {
+                                "opensAtHour": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 23
+                                },
+                                "closesAtHour": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 24
+                                },
+                                "openDays": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 7
+                                  },
+                                  "maxItems": 7
+                                }
+                              },
+                              "required": [
+                                "opensAtHour",
+                                "closesAtHour",
+                                "openDays"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "escalation": {
+                              "type": [
+                                "object",
+                                "null"
+                              ],
+                              "properties": {
+                                "toNumber": {
+                                  "type": "string",
+                                  "maxLength": 16,
+                                  "pattern": "^\\+[1-9][0-9]{6,14}$"
+                                },
+                                "fromNumber": {
+                                  "type": "string",
+                                  "maxLength": 16,
+                                  "pattern": "^\\+[1-9][0-9]{6,14}$"
+                                },
+                                "ringSeconds": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 5,
+                                  "maximum": 120
+                                }
+                              },
+                              "required": [
+                                "toNumber",
+                                "fromNumber",
+                                "ringSeconds"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "voiceId",
+                            "greeting",
+                            "persona",
+                            "instructions",
+                            "keyterms",
+                            "businessHours",
+                            "escalation"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "note",
+                        "publishedBy",
+                        "publishedAt",
+                        "config"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "callId",
+                    "configVersion",
+                    "version"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/guarantees": {
+      "get": {
+        "operationId": "config.listGuarantees",
+        "tags": [
+          "config"
+        ],
+        "summary": "What this organisation cannot configure, and where each rule is enforced",
+        "description": "Generated from the list the platform actually enforces, so it cannot describe a rule that stopped being enforced. A publication tripping one of these is refused with 422 naming the id — and the rule would have held anyway, because none of them is held up by the prompt.",
+        "x-ansa-capability": "config:read",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "guarantees": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "maxLength": 64
+                          },
+                          "enforcedIn": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "restatedToTheModel": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "enforcedIn",
+                          "restatedToTheModel"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "guarantees"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/versions": {
+      "get": {
+        "operationId": "config.listVersions",
+        "tags": [
+          "config"
+        ],
+        "summary": "Every configuration version this organisation has published, newest first",
+        "x-ansa-capability": "config:read",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 512
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "version": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "note": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 500
+                          },
+                          "publishedBy": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "publishedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "version",
+                          "note",
+                          "publishedBy",
+                          "publishedAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "config.publish",
+        "tags": [
+          "config"
+        ],
+        "summary": "Publish a new configuration version",
+        "description": "The whole configuration, not a patch: a field left out is a field cleared, so every one of them is required. Tool and event configuration is not settable here and is carried forward unchanged inside the same transaction. Bumps the version and snapshots it atomically, so the number recorded on every subsequent call has a row behind it.",
+        "x-ansa-capability": "config:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "voiceId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 200
+                  },
+                  "greeting": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 500
+                  },
+                  "persona": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 400
+                  },
+                  "instructions": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2000
+                  },
+                  "keyterms": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "maxItems": 100
+                  },
+                  "businessHours": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "opensAtHour": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 23
+                      },
+                      "closesAtHour": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 24
+                      },
+                      "openDays": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 7
+                        },
+                        "maxItems": 7
+                      }
+                    },
+                    "required": [
+                      "opensAtHour",
+                      "closesAtHour",
+                      "openDays"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "escalation": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "toNumber": {
+                        "type": "string",
+                        "maxLength": 16,
+                        "pattern": "^\\+[1-9][0-9]{6,14}$"
+                      },
+                      "fromNumber": {
+                        "type": "string",
+                        "maxLength": 16,
+                        "pattern": "^\\+[1-9][0-9]{6,14}$"
+                      },
+                      "ringSeconds": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "minimum": 5,
+                        "maximum": 120
+                      }
+                    },
+                    "required": [
+                      "toNumber",
+                      "fromNumber",
+                      "ringSeconds"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "note": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "name",
+                  "voiceId",
+                  "greeting",
+                  "persona",
+                  "instructions",
+                  "keyterms",
+                  "businessHours",
+                  "escalation",
+                  "note"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": {
+                      "type": "object",
+                      "properties": {
+                        "version": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 500
+                        },
+                        "publishedBy": {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        "publishedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "config": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120
+                            },
+                            "voiceId": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 200
+                            },
+                            "greeting": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 500
+                            },
+                            "persona": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 400
+                            },
+                            "instructions": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 2000
+                            },
+                            "keyterms": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              },
+                              "maxItems": 100
+                            },
+                            "businessHours": {
+                              "type": [
+                                "object",
+                                "null"
+                              ],
+                              "properties": {
+                                "opensAtHour": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 23
+                                },
+                                "closesAtHour": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 24
+                                },
+                                "openDays": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 7
+                                  },
+                                  "maxItems": 7
+                                }
+                              },
+                              "required": [
+                                "opensAtHour",
+                                "closesAtHour",
+                                "openDays"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "escalation": {
+                              "type": [
+                                "object",
+                                "null"
+                              ],
+                              "properties": {
+                                "toNumber": {
+                                  "type": "string",
+                                  "maxLength": 16,
+                                  "pattern": "^\\+[1-9][0-9]{6,14}$"
+                                },
+                                "fromNumber": {
+                                  "type": "string",
+                                  "maxLength": 16,
+                                  "pattern": "^\\+[1-9][0-9]{6,14}$"
+                                },
+                                "ringSeconds": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 5,
+                                  "maximum": 120
+                                }
+                              },
+                              "required": [
+                                "toNumber",
+                                "fromNumber",
+                                "ringSeconds"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "voiceId",
+                            "greeting",
+                            "persona",
+                            "instructions",
+                            "keyterms",
+                            "businessHours",
+                            "escalation"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "note",
+                        "publishedBy",
+                        "publishedAt",
+                        "config"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "vocabulary": {
+                      "type": "object",
+                      "properties": {
+                        "base": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 100
+                          }
+                        },
+                        "effective": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 100
+                          }
+                        },
+                        "cap": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "required": [
+                        "base",
+                        "effective",
+                        "cap"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "vocabulary"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/versions/{version}": {
+      "get": {
+        "operationId": "config.version",
+        "tags": [
+          "config"
+        ],
+        "summary": "One configuration version, as it was published",
+        "description": "Addressable, so the version a call recorded can be linked to rather than described.",
+        "x-ansa-capability": "config:read",
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "note": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 500
+                    },
+                    "publishedBy": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "publishedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "config": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120
+                        },
+                        "voiceId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 200
+                        },
+                        "greeting": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 500
+                        },
+                        "persona": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 400
+                        },
+                        "instructions": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 2000
+                        },
+                        "keyterms": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                          },
+                          "maxItems": 100
+                        },
+                        "businessHours": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "opensAtHour": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 23
+                            },
+                            "closesAtHour": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 24
+                            },
+                            "openDays": {
+                              "type": "array",
+                              "items": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 7
+                              },
+                              "maxItems": 7
+                            }
+                          },
+                          "required": [
+                            "opensAtHour",
+                            "closesAtHour",
+                            "openDays"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "escalation": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "toNumber": {
+                              "type": "string",
+                              "maxLength": 16,
+                              "pattern": "^\\+[1-9][0-9]{6,14}$"
+                            },
+                            "fromNumber": {
+                              "type": "string",
+                              "maxLength": 16,
+                              "pattern": "^\\+[1-9][0-9]{6,14}$"
+                            },
+                            "ringSeconds": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 5,
+                              "maximum": 120
+                            }
+                          },
+                          "required": [
+                            "toNumber",
+                            "fromNumber",
+                            "ringSeconds"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "voiceId",
+                        "greeting",
+                        "persona",
+                        "instructions",
+                        "keyterms",
+                        "businessHours",
+                        "escalation"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "note",
+                    "publishedBy",
+                    "publishedAt",
+                    "config"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/credentials": {
+      "get": {
+        "operationId": "credentials.list",
+        "tags": [
+          "credentials"
+        ],
+        "summary": "The credentials this organisation has stored, by name",
+        "description": "Names, kinds and dates. No credential value is returned by this API in any form, including masked.",
+        "x-ansa-capability": "config:read",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "ref": {
+                            "type": "string",
+                            "maxLength": 64
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "auth",
+                              "signing",
+                              "unreadable"
+                            ]
+                          },
+                          "inUse": {
+                            "type": "boolean"
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "updatedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "ref",
+                          "kind",
+                          "inUse",
+                          "createdAt",
+                          "updatedAt"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 500
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/credentials/{ref}": {
+      "put": {
+        "operationId": "credentials.put",
+        "tags": [
+          "credentials"
+        ],
+        "summary": "Store a credential under this name, or replace the one already there",
+        "description": "Write-only. The value is sealed before it reaches the database and is not recoverable through this API — rotate rather than recover. Rotating takes effect on the next call; a call in progress keeps the credential it already resolved.",
+        "x-ansa-capability": "config:write",
+        "parameters": [
+          {
+            "name": "ref",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[a-z][a-z0-9_]{1,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "bearer",
+                      "header",
+                      "basic",
+                      "signing"
+                    ]
+                  },
+                  "token": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "header": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "value": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "username": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  },
+                  "secret": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ref": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "ref",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "credentials.remove",
+        "tags": [
+          "credentials"
+        ],
+        "summary": "Remove a credential",
+        "description": "Refused with 409 while the tool or event configuration still names it, because removing it would leave a tool that registers and then refuses every caller.",
+        "x-ansa-capability": "config:write",
+        "parameters": [
+          {
+            "name": "ref",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[a-z][a-z0-9_]{1,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/event-subscriptions": {
+      "get": {
+        "operationId": "event-subscriptions.read",
+        "tags": [
+          "event-subscriptions"
+        ],
+        "summary": "Where this organisation's calls are pushed, and what is masked on the way",
+        "description": "Each receiver carries the redaction rules that will actually apply to it, resolved from the organisation's default. A receiver that masks nothing reports no redaction, because nothing is masked unless it is asked for.",
+        "x-ansa-capability": "config:read",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "configVersion": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "egress": {
+                      "type": "object",
+                      "properties": {
+                        "allowedHosts": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 253
+                          },
+                          "maxItems": 100
+                        },
+                        "allowPlaintextHttp": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "allowedHosts"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "redaction": {
+                      "type": "object",
+                      "properties": {
+                        "categories": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "captured-identifier",
+                              "email",
+                              "card-number",
+                              "digit-sequence",
+                              "spoken-digit-sequence"
+                            ]
+                          },
+                          "maxItems": 5
+                        },
+                        "minDigits": {
+                          "type": "integer",
+                          "minimum": 2
+                        },
+                        "minSpokenDigits": {
+                          "type": "integer",
+                          "minimum": 2
+                        }
+                      },
+                      "required": [
+                        "categories"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "subscriptions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri",
+                            "minLength": 1,
+                            "maxLength": 2048
+                          },
+                          "events": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "call.ended",
+                                "call.transferred"
+                              ]
+                            },
+                            "maxItems": 2
+                          },
+                          "signingSecretRef": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^[a-z][a-z0-9_]{1,63}$"
+                          },
+                          "credentialRef": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^[a-z][a-z0-9_]{1,63}$"
+                          },
+                          "timeoutMs": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "maxAttempts": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "redaction": {
+                            "type": "object",
+                            "properties": {
+                              "categories": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "enum": [
+                                    "captured-identifier",
+                                    "email",
+                                    "card-number",
+                                    "digit-sequence",
+                                    "spoken-digit-sequence"
+                                  ]
+                                },
+                                "maxItems": 5
+                              },
+                              "minDigits": {
+                                "type": "integer",
+                                "minimum": 2
+                              },
+                              "minSpokenDigits": {
+                                "type": "integer",
+                                "minimum": 2
+                              }
+                            },
+                            "required": [
+                              "categories"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "url",
+                          "events",
+                          "signingSecretRef"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 50
+                    }
+                  },
+                  "required": [
+                    "configVersion",
+                    "egress",
+                    "subscriptions"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "event-subscriptions.replace",
+        "tags": [
+          "event-subscriptions"
+        ],
+        "summary": "Replace where this organisation's calls are pushed",
+        "description": "Whole document, never a patch, and it publishes a new configuration version — which is what records the redaction rules a payload left under. Refused with 422 if a receiver names an unknown event, has no signing secret, sits outside egress.allowedHosts, or points at a credential this organisation has not stored or has stored as the other kind.",
+        "x-ansa-capability": "config:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "note": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "egress": {
+                    "type": "object",
+                    "properties": {
+                      "allowedHosts": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 253
+                        },
+                        "maxItems": 100
+                      },
+                      "allowPlaintextHttp": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "allowedHosts"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "redaction": {
+                    "type": "object",
+                    "properties": {
+                      "categories": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "captured-identifier",
+                            "email",
+                            "card-number",
+                            "digit-sequence",
+                            "spoken-digit-sequence"
+                          ]
+                        },
+                        "maxItems": 5
+                      },
+                      "minDigits": {
+                        "type": "integer",
+                        "minimum": 2
+                      },
+                      "minSpokenDigits": {
+                        "type": "integer",
+                        "minimum": 2
+                      }
+                    },
+                    "required": [
+                      "categories"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "subscriptions": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "url": {
+                          "type": "string",
+                          "format": "uri",
+                          "minLength": 1,
+                          "maxLength": 2048
+                        },
+                        "events": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "call.ended",
+                              "call.transferred"
+                            ]
+                          },
+                          "maxItems": 2
+                        },
+                        "signingSecretRef": {
+                          "type": "string",
+                          "maxLength": 64,
+                          "pattern": "^[a-z][a-z0-9_]{1,63}$"
+                        },
+                        "credentialRef": {
+                          "type": "string",
+                          "maxLength": 64,
+                          "pattern": "^[a-z][a-z0-9_]{1,63}$"
+                        },
+                        "timeoutMs": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "maxAttempts": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "redaction": {
+                          "type": "object",
+                          "properties": {
+                            "categories": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "captured-identifier",
+                                  "email",
+                                  "card-number",
+                                  "digit-sequence",
+                                  "spoken-digit-sequence"
+                                ]
+                              },
+                              "maxItems": 5
+                            },
+                            "minDigits": {
+                              "type": "integer",
+                              "minimum": 2
+                            },
+                            "minSpokenDigits": {
+                              "type": "integer",
+                              "minimum": 2
+                            }
+                          },
+                          "required": [
+                            "categories"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "url",
+                        "events",
+                        "signingSecretRef"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 50
+                  }
+                },
+                "required": [
+                  "expectedVersion",
+                  "egress",
+                  "subscriptions"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "configVersion": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "configVersion"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/invitations": {
       "post": {
         "operationId": "invitations.invite",
@@ -2328,6 +4647,1154 @@
           },
           "404": {
             "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/numbers": {
+      "get": {
+        "operationId": "numbers.list",
+        "tags": [
+          "numbers"
+        ],
+        "summary": "List the numbers attached to this organisation",
+        "description": "At most one today: an inbound call is resolved by the number that was dialled, and one organisation holds one. Each entry carries the carrier's own record of where that number sends calls, which is unreadable — and reported as unchecked — for a number held at a carrier this deployment has no account with.",
+        "x-ansa-capability": "config:read",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "number": {
+                            "type": "string",
+                            "maxLength": 64
+                          },
+                          "use": {
+                            "type": "string",
+                            "enum": [
+                              "inbound"
+                            ]
+                          },
+                          "managedBy": {
+                            "type": "string",
+                            "enum": [
+                              "operator"
+                            ]
+                          },
+                          "carrierWebhook": {
+                            "type": "object",
+                            "properties": {
+                              "state": {
+                                "type": "string",
+                                "enum": [
+                                  "matches",
+                                  "points-elsewhere",
+                                  "not-set",
+                                  "not-in-carrier-account",
+                                  "unchecked"
+                                ]
+                              },
+                              "expected": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "maxLength": 2048
+                              },
+                              "observed": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "maxLength": 2048
+                              },
+                              "reason": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "maxLength": 400
+                              }
+                            },
+                            "required": [
+                              "state",
+                              "expected",
+                              "observed",
+                              "reason"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "number",
+                          "use",
+                          "managedBy",
+                          "carrierWebhook"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/numbers/provisioning": {
+      "get": {
+        "operationId": "numbers.provisioning",
+        "tags": [
+          "numbers"
+        ],
+        "summary": "What this organisation can and cannot do to get a number",
+        "description": "Two things are unavailable and both are stated here rather than discovered as a failing request: a number cannot be bought through this API, because the carrier sells no Nigerian inventory; and a number cannot be attached self-service, because the attached number routes every inbound call on the deployment and nothing yet proves an organisation controls the number it names. The webhook URL is this deployment's real ingress address, which is the value an operator needs at the carrier.",
+        "x-ansa-capability": "config:read",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "carrier": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 32
+                    },
+                    "claim": {
+                      "type": "object",
+                      "properties": {
+                        "available": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "no-nigerian-inventory"
+                          ]
+                        },
+                        "detail": {
+                          "type": "string",
+                          "maxLength": 800
+                        }
+                      },
+                      "required": [
+                        "available",
+                        "reason",
+                        "detail"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "attach": {
+                      "type": "object",
+                      "properties": {
+                        "selfService": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "operator-owned-ingress"
+                          ]
+                        },
+                        "detail": {
+                          "type": "string",
+                          "maxLength": 800
+                        }
+                      },
+                      "required": [
+                        "selfService",
+                        "reason",
+                        "detail"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "voiceWebhook": {
+                      "type": "object",
+                      "properties": {
+                        "url": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 2048
+                        },
+                        "method": {
+                          "type": "string",
+                          "enum": [
+                            "POST"
+                          ]
+                        },
+                        "detail": {
+                          "type": "string",
+                          "maxLength": 800
+                        }
+                      },
+                      "required": [
+                        "url",
+                        "method",
+                        "detail"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "carrier",
+                    "claim",
+                    "attach",
+                    "voiceWebhook"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/readiness": {
+      "get": {
+        "operationId": "readiness.report",
+        "tags": [
+          "readiness"
+        ],
+        "summary": "Whether this organisation is live, and what is missing if it is not",
+        "description": "Read-only. Every check is a failure that has actually happened while onboarding an organisation by hand: a carrier webhook nobody set, a voice id that publishes happily and ends the first call, a vault key whose absence drops every tool silently at config load, a tool or event document that no longer parses. A check that cannot be decided from this process answers `unknown` with the reason rather than passing. No call is placed.",
+        "x-ansa-capability": "config:read",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "live": {
+                      "type": "boolean"
+                    },
+                    "checkedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "configVersion": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "checks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "enum": [
+                              "number.attached",
+                              "number.carrier_webhook",
+                              "number.traffic",
+                              "greeting",
+                              "voice",
+                              "consent_policy",
+                              "business_hours",
+                              "tools",
+                              "credentials",
+                              "events",
+                              "escalation"
+                            ]
+                          },
+                          "title": {
+                            "type": "string",
+                            "maxLength": 120
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "ok",
+                              "attention",
+                              "blocked",
+                              "unknown"
+                            ]
+                          },
+                          "detail": {
+                            "type": "string",
+                            "maxLength": 1200
+                          },
+                          "remedy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 600
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "title",
+                          "state",
+                          "detail",
+                          "remedy"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "live",
+                    "checkedAt",
+                    "configVersion",
+                    "checks"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tools": {
+      "get": {
+        "operationId": "tools.read",
+        "tags": [
+          "tools"
+        ],
+        "summary": "The tools this organisation has given its agent",
+        "description": "Credential names are shown; credential values are not stored in this document and are never returned. Answers 409 if the stored configuration is one the agent is refusing to load, with the reason.",
+        "x-ansa-capability": "config:read",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "configVersion": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "egress": {
+                      "type": "object",
+                      "properties": {
+                        "allowedHosts": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 253
+                          },
+                          "maxItems": 100
+                        },
+                        "allowPlaintextHttp": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "allowedHosts"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "http": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "minLength": 3,
+                            "maxLength": 64,
+                            "pattern": "^[a-z][a-z0-9_]{2,63}$"
+                          },
+                          "description": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2000
+                          },
+                          "parametersJson": {
+                            "type": "string",
+                            "format": "json",
+                            "minLength": 2,
+                            "maxLength": 20000
+                          },
+                          "riskTier": {
+                            "type": "string",
+                            "enum": [
+                              "read",
+                              "write",
+                              "irreversible"
+                            ]
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri",
+                            "minLength": 1,
+                            "maxLength": 2048
+                          },
+                          "method": {
+                            "type": "string",
+                            "enum": [
+                              "GET",
+                              "POST",
+                              "PUT",
+                              "PATCH",
+                              "DELETE"
+                            ]
+                          },
+                          "send": {
+                            "type": "string",
+                            "enum": [
+                              "query",
+                              "body"
+                            ]
+                          },
+                          "timeoutMs": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 3000
+                          },
+                          "credentialRef": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^[a-z][a-z0-9_]{1,63}$"
+                          },
+                          "speech": {
+                            "type": "object",
+                            "properties": {
+                              "template": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 1000
+                              },
+                              "fallback": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 1000
+                              }
+                            },
+                            "required": [
+                              "template",
+                              "fallback"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "readback": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1000
+                          },
+                          "transferReason": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1000
+                          },
+                          "identifiers": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "argument": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 100
+                                },
+                                "fact": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 100
+                                }
+                              },
+                              "required": [
+                                "argument",
+                                "fact"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "maxItems": 16
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "description",
+                          "parametersJson",
+                          "riskTier",
+                          "url",
+                          "method",
+                          "send"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 100
+                    },
+                    "mcp": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "url": {
+                            "type": "string",
+                            "format": "uri",
+                            "minLength": 1,
+                            "maxLength": 2048
+                          },
+                          "credentialRef": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^[a-z][a-z0-9_]{1,63}$"
+                          },
+                          "tools": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 64
+                                },
+                                "riskTier": {
+                                  "type": "string",
+                                  "enum": [
+                                    "read",
+                                    "write",
+                                    "irreversible"
+                                  ]
+                                },
+                                "timeoutMs": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 3000
+                                },
+                                "speech": {
+                                  "type": "object",
+                                  "properties": {
+                                    "template": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 1000
+                                    },
+                                    "fallback": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 1000
+                                    }
+                                  },
+                                  "required": [
+                                    "template",
+                                    "fallback"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "readback": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 1000
+                                },
+                                "transferReason": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 1000
+                                },
+                                "identifiers": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "argument": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                      },
+                                      "fact": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                      }
+                                    },
+                                    "required": [
+                                      "argument",
+                                      "fact"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "maxItems": 16
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "riskTier"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "maxItems": 100
+                          }
+                        },
+                        "required": [
+                          "url",
+                          "tools"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 20
+                    }
+                  },
+                  "required": [
+                    "configVersion",
+                    "egress",
+                    "http",
+                    "mcp"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "tools.replace",
+        "tags": [
+          "tools"
+        ],
+        "summary": "Replace the tools this organisation has given its agent",
+        "description": "Whole document, never a patch, and it publishes a new configuration version. Refused with 422 if any tool would not register — no risk tier, a write tool with no readback, a timeout over the ceiling, a name that shadows a platform tool, a URL outside egress.allowedHosts, or a credential reference this organisation has not stored.",
+        "x-ansa-capability": "config:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "note": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "egress": {
+                    "type": "object",
+                    "properties": {
+                      "allowedHosts": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 253
+                        },
+                        "maxItems": 100
+                      },
+                      "allowPlaintextHttp": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "allowedHosts"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "http": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 3,
+                          "maxLength": 64,
+                          "pattern": "^[a-z][a-z0-9_]{2,63}$"
+                        },
+                        "description": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2000
+                        },
+                        "parametersJson": {
+                          "type": "string",
+                          "format": "json",
+                          "minLength": 2,
+                          "maxLength": 20000
+                        },
+                        "riskTier": {
+                          "type": "string",
+                          "enum": [
+                            "read",
+                            "write",
+                            "irreversible"
+                          ]
+                        },
+                        "url": {
+                          "type": "string",
+                          "format": "uri",
+                          "minLength": 1,
+                          "maxLength": 2048
+                        },
+                        "method": {
+                          "type": "string",
+                          "enum": [
+                            "GET",
+                            "POST",
+                            "PUT",
+                            "PATCH",
+                            "DELETE"
+                          ]
+                        },
+                        "send": {
+                          "type": "string",
+                          "enum": [
+                            "query",
+                            "body"
+                          ]
+                        },
+                        "timeoutMs": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 3000
+                        },
+                        "credentialRef": {
+                          "type": "string",
+                          "maxLength": 64,
+                          "pattern": "^[a-z][a-z0-9_]{1,63}$"
+                        },
+                        "speech": {
+                          "type": "object",
+                          "properties": {
+                            "template": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1000
+                            },
+                            "fallback": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1000
+                            }
+                          },
+                          "required": [
+                            "template",
+                            "fallback"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "readback": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1000
+                        },
+                        "transferReason": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1000
+                        },
+                        "identifiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "argument": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              },
+                              "fact": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              }
+                            },
+                            "required": [
+                              "argument",
+                              "fact"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 16
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "description",
+                        "parametersJson",
+                        "riskTier",
+                        "url",
+                        "method",
+                        "send"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 100
+                  },
+                  "mcp": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "url": {
+                          "type": "string",
+                          "format": "uri",
+                          "minLength": 1,
+                          "maxLength": 2048
+                        },
+                        "credentialRef": {
+                          "type": "string",
+                          "maxLength": 64,
+                          "pattern": "^[a-z][a-z0-9_]{1,63}$"
+                        },
+                        "tools": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                              },
+                              "riskTier": {
+                                "type": "string",
+                                "enum": [
+                                  "read",
+                                  "write",
+                                  "irreversible"
+                                ]
+                              },
+                              "timeoutMs": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 3000
+                              },
+                              "speech": {
+                                "type": "object",
+                                "properties": {
+                                  "template": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 1000
+                                  },
+                                  "fallback": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 1000
+                                  }
+                                },
+                                "required": [
+                                  "template",
+                                  "fallback"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "readback": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 1000
+                              },
+                              "transferReason": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 1000
+                              },
+                              "identifiers": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "argument": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 100
+                                    },
+                                    "fact": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 100
+                                    }
+                                  },
+                                  "required": [
+                                    "argument",
+                                    "fact"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "maxItems": 16
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "riskTier"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 100
+                        }
+                      },
+                      "required": [
+                        "url",
+                        "tools"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 20
+                  }
+                },
+                "required": [
+                  "expectedVersion",
+                  "egress",
+                  "http",
+                  "mcp"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "configVersion": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "configVersion"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:write",
             "content": {
               "application/problem+json": {
                 "schema": {
