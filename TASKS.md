@@ -1333,6 +1333,55 @@ under `/api/v1` with no `@Endpoint` is refused rather than guessed at.
   their interleaving. Pre-existing, worth pinning down before there is CI.
 
 
+### 4 · Calls, transcripts, corrections, metrics — done
+
+*2026-08-09. `apps/api/src/api/calls/`, query layer in `packages/db/src/call-page.ts`,
+`call-records.ts` and `corrections.ts`.*
+
+- [x] `GET /calls` with filters that match what a reviewer opens the list to do:
+      `from`/`to` (inclusive/exclusive), `endReason`, `caller`, `dialled`,
+      `minDurationSeconds`, and `reviewed`, which is the review queue's backlog and its
+      done pile. Keyset pagination unchanged; `PAGE_PROPS` is now spread into the filtered
+      query so `limit`'s ceiling is written once.
+- [x] `GET /calls/{callId}` — turns with barge-in offsets, final transcripts with
+      confidence and provider, the event timeline in offset order, and `configVersion`.
+      Declared after `GET /calls/metrics`, because Nest matches in declaration order.
+- [x] `POST /calls/{callId}/transcripts/{transcriptId}/corrections`. **Submitting the
+      transcriber's own words back is a verdict**, not a no-op: it stamps `corrected_at`
+      and answers `changed: false`. Without it "reviewed" and "wrong" are one set and no
+      accuracy rate exists. New capability `calls:write`, admin and owner only.
+- [x] `GET /calls/metrics` reuses `readCallRecords` and the viewer's `scoreCalls`. One
+      arithmetic, two surfaces. Rates are strings — the schema layer has no decimal, and
+      an integer percentage loses the difference between a 0.4% transfer rate and a 0%
+      one — and null where the denominator was zero.
+- [x] `calls.test.ts`: 17 tests, two organisations, real HTTP against real Postgres. The
+      load-bearing ones are cross-tenant correction, a transcript id from another call on
+      the path, a member refused the verdict, and the timeline not leaking the policy
+      number that the `caller said` event's detail holds.
+- [ ] **No audio, deliberately.** Reasoning in `apps/api/src/api/README.md`. It is a
+      caller's voice reading identifiers aloud and it needs expiring, single-use,
+      unguessable URLs plus a record of who listened to whom — a slice, not a field.
+
+**`call_events.detail` is projected, not published.** The column holds whatever the
+orchestrator wrote: the caller's sentence, the entity they read out, a tenant id. The
+timeline exposes nine named scalars (`stage`, `ms`, `seq`, `attempt`, `reason`, `subject`,
+`outcome`, `tool`, `chars`) and drops the rest, in the query layer rather than in the
+response schema — a projection that runs through the validator turns one unexpected value
+into a 500 for the whole call. Speech reaches the client through `transcripts`, which is
+the field a reviewer corrects, and nowhere else.
+
+**Session log**
+
+- Response schemas no longer carry `maxLength` on text that came out of the database. The
+  interceptor projects through them, so a bound there is not a guard — it is a way to turn
+  one unusually long turn into a 500 that blames us. Bounds belong on input.
+- `recordTranscriptCorrection` and `loadCallRecords` grew scope-taking halves
+  (`applyTranscriptCorrection`, `readCallRecords`) rather than copies. The viewer and the
+  dashboard now record a verdict and score a call through one body each.
+- `@ansa/db`'s suite failed once mid-session with rows another agent's run had deleted,
+  and passed in isolation immediately after. Same shared-database interleaving already
+  noted under area 1; still worth pinning down before there is CI.
+
 **Suggested, not requested** — recorded so they are not mistaken for scope:
 
 - **6 · Test-call button.** Configure, press, your phone rings. The gap between "I changed
