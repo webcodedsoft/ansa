@@ -84,7 +84,8 @@ describe("the composition", () => {
 
   it("names the organisation instead of 'a company in Nigeria'", () => {
     const prompt = composeSystemPrompt({ tenant: layerFor(null).layer, tools: [] });
-    expect(prompt).toContain("You're Ansa, answering the phone for Kano General Insurance.");
+    // Quoted, and added as a value rather than spliced into our sentence. See base.ts.
+    expect(prompt).toContain('Its name is "Kano General Insurance".');
   });
 
   it("does not open an empty fence when a tenant configured nothing", () => {

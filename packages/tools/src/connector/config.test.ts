@@ -99,6 +99,7 @@ describe("parsing a tenant's tool configuration", () => {
 
   it("accepts a write tool that reads the caller's own values back", () => {
     const config = parseConnectorConfig({
+      egress: { allowedHosts: ["api.partner.test"] },
       http: [
         httpTool({
           name: "update_contact",
@@ -118,9 +119,63 @@ describe("parsing a tenant's tool configuration", () => {
     ).toThrow(/riskTier/);
 
     const config = parseConnectorConfig({
+      egress: { allowedHosts: ["mcp.partner.test"] },
       mcp: [{ url: "https://mcp.partner.test/rpc", tools: [{ name: "lookup", riskTier: "read" }] }],
     });
     expect(config.mcp[0]?.tools[0]).toMatchObject({ name: "lookup", riskTier: "read" });
+  });
+
+  /**
+   * The guard refuses this at request time and always will. What it cannot do is say so
+   * before a caller hits it: the tool registers, the model is told it can look the thing
+   * up, and every attempt comes back as an apology. Two lines of the same tenant's
+   * configuration disagreeing is a publication error.
+   */
+  it("refuses a tool whose host the same tenant's allowlist does not cover", () => {
+    expect(() =>
+      parseConnectorConfig({
+        egress: { allowedHosts: ["api.partner.test"] },
+        http: [httpTool({ url: "https://somewhere.else.test/orders" })],
+      }),
+    ).toThrow(/somewhere\.else\.test/);
+
+    expect(() =>
+      parseConnectorConfig({
+        egress: { allowedHosts: ["api.partner.test"] },
+        mcp: [{ url: "https://mcp.elsewhere.test/rpc", tools: [{ name: "x", riskTier: "read" }] }],
+      }),
+    ).toThrow(/mcp\.elsewhere\.test/);
+  });
+
+  it("accepts a subdomain a wildcard covers, and still refuses the apex", () => {
+    // Same rule as the guard's, because it is literally the guard's function.
+    expect(() =>
+      parseConnectorConfig({
+        egress: { allowedHosts: ["*.partner.test"] },
+        http: [httpTool({ url: "https://api.partner.test/orders" })],
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      parseConnectorConfig({
+        egress: { allowedHosts: ["*.partner.test"] },
+        http: [httpTool({ url: "https://partner.test/orders" })],
+      }),
+    ).toThrow(/partner\.test/);
+  });
+
+  /**
+   * The allowlist matches `URL.hostname`, which carries no port. An entry written with one
+   * therefore matches nothing, and used to do so in silence — including in this repo's own
+   * fixtures, which is how it was found.
+   */
+  it("says so when an allowlist entry carries a port the matcher will never see", () => {
+    expect(() =>
+      parseConnectorConfig({
+        egress: { allowedHosts: ["api.partner.test:8443"] },
+        http: [httpTool({ url: "https://api.partner.test:8443/orders" })],
+      }),
+    ).toThrow(/api\.partner\.test/);
   });
 
   it("refuses an MCP server with no tools listed — discovery does not assign tiers", () => {

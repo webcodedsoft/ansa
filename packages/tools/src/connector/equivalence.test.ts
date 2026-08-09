@@ -291,7 +291,9 @@ beforeAll(async () => {
   registry = createToolRegistry();
 
   const httpConfig = parseConnectorConfig({
-    egress: { allowedHosts: [host], allowPlaintextHttp: true },
+    // Hostname, not host:port. The allowlist matches `URL.hostname`, so an entry
+    // carrying a port matches nothing — which parseConnectorConfig now says out loud.
+    egress: { allowedHosts: [new URL(`http://${host}`).hostname], allowPlaintextHttp: true },
     http: [
       {
         name: "order_status",
@@ -338,7 +340,9 @@ beforeAll(async () => {
   });
 
   const mcpConfig = parseConnectorConfig({
-    egress: { allowedHosts: [host], allowPlaintextHttp: true },
+    // Hostname, not host:port. The allowlist matches `URL.hostname`, so an entry
+    // carrying a port matches nothing — which parseConnectorConfig now says out loud.
+    egress: { allowedHosts: [new URL(`http://${host}`).hostname], allowPlaintextHttp: true },
     mcp: [
       {
         url: `http://${host}/rpc`,

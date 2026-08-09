@@ -14,3 +14,7 @@ coverage/
 
 # Caller audio. Someone's voice reading their policy number aloud.
 recordings/
+
+# Hand-onboarding working files: one organisation's real configuration, plus the
+# secrets that go with it. The tool reads a path, so these never need to be in the repo.
+tools/tenant/local/

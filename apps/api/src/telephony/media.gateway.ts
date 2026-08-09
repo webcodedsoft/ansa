@@ -8,6 +8,7 @@ import {
   TELEPHONY_AUDIO,
   type AudioChunk,
   type AudioFormat,
+  type HandoffDestination,
   type Logger,
 } from "@ansa/shared";
 import type { CallDirection, CallMediaStream, TelephonyProvider } from "@ansa/telephony";
@@ -28,19 +29,18 @@ import { WebSocketServer, type WebSocket } from "ws";
 import type { AppConfig } from "../config/env";
 import { ACKNOWLEDGEMENTS, ALL_FILLERS, PROGRESS, STILL_WORKING } from "./filler";
 import { forSpeech, GREETING_TEXT } from "./greeting";
-import { createAudioCache } from "./prerender";
+import { createAudioCache, type AudioCache } from "./prerender";
 import { composeListen } from "./composite-listen";
 import { createHandoff } from "../handoff/handoff";
 import { withHandoffJournal } from "../handoff/journal";
 import { withEventPublisher } from "../events/publisher";
-import type { HandoffDestination } from "../handoff/destination";
 import { HANDOFF_DESTINATION, WHISPER_REGISTRY } from "../handoff/tokens";
 import type { WhisperRegistry } from "../handoff/whisper";
 import { confirmedFact, createCallFacts } from "../conversation/call-facts";
 import { createCallRecorder } from "./event-log";
 import type { Db } from "@ansa/db";
-import { BASE_KEYTERMS } from "../tenancy/defaults";
-import { UNKNOWN_TENANT, type TenantRegistry } from "../tenancy/tenant-registry";
+import { callSettings, type PlatformDefaults } from "../tenancy/call-settings";
+import type { CallTenant, TenantRegistry } from "../tenancy/tenant-registry";
 import { runConversation, type ListenSession } from "../orchestrator/orchestrator";
 import { openDeepgramSocket } from "./ws-deepgram-socket";
 import { openListenSocket } from "./ws-listen-socket";
@@ -61,16 +61,35 @@ import {
 import { fromWebSocket } from "./ws-media-socket";
 
 /**
+ * The fixed phrases of one call, in the voice that call is answered in.
+ *
+ * One of these per (voice, greeting) pair rather than one per process. Two tenants with
+ * two voices need two sets, and the fillers matter as much as the greeting: an
+ * acknowledgement rendered in the platform's default voice, played in the middle of a turn
+ * spoken in the tenant's, is one organisation's voice audibly appearing on another's call.
+ */
+interface WarmAudio {
+  /** Null when the render failed; the greeting is then synthesised live. */
+  readonly greeting: readonly AudioChunk[] | null;
+  /** Keyed by phrase so the orchestrator picks a register, not a queue position. */
+  readonly fillers: ReadonlyMap<string, readonly AudioChunk[]>;
+}
+
+/** Nothing rendered yet, and the call must not wait for it (R6.2). */
+const NOT_WARM: WarmAudio = { greeting: null, fillers: new Map() };
+
+/**
  * Owns the media WebSocket server. It knows about sockets and nothing about the
  * carrier's wire format; the adapter knows the wire format and nothing about sockets.
  */
 @Injectable()
 export class MediaGateway implements OnApplicationShutdown {
   private server: WebSocketServer | null = null;
-  /** Fixed phrases, rendered once at boot rather than per call. */
-  private greetingAudio: readonly AudioChunk[] | null = null;
-  /** Keyed by phrase so the orchestrator picks a register, not a queue position. */
-  private fillers: ReadonlyMap<string, readonly AudioChunk[]> = new Map();
+  /** Built on first use: nothing should synthesise before the server is up. */
+  private audio: AudioCache | null = null;
+  /** Rendered phrases per `${voiceId}\n${greeting}`, and the renders in flight. */
+  private readonly warm = new Map<string, WarmAudio>();
+  private readonly warming = new Set<string>();
   /**
    * R5.2.3. Per process, and keyed inside by tenant and tool.
    *
@@ -121,36 +140,88 @@ export class MediaGateway implements OnApplicationShutdown {
 
     // Off the critical path: calls that arrive before this finishes fall back to
     // synthesising live, which is slower but never silent.
-    void this.warmAudio();
+    this.warmed(this.platform().voiceId, this.platform().greeting);
+  }
+
+  /** What the platform supplies when an organisation has not. */
+  private platform(): PlatformDefaults {
+    return {
+      voiceId: this.config.elevenLabsVoiceId,
+      greeting: GREETING_TEXT,
+      handoff: this.destination,
+    };
   }
 
   /**
-   * Renders the greeting and the thinking-gap acknowledgements once. Everything here is
-   * a compile-time constant in a fixed voice at a fixed format, so the result is
-   * identical on every call and paying for it per call is pure latency.
+   * Renders one voice's fixed phrases: the greeting it answers with, and the thinking-gap
+   * acknowledgements. Deterministic given the pair, so paying for it per call is pure
+   * latency — a measured 959ms cold at the moment the caller is listening hardest.
    */
-  private async warmAudio(): Promise<void> {
-    const cache = createAudioCache({
+  private async render(voiceId: string, greeting: string): Promise<WarmAudio> {
+    const cache = (this.audio ??= createAudioCache({
       tts: this.tts,
       format: TELEPHONY_AUDIO,
       forSpeech,
       log: this.log,
-    });
-    const voiceId = this.config.elevenLabsVoiceId;
+    }));
 
-    this.greetingAudio = await cache.render(GREETING_TEXT, voiceId);
-
-    const rendered = new Map<string, readonly AudioChunk[]>();
+    const greetingAudio = await cache.render(greeting, voiceId);
+    const fillers = new Map<string, readonly AudioChunk[]>();
     for (const phrase of ALL_FILLERS) {
       const chunks = await cache.render(phrase, voiceId);
-      if (chunks !== null) rendered.set(phrase, chunks);
+      if (chunks !== null) fillers.set(phrase, chunks);
     }
-    this.fillers = rendered;
+    return { greeting: greetingAudio, fillers };
+  }
 
-    this.log.info("audio warmed", {
-      greeting: this.greetingAudio !== null,
-      fillers: rendered.size,
-    });
+  /**
+   * This voice's phrases if they are ready, and starts rendering them if they are not.
+   *
+   * Synchronous on purpose. A caller has been connected and the answer cannot wait on
+   * ElevenLabs, so an unwarmed voice answers by synthesising live — slower, audible, and
+   * exactly the fallback the platform voice has always had before boot finished. What is
+   * new is that a tenant with their own voice hits it on the first call after a restart,
+   * which is why `warmForTenant` runs at ingress: the carrier still has to fetch TwiML and
+   * open a socket, and that is usually enough.
+   */
+  private warmed(voiceId: string, greeting: string): WarmAudio {
+    const key = `${voiceId}\n${greeting}`;
+    const ready = this.warm.get(key);
+    if (ready !== undefined) return ready;
+    if (this.warming.has(key)) return NOT_WARM;
+
+    this.warming.add(key);
+    void this.render(voiceId, greeting)
+      .then((rendered) => {
+        this.warm.set(key, rendered);
+        this.log.info("audio warmed", {
+          voiceId,
+          greeting: rendered.greeting !== null,
+          fillers: rendered.fillers.size,
+        });
+      })
+      .catch((error: unknown) => {
+        // Never fatal. The next call synthesises live and tries again.
+        this.log.error("could not warm audio for a voice", {
+          voiceId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      })
+      .finally(() => this.warming.delete(key));
+
+    return NOT_WARM;
+  }
+
+  /**
+   * Start rendering this organisation's voice, called from the voice webhook.
+   *
+   * The tenant is resolved at ingress (R7.3) and the media socket opens a moment later, so
+   * this is the only free head start available on a per-tenant voice. It returns nothing
+   * and is never awaited: the TwiML must go back to the carrier now.
+   */
+  warmForTenant(tenant: CallTenant): void {
+    const settings = callSettings(tenant, this.platform());
+    this.warmed(settings.voiceId, settings.greeting);
   }
 
 
@@ -357,13 +428,27 @@ export class MediaGateway implements OnApplicationShutdown {
     if (tenantId !== undefined && tenant === null) {
       log.warn("tenant on the media socket has no config, using base vocabulary", { tenantId });
     }
-    const keyterms = tenant?.keyterms ?? BASE_KEYTERMS;
+
+    /**
+     * Every value on this call that depends on which organisation was dialled, derived in
+     * one place (`tenancy/call-settings.ts`) rather than six times down this method. Two of
+     * those six used to read the platform's value and ignore the tenant's; nothing here
+     * reaches past `settings` for one of them any more.
+     */
+    const settings = callSettings(tenant, this.platform());
+    const { keyterms } = settings;
     log.info("tenant for call", {
-      tenantId: tenant?.tenantId ?? null,
-      name: tenant?.name ?? "unknown",
-      configVersion: tenant?.configVersion ?? 0,
+      tenantId: settings.tenantId,
+      name: settings.name,
+      configVersion: settings.configVersion,
       keyterms: keyterms.length,
+      voiceId: settings.voiceId,
+      // Whether they answer in their own words, not the words themselves: the greeting is
+      // spoken on every call and a log line is not where it needs repeating.
+      ownGreeting: settings.greeting !== this.platform().greeting,
+      ownEscalation: settings.handoff !== this.platform().handoff,
     });
+    const warm = this.warmed(settings.voiceId, settings.greeting);
 
     const direction: CallDirection =
       stream.parameters[DIRECTION_PARAM] === "outbound" ? "outbound" : "inbound";
@@ -376,10 +461,10 @@ export class MediaGateway implements OnApplicationShutdown {
     // ends: the identifiers a call established are both part of the payload and the
     // strongest signal a tenant's redaction has to work with.
     const facts =
-      tenant?.tenantId == null
+      settings.tenantId === null
         ? undefined
         : createCallFacts({
-            tenantId: tenant.tenantId,
+            tenantId: settings.tenantId,
             callId: asCallId(stream.callId),
             callDirection: direction,
           });
@@ -406,34 +491,34 @@ export class MediaGateway implements OnApplicationShutdown {
      * the events the person answering the phone was given.
      */
     const record =
-      tenant?.tenantId == null
+      settings.tenantId === null
         ? journal.recorder
         : withEventPublisher(journal.recorder, {
             dataSource: this.dataSource,
             log,
-            tenantId: tenant.tenantId,
-            events: tenant.events,
+            tenantId: settings.tenantId,
+            events: settings.events,
             call: {
               callId: stream.callId,
               direction,
               dialled: stream.parameters[DIALLED_PARAM] ?? null,
               caller: stream.parameters[CALLER_PARAM] ?? null,
               startedAt: new Date(openedAt).toISOString(),
-              configVersion: tenant.configVersion,
+              configVersion: settings.configVersion,
             },
             facts: () => facts?.facts ?? null,
             journal: journal.events,
             callerNumber: stream.parameters[CALLER_PARAM] ?? null,
           });
 
-    if (tenant?.tenantId != null) {
+    if (settings.tenantId !== null) {
       record.started({
-        tenantId: tenant.tenantId,
+        tenantId: settings.tenantId,
         carrierCallId: stream.callId,
         direction,
         dialled: stream.parameters[DIALLED_PARAM] ?? "unknown",
         caller: stream.parameters[CALLER_PARAM] ?? null,
-        configVersion: tenant.configVersion,
+        configVersion: settings.configVersion,
       });
       stream.onClosed((reason) => {
         // Our own duration, not the carrier's. Inbound calls recorded none at all: a
@@ -454,7 +539,7 @@ export class MediaGateway implements OnApplicationShutdown {
       // Null for an unregistered number, and the orchestrator reads that as "no tools on
       // this call at all". Such a caller may hold a conversation and must not reach
       // anybody's systems (CLAUDE.md rule 3).
-      tenantId: tenant?.tenantId ?? null,
+      tenantId: settings.tenantId,
       /**
        * Built per call, given the two things only the orchestrator knows: when to make a
        * noise while a tool runs, and when the caller has actually heard the goodbye.
@@ -478,17 +563,17 @@ export class MediaGateway implements OnApplicationShutdown {
             endCall: hooks.endCall,
             // Null until the tenant configures hours; the tool then says it does not know
             // rather than inventing a nine to five (R6.5, migration 0012).
-            businessHours: tenant?.businessHours ?? null,
+            businessHours: settings.businessHours,
           }),
         );
         // Prepared when the tenant's configuration was loaded, so this is map writes
         // rather than a handshake on the answer path.
-        tenant?.connectors.register(registry);
+        settings.connectors.register(registry);
         return {
           registry,
           dispatcher: createToolDispatcher({
             registry,
-            log: log.child({ tenantId: tenant?.tenantId ?? null }),
+            log: log.child({ tenantId: settings.tenantId }),
             holding: hooks.holding,
             /**
              * Who the caller has been confirmed to be, read live rather than snapshotted:
@@ -532,9 +617,11 @@ export class MediaGateway implements OnApplicationShutdown {
         createHandoff({
           telephony: this.telephony,
           callId: asCallId(stream.callId),
-          tenantId: tenant?.tenantId ?? null,
+          tenantId: settings.tenantId,
           callerNumber: stream.parameters[CALLER_PARAM] ?? null,
-          destination: this.destination,
+          // Theirs, falling back to the platform's. Before migration 0015 this was always
+          // the platform's, which on a second tenant is somebody else's staff phone.
+          destination: settings.handoff,
           events: journal.events,
           record,
           log,
@@ -570,16 +657,18 @@ export class MediaGateway implements OnApplicationShutdown {
             },
       llm: this.llm,
       tts: this.tts,
-      voiceId: this.config.elevenLabsVoiceId,
+      voiceId: settings.voiceId,
       log: this.log,
-      greeting: GREETING_TEXT,
+      greeting: settings.greeting,
       // The tenant's own persona and instructions, already composed and cached at config
-      // load. An unregistered number gets UNKNOWN_TENANT's, which is the default
-      // composition and so exactly what every call got before this line existed.
-      systemPrompt: tenant?.systemPrompt ?? UNKNOWN_TENANT.systemPrompt,
+      // load. An unregistered number gets the default composition, which is exactly what
+      // every call got before this line existed.
+      systemPrompt: settings.systemPrompt,
       forSpeech,
-      greetingAudio: this.greetingAudio,
-      fillers: this.fillers,
+      // Rendered for this call's voice and this call's greeting, or null and synthesised
+      // live. Never another voice's.
+      greetingAudio: warm.greeting,
+      fillers: warm.fillers,
       // Acknowledge first, then report progress, then acknowledge the wait itself.
       fillerTiers: [ACKNOWLEDGEMENTS, PROGRESS, STILL_WORKING],
     });

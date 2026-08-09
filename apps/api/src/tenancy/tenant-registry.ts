@@ -1,4 +1,9 @@
-import { type BusinessHours, type Logger, type TenantId } from "@ansa/shared";
+import {
+  type BusinessHours,
+  type HandoffDestination,
+  type Logger,
+  type TenantId,
+} from "@ansa/shared";
 import { loadTenantById, loadTenantForNumber, type Db, type TenantConfig } from "@ansa/db";
 import {
   CALL_CONTROL_DEFINITIONS,
@@ -37,6 +42,11 @@ export interface CallTenant {
   readonly systemPrompt: string;
   /** When their line is staffed, in WAT. Null until they configure it (R6.5). */
   readonly businessHours: BusinessHours | null;
+  /**
+   * Where this organisation's escalations go (R6.5). Null falls back to the platform's
+   * own number, which is right for one tenant and wrong for two — see migration 0015.
+   */
+  readonly handoff: HandoffDestination | null;
   /**
    * This tenant's own tools, discovered and prepared once (R5.2).
    *
@@ -91,6 +101,7 @@ export const UNKNOWN_TENANT: CallTenant = {
   instructions: null,
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   businessHours: null,
+  handoff: null,
   connectors: NO_CONNECTORS,
   events: NO_EVENTS,
   configVersion: 0,
@@ -200,6 +211,7 @@ const toCallTenant = async (
       tools: [...PLATFORM_TOOLS, ...connectors.tools],
     }),
     businessHours: config.businessHours,
+    handoff: config.handoff,
     connectors,
     events,
     configVersion: config.configVersion,

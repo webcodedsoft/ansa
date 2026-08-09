@@ -258,7 +258,16 @@ const normaliseHost = (host: string): string =>
  * is on the host string; whether the address behind it is reachable is a separate
  * question answered below, and both have to pass.
  */
-const hostAllowed = (host: string, allowed: readonly string[]): boolean => {
+/**
+ * Exported because configuration is checked against the same rule the guard enforces.
+ *
+ * `parseConnectorConfig` refuses a tool whose URL sits outside the allowlist the same
+ * tenant declared beside it. That is not a second boundary — this function is still the
+ * only definition of "allowed", and the guard below is still the thing standing between a
+ * request and the network. It is validation, so a mistake surfaces at publication time
+ * rather than as a tool the model is told it has and that refuses every caller.
+ */
+export const isHostAllowed = (host: string, allowed: readonly string[]): boolean => {
   const target = normaliseHost(host);
   for (const raw of allowed) {
     const entry = normaliseHost(raw);
@@ -317,7 +326,7 @@ export const createEgressGuard = (options: EgressGuardOptions): EgressGuard => {
         return { ok: false, reason: "credentials-in-url", detail: url.hostname };
       }
       const host = normaliseHost(url.hostname);
-      if (!hostAllowed(host, policy.allowedHosts)) {
+      if (!isHostAllowed(host, policy.allowedHosts)) {
         return { ok: false, reason: "host-not-allowed", detail: host };
       }
 

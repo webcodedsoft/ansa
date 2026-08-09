@@ -1,4 +1,9 @@
-import { asTenantId, type BusinessHours, type TenantId } from "@ansa/shared";
+import {
+  asTenantId,
+  type BusinessHours,
+  type HandoffDestination,
+  type TenantId,
+} from "@ansa/shared";
 import type { Db } from "./data-source";
 
 import { withTenant } from "./tenant-scope";
@@ -35,6 +40,13 @@ export interface TenantConfig {
    * opening hours is the same failure as one answering from records nobody wrote.
    */
   readonly businessHours: BusinessHours | null;
+  /**
+   * Where this organisation's escalations are transferred (R6.5). Null until they say.
+   *
+   * Null falls back to the platform's own `HANDOFF_TO_NUMBER`, which is correct for a
+   * deployment with one tenant and wrong the moment there are two — see migration 0015.
+   */
+  readonly handoff: HandoffDestination | null;
   /**
    * The tenant's own tools: endpoints, schemas, risk tiers (R5.2). Null until they
    * configure some, which is every tenant today.
@@ -77,6 +89,9 @@ interface ConfigRow {
   business_days: number[] | null;
   tool_config: unknown;
   event_config: unknown;
+  escalation_to_number: string | null;
+  escalation_from_number: string | null;
+  escalation_ring_seconds: number | null;
   credentials: Record<string, unknown> | null;
   config_version: number;
 }
@@ -112,6 +127,27 @@ const toBusinessHours = (row: ConfigRow): BusinessHours | null => {
   return { opensAtHour: opens, closesAtHour: closes, openDays: days };
 };
 
+/**
+ * Long enough for a phone in a pocket, short enough that the caller has not given up.
+ * Duplicated from the environment path on purpose: a tenant who set a destination and no
+ * ring time gets the same answer as a deployment that set neither.
+ */
+const DEFAULT_RING_SECONDS = 25;
+
+/**
+ * Both numbers or neither, matching the CHECK constraint in 0015 and refusing again here.
+ *
+ * A database whose migration has not been applied returns the row without these columns at
+ * all, and `undefined` has to read as "not configured" rather than as a transfer to
+ * `undefined`.
+ */
+const toHandoff = (row: ConfigRow): HandoffDestination | null => {
+  const to = row.escalation_to_number;
+  const from = row.escalation_from_number;
+  if (to == null || from == null) return null;
+  return { to, from, ringSeconds: row.escalation_ring_seconds ?? DEFAULT_RING_SECONDS };
+};
+
 const toConfig = (row: ConfigRow): TenantConfig => ({
   tenantId: asTenantId(row.id),
   name: row.name,
@@ -121,6 +157,7 @@ const toConfig = (row: ConfigRow): TenantConfig => ({
   persona: row.persona,
   instructions: row.instructions ?? null,
   businessHours: toBusinessHours(row),
+  handoff: toHandoff(row),
   // `undefined` when migration 0013 has not been applied — the row comes back without the
   // column at all — and that has to read as "no tools configured" rather than reaching
   // the parser as a value.

@@ -1,9 +1,8 @@
 import { forSpeech } from "@ansa/normalizer";
-import type { CallId, Logger, TenantId } from "@ansa/shared";
+import type { CallId, HandoffDestination, Logger, TenantId } from "@ansa/shared";
 import type { TelephonyProvider } from "@ansa/telephony";
 
 import type { CallRecorder } from "../telephony/event-log";
-import type { HandoffDestination } from "./destination";
 import { renderSummary, speakSummary, summarise, type LoggedEvent } from "./summary";
 import type { EscalationTrigger } from "./triggers";
 import type { WhisperRegistry } from "./whisper";

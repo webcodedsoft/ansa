@@ -1,26 +1,19 @@
-import type { Logger } from "@ansa/shared";
+import type { HandoffDestination, Logger } from "@ansa/shared";
 
 /**
- * Where a transfer goes.
+ * The platform's fallback destination, read from the environment at boot.
  *
- * R6.5 puts this in per-tenant configuration alongside business hours and out-of-hours
- * behaviour, and that is where it belongs — one destination for every tenant is a
- * single-tenant assumption with a deadline on it. The tenant config table does not carry
- * these columns yet, so it is read from the environment and the shape is the one a tenant
- * row will fill: resolve() gains a tenant argument and nothing above it changes.
+ * **A tenant's own destination wins over this.** Migration 0015 put escalation on the
+ * tenant row where R6.5 always said it belonged, and `callSettings` prefers it; this is
+ * what a deployment with one tenant and no rows filled in still gets. It is a fallback and
+ * not a default in the ordinary sense: with two tenants configured, a call that lands here
+ * is a call whose organisation has not said where its escalations go.
  *
- * Unconfigured returns null rather than a default, and the escalation path says so out
+ * Unconfigured returns null rather than a placeholder, and the escalation path says so out
  * loud. Today the agent says "let me get a colleague for you" and transfers nowhere; a
  * placeholder number would turn that from an honest dead end into a call that rings a
  * stranger.
  */
-export interface HandoffDestination {
-  /** E.164. The person. */
-  readonly to: string;
-  /** E.164, and must be a number the carrier account owns. */
-  readonly from: string;
-  readonly ringSeconds: number;
-}
 
 /** Long enough for a phone in a pocket, short enough that the caller has not given up. */
 const DEFAULT_RING_SECONDS = 25;

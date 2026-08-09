@@ -85,6 +85,17 @@ export interface ScenarioOptions {
   /** Null is an unregistered number, which disables tool calling for the whole call. */
   readonly tenantId?: TenantId | null;
   readonly makeTools?: OrchestratorDeps["makeTools"];
+  /**
+   * The three values a tenant's configuration decides about how a call sounds.
+   *
+   * Overridable because `isolation.test.ts` runs the same conversation twice, once as each
+   * of two organisations, and the whole question it asks is whether any of these three
+   * crosses over. Everything else about a scenario is deliberately fixed: the scenarios in
+   * `conversation.test.ts` are about the conversation and would be noisier for varying it.
+   */
+  readonly greeting?: string;
+  readonly systemPrompt?: string;
+  readonly voiceId?: string;
 }
 
 export interface Scenario {

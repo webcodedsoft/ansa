@@ -1,3 +1,4 @@
+import { requireAllowed } from "../connector/config";
 import { parseRedactionPolicy, type RedactionPolicy } from "../redaction";
 
 import type { EgressPolicy } from "../connector/egress";
@@ -174,7 +175,7 @@ export const parseEventConfig = (value: unknown): EventConfig => {
 
   const tenantRedaction = parseRedactionPolicy(raw.redaction, "event config.redaction");
 
-  return {
+  const parsed: EventConfig = {
     egress: {
       allowedHosts: (hosts ?? []).map((host, index) =>
         asText(host, `event config.egress.allowedHosts[${index}]`),
@@ -185,6 +186,15 @@ export const parseEventConfig = (value: unknown): EventConfig => {
       parseSubscription(entry, index, tenantRedaction),
     ),
   };
+
+  // Same check and same reasoning as the tool config: a receiver outside the allowlist the
+  // tenant declared beside it is refused by the guard on every attempt, and it should be a
+  // publication error rather than a delivery that never arrives and nobody watches.
+  for (const subscription of parsed.subscriptions) {
+    requireAllowed(subscription.url, parsed.egress, `event config.${subscription.name}.url`);
+  }
+
+  return parsed;
 };
 
 /** Which of a tenant's receivers asked for this event. */

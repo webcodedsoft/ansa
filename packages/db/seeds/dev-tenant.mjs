@@ -73,8 +73,19 @@ const tenantId = created[0].id;
 
 // Publishing runs under the tenant's own scope, exactly as the application would.
 await client.query("select set_config('app.tenant_id', $1, true)", [tenantId]);
+//
+// The argument list grows with every migration that adds a configurable field, and this
+// call silently rotted twice before anyone noticed: 0012, 0013, 0014 and 0015 each dropped
+// and recreated the function with a wider signature, and an old call site fails with
+// "function does not exist" rather than with anything that names the missing field. Keep
+// it in step, in the same commit as the migration.
 const { rows } = await client.query(
-  "select app.publish_tenant_config($1, $2, null, null, $3, $4, $5, $6) as version",
+  `select app.publish_tenant_config(
+     $1, $2, null, null, $3, $4, $5,
+     null, null, null,   -- business hours: the seed leaves them unset on purpose
+     null, null,         -- tools, event receivers
+     null, null, null,   -- escalation: falls back to the platform number
+     $6) as version`,
   [
     tenantId,
     "Kano General Insurance",

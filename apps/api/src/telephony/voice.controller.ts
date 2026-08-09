@@ -15,6 +15,7 @@ import type { Logger } from "@ansa/shared";
 import { wasAnswered, type TelephonyProvider } from "@ansa/telephony";
 
 import type { AppConfig } from "../config/env";
+import { MediaGateway } from "./media.gateway";
 import type { TenantRegistry } from "../tenancy/tenant-registry";
 import {
   APP_CONFIG,
@@ -45,6 +46,11 @@ export class VoiceController {
     @Inject(LOGGER) private readonly log: Logger,
     @Inject(TENANT_REGISTRY) private readonly tenants: TenantRegistry,
     @Inject(DATA_SOURCE) private readonly dataSource: Db | null,
+    // Injected by class rather than by token, and with an explicit @Inject so the import
+    // stays a runtime value: Nest resolves a constructor parameter from emitted metadata,
+    // and `import type` would erase it to Object and break the injection at boot rather
+    // than at compile time.
+    @Inject(MediaGateway) private readonly media: MediaGateway,
   ) {}
 
   @Post("voice")
@@ -80,6 +86,13 @@ export class VoiceController {
       configVersion: tenant.configVersion,
       keyterms: tenant.keyterms.length,
     });
+
+    // Their voice may not be the platform's, and rendering a greeting was measured at
+    // 959ms cold. Started here and never awaited: the carrier is waiting for this TwiML,
+    // and the media socket that will use the audio does not open until it has it. If the
+    // render has not finished by then the call synthesises live, which is slower and
+    // audible rather than silent (R6.2).
+    this.media.warmForTenant(tenant);
 
     const wsOrigin = this.config.publicBaseUrl.replace(/^http/, "ws");
     const answer = this.telephony.renderAnswer({

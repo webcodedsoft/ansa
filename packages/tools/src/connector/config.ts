@@ -1,6 +1,6 @@
 import type { RiskTier } from "../types";
 
-import type { EgressPolicy } from "./egress";
+import { isHostAllowed, type EgressPolicy } from "./egress";
 import { templateFields } from "./template";
 
 /**
@@ -252,6 +252,29 @@ const parseMcpServer = (value: unknown, index: number): McpServerConfig => {
 };
 
 /**
+ * A declared URL has to sit inside the allowlist declared beside it.
+ *
+ * Shared by tool configuration and event configuration, which have the same shape and the
+ * same mistake available to them.
+ */
+export const requireAllowed = (url: string, egress: EgressPolicy, where: string): void => {
+  let host: string;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    // The parsers above already rejected a malformed URL; reaching here means one got past
+    // them, and refusing is the safe direction.
+    throw new Error(`${where} is not a URL`);
+  }
+  if (!isHostAllowed(host, egress.allowedHosts)) {
+    throw new Error(
+      `${where} points at ${host}, which egress.allowedHosts does not cover — ` +
+        "the request would be refused on every call",
+    );
+  }
+};
+
+/**
  * Configuration as stored, turned into configuration this package will act on.
  *
  * Throws rather than dropping the bad entry. A tool that silently fails to register is a
@@ -273,12 +296,32 @@ export const parseConnectorConfig = (value: unknown): ConnectorConfig => {
   if (!Array.isArray(http)) throw new Error("tool config: http must be an array");
   if (!Array.isArray(mcp)) throw new Error("tool config: mcp must be an array");
 
-  return {
-    egress: {
-      allowedHosts: (hosts ?? []).map((host, index) => asText(host, `egress.allowedHosts[${index}]`)),
-      allowPlaintextHttp: egressRaw.allowPlaintextHttp === true,
-    },
+  const egress: EgressPolicy = {
+    allowedHosts: (hosts ?? []).map((host, index) => asText(host, `egress.allowedHosts[${index}]`)),
+    allowPlaintextHttp: egressRaw.allowPlaintextHttp === true,
+  };
+
+  const parsed: ConnectorConfig = {
+    egress,
     http: http.map(parseHttpTool),
     mcp: mcp.map(parseMcpServer),
   };
+
+  /**
+   * A URL the same tenant's allowlist does not cover.
+   *
+   * The guard already refuses this at request time and always will — it is the boundary and
+   * this is not. What it cannot do is tell anybody *before* a caller hits it: the tool
+   * registers, the model is told it can look the thing up, and every attempt comes back as
+   * "sorry, I couldn't get that just now". Two lines of configuration disagreeing with each
+   * other is a publication-time error, and this is the only place both are in scope.
+   */
+  for (const tool of parsed.http) {
+    requireAllowed(tool.url, egress, `tool config.http[${tool.name}].url`);
+  }
+  for (const [index, server] of parsed.mcp.entries()) {
+    requireAllowed(server.url, egress, `tool config.mcp[${index}].url`);
+  }
+
+  return parsed;
 };

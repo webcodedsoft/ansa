@@ -74,7 +74,8 @@ describe("tenant registry", () => {
     // The tenant's own terms are there...
     expect(tenant.keyterms).toContain("Ikeja");
     // ...and so is every base term. A tenant configuring their products must not
-    // silently lose "policy", which fails on nearly every call without boosting.
+    // silently lose the platform's own vocabulary, which fails on nearly every call
+    // without boosting.
     for (const base of BASE_KEYTERMS) expect(tenant.keyterms).toContain(base);
     expect(tenant.configVersion).toBe(7);
   });
@@ -113,7 +114,7 @@ describe("tenant registry", () => {
 
     const tenant = await registry.resolve("+2348138178550");
     expect(tenant.keyterms).toHaveLength(MAX_KEYTERMS);
-    // Base first, so truncation costs the tenant's tail rather than "policy".
+    // Base first, so truncation costs the tenant's tail rather than the platform's own.
     for (const base of BASE_KEYTERMS) expect(tenant.keyterms).toContain(base);
     // Silent truncation reads exactly like a transcriber that mishears the word.
     expect(log.warn).toHaveBeenCalledWith("keyterms truncated", expect.anything());

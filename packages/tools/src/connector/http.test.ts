@@ -90,6 +90,10 @@ const dispatcherFor = (path: string, credentialRef: string | undefined, sealed: 
   const recorder = recordingLogger();
   const registry = createToolRegistry();
   const config = parseConnectorConfig({
+    // Hostname only: the allowlist matches `URL.hostname`, so an entry carrying the port
+    // would match nothing and parseConnectorConfig now refuses the pair rather than
+    // leaving it to fail on a call.
+    egress: { allowedHosts: [new URL(`http://${host}`).hostname], allowPlaintextHttp: true },
     http: [
       {
         name: "order_status",

@@ -163,6 +163,7 @@ describe("configuration", () => {
 
   it("defaults to no redaction, and a subscription may narrow the tenant's rule", () => {
     const parsed = parseEventConfig({
+      egress: { allowedHosts: ["a.example.test", "b.example.test"] },
       redaction: { categories: ["digit-sequence"] },
       subscriptions: [
         { name: "crm", url: "https://a.example.test/x", events: ["call.ended"], signingSecretRef: "s" },
@@ -179,6 +180,7 @@ describe("configuration", () => {
     expect(parsed.subscriptions[1]?.redaction.categories).toHaveLength(3);
 
     const bare = parseEventConfig({
+      egress: { allowedHosts: ["a.example.test"] },
       subscriptions: [
         { name: "crm", url: "https://a.example.test/x", events: ["call.ended"], signingSecretRef: "s" },
       ],
@@ -188,6 +190,7 @@ describe("configuration", () => {
 
   it("routes each event only to the receivers that asked for it", () => {
     const parsed = parseEventConfig({
+      egress: { allowedHosts: ["a.example.test", "b.example.test", "c.example.test"] },
       subscriptions: [
         { name: "crm", url: "https://a.example.test/x", events: ["call.ended"], signingSecretRef: "s" },
         { name: "desk", url: "https://b.example.test/x", events: ["call.transferred"], signingSecretRef: "s" },

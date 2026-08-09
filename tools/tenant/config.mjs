@@ -32,6 +32,14 @@
 // window and refuses one that wraps past midnight, so a typo fails here rather than
 // telling a caller to ring back tomorrow.
 //
+// `escalation` is where a transfer goes when the agent gives up (R6.5, migration 0015).
+// Both numbers or neither, both E.164, and the origination must be a number the carrier
+// account owns. Omit it and escalation falls back to the platform's own HANDOFF_TO_NUMBER,
+// which is right for a single-tenant deployment and is somebody else's staff phone the
+// moment there are two — so publish one.
+//
+//   { "escalation": { "toNumber": "+234...", "fromNumber": "+234...", "ringSeconds": 25 } }
+//
 // `tools` is the tenant's own tool configuration (Slice 6, R5.2) and travels with the
 // version, because it changes what the agent can do. Its shape is validated by
 // packages/tools/src/connector/config.ts on the way into the registry, on every config
@@ -132,9 +140,10 @@ if (command === "show") {
   const { rows } =
     version === undefined
       ? await client.query(
-          `select name, voice_id, greeting, persona, instructions, keyterms,
+          `select name, dialled_number, voice_id, greeting, persona, instructions, keyterms,
                   business_open_hour, business_close_hour, business_days, tool_config,
-                  event_config, config_version
+                  event_config, escalation_to_number, escalation_from_number,
+                  escalation_ring_seconds, config_version
              from tenants where id = $1`,
           [tenantId],
         )
@@ -219,8 +228,13 @@ if (command === "show") {
   // hours. The three columns travel together because two thirds of a window cannot be
   // reasoned about, and the CHECK constraint in 0012 says so too.
   const hours = config.businessHours ?? {};
+  // Same rule as the hours: both numbers travel together or neither does, because a
+  // destination with no origination cannot be dialled and the CHECK constraint in 0015
+  // says so too. A typo therefore fails here rather than at the carrier, one second after
+  // a caller has been told they are being put through.
+  const escalation = config.escalation ?? {};
   const { rows } = await client.query(
-    "select app.publish_tenant_config($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) as version",
+    "select app.publish_tenant_config($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) as version",
     [
       tenantId,
       config.name ?? null,
@@ -238,6 +252,9 @@ if (command === "show") {
       config.tools == null ? null : JSON.stringify(config.tools),
       // Same rule again: omitting `events` publishes a version that delivers nothing.
       config.events == null ? null : JSON.stringify(config.events),
+      escalation.toNumber ?? null,
+      escalation.fromNumber ?? null,
+      escalation.ringSeconds ?? null,
       note,
     ],
   );
