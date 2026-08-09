@@ -185,5 +185,15 @@ consumes it.
   `sessions` already records `user_agent` and `last_seen_at` for the second one.
 - **No refresh tokens.** Sessions are absolute, seven days, then sign in again. A sliding
   window keeps a stolen token alive exactly as long as the thief keeps using it.
+- **No call audio.** `RECORD_AUDIO_DIR` writes the caller's raw µ-law stream to the
+  process's own disk. It is an operator diagnostic that is off by default, keyed by the
+  carrier's call id rather than by anything this API exposes, swept on
+  `tenants.audio_retention_days`, and playable by nothing without transcoding — so an
+  endpoint over it would answer 404 for almost every call and would make this API a media
+  path. The real objection is what the file is: a caller reading their policy number
+  aloud. Serving that needs expiring, single-use, unguessable URLs and a record of who
+  listened to whose voice. That is a slice with its own decisions, not a field on a
+  response. The review loop it would serve works without it, because the question a
+  reviewer answers is "is this text what was said".
 - **No distributed rate limiting.** `http/rate-limit.ts` is per process and protects
   password and token guessing. Traffic shaping belongs in front of the process.

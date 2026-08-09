@@ -95,6 +95,7 @@
                         "type": "string",
                         "enum": [
                           "calls:read",
+                          "calls:write",
                           "members:read",
                           "members:write",
                           "invitations:read",
@@ -473,6 +474,7 @@
           "calls"
         ],
         "summary": "List this organisation's calls, newest first",
+        "description": "Filters combine with AND. `from` is inclusive and `to` exclusive, so two consecutive ranges do not both contain a call on the boundary. `reviewed` selects calls where somebody has ruled on at least one transcript.",
         "x-ansa-capability": "calls:read",
         "parameters": [
           {
@@ -492,6 +494,68 @@
             "schema": {
               "type": "string",
               "maxLength": 512
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "endReason",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            }
+          },
+          {
+            "name": "caller",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 32
+            }
+          },
+          {
+            "name": "dialled",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 32
+            }
+          },
+          {
+            "name": "minDurationSeconds",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "reviewed",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -613,6 +677,753 @@
           },
           "422": {
             "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/calls/{callId}": {
+      "get": {
+        "operationId": "calls.detail",
+        "tags": [
+          "calls"
+        ],
+        "summary": "One call, turn by turn",
+        "description": "Turns with their barge-in offsets, final transcripts with confidence and the provider that produced them, the event timeline ordered by offset, and the configuration version that served the call. There is no audio; see the API README.",
+        "x-ansa-capability": "calls:read",
+        "parameters": [
+          {
+            "name": "callId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "carrierCallId": {
+                      "type": "string",
+                      "maxLength": 128
+                    },
+                    "direction": {
+                      "type": "string",
+                      "maxLength": 16
+                    },
+                    "dialled": {
+                      "type": "string",
+                      "maxLength": 32
+                    },
+                    "caller": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 32
+                    },
+                    "answeredAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "endedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "endReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 64
+                    },
+                    "durationSeconds": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "configVersion": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "turns": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "seq": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "speaker": {
+                            "type": "string",
+                            "maxLength": 16
+                          },
+                          "startedOffsetMs": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "endedOffsetMs": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ],
+                            "minimum": 0
+                          },
+                          "bargedInAtMs": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ],
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "seq",
+                          "speaker",
+                          "startedOffsetMs",
+                          "endedOffsetMs",
+                          "bargedInAtMs"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "transcripts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "maxLength": 19
+                          },
+                          "text": {
+                            "type": "string"
+                          },
+                          "correctedText": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "correctedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time"
+                          },
+                          "confidence": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 24
+                          },
+                          "offsetMs": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "provider": {
+                            "type": "string",
+                            "maxLength": 64
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "text",
+                          "correctedText",
+                          "correctedAt",
+                          "confidence",
+                          "offsetMs",
+                          "provider"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string"
+                          },
+                          "offsetMs": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          },
+                          "at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "detail": {
+                            "type": "object",
+                            "properties": {
+                              "stage": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "ms": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
+                              },
+                              "seq": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
+                              },
+                              "attempt": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
+                              },
+                              "reason": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "subject": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "outcome": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "tool": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "chars": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "stage",
+                              "ms",
+                              "seq",
+                              "attempt",
+                              "reason",
+                              "subject",
+                              "outcome",
+                              "tool",
+                              "chars"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "offsetMs",
+                          "at",
+                          "detail"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "carrierCallId",
+                    "direction",
+                    "dialled",
+                    "caller",
+                    "answeredAt",
+                    "endedAt",
+                    "endReason",
+                    "durationSeconds",
+                    "configVersion",
+                    "createdAt",
+                    "turns",
+                    "transcripts",
+                    "events"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold calls:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/calls/{callId}/transcripts/{transcriptId}/corrections": {
+      "post": {
+        "operationId": "calls.correct",
+        "tags": [
+          "calls"
+        ],
+        "summary": "Record a review verdict on one transcript",
+        "description": "Submitting the transcriber's own words back is a verdict, not a no-op: it marks the transcript reviewed and correct. `changed` says which it was.",
+        "x-ansa-capability": "calls:write",
+        "parameters": [
+          {
+            "name": "callId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          },
+          {
+            "name": "transcriptId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 19,
+              "pattern": "^[1-9][0-9]{0,18}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "correctedText": {
+                    "type": "string",
+                    "maxLength": 8000
+                  }
+                },
+                "required": [
+                  "correctedText"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "transcriptId": {
+                      "type": "string",
+                      "maxLength": 19
+                    },
+                    "callId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "correctedText": {
+                      "type": "string"
+                    },
+                    "correctedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "changed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "transcriptId",
+                    "callId",
+                    "text",
+                    "correctedText",
+                    "correctedAt",
+                    "changed"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold calls:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/calls/metrics": {
+      "get": {
+        "operationId": "calls.metrics",
+        "tags": [
+          "calls"
+        ],
+        "summary": "Quality metrics over this organisation's recent calls",
+        "description": "Computed over the last 200 calls, from the same event log and the same arithmetic the internal viewer uses. Rates are strings so their precision is not rounded away, and null where the denominator was zero — no calls yet and no transfers are different readings.",
+        "x-ansa-capability": "calls:read",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "calls": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "callerTurns": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "agentTurns": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "reviewed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "sttExactMatch": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 24
+                    },
+                    "sttWordAccuracy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 24
+                    },
+                    "correctionRate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 24
+                    },
+                    "confirmationRate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 24
+                    },
+                    "readbackRejectionRate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 24
+                    },
+                    "captureCompletionRate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 24
+                    },
+                    "bargeInRate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 24
+                    },
+                    "responseLatencyMs": {
+                      "type": "object",
+                      "properties": {
+                        "p50": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
+                        "p95": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
+                        "samples": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "p50",
+                        "p95",
+                        "samples"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "transferRate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 24
+                    },
+                    "abandonmentRate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 24
+                    },
+                    "hallucinationsDiscarded": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "recoveryLines": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "recoveryRate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 24
+                    },
+                    "toolCalls": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "toolFailureRate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 24
+                    }
+                  },
+                  "required": [
+                    "calls",
+                    "callerTurns",
+                    "agentTurns",
+                    "reviewed",
+                    "sttExactMatch",
+                    "sttWordAccuracy",
+                    "correctionRate",
+                    "confirmationRate",
+                    "readbackRejectionRate",
+                    "captureCompletionRate",
+                    "bargeInRate",
+                    "responseLatencyMs",
+                    "transferRate",
+                    "abandonmentRate",
+                    "hallucinationsDiscarded",
+                    "recoveryLines",
+                    "recoveryRate",
+                    "toolCalls",
+                    "toolFailureRate"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold calls:read",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1626,6 +2437,7 @@
   ],
   "x-ansa-capabilities": [
     "calls:read",
+    "calls:write",
     "members:read",
     "members:write",
     "invitations:read",

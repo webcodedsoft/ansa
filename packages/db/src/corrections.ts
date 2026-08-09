@@ -1,7 +1,7 @@
 import type { TenantId } from "@ansa/shared";
 
 import type { Db } from "./data-source";
-import { withTenant } from "./tenant-scope";
+import { withTenant, type TenantScope } from "./tenant-scope";
 
 /**
  * The R9.2 review loop, as two queries.
@@ -22,39 +22,95 @@ export interface TranscriptCorrection {
   readonly transcriptId: string;
   /** What the human heard on the recording. Equal to `text` when the transcriber was right. */
   readonly correctedText: string;
+  /**
+   * The call the reviewer believes this transcript belongs to, when the caller knows one.
+   *
+   * The dashboard addresses a transcript through its call — `/calls/{callId}/transcripts/
+   * {transcriptId}/corrections` — and a transcript id from a different call arriving on
+   * that path is a client bug, not a verdict to record silently against the wrong turn.
+   * Null means "do not constrain", which is the internal viewer, where the reviewer is
+   * looking at one rendered page and the id came off it.
+   */
+  readonly callId?: string | null;
+}
+
+/** One recorded verdict, as the reviewer's screen should now show it. */
+export interface ReviewVerdict {
+  readonly transcriptId: string;
+  readonly callId: string;
+  /** What the transcriber heard. Unchanged by a correction — the pair is the evidence. */
+  readonly text: string;
+  readonly correctedText: string;
+  readonly correctedAt: string;
+  /** False when the reviewer submitted the transcriber's own words back. Still a verdict. */
+  readonly changed: boolean;
 }
 
 /**
- * Records one reviewer's verdict on one transcript.
+ * Records one reviewer's verdict on one transcript, inside a scope the caller already has.
  *
- * Scoped like every other write: the `where` clause names the row, RLS decides whether
- * this tenant may touch it. Returns false when the row is not theirs, which is
- * indistinguishable from "no such row" on purpose.
+ * Two statements rather than one `update … returning`, and not for taste: TypeORM's
+ * Postgres driver special-cases UPDATE and DELETE and hands back `[rows, affectedCount]`
+ * instead of the rows, so `(await scope.query("update … returning id")).length > 0` is
+ * always true — and a cross-tenant correction RLS had correctly refused reported success.
+ * `scope.mutate` unwraps that shape, but the select still leads, because it is also what
+ * decides whether the transcript is on the call the caller named and what the transcriber
+ * originally heard. Both statements run in the same tenant-scoped transaction, so the
+ * check and the write cannot disagree.
+ *
+ * Null when the row is not theirs, not there, or not on that call. The three are one
+ * answer on purpose.
+ */
+export const applyTranscriptCorrection = async (
+  scope: TenantScope,
+  correction: TranscriptCorrection,
+): Promise<ReviewVerdict | null> => {
+  const existing = await scope.query<{ id: string; call_id: string; text: string }>(
+    "select id, call_id, text from transcripts where id = $1",
+    [correction.transcriptId],
+  );
+  const row = existing[0];
+  if (row === undefined) return null;
+  const wanted = correction.callId ?? null;
+  if (wanted !== null && row.call_id !== wanted) return null;
+
+  const stamped = await scope.mutate<{ corrected_at: Date }>(
+    `update transcripts set corrected_text = $2, corrected_at = now()
+      where id = $1 returning corrected_at`,
+    [correction.transcriptId, correction.correctedText],
+  );
+  const correctedAt = stamped[0]?.corrected_at;
+  // The select found it a moment ago in this same transaction, so no row here means the
+  // driver handed back something other than what it claims to. Louder than a false null.
+  if (correctedAt === undefined) throw new Error("the correction updated no row");
+
+  return {
+    transcriptId: row.id,
+    callId: row.call_id,
+    text: row.text,
+    correctedText: correction.correctedText,
+    correctedAt: correctedAt.toISOString(),
+    changed: correction.correctedText !== row.text,
+  };
+};
+
+/**
+ * The same verdict, for a caller that has a tenant id rather than a scope.
+ *
+ * The internal viewer, which is told which organisation to act for because there is no
+ * session there to infer one from. One implementation underneath, so the dashboard and the
+ * viewer cannot record a correction two different ways.
  */
 export const recordTranscriptCorrection = async (
   dataSource: Db,
   tenantId: TenantId,
   correction: TranscriptCorrection,
 ): Promise<boolean> =>
-  withTenant(dataSource, tenantId, async (scope) => {
-    // Two statements rather than `update … returning`, and not for taste: TypeORM's
-    // Postgres driver special-cases UPDATE and DELETE and hands back
-    // `[rows, affectedCount]` instead of the rows. `rows.length > 0` on that is always
-    // true, so a cross-tenant correction RLS had correctly refused reported success.
-    // Both statements run inside the same tenant-scoped transaction, so the check and
-    // the write cannot disagree.
-    const existing = await scope.query<{ id: string }>(
-      "select id from transcripts where id = $1",
-      [correction.transcriptId],
-    );
-    if (existing.length === 0) return false;
-
-    await scope.query(
-      "update transcripts set corrected_text = $2, corrected_at = now() where id = $1",
-      [correction.transcriptId, correction.correctedText],
-    );
-    return true;
-  });
+  withTenant(
+    dataSource,
+    tenantId,
+    async (scope) => (await applyTranscriptCorrection(scope, correction)) !== null,
+  );
 
 /**
  * One reviewed turn, in the shape the eval corpus wants.

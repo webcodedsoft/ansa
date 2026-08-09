@@ -15,10 +15,19 @@ import { integer, list, nullable, object, optional, text, type Infer, type Schem
 export const DEFAULT_PAGE_LIMIT = 25;
 const MAX_PAGE_LIMIT = 100;
 
-export const pageQuery = object({
+/**
+ * The two properties every list takes, as properties rather than as a finished schema.
+ *
+ * A list with filters spreads these into its own query object — `object({ ...PAGE_PROPS,
+ * from: … })` — so `limit`'s ceiling and the cursor's length are written once. Declaring
+ * them again beside the filters is how one endpoint quietly ends up accepting `limit=500`.
+ */
+export const PAGE_PROPS = {
   limit: optional(integer({ minimum: 1, maximum: MAX_PAGE_LIMIT })),
   cursor: optional(text({ maxLength: 512 })),
-});
+};
+
+export const pageQuery = object(PAGE_PROPS);
 
 export type PageQuery = Infer<typeof pageQuery>;
 
