@@ -135,6 +135,16 @@ const seed = async (label: string): Promise<Organisation> => {
     [tenantId, callId],
   );
 
+  // The second call is the one the review scan should rank first: the agent invented words
+  // and then gave up. Written as events rather than as an `end_reason` because that is what
+  // the pipeline writes and what the scan reads.
+  await owner.query(
+    `insert into call_events (tenant_id, call_id, kind, offset_ms, detail)
+     values ($1, $2, 'hallucination discarded', 400, '{"text":"thank you","speechMs":0}'::jsonb),
+            ($1, $2, 'escalated to a human', 800, '{"text":"let me get a colleague"}'::jsonb)`,
+    [tenantId, otherCallId],
+  );
+
   const first = await owner.query<{ id: string }[]>(
     `insert into transcripts (tenant_id, call_id, kind, text, confidence, offset_ms, provider)
      values ($1, $2, 'final', 'my policy number is AB1234', 0.62, 900, 'openai')
@@ -461,6 +471,87 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("the call histor
       expect(Number(theirs.body["reviewed"])).toBe(0);
       // Nothing reviewed is not the same reading as nothing wrong, so it is null.
       expect(theirs.body["sttExactMatch"]).toBeNull();
+    });
+  });
+
+  /**
+   * The review queue (R9.2.1, R9.2.2), over HTTP against the real event log.
+   *
+   * Worth doing here rather than only as a unit test for the reason `isolation.test.ts`
+   * gives: the two properties that matter are outside the scoring function. That the scan
+   * sees the events at all depends on `readCallRecords` selecting their kinds — it did not,
+   * for two slices — and that one organisation's queue holds none of another's is a fact
+   * about RLS.
+   */
+  describe("the review queue", () => {
+    const calls = (reply: Reply): Record<string, unknown>[] =>
+      reply.body["calls"] as Record<string, unknown>[];
+
+    it("puts the worst call first and says why it is there", async () => {
+      const reply = await request("GET", "/api/v1/calls/review-queue", {
+        token: alpha.owner.token,
+      });
+      expect(reply.status).toBe(200);
+
+      const first = calls(reply)[0];
+      expect(first?.["id"]).toBe(alpha.otherCallId);
+      const signals = (first?.["signals"] as Record<string, unknown>[]).map((s) => s["kind"]);
+      expect(signals).toContain("hallucination");
+      expect(signals).toContain("escalated");
+    });
+
+    it("reports what it scanned, so the flagged count has a denominator", async () => {
+      const reply = await request("GET", "/api/v1/calls/review-queue", {
+        token: alpha.owner.token,
+      });
+      expect(Number(reply.body["scanned"])).toBe(2);
+      expect(Number(reply.body["flagged"])).toBe(calls(reply).length);
+    });
+
+    it("narrows to the calls worth a reviewer's attention", async () => {
+      const severe = await request("GET", "/api/v1/calls/review-queue?minSeverity=10", {
+        token: alpha.owner.token,
+      });
+      expect(calls(severe).map((c) => c["id"])).toEqual([alpha.otherCallId]);
+    });
+
+    it("is read as a page of its own and not as a call id", async () => {
+      const reply = await request("GET", "/api/v1/calls/review-queue", {
+        token: alpha.owner.token,
+      });
+      expect(reply.status).toBe(200);
+    });
+
+    it("holds none of another organisation's calls", async () => {
+      const theirs = await request("GET", "/api/v1/calls/review-queue", {
+        token: beta.owner.token,
+      });
+      const ids = calls(theirs).map((c) => c["id"]);
+      expect(ids).not.toContain(alpha.callId);
+      expect(ids).not.toContain(alpha.otherCallId);
+    });
+  });
+
+  /**
+   * Attribution (R9.2.6). The seed answers one call under configuration version 7 and one
+   * under none, which is exactly the shape a rollout produces.
+   */
+  describe("trends by configuration version", () => {
+    it("splits the window by the version that served each call", async () => {
+      const reply = await request("GET", "/api/v1/calls/trends", { token: alpha.owner.token });
+      expect(reply.status).toBe(200);
+
+      const versions = reply.body["versions"] as Record<string, unknown>[];
+      expect(versions.map((v) => v["configVersion"])).toEqual([7, null]);
+      expect(Number(versions[0]?.["calls"])).toBe(1);
+    });
+
+    it("carries the flagged rate for each version, not just its metrics", async () => {
+      const reply = await request("GET", "/api/v1/calls/trends", { token: alpha.owner.token });
+      const versions = reply.body["versions"] as Record<string, unknown>[];
+
+      // The unversioned row is the call the scan flags hardest, so its rate is 1.
+      expect(versions[1]?.["flaggedRate"]).toBe("1.0000");
     });
   });
 });

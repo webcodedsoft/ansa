@@ -3,6 +3,9 @@ import type { CallDetail, CallSummary, CorpusEntry, DeliveryRecord } from "@ansa
 import type { alertsFor } from "./alerts";
 import type { CallCost } from "./cost";
 import { wordErrorRate, type QualityMetrics } from "./metrics";
+import type { ReviewScore } from "./review";
+import type { CaptureCase, KeytermCandidate } from "./suggestions";
+import type { ConfigVersionTrend } from "./trends";
 
 /**
  * The internal call viewer's HTML (R8.1).
@@ -39,8 +42,15 @@ export interface ViewerLink {
   readonly tenant: string;
 }
 
+/**
+ * Each segment is encoded separately, so a path can have more than one.
+ *
+ * `encodeURIComponent` over the whole path turns the slash in `id/claim.json` into `%2F`
+ * and the link 404s — the id is still a path parameter and still needs encoding, so the
+ * fix is per segment rather than dropping the encoding.
+ */
 const href = (link: ViewerLink, path = ""): string =>
-  `/viewer${path === "" ? "" : `/${encodeURIComponent(path)}`}` +
+  `/viewer${path === "" ? "" : `/${path.split("/").map(encodeURIComponent).join("/")}`}` +
   `?token=${encodeURIComponent(link.token)}&tenant=${encodeURIComponent(link.tenant)}`;
 
 /**
@@ -79,13 +89,33 @@ const page = (title: string, body: string): string =>
     .num{text-align:right;font-variant-numeric:tabular-nums}
   </style></head><body>${body}</body></html>`;
 
+/**
+ * The one navigation line, so a page added here appears on every other page.
+ *
+ * The review queue leads, because it is the page a reviewer opens; the call list is where
+ * you end up when you already know which call you want.
+ */
+const nav = (link: ViewerLink, here: string): string => {
+  const items: readonly (readonly [string, string])[] = [
+    ["", "calls"],
+    ["review", "review queue"],
+    ["metrics", "metrics"],
+    ["suggestions", "suggestions"],
+    ["corpus", "corpus"],
+    ["corpus.jsonl", "corpus (jsonl)"],
+    ["deliveries", "event deliveries"],
+  ];
+  return `<p>${items
+    .filter(([path]) => path !== here)
+    .map(([path, label]) => `<a href="${esc(href(link, path))}">${esc(label)}</a>`)
+    .join(" · ")}</p>`;
+};
+
 export const renderCallList = (calls: readonly CallSummary[], link: ViewerLink): string =>
   page(
     "Calls",
     `<h1>Calls</h1>` +
-      `<p><a href="${esc(href(link, "metrics"))}">metrics</a> · ` +
-      `<a href="${esc(href(link, "corpus.jsonl"))}">corpus (jsonl)</a> · ` +
-      `<a href="${esc(href(link, "deliveries"))}">event deliveries</a></p>` +
+      nav(link, "") +
       (calls.length === 0
         ? "<p class=muted>No calls recorded yet.</p>"
         : `<table><tr><th>When<th>Dir<th>Dialled<th>Caller<th>Turns<th>Ended<th></tr>` +
@@ -152,6 +182,11 @@ export const renderCall = (call: CallDetail, link: ViewerLink): string => {
       `<h1>${esc(s.direction)} · ${esc(s.dialled)}</h1>` +
       `<p class=muted>${esc(s.carrierCallId)} · caller ${esc(s.caller ?? "withheld")} · ` +
       `${esc(s.durationSeconds ?? "—")}s · ended: ${esc(s.endReason ?? "in progress")}</p>` +
+      // The corrections on this call, in the format `eval/verdict.py` reads. Offered per
+      // call rather than in bulk because a claim file is about one recording, and because
+      // saving it is the moment a reviewer decides this call is worth keeping.
+      `<p><a href="${esc(href(link, `${s.id}/claim.json`))}">claim.json</a> ` +
+      `<span class=muted>— save into eval/claims/ and score a candidate against it</span></p>` +
       `<table><tr><th>At<th>What<th>Detail</tr>` +
       rows
         .map((r) => `<tr><td>${esc(secs(r.offsetMs))}<td>${esc(r.kind)}<td>${r.body}</tr>`)
@@ -174,6 +209,8 @@ export const renderMetrics = (
   /** What the numbers above say is wrong, and what the calls cost. Both read the same log. */
   breaches: ReturnType<typeof alertsFor>,
   cost: CallCost,
+  /** The same numbers again, split by the configuration that served each call (R9.2.6). */
+  trends: readonly ConfigVersionTrend[],
 ): string => {
   const row = (name: string, value: string, meaning: string): string =>
     `<tr><td>${esc(name)}<td class=num>${esc(value)}<td class=muted>${esc(meaning)}</tr>`;
@@ -221,9 +258,42 @@ export const renderMetrics = (
         : `${money(cost.perCall)} per call`,
     )}</tr></table>`;
 
+  /**
+   * Movement, by the configuration that served it (R9.2.6).
+   *
+   * One row per `calls.config_version` in the window. It is deliberately spare — flagged
+   * rate, correction rate, latency, transfer — because the question it answers is "did
+   * anything move", and fourteen columns per version answers that worse than four.
+   *
+   * A version with a handful of calls is left in rather than hidden, with its call count
+   * next to it, because the alternative is a rollout looking like it had no effect for the
+   * first hour. Reading a rate off three calls is the reader's mistake to avoid, and the
+   * denominator is right there.
+   */
+  const trend =
+    trends.length === 0
+      ? `<p class=muted>No calls in the window.</p>`
+      : `<table><tr><th>Config<th>Calls<th>Flagged<th>Severity/call<th>Corrections` +
+        `<th>Latency p50<th>Transfers<th>First<th>Last</tr>` +
+        trends
+          .map(
+            (t) =>
+              `<tr><td>${esc(t.configVersion === null ? "not recorded" : `v${t.configVersion}`)}` +
+              `<td class=num>${esc(t.calls)}` +
+              `<td class=num>${esc(percent(t.flaggedRate))}` +
+              `<td class=num>${esc(t.severityPerCall === null ? "—" : t.severityPerCall.toFixed(1))}` +
+              `<td class=num>${esc(percent(t.metrics.correctionRate))}` +
+              `<td class=num>${esc(ms(t.metrics.responseLatencyMs.p50))}` +
+              `<td class=num>${esc(percent(t.metrics.transferRate))}` +
+              `<td class=muted>${esc(t.firstCallAt)}` +
+              `<td class=muted>${esc(t.lastCallAt)}</tr>`,
+          )
+          .join("") +
+        `</table>`;
+
   return page(
     "Metrics",
-    `<p><a href="${esc(href(link))}">&larr; all calls</a></p>` +
+    nav(link, "metrics") +
       `<h1>Thresholds</h1>` +
       alarms +
       `<h1>Quality</h1>` +
@@ -269,12 +339,135 @@ export const renderMetrics = (
         `tool calls that timed out or errored (${metrics.toolCalls} dispatched)`,
       ) +
       `</table>` +
+      `<h1>By configuration version</h1>` +
+      `<p class=muted>Which version of the tenant's configuration served each call (R7.5). ` +
+      `Movement between versions is evidence that something changed, not evidence of what: ` +
+      `provider, model and endpointing are deployment settings and do not appear here. Each ` +
+      `call's own settings are in its claim file.</p>` +
+      trend +
       `<h1>Cost</h1>` +
       `<p class=muted>Usage is measured; prices are whatever this deployment was ` +
       `configured with. An unpriced line means no rate is set for it, never that it is free.</p>` +
       spend,
   );
 };
+
+/**
+ * The review queue (R9.2.2) — the page this whole slice exists to put in front of someone.
+ *
+ * Ranked by severity, and every row carries the signals that produced its number. A queue
+ * that says only "this call scored 14" makes a reviewer open it to find out why; a queue
+ * that says "two hallucinations, capture fell to the keypad" lets them decide not to.
+ */
+export const renderReviewQueue = (
+  queue: readonly ReviewScore[],
+  link: ViewerLink,
+  window: { readonly calls: number },
+): string =>
+  page(
+    "Review queue",
+    `<h1>Review queue</h1>` +
+      nav(link, "review") +
+      `<p class=muted>Over the last ${esc(window.calls)} calls, ${esc(queue.length)} flagged. ` +
+      `Severity orders the list and means nothing else: a call at 20 is opened before a call ` +
+      `at 8, and two calls at 8 are equally next rather than equally bad.</p>` +
+      (queue.length === 0
+        ? `<p class=good>Nothing flagged in this window.</p>`
+        : `<table><tr><th>Sev<th>When<th>Call<th>Ended<th>Reviewed<th>Why</tr>` +
+          queue
+            .map(
+              (score) =>
+                `<tr><td class="num warn">${esc(score.severity)}` +
+                `<td>${esc(score.createdAt)}` +
+                `<td><a href="${esc(href(link, score.callId))}">${esc(score.carrierCallId)}</a>` +
+                `<td>${esc(score.endReason ?? "in progress")}` +
+                `<td class=num>${esc(score.reviewed)}/${esc(score.reviewed + score.unreviewed)}` +
+                `<td>` +
+                score.signals
+                  .map(
+                    (signal) =>
+                      `<div><b>${esc(signal.kind)}</b>` +
+                      `${signal.count > 1 ? esc(` ×${signal.count}`) : ""} ` +
+                      `<span class=muted>${esc(signal.why)}</span></div>`,
+                  )
+                  .join("") +
+                `</tr>`,
+            )
+            .join("") +
+          `</table>`),
+  );
+
+/**
+ * What the corrections are evidence for, and what nobody has approved yet (R9.2.5).
+ *
+ * There is no button on this page and that is the design. `apps/api/src/tenancy/defaults.ts`
+ * records that boosting a list of ordinary domain words — with no personal name in it —
+ * deterministically turned a caller's name into a different name. A human reads this and
+ * edits the tenant's keyterms through the configuration API if they agree.
+ */
+export const renderSuggestions = (
+  keyterms: readonly KeytermCandidate[],
+  captures: readonly CaptureCase[],
+  link: ViewerLink,
+  known: readonly string[],
+): string =>
+  page(
+    "Suggestions",
+    `<h1>Suggestions</h1>` +
+      nav(link, "suggestions") +
+      `<p class=warn>Nothing on this page has been applied, and nothing on it will be. ` +
+      `Boosting a keyterm is a bias, not a hint: a listed token wins ties against every ` +
+      `token nobody listed. Measured on 2026-08-08, three deterministic runs each way, a ` +
+      `domain-word list with no personal name in it turned "Sikiru" into "Akiro". Approve ` +
+      `these one at a time, through the configuration API.</p>` +
+      `<h2>Keyterm candidates</h2>` +
+      `<p class=muted>Words a reviewer put back that the transcriber never produced, on at ` +
+      `least two separate calls. Already carried: ${esc(known.join(", ") || "nothing")}.</p>` +
+      (keyterms.length === 0
+        ? `<p class=muted>Nothing repeated across two calls yet.</p>`
+        : `<table><tr><th>Term<th>Calls<th>Note<th>Evidence</tr>` +
+          keyterms
+            .map(
+              (candidate) =>
+                `<tr><td>${esc(candidate.term)}` +
+                `<td class=num>${esc(candidate.calls)}` +
+                `<td class=${candidate.looksLikeAName ? "warn" : "muted"}>${esc(
+                  candidate.looksLikeAName
+                    ? "reads as a personal name — a shared vocabulary is the wrong home for one"
+                    : "",
+                )}` +
+                `<td>` +
+                candidate.evidence
+                  .map(
+                    (e) =>
+                      `<div><a href="${esc(href(link, e.callId))}">${esc(e.carrierCallId)}</a> ` +
+                      `<span class=warn>${esc(e.heard)}</span> → ` +
+                      `<span class=good>${esc(e.corrected)}</span></div>`,
+                  )
+                  .join("") +
+                `</tr>`,
+            )
+            .join("") +
+          `</table>`) +
+      `<h2>Number capture cases</h2>` +
+      `<p class=muted>Turns where the digits a reviewer heard are not the digits the ` +
+      `transcriber produced. These are inbound capture cases (R4.3.1), not outbound ` +
+      `normalizer cases — a correction is a human's transcript of what the <em>caller</em> ` +
+      `said, and says nothing about how the agent pronounced anything.</p>` +
+      (captures.length === 0
+        ? `<p class=muted>No corrected turn has changed a digit.</p>`
+        : `<table><tr><th>Call<th>Heard<th>Truth<th>Digits</tr>` +
+          captures
+            .map(
+              (c) =>
+                `<tr><td><a href="${esc(href(link, c.callId))}">${esc(c.carrierCallId)}</a>` +
+                `<td class=warn>${esc(c.heard)}` +
+                `<td class=good>${esc(c.corrected)}` +
+                `<td class=num>${esc(c.heardDigits || "—")} → ${esc(c.correctedDigits || "—")}</tr>`,
+            )
+            .join("") +
+          `</table>`),
+  );
 
 /**
  * The corpus, as a page a human can read before trusting the file.
@@ -285,8 +478,8 @@ export const renderMetrics = (
 export const renderCorpus = (entries: readonly CorpusEntry[], link: ViewerLink): string =>
   page(
     "Corpus",
-    `<p><a href="${esc(href(link))}">&larr; all calls</a></p>` +
-      `<h1>Eval corpus</h1>` +
+    `<h1>Eval corpus</h1>` +
+      nav(link, "corpus") +
       `<p class=muted>${esc(entries.length)} reviewed turns. Every one of them is a ` +
       `regression test: the pairs that agree score the incumbent, the pairs that differ ` +
       `are the failures.</p>` +
@@ -351,7 +544,7 @@ export const renderDeliveries = (
   page(
     "Event deliveries",
     `<h1>Event deliveries</h1>` +
-      `<p><a href="${esc(href(link))}">calls</a></p>` +
+      nav(link, "deliveries") +
       (deliveries.length === 0
         ? "<p class=muted>Nothing queued. No receiver is configured for this tenant, " +
           "or no call has ended since one was.</p>"

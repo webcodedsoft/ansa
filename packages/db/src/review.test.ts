@@ -2,7 +2,7 @@ import { asTenantId } from "@ansa/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { loadCallRecords } from "./call-records";
-import { exportCorpus, recordTranscriptCorrection } from "./corrections";
+import { exportCorpus, readClaimSource, recordTranscriptCorrection } from "./corrections";
 import { createDataSource, type Db } from "./data-source";
 import {
   expiredCallAudio,
@@ -72,7 +72,15 @@ beforeAll(async () => {
     await scope.query(
       `insert into call_events (tenant_id, call_id, kind, offset_ms, detail)
        values ($1, $2, 'latency', 1000, '{"stage":"turn_to_audio","ms":740}'::jsonb),
-              ($1, $2, 'barge-in', 2000, '{"reason":"caller interrupted"}'::jsonb)`,
+              ($1, $2, 'barge-in', 2000, '{"reason":"caller interrupted"}'::jsonb),
+              -- The kinds a metric or the review scan is defined over but the read used to
+              -- filter out, so the query and the arithmetic agree about what exists.
+              ($1, $2, 'recovery_line', 2500, '{"reason":"llm failed","seq":3}'::jsonb),
+              ($1, $2, 'tool_call', 2600, '{"tool":"business_hours","outcome":"failed"}'::jsonb),
+              ($1, $2, 'call configuration', null,
+               '{"listenProvider":"openai","encoding":"mulaw","sampleRate":8000,
+                 "model":"gpt-4o-transcribe","language":"en",
+                 "turnDetection":"semantic_vad","eagerness":"auto"}'::jsonb)`,
       [TENANT, CALL],
     );
     const rows = await scope.query<{ id: string }>(
@@ -153,6 +161,25 @@ describe("recording a human's correction (R9.2.3)", () => {
   });
 });
 
+describe("assembling an eval claim from a call (R9.2.4)", () => {
+  it("returns the corrected pairs together with the settings that produced them", async () => {
+    // The second half is the point. `eval/verdict.py` refuses to score a configuration it
+    // cannot reproduce, and the orchestrator has been writing the settings down once per
+    // call since Slice 3 with nothing reading them.
+    const source = await readClaimSource(db, TENANT, CALL);
+
+    expect(source?.carrierCallId).toBe("CA-review");
+    expect(source?.entries[0]?.heard).toBe("My name is Security");
+    expect(source?.entries[0]?.corrected).toBe("My name is Sikiru");
+    expect(source?.listenConfig?.["model"]).toBe("gpt-4o-transcribe");
+    expect(source?.listenConfig?.["sampleRate"]).toBe(8_000);
+  });
+
+  it("gives another tenant nothing, and does not say the call exists", async () => {
+    expect(await readClaimSource(db, OTHER, CALL)).toBeNull();
+  });
+});
+
 describe("reading the log back to score it", () => {
   it("returns the events and review verdicts a metric is computed from", async () => {
     const records = await loadCallRecords(db, TENANT, 50);
@@ -162,6 +189,36 @@ describe("reading the log back to score it", () => {
     expect(record?.agentTurns).toBe(1);
     expect(record?.events.map((e) => e.kind)).toContain("barge-in");
     expect(record?.reviewed[0]?.corrected).toBe("My name is Sikiru");
+  });
+
+  it("selects the kinds every consumer reads, not only the ones metrics.ts started with", async () => {
+    // `recovery_line`, `tool_call` and `call configuration` were counted in TypeScript and
+    // filtered out in SQL, so the viewer's silence rate, tool failure rate and entire cost
+    // table read zero against a database full of them. A filter that drops the row a metric
+    // is made of does not fail; it agrees with you.
+    const records = await loadCallRecords(db, TENANT, 50);
+    const kinds = records.find((r) => r.callId === CALL)?.events.map((e) => e.kind) ?? [];
+
+    expect(kinds).toContain("recovery_line");
+    expect(kinds).toContain("tool_call");
+    expect(kinds).toContain("call configuration");
+  });
+
+  it("carries the transcriber's confidence for turns nobody has reviewed", async () => {
+    // The review queue's whole job is the backlog, so a low-confidence turn has to be
+    // visible before anyone has ruled on it.
+    const records = await loadCallRecords(db, TENANT, 50);
+    expect(records.find((r) => r.callId === CALL)?.confidences).toContain(0.4);
+  });
+
+  it("carries the configuration version that served the call, for trend attribution", async () => {
+    const records = await loadCallRecords(db, TENANT, 50);
+    const record = records.find((r) => r.callId === CALL);
+
+    expect(record?.carrierCallId).toBe("CA-review");
+    // Null here rather than a number: this fixture inserts a call directly and names no
+    // version, which is exactly what an unregistered number records on a real call.
+    expect(record?.configVersion).toBeNull();
   });
 });
 

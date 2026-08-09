@@ -90,6 +90,39 @@ which is how the self-test drives it and how a transcript from anywhere else get
 **Exit codes:** `0` everything measured and matched, `1` measured and something missed,
 `2` refused — nothing here is a measurement.
 
+### Claims that write themselves — the review loop (R9.2.4)
+
+Every claim in this directory used to be hand-written, which is why there is one. Since
+Slice 4a the product side emits them: correct a transcript in the internal viewer, then
+open **`/viewer/{callId}/claim.json`** and save the file into `eval/claims/`. The
+corrected text is the truth, the transcriber's text is a trial, and the six required
+configuration keys come from that call's own `call configuration` event rather than from
+anybody's memory of what was deployed.
+
+Rule 0 is intact: the exporter is TypeScript
+(`apps/api/src/viewer/claims.ts`), nothing here imports it, and the two sides meet at a
+file on disk. `apps/api/src/viewer/claims.test.ts` runs *this* `verdict.py` over its output
+on every test run, so a change on either side that breaks the format fails a test rather
+than a Tuesday.
+
+Three things about a generated claim are deliberately unsatisfying, and all three are this
+tool's own rules pointed at production:
+
+- **It refuses at n=1.** One call is one observation. The generated file carries the single
+  production transcript as a trial and `verdict.py` exits 2 — padding it to three by
+  repeating the string would manufacture the exact agreement the three-trial rule exists to
+  detect. Three trials come from re-running a candidate over the audio, which is the same
+  `compare.mjs` loop above; the generated claim is what you score them against.
+- **Most turns arrive `unlabelled`.** `verdict.py` scores names and identifiers; a caller
+  saying "good afternoon, my name is Sikiru" is prose, and the truth for a turn is not the
+  truth for an item inside it. Only a turn that is *entirely* a read-out reference, or
+  entirely a capitalised name, is offered as `expected`. Marking a span inside a sentence
+  needs somewhere to store the span and there is nowhere yet.
+- **A configuration field the pipeline never recorded comes out `null`,** which the tool
+  refuses rather than scores. Deepgram records no `language`, so a Deepgram claim needs one
+  written in by hand before it will produce a verdict. That is the correct outcome and it
+  is visible.
+
 `compare.mjs` prints no configuration of its own; it reads `TRANSCRIPTION_MODEL`,
 `DEEPGRAM_MODEL`, `DEEPGRAM_EOT_THRESHOLD` and `DEEPGRAM_EOT_TIMEOUT_MS` from `.env` at run
 time and says nothing about them. **The claim file is therefore the only record that the

@@ -16,14 +16,42 @@ import { withTenant, type TenantScope } from "./tenant-scope";
  * two metrics.
  */
 
-/** The kinds a metric is computed from. Anything else stays in the database. */
+/**
+ * The kinds a metric is computed from. Anything else stays in the database.
+ *
+ * **This list was three readers short and every one of them silently read zero.**
+ * `metrics.ts` counts `recovery_line` and `tool_call`; `cost.ts` prices `call
+ * configuration`, `tts_start`, `llm_start` and `agent said`. None of those kinds was
+ * selected here, so the viewer's silence rate, tool failure rate and entire cost table
+ * showed zeros against a database full of the events they are defined over — while the
+ * scenario tests passed, because a harness hands `scoreCalls` its events directly and
+ * never comes through this query. A filter that drops the row a metric is made of does not
+ * fail; it agrees with you.
+ *
+ * So the rule for this list is now explicit: **a kind belongs here if any consumer of
+ * `CallRecord` reads it, and adding a `case` to one of those files without adding the kind
+ * here is a no-op.** The consumers are `apps/api/src/viewer/{metrics,cost,review}.ts`.
+ */
 const METRIC_EVENT_KINDS: readonly string[] = [
+  // Quality (metrics.ts)
   "latency",
   "barge-in",
   "confirmation_requested",
   "value confirmed",
   "escalated to a human",
   "hallucination discarded",
+  "recovery_line",
+  "tool_call",
+  // Cost (cost.ts) — which vendors listened, and how much each stage was asked to do.
+  "call configuration",
+  "tts_start",
+  "llm_start",
+  "agent said",
+  // The post-call review scan (review.ts). `agent said` above carries the readback reason
+  // that says capture fell through to spelling or the keypad, so it is not repeated here.
+  "tts_sentence_dropped",
+  "tts_failed",
+  "listen_failed",
 ];
 
 export interface MetricEvent {
@@ -39,12 +67,33 @@ export interface ReviewedTranscript {
 
 export interface CallRecord {
   readonly callId: string;
+  /** The carrier's id. What a reviewer searches by, and what the recording is named after. */
+  readonly carrierCallId: string;
+  readonly createdAt: string;
+  /**
+   * Which version of the tenant's configuration served this call (R7.5).
+   *
+   * Carried so a quality figure can be sliced by the configuration that produced it — that
+   * is the whole of R9.2.6, and without this column a provider change is attributable only
+   * to the date it happened to ship on.
+   */
+  readonly configVersion: number | null;
   readonly endReason: string | null;
   readonly durationSeconds: number | null;
   readonly callerTurns: number;
   readonly agentTurns: number;
   readonly events: readonly MetricEvent[];
   readonly reviewed: readonly ReviewedTranscript[];
+  /**
+   * The transcriber's confidence in each final turn, and nothing else about it.
+   *
+   * A low-confidence turn is one of R9.2.1's flagging heuristics, and it has to be visible
+   * for turns *nobody has reviewed yet* — that is the entire point of a queue. Carrying the
+   * numbers rather than the text keeps that possible without dragging every unreviewed
+   * sentence a caller has ever spoken into a metrics read. Null where the provider
+   * reported none, which is not the same as low and must not be counted as one.
+   */
+  readonly confidences: readonly (number | null)[];
 }
 
 /**
@@ -64,7 +113,8 @@ export const readCallRecords = async (
   limit = 200,
 ): Promise<readonly CallRecord[]> => {
   const calls = await scope.query<Record<string, unknown>>(
-    `select c.id, c.end_reason, c.duration_seconds,
+    `select c.id, c.carrier_call_id, c.created_at, c.config_version,
+            c.end_reason, c.duration_seconds,
             (select count(*) from turns t
               where t.call_id = c.id and t.speaker = 'caller') as caller_turns,
             (select count(*) from turns t
@@ -85,10 +135,16 @@ export const readCallRecords = async (
       order by id`,
     [ids, METRIC_EVENT_KINDS],
   );
+  // Every final turn, for its confidence — but its text only once a human has ruled on it.
+  // The `case` is the whole reason this is one statement rather than two: an unreviewed
+  // turn contributes a number to the scan and no speech to anything.
   const reviewed = await scope.query<Record<string, unknown>>(
-    `select call_id, text, corrected_text
+    `select call_id, confidence,
+            case when corrected_at is not null then text end as text,
+            corrected_text
        from transcripts
-      where call_id = any($1) and corrected_at is not null`,
+      where call_id = any($1) and kind = 'final'
+      order by offset_ms, id`,
     [ids],
   );
 
@@ -101,10 +157,22 @@ export const readCallRecords = async (
   }
 
   const reviewedByCall = new Map<string, ReviewedTranscript[]>();
+  const confidenceByCall = new Map<string, (number | null)[]>();
   for (const t of reviewed) {
     const callId = String(t["call_id"]);
+    const confidences = confidenceByCall.get(callId) ?? [];
+    confidences.push(t["confidence"] === null ? null : Number(t["confidence"]));
+    confidenceByCall.set(callId, confidences);
+
+    // `text` is null exactly when nobody has ruled on the turn, which is the same condition
+    // as `corrected_text` being null. Both are checked rather than one, because a verdict
+    // that stamped one column and not the other would otherwise reach `scoreCalls` as the
+    // string "null" and score as an error against the reviewer.
+    const heard = t["text"];
+    const corrected = t["corrected_text"];
+    if (typeof heard !== "string" || typeof corrected !== "string") continue;
     const list = reviewedByCall.get(callId) ?? [];
-    list.push({ heard: String(t["text"]), corrected: String(t["corrected_text"]) });
+    list.push({ heard, corrected });
     reviewedByCall.set(callId, list);
   }
 
@@ -112,12 +180,16 @@ export const readCallRecords = async (
     const callId = String(c["id"]);
     return {
       callId,
+      carrierCallId: String(c["carrier_call_id"]),
+      createdAt: (c["created_at"] as Date).toISOString(),
+      configVersion: c["config_version"] === null ? null : Number(c["config_version"]),
       endReason: c["end_reason"] === null ? null : String(c["end_reason"]),
       durationSeconds: c["duration_seconds"] === null ? null : Number(c["duration_seconds"]),
       callerTurns: Number(c["caller_turns"] ?? 0),
       agentTurns: Number(c["agent_turns"] ?? 0),
       events: eventsByCall.get(callId) ?? [],
       reviewed: reviewedByCall.get(callId) ?? [],
+      confidences: confidenceByCall.get(callId) ?? [],
     };
   });
 };

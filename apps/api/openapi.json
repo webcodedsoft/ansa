@@ -1476,6 +1476,375 @@
         }
       }
     },
+    "/api/v1/calls/review-queue": {
+      "get": {
+        "operationId": "calls.reviewQueue",
+        "tags": [
+          "calls"
+        ],
+        "summary": "Calls worth reviewing first, worst rated highest",
+        "description": "Scanned over the last 200 calls against the failure heuristics in R9.2.1: invented speech, escalations, repeated readbacks, low-confidence turns, interruption storms, recovery lines, dropped sentences, capture falling through to spelling or the keypad, dead air over two seconds, tool failures and calls where the caller never spoke. `severity` orders the list and means nothing else.",
+        "x-ansa-capability": "calls:read",
+        "parameters": [
+          {
+            "name": "minSeverity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "reviewed",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "scanned": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "flagged": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "calls": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                          },
+                          "carrierCallId": {
+                            "type": "string",
+                            "maxLength": 128
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "endReason": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 64
+                          },
+                          "durationSeconds": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ],
+                            "minimum": 0
+                          },
+                          "configVersion": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          },
+                          "severity": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "reviewed": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "unreviewed": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "signals": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "maxLength": 32
+                                },
+                                "count": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "weight": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "why": {
+                                  "type": "string",
+                                  "maxLength": 200
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "count",
+                                "weight",
+                                "why"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "carrierCallId",
+                          "createdAt",
+                          "endReason",
+                          "durationSeconds",
+                          "configVersion",
+                          "severity",
+                          "reviewed",
+                          "unreviewed",
+                          "signals"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "scanned",
+                    "flagged",
+                    "calls"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold calls:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/calls/trends": {
+      "get": {
+        "operationId": "calls.trends",
+        "tags": [
+          "calls"
+        ],
+        "summary": "Quality over recent calls, by configuration version",
+        "description": "One row per `config_version` in the last 200 calls, newest version first, with the calls that recorded no version last. A version with few calls is included with its count rather than hidden, because a rollout that looks like it had no effect for an hour is worse than a small denominator.",
+        "x-ansa-capability": "calls:read",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "versions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "configVersion": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          },
+                          "calls": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "firstCallAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "lastCallAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "flaggedRate": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 24
+                          },
+                          "severityPerCall": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 24
+                          },
+                          "reviewed": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "correctionRate": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 24
+                          },
+                          "sttWordAccuracy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 24
+                          },
+                          "responseLatencyP50Ms": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          },
+                          "transferRate": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 24
+                          }
+                        },
+                        "required": [
+                          "configVersion",
+                          "calls",
+                          "firstCallAt",
+                          "lastCallAt",
+                          "flaggedRate",
+                          "severityPerCall",
+                          "reviewed",
+                          "correctionRate",
+                          "sttWordAccuracy",
+                          "responseLatencyP50Ms",
+                          "transferRate"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "versions"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold calls:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/config": {
       "get": {
         "operationId": "config.current",

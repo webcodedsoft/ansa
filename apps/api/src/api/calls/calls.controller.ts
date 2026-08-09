@@ -8,6 +8,10 @@ import {
 import { Controller, Get, Inject, NotFoundException, Post } from "@nestjs/common";
 
 import { scoreCalls } from "../../viewer/metrics";
+// Aliased: the handler below is also called `reviewQueue`, and a reader should not have to
+// work out that a bare call inside a method resolves to the module import and not to `this`.
+import { reviewQueue as rankForReview } from "../../viewer/review";
+import { trendByConfigVersion } from "../../viewer/trends";
 import { Endpoint } from "../http/endpoint";
 import { PAGE_PROPS, pageResponse, toPageBody, toPageRequest } from "../http/pagination";
 import { apiRoute, FromBody, FromPath, FromQuery } from "../http/request";
@@ -259,8 +263,85 @@ const quality = object({
   toolFailureRate: ratio(),
 });
 
+/**
+ * One flagged call, with the reasons it is on the list (R9.2.1, R9.2.2).
+ *
+ * `reviewed` and `unreviewed` count final transcripts, not calls: a call somebody has
+ * half worked through is the common case and "reviewed: true" would hide it.
+ */
+const reviewSignal = object({
+  /** A stable identifier for the heuristic — safe to switch on in a client. */
+  kind: text({ maxLength: 32 }),
+  count: integer({ minimum: 0 }),
+  /** What this signal contributed to `severity`, after the scan's per-signal cap. */
+  weight: integer({ minimum: 0 }),
+  why: text({ maxLength: 200 }),
+});
+
+const flaggedCall = object({
+  id: uuid(),
+  carrierCallId: text({ maxLength: 128 }),
+  createdAt: timestamp(),
+  endReason: nullable(text({ maxLength: 64 })),
+  durationSeconds: nullable(integer({ minimum: 0 })),
+  configVersion: nullable(integer()),
+  /**
+   * Higher is worse, and it means nothing beyond ordering.
+   *
+   * Not a percentage, not a grade, and deliberately not normalised into one: a 0–100 score
+   * invites "we are at 94% quality", which this number cannot support. It is a sum of
+   * weights whose only job is to decide which call is opened next.
+   */
+  severity: integer({ minimum: 0 }),
+  reviewed: integer({ minimum: 0 }),
+  unreviewed: integer({ minimum: 0 }),
+  signals: list(reviewSignal),
+});
+
+const reviewQueueResponse = object({
+  /** How many recent calls were scanned. The denominator for `flagged`. */
+  scanned: integer({ minimum: 0 }),
+  flagged: integer({ minimum: 0 }),
+  calls: list(flaggedCall),
+});
+
+const reviewQueueQuery = object({
+  /** Calls scoring below this are left out. Default 1, which is "anything at all fired". */
+  minSeverity: optional(integer({ minimum: 0 })),
+  /** `false` is the backlog: calls where no transcript has been ruled on yet. */
+  reviewed: optional(flag()),
+  limit: optional(integer({ minimum: 1, maximum: 200 })),
+});
+
 /** How many recent calls a score is computed over. The same window the viewer uses. */
 const METRIC_WINDOW = 200;
+
+/**
+ * The window's quality, split by the configuration that served each call (R9.2.6).
+ *
+ * Four figures rather than all fourteen, chosen because they are the ones that move when
+ * something changes: how much of the window got flagged, how much of it a human had to
+ * correct, how fast it answered and how often it gave up. The full set is on `/metrics`,
+ * which reports the window as a whole.
+ */
+const configTrend = object({
+  /** Null for calls that recorded no version — an unregistered number, or a pre-R7.5 call. */
+  configVersion: nullable(integer()),
+  calls: integer({ minimum: 0 }),
+  firstCallAt: timestamp(),
+  lastCallAt: timestamp(),
+  /** Calls the scan flagged, over calls served. */
+  flaggedRate: ratio(),
+  /** Total severity over calls served — how bad the flagged ones were, not just how many. */
+  severityPerCall: ratio(),
+  reviewed: integer({ minimum: 0 }),
+  correctionRate: ratio(),
+  sttWordAccuracy: ratio(),
+  responseLatencyP50Ms: nullable(integer()),
+  transferRate: ratio(),
+});
+
+const trendsResponse = object({ versions: list(configTrend) });
 
 const toFilters = (query: Infer<typeof callQuery>): CallFilters => ({
   from: query.from ?? null,
@@ -332,6 +413,101 @@ export class CallsController {
       recoveryRate: asRatio(scored.recoveryRate),
       toolCalls: scored.toolCalls,
       toolFailureRate: asRatio(scored.toolFailureRate),
+    };
+  }
+
+  /**
+   * The review queue (R9.2.2), and why it is not a filter on the list above.
+   *
+   * "Worth looking at first" is computed in `apps/api/src/viewer/review.ts` from the event
+   * log — the same file, the same weights and the same window the internal viewer's queue
+   * uses. Expressing it as a `?flagged=true` clause on `listCallPage` would mean writing
+   * the heuristics a second time in SQL, and the day the two spellings drifted the
+   * dashboard and the viewer would disagree about which calls went wrong. That is the
+   * mistake `metrics.ts` was written to avoid and it is not worth repeating for a filter.
+   *
+   * So this is a separate ranked read over a bounded window, exactly like `/metrics`, and
+   * for the same reason: severity is arithmetic over events, and neither the ordering nor
+   * the threshold exists as a column anything could page over.
+   *
+   * Declared before `:callId` or Nest reads the path as a call id and answers 422.
+   */
+  @Get("review-queue")
+  @Endpoint({
+    summary: "Calls worth reviewing first, worst rated highest",
+    description:
+      "Scanned over the last 200 calls against the failure heuristics in R9.2.1: invented speech, escalations, repeated readbacks, low-confidence turns, interruption storms, recovery lines, dropped sentences, capture falling through to spelling or the keypad, dead air over two seconds, tool failures and calls where the caller never spoke. `severity` orders the list and means nothing else.",
+    capability: "calls:read",
+    query: reviewQueueQuery,
+    response: reviewQueueResponse,
+  })
+  async reviewQueue(
+    @FromQuery() query: Infer<typeof reviewQueueQuery>,
+  ): Promise<Infer<typeof reviewQueueResponse>> {
+    const records = await this.db.tx((scope) => readCallRecords(scope, METRIC_WINDOW));
+    const queue = rankForReview(records, {
+      minSeverity: query.minSeverity,
+      reviewed: query.reviewed,
+      limit: query.limit,
+    });
+    return {
+      scanned: records.length,
+      flagged: queue.length,
+      calls: queue.map((score) => ({
+        id: score.callId,
+        carrierCallId: score.carrierCallId,
+        createdAt: score.createdAt,
+        endReason: score.endReason,
+        durationSeconds: score.durationSeconds,
+        configVersion: score.configVersion,
+        severity: score.severity,
+        reviewed: score.reviewed,
+        unreviewed: score.unreviewed,
+        signals: score.signals.map((signal) => ({
+          kind: signal.kind,
+          count: signal.count,
+          weight: signal.weight,
+          why: signal.why,
+        })),
+      })),
+    };
+  }
+
+  /**
+   * Quality over the window, sliced by the configuration that served each call (R9.2.6).
+   *
+   * The point is attribution: a prompt or persona change publishes a new `config_version`,
+   * every call records which one answered it, and the difference between two rows is the
+   * only honest way to say a change moved anything. What it cannot say is *what* changed —
+   * provider, model and endpointing are deployment settings and identical across versions
+   * on the same deploy. See the note in `viewer/trends.ts`.
+   *
+   * Declared before `:callId`, as above.
+   */
+  @Get("trends")
+  @Endpoint({
+    summary: "Quality over recent calls, by configuration version",
+    description:
+      "One row per `config_version` in the last 200 calls, newest version first, with the calls that recorded no version last. A version with few calls is included with its count rather than hidden, because a rollout that looks like it had no effect for an hour is worse than a small denominator.",
+    capability: "calls:read",
+    response: trendsResponse,
+  })
+  async trends(): Promise<Infer<typeof trendsResponse>> {
+    const records = await this.db.tx((scope) => readCallRecords(scope, METRIC_WINDOW));
+    return {
+      versions: trendByConfigVersion(records).map((trend) => ({
+        configVersion: trend.configVersion,
+        calls: trend.calls,
+        firstCallAt: trend.firstCallAt,
+        lastCallAt: trend.lastCallAt,
+        flaggedRate: asRatio(trend.flaggedRate),
+        severityPerCall: asRatio(trend.severityPerCall),
+        reviewed: trend.metrics.reviewed,
+        correctionRate: asRatio(trend.metrics.correctionRate),
+        sttWordAccuracy: asRatio(trend.metrics.sttWordAccuracy),
+        responseLatencyP50Ms: round(trend.metrics.responseLatencyMs.p50),
+        transferRate: asRatio(trend.metrics.transferRate),
+      })),
     };
   }
 

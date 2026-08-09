@@ -14,12 +14,16 @@ import { scenario } from "../scenarios/harness";
 
 const call = (events: readonly MetricEvent[], durationSeconds: number | null = 60): CallRecord => ({
   callId: "c",
+  carrierCallId: "CA-cost",
+  createdAt: "2026-01-01T00:00:00.000Z",
+  configVersion: 1,
   endReason: "carrier sent stop",
   durationSeconds,
   callerTurns: 1,
   agentTurns: 1,
   events,
   reviewed: [],
+  confidences: [],
 });
 
 const configured = (detail: Record<string, unknown>): MetricEvent => ({

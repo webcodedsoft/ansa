@@ -710,21 +710,77 @@ harness scores it.
 **Goal:** Every call that goes badly teaches the system something. Built here, once
 there's a real conversation and a normalizer to feed, and it runs forever after.
 
-- [ ] Automatic post-call quality scan (R9.2.1): low-confidence turns, repeated
+- [x] Automatic post-call quality scan (R9.2.1): low-confidence turns, repeated
       clarifications, failed number captures, DTMF fallbacks, silences over 2s,
       escalations, abrupt hangups, tool timeouts.
-- [ ] Severity scoring and a **review queue** in the internal call viewer (R9.2.2).
-- [ ] Transcript correction UI: play the audio, fix the text, save (R9.2.3). Keep it
-      ugly and fast — you'll use it daily.
-- [ ] Corrected turns promoted into the eval corpus with category labels (R9.2.4). The
+      *`apps/api/src/viewer/review.ts`. Twelve signals, every one an event the pipeline
+      already writes, scored over the same `CallRecord[]` that `scoreCalls` and `priceUsage`
+      read. No new telemetry path.*
+- [x] Severity scoring and a **review queue** in the internal call viewer (R9.2.2).
+      *`/viewer/review`, and `GET /api/v1/calls/review-queue` for the dashboard. Weights
+      are a chosen ordering with the argument written next to each one, capped per signal
+      so a long call cannot outrank a bad one.*
+- [x] Transcript correction UI: play the audio, fix the text, save (R9.2.3). Keep it
+      ugly and fast — you'll use it daily. **Text only — there is still no audio.** The
+      form and both write paths landed in Slice 6a/7; the reason a reviewer cannot hear
+      the turn is in the comment above `CallsController.correct` and it is a slice of its
+      own (expiring URLs, an access log of who listened to whose voice).
+- [x] Corrected turns promoted into the eval corpus with category labels (R9.2.4). The
       corpus from Slice 0 now grows on its own.
-- [ ] Correction feeds wired (R9.2.5): per-tenant keyterm vocabulary, normalizer test
-      cases, prompt-adjustment candidates, missing-FAQ candidates.
-- [ ] Trend tracking so provider and prompt changes can be attributed to real movement
-      (R9.2.6).
+      *`/viewer/{callId}/claim.json` writes `eval/verdict.py`'s own claim format, with the
+      configuration read off the call's `call configuration` event.
+      `apps/api/src/viewer/claims.test.ts` runs the real `verdict.py` over the output.*
+- [x] Correction feeds wired (R9.2.5): per-tenant keyterm vocabulary, normalizer test
+      cases, prompt-adjustment candidates, missing-FAQ candidates. **Two of four, and
+      suggested rather than applied** — `/viewer/suggestions`. Prompt-adjustment and
+      missing-FAQ candidates are not built: the first needs a recurring *conversational*
+      failure pattern and a corrected transcript is evidence about listening, and the
+      second needs `search_knowledge_base`, which Slice 6 has not shipped.
+- [x] Trend tracking so provider and prompt changes can be attributed to real movement
+      (R9.2.6). *`viewer/trends.ts`, grouping `scoreCalls` by `calls.config_version`.
+      On the metrics page and at `GET /api/v1/calls/trends`.*
 
 **Done when:** you make three deliberately awkward calls, all three surface in the review
-queue, and correcting them adds new entries to the eval corpus.
+queue, and correcting them adds new entries to the eval corpus. **Not yet true — the loop
+is built and no phone call has run through it** (rule 1). Nothing in this slice needs a
+migration; the columns and the event kinds were all already there.
+
+**Session log**
+
+- *2026-08-09 — the review loop is joined and no call has been reviewed on it.* The parts
+  existed and nothing connected them: `corrected_text` had two writers and no reader beyond
+  a JSONL nothing parsed, the event log had every signal a scan wants, `verdict.py` had a
+  format, and `config_version` was on every call.
+- **Found while wiring, and the reason the scan would have read zero.**
+  `packages/db/src/call-records.ts` selected six event kinds. `metrics.ts` counts
+  `recovery_line` and `tool_call`; `cost.ts` prices `call configuration`, `tts_start`,
+  `llm_start` and `agent said`. **None of those six kinds was selected**, so the viewer's
+  silence rate, tool failure rate and the entire cost table have been reading zero against a
+  database full of the events they are defined over — while every scenario test passed,
+  because the harness hands `scoreCalls` its events directly and never goes through that
+  query. A filter that drops the row a metric is made of does not fail; it agrees with you.
+  The list now carries a rule about who its consumers are.
+- **Confidence is now read for unreviewed turns too.** The old query took reviewed
+  transcripts only, which made "the transcriber was unsure of this turn" invisible to a
+  queue whose entire job is the backlog. One statement, with the text still gated on
+  `corrected_at` so an unreviewed turn contributes a number and no speech.
+- **`suggestions` has no button and will not get one.** `tenancy/defaults.ts` records the
+  measurement — a domain-word list with no personal name in it deterministically turned
+  "Sikiru" into "Akiro", three runs each way. Boosting is a bias, not a hint, so a pipeline
+  that promoted corrections into keyterms would take the evidence that a word is misheard
+  and use it to damage the words next to it, fastest for whoever corrects most.
+- **A generated claim mostly refuses, on purpose.** One production call is one trial and
+  `verdict.py` exits 2 rather than concluding; prose turns arrive `unlabelled` because the
+  truth for a turn is not the truth for an item inside it and there is nowhere to mark a
+  span; a configuration key the pipeline never recorded is emitted null and refused. All
+  three are that tool's own rules pointed at production rather than exceptions to them.
+- **What a call has to prove**, in this order: make three awkward calls — one where you
+  read a reference badly enough to reach the keypad, one where you interrupt constantly,
+  one where you say nothing after the greeting — and check all three are in
+  `/viewer/review` above the ordinary ones. Then correct a turn on the first, open its
+  `claim.json`, and check the identifier came out as an `expected` item rather than as
+  prose. **The confidence threshold (0.6) and every weight are guesses until that
+  happens**; they are one object, `DEFAULT_REVIEW_WEIGHTS`, so tuning them is one edit.
 
 ---
 

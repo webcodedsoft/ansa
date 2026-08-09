@@ -5,12 +5,16 @@ import { scoreCalls, wordErrorRate } from "./metrics";
 
 const call = (over: Partial<CallRecord> = {}): CallRecord => ({
   callId: "c1",
+  carrierCallId: "CA-metrics",
+  createdAt: "2026-01-01T00:00:00.000Z",
+  configVersion: 1,
   endReason: "carrier sent stop",
   durationSeconds: 42,
   callerTurns: 4,
   agentTurns: 4,
   events: [],
   reviewed: [],
+  confidences: [],
   ...over,
 });
 

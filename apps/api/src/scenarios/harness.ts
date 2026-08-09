@@ -254,12 +254,22 @@ export const scenario = (options: ScenarioOptions = {}): Scenario => {
     eventsOf: (kind) => log.events.filter((e) => e.kind === kind),
     asRecord: () => ({
       callId: "scenario",
+      carrierCallId: "scenario",
+      createdAt: new Date(0).toISOString(),
+      // A scenario runs against no tenant row, so there is no published configuration for
+      // it to have been served by. Null is what a real call with an unregistered number
+      // records, which is the honest value rather than an invented version number.
+      configVersion: null,
       endReason: "carrier sent stop",
       durationSeconds: 30,
       callerTurns: log.turns.filter((t) => t.speaker === "caller").length,
       agentTurns: log.turns.filter((t) => t.speaker === "agent").length,
       events: log.events.map((e): MetricEvent => ({ kind: e.kind, detail: e.detail })),
       reviewed: [],
+      // The harness records transcripts without a confidence, so the scan's low-confidence
+      // signal has nothing to read here. A scenario proves the pipeline's behaviour; what a
+      // transcriber was unsure of only exists on a real call.
+      confidences: log.transcripts.map((t) => t.confidence),
     }),
   };
 };

@@ -1,3 +1,4 @@
+import type { CallRecord } from "@ansa/db";
 import { describe, expect, it } from "vitest";
 
 import { alertsFor } from "./alerts";
@@ -10,6 +11,7 @@ import {
   renderCorpusJsonl,
   renderMetrics,
 } from "./render";
+import { trendByConfigVersion } from "./trends";
 
 const LINK = { token: "t", tenant: "abc-123" };
 
@@ -177,9 +179,12 @@ describe("the metrics page", () => {
   /** No rates configured, which is the default deployment and the interesting one. */
   const noCost = priceUsage(usageOverCalls([]), readCostRates({}));
 
-  const metrics = scoreCalls([
+  const records: readonly CallRecord[] = [
     {
       callId: "c1",
+      carrierCallId: "CA1",
+      createdAt: "2026-08-08T12:00:00.000Z",
+      configVersion: 3,
       endReason: "carrier sent stop",
       durationSeconds: 30,
       callerTurns: 4,
@@ -189,13 +194,16 @@ describe("the metrics page", () => {
         { kind: "barge-in", detail: {} },
       ],
       reviewed: [{ heard: "Security", corrected: "Sikiru" }],
+      confidences: [0.9],
     },
-  ]);
+  ];
+  const metrics = scoreCalls(records);
+  const trends = trendByConfigVersion(records);
 
   it("puts the definition next to the number", () => {
     // A metric whose meaning lives in someone's head is a number two people read
     // differently.
-    const html = renderMetrics(metrics, LINK, { calls: 1 }, alertsFor(metrics), noCost);
+    const html = renderMetrics(metrics, LINK, { calls: 1 }, alertsFor(metrics), noCost, trends);
     expect(html).toContain("Response latency p50");
     expect(html).toContain("900ms");
     expect(html).toContain("caller stopped");
@@ -203,9 +211,17 @@ describe("the metrics page", () => {
 
   it("shows an em dash rather than a zero for a metric with no samples", () => {
     const none = scoreCalls([]);
-    const empty = renderMetrics(none, LINK, { calls: 0 }, alertsFor(none), noCost);
+    const empty = renderMetrics(none, LINK, { calls: 0 }, alertsFor(none), noCost, []);
     expect(empty).toContain("—");
     expect(empty).not.toContain("0.0%");
+  });
+
+  it("names the configuration version a figure belongs to (R9.2.6)", () => {
+    // Without this the trend table is a list of numbers with no way to say what served
+    // them, which is the whole of what R9.2.6 asks for.
+    const html = renderMetrics(metrics, LINK, { calls: 1 }, alertsFor(metrics), noCost, trends);
+    expect(html).toContain("By configuration version");
+    expect(html).toContain("v3");
   });
 });
 

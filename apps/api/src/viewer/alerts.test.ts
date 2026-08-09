@@ -22,12 +22,16 @@ const window = (
 ): readonly CallRecord[] =>
   Array.from({ length: count }, (_v, i) => ({
     callId: `c${i}`,
+    carrierCallId: `CA${i}`,
+    createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, i)).toISOString(),
+    configVersion: 1,
     endReason: "carrier sent stop",
     durationSeconds: 60,
     callerTurns: turns.caller,
     agentTurns: turns.agent,
     events,
     reviewed: [],
+    confidences: [],
   }));
 
 const fast: MetricEvent = { kind: "latency", detail: { stage: "turn_to_audio", ms: 600 } };

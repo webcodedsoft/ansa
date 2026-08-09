@@ -6,7 +6,10 @@ import {
   listEventDeliveries,
   loadCall,
   loadCallRecords,
+  loadCurrentTenantConfig,
+  readClaimSource,
   recordTranscriptCorrection,
+  withTenant,
   type Db,
 } from "@ansa/db";
 import { asTenantId, type Logger } from "@ansa/shared";
@@ -28,7 +31,9 @@ import {
 
 import type { AppConfig } from "../config/env";
 import { APP_CONFIG, DATA_SOURCE, LOGGER } from "../telephony/tokens";
+import { BASE_KEYTERMS } from "../tenancy/defaults";
 import { alertsFor } from "./alerts";
+import { renderClaim } from "./claims";
 import { priceUsage, readCostRates, usageOverCalls } from "./cost";
 import { scoreCalls } from "./metrics";
 import {
@@ -38,7 +43,12 @@ import {
   renderCorpusJsonl,
   renderDeliveries,
   renderMetrics,
+  renderReviewQueue,
+  renderSuggestions,
 } from "./render";
+import { reviewQueue } from "./review";
+import { captureCases, keytermCandidates } from "./suggestions";
+import { trendByConfigVersion } from "./trends";
 
 /** How many recent calls a score is computed over. Enough to see a change, cheap to read. */
 const METRIC_WINDOW = 200;
@@ -124,6 +134,56 @@ export class ViewerController {
       { calls: records.length },
       alertsFor(metrics),
       priceUsage(usageOverCalls(records), readCostRates(process.env)),
+      trendByConfigVersion(records),
+    );
+  }
+
+  /**
+   * The review queue (R9.2.1, R9.2.2).
+   *
+   * Same window, same `loadCallRecords`, same event log as the metrics page — the queue is
+   * a different reading of the calls the scoreboard already counted, not a second scan.
+   * Declared before `:id`, like everything else here, or it is read as a call id.
+   */
+  @Get("review")
+  @Header("Content-Type", "text/html; charset=utf-8")
+  @Header("Cache-Control", "no-store")
+  @Header("Referrer-Policy", "no-referrer")
+  async review(@Query("token") token?: string, @Query("tenant") tenant?: string): Promise<string> {
+    this.authorise(token);
+    const { db, tenantId } = this.scope(tenant);
+    const records = await loadCallRecords(db, tenantId, METRIC_WINDOW);
+    return renderReviewQueue(reviewQueue(records), { token: token ?? "", tenant: tenant ?? "" }, {
+      calls: records.length,
+    });
+  }
+
+  /**
+   * What the corrections are evidence for, and what nobody has approved (R9.2.5).
+   *
+   * The tenant's current keyterms are read only to subtract them: a candidate they already
+   * carry is not a suggestion. Falls back to the platform base alone when the tenant has no
+   * configuration row, which under-filters rather than over-filters — a duplicate suggestion
+   * wastes a reader's second, a missing one loses the finding.
+   */
+  @Get("suggestions")
+  @Header("Content-Type", "text/html; charset=utf-8")
+  @Header("Cache-Control", "no-store")
+  @Header("Referrer-Policy", "no-referrer")
+  async suggestions(
+    @Query("token") token?: string,
+    @Query("tenant") tenant?: string,
+  ): Promise<string> {
+    this.authorise(token);
+    const { db, tenantId } = this.scope(tenant);
+    const entries = await exportCorpus(db, tenantId);
+    const current = await withTenant(db, tenantId, loadCurrentTenantConfig);
+    const known = [...BASE_KEYTERMS, ...(current?.config.keyterms ?? [])];
+    return renderSuggestions(
+      keytermCandidates(entries, { known }),
+      captureCases(entries),
+      { token: token ?? "", tenant: tenant ?? "" },
+      known,
     );
   }
 
@@ -179,6 +239,34 @@ export class ViewerController {
     this.authorise(token);
     const { db, tenantId } = this.scope(tenant);
     return renderCorpusJsonl(await exportCorpus(db, tenantId));
+  }
+
+  /**
+   * One call's reviewed turns as an `eval/` claim file (R9.2.4).
+   *
+   * Declared before `:id`. Nest matches in declaration order and a two-segment path cannot
+   * collide with a one-segment one, but the ordering rule on this controller is worth
+   * keeping unconditional rather than reasoned about per route.
+   *
+   * Served as a download because the consumer is `python3 eval/verdict.py` and the workflow
+   * is: save it into `eval/claims/`, run a candidate over the audio three times, score. It
+   * carries a caller's words, so it is no-store like everything else here.
+   */
+  @Get(":id/claim.json")
+  @Header("Content-Type", "application/json; charset=utf-8")
+  @Header("Cache-Control", "no-store")
+  @Header("Referrer-Policy", "no-referrer")
+  async claim(
+    @Param("id") id: string,
+    @Query("token") token?: string,
+    @Query("tenant") tenant?: string,
+  ): Promise<string> {
+    this.authorise(token);
+    const { db, tenantId } = this.scope(tenant);
+    const source = await readClaimSource(db, tenantId, id);
+    // Not theirs and not there are one answer, as on every other read here.
+    if (source === null) throw new NotFoundException();
+    return renderClaim(source);
   }
 
   @Get(":id")
