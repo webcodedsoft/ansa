@@ -51,7 +51,10 @@ export const tsType = (schema: unknown): string => {
     case "boolean":
       return `boolean${suffix}`;
     case "array":
-      return `readonly ${tsType(schema["items"])}[]${suffix}`;
+      // Always parenthesised. `readonly "a" | "b"[]` is a syntax error and
+      // `readonly {…}[]` binds the wrong way; the parentheses cost nothing when the item
+      // type is a single word and are required as soon as it is a union or an object.
+      return `readonly (${tsType(schema["items"])})[]${suffix}`;
     case "object": {
       const properties = isRecord(schema["properties"]) ? schema["properties"] : {};
       const required = new Set(

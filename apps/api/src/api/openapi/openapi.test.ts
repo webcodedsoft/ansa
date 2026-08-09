@@ -81,8 +81,18 @@ describe("the generated client", () => {
 
   it("renders nullable fields as unions, not as optional", () => {
     expect(tsType({ type: ["string", "null"] })).toBe("string | null");
-    expect(tsType({ type: "array", items: { type: "integer" } })).toBe("readonly number[]");
     expect(tsType({ enum: ["a", "b"], type: "string" })).toBe(`"a" | "b"`);
+  });
+
+  /**
+   * `readonly "a" | "b"[]` is a syntax error, and the generator emitted one for
+   * `GET /auth/me`'s capability list before this existed.
+   */
+  it("parenthesises array items, so an array of a union parses", () => {
+    expect(tsType({ type: "array", items: { type: "integer" } })).toBe("readonly (number)[]");
+    expect(tsType({ type: "array", items: { enum: ["a", "b"], type: "string" } })).toBe(
+      `readonly ("a" | "b")[]`,
+    );
   });
 
   it("carries the summary through as documentation", () => {
