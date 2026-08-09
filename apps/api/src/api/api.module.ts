@@ -8,15 +8,21 @@ import { AuthController } from "./auth/auth.controller";
 import { AuthService } from "./auth/auth.service";
 import { CallsController } from "./calls/calls.controller";
 import { loadApiConfig } from "./config";
+import { ConfigController } from "./config/config.controller";
 import { EndpointInterceptor } from "./http/endpoint.interceptor";
 import { ProblemFilter } from "./http/problem";
 import { RateLimitGuard } from "./http/rate-limit.guard";
 import { RequestIdMiddleware } from "./http/request-id.middleware";
 import { InvitationsController } from "./invitations/invitations.controller";
 import { MembersController } from "./members/members.controller";
+import { NumbersController } from "./numbers/numbers.controller";
+import { ReadinessController } from "./numbers/readiness.controller";
 import { TenantContext } from "./tenancy/tenant-context";
 import { TenantGateway } from "./tenancy/tenant-gateway";
 import { API_DATA_SOURCE } from "./tenancy/tokens";
+import { CredentialsController } from "./tools/credentials.controller";
+import { EventSubscriptionsController } from "./tools/events.controller";
+import { ToolsController } from "./tools/tools.controller";
 
 /**
  * The tenant-facing dashboard API.
@@ -29,8 +35,14 @@ import { API_DATA_SOURCE } from "./tenancy/tokens";
 export const API_CONTROLLERS = [
   AuthController,
   CallsController,
+  ConfigController,
+  CredentialsController,
+  EventSubscriptionsController,
   InvitationsController,
   MembersController,
+  NumbersController,
+  ReadinessController,
+  ToolsController,
 ];
 
 @Module({

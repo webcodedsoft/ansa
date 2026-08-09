@@ -261,3 +261,45 @@ export interface TelephonyProvider {
   /** Adopt a media socket the carrier has just opened. */
   attachMediaStream(socket: MediaSocket, handlers: MediaStreamHandlers): void;
 }
+
+/**
+ * A number as the carrier account holds it, and where that carrier will send a call to it.
+ *
+ * Only the routing is here. Nothing about billing, capabilities or the number's friendly
+ * name, because the one question this answers is "does this number point at us" — the
+ * step of onboarding that nothing in this repository has ever checked, and the one whose
+ * omission looks exactly like a correctly provisioned tenant right up until the phone
+ * rings nowhere.
+ */
+export interface CarrierNumber {
+  /** E.164, as the carrier spells it. */
+  readonly number: string;
+  /** Where an inbound call is announced. Null when the carrier holds the number and no URL. */
+  readonly voiceUrl: string | null;
+  readonly voiceMethod: string | null;
+}
+
+/**
+ * Reading the carrier's own record of a number.
+ *
+ * Separate from `TelephonyProvider` rather than another method on it, for two reasons.
+ * It is answerable by an account that can do nothing else — a read-only REST credential —
+ * and it is the only part of the carrier surface a dashboard needs, so a deployment that
+ * serves the dashboard and not the phone can hold one without the other. Fusing them
+ * would also mean every test fake of the call path grew a method it never calls.
+ */
+export interface CarrierNumberDirectory {
+  readonly name: string;
+  /**
+   * The carrier's record for one number, or null when the account does not hold it.
+   *
+   * Null is the ordinary answer for a Nigerian number: no carrier this platform has an
+   * account with sells them, so the number belongs to the organisation's own carrier and
+   * is invisible from here. It is not an error and must not be reported as one.
+   *
+   * Rejects rather than resolving when the carrier could not be reached or refused the
+   * credential, because "we could not look" and "it is not there" are different answers
+   * and collapsing them would let an expired API key read as a correctly wired number.
+   */
+  describeNumber(number: string): Promise<CarrierNumber | null>;
+}

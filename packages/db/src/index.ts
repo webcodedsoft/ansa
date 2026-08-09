@@ -4,6 +4,8 @@ export * from "./paging";
 export * from "./accounts";
 export * from "./call-page";
 export * from "./tenants";
+export * from "./tenant-config";
+export * from "./onboarding";
 export * from "./call-log";
 export * from "./call-records";
 export * from "./event-deliveries";
