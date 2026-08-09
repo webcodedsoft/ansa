@@ -83,6 +83,22 @@ export interface DispatcherOptions {
    * is not a dispatcher that should be looking people up.
    */
   readonly identity?: IdentityGate;
+  /**
+   * The result a tool returned, before `summarise` turned it into a sentence.
+   *
+   * Absent on a call, and it must stay that way — this is the tenant's customer data in the
+   * shape their endpoint produced it, and the reason R5.4.3 exists is that it has no
+   * business anywhere near speech. What it is for is the dashboard's tool sandbox, where
+   * showing the JSON beside the sentence is the entire point: a tenant whose template
+   * silently renders its fallback because the field is called `status` and not `state`
+   * finds that out on a screen instead of from a caller.
+   *
+   * Called after the tool has actually run and before it is summarised, so it fires exactly
+   * when there is a raw result to see — not on a refused tier, not on a timeout. Anything it
+   * throws is logged and dropped: an observer is not allowed to turn a tool call that
+   * worked into one that failed.
+   */
+  readonly onResult?: (call: ToolCall, result: unknown) => void;
 }
 
 export interface ToolDispatcher {
@@ -157,7 +173,7 @@ export const modelMessage = (outcome: DispatchOutcome): string => {
 };
 
 export const createToolDispatcher = (options: DispatcherOptions): ToolDispatcher => {
-  const { registry, log, holding, breaker, identity } = options;
+  const { registry, log, holding, breaker, identity, onResult } = options;
   const now = options.now ?? Date.now;
   const softMs = options.softTimeoutMs ?? SOFT_TIMEOUT_MS;
   const hardMs = options.hardTimeoutMs ?? HARD_TIMEOUT_MS;
@@ -372,6 +388,14 @@ export const createToolDispatcher = (options: DispatcherOptions): ToolDispatcher
         return fail("adapter-error", tier, describe(settled.error));
       }
       breaker?.succeeded(key);
+
+      try {
+        onResult?.(checked, settled.value);
+      } catch (error) {
+        // Never the caller's problem. The tool ran, the caller is owed the sentence it
+        // produces, and an observer that threw is a defect in the observer.
+        scoped.warn("a tool result observer threw", { tier, detail: describe(error) });
+      }
 
       let summary: unknown;
       try {

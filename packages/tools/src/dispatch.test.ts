@@ -121,6 +121,67 @@ describe("read tier", () => {
   });
 });
 
+/**
+ * The raw result, for the one reader allowed to see it.
+ *
+ * R5.4.3 keeps raw JSON out of speech; it does not say a tenant may never look at what
+ * their own endpoint returned. The dashboard's tool sandbox shows both side by side, which
+ * is where a template rendering its fallback because the field is named `status` and not
+ * `state` becomes visible — and this hook is how it gets the left-hand side without a
+ * second dispatch path.
+ */
+describe("the result observer", () => {
+  it("sees the result before it is summarised, and does not change the outcome", async () => {
+    const { log } = recordingLogger();
+    const seen: unknown[] = [];
+
+    const outcome = await createToolDispatcher({
+      registry: registryWith([LOOKUP], okAdapter),
+      log,
+      onResult: (_call, result) => seen.push(result),
+    }).dispatch({ tenantId: TENANT_A, callId: CALL, name: "policy_lookup", args: {} });
+
+    expect(seen).toEqual([{ status: "active" }]);
+    expect(outcome).toMatchObject({ kind: "ok", speech: "The policy is active." });
+  });
+
+  it("is not called for a tool that never ran", async () => {
+    const { log } = recordingLogger();
+    const seen: unknown[] = [];
+    const dispatcher = createToolDispatcher({
+      registry: registryWith([CANCEL, UPDATE], okAdapter),
+      log,
+      onResult: (_call, result) => seen.push(result),
+    });
+
+    // Irreversible: transferred. Write with no confirmation: read back, not fired.
+    await dispatcher.dispatch({ tenantId: TENANT_A, callId: CALL, name: "cancel_policy", args: {} });
+    await dispatcher.dispatch({
+      tenantId: TENANT_A,
+      callId: CALL,
+      name: "update_number",
+      args: { phone: "+10000000000" },
+    });
+
+    expect(seen).toEqual([]);
+  });
+
+  it("cannot turn a tool call that worked into one that failed", async () => {
+    const { lines, log } = recordingLogger();
+
+    const outcome = await createToolDispatcher({
+      registry: registryWith([LOOKUP], okAdapter),
+      log,
+      onResult: () => {
+        throw new Error("the observer is broken");
+      },
+    }).dispatch({ tenantId: TENANT_A, callId: CALL, name: "policy_lookup", args: {} });
+
+    expect(outcome).toMatchObject({ kind: "ok", speech: "The policy is active." });
+    expect(lines.some((line) => line.message.includes("observer threw"))).toBe(true);
+  });
+});
+
 describe("holding speech", () => {
   it("starts before the adapter runs, not when it returns", async () => {
     const { log } = recordingLogger();

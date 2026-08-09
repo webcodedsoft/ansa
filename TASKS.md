@@ -1456,6 +1456,63 @@ and are not a field here in either direction.
 **Known constraint on 5:** Twilio does not sell Nigerian numbers. "Claim a number" is the
 first thing a Nigerian organisation needs and the one thing we cannot currently give them.
 
+### 6 · Test call, config diff and rollback, tool sandbox — done
+
+*2026-08-09. Suggestions 6, 8 and 9 above, built. `apps/api/src/api/testcall/`, plus
+`config/diff.ts` and `tools/sandbox.ts` in the two areas they extend.*
+
+- [x] `POST /test-calls` — rings a number from the organisation's own dialled number and
+      answers 202 with the carrier's word for it. **Through `outbound/place.ts`**, which is
+      the one door and the one consent gate; nothing in `src/api` calls `provider.placeCall`
+      and a source scan in `testcall.test.ts` keeps it that way.
+- [x] **Consent is not waived for a test, and there is no flag that waives it.** No consent
+      on record, a suppression, or 21:00 WAT is a 422 carrying `consent.ts`'s own sentence.
+      A verified-own-number flow is described in the controller as what it would have to be
+      — a consent row with its own basis, written when the proof happened — rather than as
+      an exemption, because a gate with one exemption is a gate with an exemption-shaped
+      hole and the hole would be the one with a button on it.
+- [x] `GET /config/diff?from=&to=` — leaves, not objects: `businessHours.closesAtHour`
+      rather than two JSON blobs to compare by eye, and keyterms as a set because
+      reordering them changes nothing on a call.
+- [x] `POST /config/versions/{version}/rollback` — **publishes the old content as a new
+      version**. Nothing rewrites history, so a call that recorded version 4 can still be
+      explained (R7.5), and the restored content goes through the same
+      `publicationProblems` a hand-written publication does: a version that was valid
+      yesterday and trips a guarantee added since is refused with the field named, rather
+      than quietly restored and silently dropped from the prompt on every call.
+- [x] `POST /tools/{name}/test` — the raw response, the summary, and the normalized speech
+      (R5.4.3). Through `packages/tools`' one dispatch path, so the tiers hold: a `write`
+      tool answers with its readback and does not fire, an `irreversible` one transfers,
+      and a tool that identifies a person refuses until the caller's detail is asserted.
+      The raw side arrives through a new `onResult` observer on the dispatcher — the call
+      path does not pass one, and an observer that throws cannot turn a tool call that
+      worked into one that failed.
+- [x] 27 tests, no database: the diff, the tiers a sandbox run meets, the carrier
+      environment, and the two source scans.
+- [ ] Not proven, and it needs a real tenant endpoint and a real phone: the `ok` branch of
+      the sandbox, and a test call ringing. The egress guard refuses loopback deliberately,
+      so a server on this machine is not a substitute and a fake transport would be testing
+      a fake. What sits under both is dialled: `connector/http.test.ts` for the request and
+      response, `dispatch.test.ts` for the observer, `consent.test.ts` for the verdict.
+
+**Session log**
+
+- **The sandbox needed the raw result and the dispatcher had nowhere to put it.** The
+  alternatives were a decorating adapter — which is a second thing invoking `execute` and
+  the test that keeps one call site is right to be blunt about it — or a `raw` field on the
+  outcome, which would put a caller's own record in an object the orchestrator logs. An
+  opt-in observer is neither, and it is absent on every call.
+- **A test call's `from` is the organisation's own number, not an environment variable.**
+  A platform-wide number would put an unfamiliar caller id on the screen of somebody
+  testing whether their own line works, and the carrier account already owns theirs.
+- `ApiModule` deliberately does not import `TelephonyModule`, because `AppConfig` throws
+  without a TTS key and the API's integration test boots the module with nothing but a
+  database. So the three carrier variables are read in `origination.ts` and their absence
+  is a 503 on one endpoint rather than a process that will not start.
+- **`openapi.json` was regenerated in a scratch worktree at HEAD** with only these changes
+  copied in. Regenerating in place would have committed another agent's uncommitted routes
+  into the spec, and `openapi.test.ts` would then have failed on the commit that did it.
+
 ## Not now
 
 **Outbound calling is the big one, and it has a named gate.** Do not start it until Slice

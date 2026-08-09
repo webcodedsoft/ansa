@@ -5,16 +5,28 @@ import {
   Get,
   Inject,
   NotFoundException,
+  Post,
   Put,
   UnprocessableEntityException,
 } from "@nestjs/common";
 
 import { Endpoint } from "../http/endpoint";
-import { apiRoute, FromBody } from "../http/request";
-import { choice, flag, integer, list, object, optional, text, type Infer } from "../http/schema";
+import { apiRoute, FromBody, FromPath } from "../http/request";
+import {
+  choice,
+  flag,
+  integer,
+  list,
+  nullable,
+  object,
+  optional,
+  text,
+  type Infer,
+} from "../http/schema";
 import { TenantContext } from "../tenancy/tenant-context";
 
 import { checkToolConfig, eventsOrNothing, orConflict, orRefuse } from "./refusals";
+import { runToolInSandbox } from "./sandbox";
 import { publishConfiguration, readConfiguration, sealedCredentials } from "./store";
 import { classifyCredentials, credentialUses, refuseUnusableReferences, vaultKey } from "./vault";
 
@@ -185,6 +197,93 @@ const replacement = object({
 });
 
 const published = object({ configVersion: integer({ minimum: 1 }) });
+
+// ---------------------------------------------------------------------------
+// The sandbox
+// ---------------------------------------------------------------------------
+
+/**
+ * Generous, and the same reasoning as the schema bound above: this is a JSON document a
+ * tenant hand-writes to stand in for what the model would pass, and the ceiling exists so
+ * an unbounded string cannot arrive at an endpoint rather than as a claim about arguments.
+ */
+const MAX_ARGS_JSON = 20_000;
+
+/** Both bounded by what `identifier` above allows, because they name the same two things. */
+const confirmedFact = object({
+  /** The call fact, as `identifiers` names it. */
+  fact: text({ minLength: 1, maxLength: 100 }),
+  /** What the caller would have confirmed it as. The argument is checked against this. */
+  value: text({ minLength: 1, maxLength: 200 }),
+});
+
+const sandboxRun = object({
+  /**
+   * The arguments, as a JSON object.
+   *
+   * A string for the same reason `parametersJson` is one: nothing in this product
+   * interprets a tool's arguments, so any shape the model could produce has to survive
+   * this endpoint unchanged rather than being flattened into whatever this schema language
+   * can express.
+   */
+  argumentsJson: text({ minLength: 2, maxLength: MAX_ARGS_JSON, format: "json" }),
+  /**
+   * What the caller is being taken to have confirmed, for a tool that identifies a person.
+   *
+   * Omit it and such a tool answers `unconfirmed-identity`, which is the honest result and
+   * a useful one — it is what a caller would get if the agent tried the lookup before
+   * reading the detail back.
+   */
+  confirmed: optional(list(confirmedFact, { maxItems: 16 })),
+});
+
+const sandboxResult = object({
+  tool: text({ maxLength: 64 }),
+  riskTier: nullable(choice(["read", "write", "irreversible"])),
+  /**
+   * `ok` ran and produced a sentence. `confirm` is a write tool that has *not* run and is
+   * waiting on the caller's yes. `transfer` is an irreversible tool that will never run.
+   * `failed` is everything else, with `reason` saying which.
+   */
+  outcome: choice(["ok", "confirm", "transfer", "failed"]),
+  /**
+   * What the endpoint returned, as JSON, or null when nothing ran (R5.4.3).
+   *
+   * No `maxLength`: the connector transport already caps a response body, and a bound here
+   * would turn a large but legitimate answer into a 500 on the way out.
+   */
+  raw: nullable(text()),
+  /** The sentence the tool's own template produced, before the normalizer. */
+  summary: text(),
+  /** The same sentence as the caller would hear it. */
+  speech: text(),
+  reason: nullable(text()),
+  route: nullable(text({ maxLength: 32 })),
+  latencyMs: integer({ minimum: 0 }),
+});
+
+const toolPath = object({ name: text({ minLength: 1, maxLength: 64 }) });
+
+/**
+ * The test arguments, as the model would have passed them.
+ *
+ * An array or a bare string is refused rather than wrapped: the dispatcher hands `args` to
+ * the connector as a record, and a caller who sent something else wants to know now.
+ */
+const toArguments = (raw: string): Record<string, unknown> => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new UnprocessableEntityException("argumentsJson is not valid JSON");
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new UnprocessableEntityException(
+      "argumentsJson must be a JSON object — the arguments the model would pass, by name",
+    );
+  }
+  return parsed as Record<string, unknown>;
+};
 
 type HttpToolInput = Infer<typeof httpTool>;
 type McpToolInput = Infer<typeof mcpTool>;
@@ -384,5 +483,74 @@ export class ToolsController {
       });
       return { configVersion: version };
     });
+  }
+
+  /**
+   * R5.4.3, from the tenant's side: what the endpoint returned, what it was summarised to,
+   * and what a caller would hear.
+   *
+   * `sandbox.ts` has the reasoning. The two properties worth having in front of you while
+   * reading this handler are that it goes through `packages/tools`' one dispatch path — so
+   * a `write` tool answers with its readback instead of firing and an `irreversible` one
+   * answers with the transfer — and that the run happens outside the transaction, because
+   * it makes a request to somebody else's server on a three-second ceiling and a database
+   * transaction held open across that is a connection spent on waiting.
+   *
+   * `config:write` rather than `config:read`, and the distinction is the point: this is the
+   * only endpoint in the dashboard that causes something to happen at the organisation's own
+   * systems. A `member` who may look at the configuration must not be able to fire a lookup
+   * of a real customer's record at it.
+   */
+  @Post(":name/test")
+  @Endpoint({
+    summary: "Run one of this organisation's tools with test arguments",
+    description:
+      "Through the same dispatch path a call uses, so the risk tiers apply: a `write` tool " +
+      "answers `confirm` with the readback the caller would hear and does not fire, and an " +
+      "`irreversible` tool answers `transfer` and never runs. Returns the raw response beside " +
+      "the summary and the normalized speech, which is where a template that silently renders " +
+      "its fallback becomes visible. 404 if this organisation has no tool by that name — " +
+      "including the platform's own call-control tools, which need a call.",
+    capability: "config:write",
+    params: toolPath,
+    body: sandboxRun,
+    response: sandboxResult,
+    // Every run is a real request to the organisation's endpoint on a three-second budget.
+    // Keyed by address rather than by organisation, which is all `rateLimit` can express;
+    // it is a brake on a held-down button, not a quota.
+    rateLimit: { limit: 30, windowMs: 60_000, by: "ip" },
+  })
+  async test(
+    @FromPath() path: Infer<typeof toolPath>,
+    @FromBody() body: Infer<typeof sandboxRun>,
+  ): Promise<Infer<typeof sandboxResult>> {
+    const args = toArguments(body.argumentsJson);
+
+    const stored = await this.db.tx(async (scope) => {
+      const current = await readConfiguration(scope);
+      if (current === null) throw new NotFoundException();
+      return { toolConfig: current.toolConfig, sealed: await sealedCredentials(scope) };
+    });
+
+    const result = await runToolInSandbox({
+      owner: this.db.caller.tenantId,
+      toolConfig: stored.toolConfig,
+      sealedCredentials: stored.sealed,
+      credentialKey: vaultKey(),
+      name: path.name,
+      args,
+      confirmed: new Map((body.confirmed ?? []).map((fact) => [fact.fact, fact.value])),
+    });
+
+    // The name is not quoted back. It came from the URL, it is on its way to a browser, and
+    // there is nothing this message needs it for.
+    if (result === null) {
+      throw new NotFoundException(
+        "this organisation has no tool registered under that name. A tool that needs a " +
+          "credential this deployment cannot open is not registered either, and the " +
+          "platform's own call-control tools cannot be exercised without a call.",
+      );
+    }
+    return result;
   }
 }

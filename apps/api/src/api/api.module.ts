@@ -20,6 +20,8 @@ import { ReadinessController } from "./numbers/readiness.controller";
 import { TenantContext } from "./tenancy/tenant-context";
 import { TenantGateway } from "./tenancy/tenant-gateway";
 import { API_DATA_SOURCE } from "./tenancy/tokens";
+import { createOrigination, ORIGINATION } from "./testcall/origination";
+import { TestCallController } from "./testcall/testcall.controller";
 import { CredentialsController } from "./tools/credentials.controller";
 import { EventSubscriptionsController } from "./tools/events.controller";
 import { ToolsController } from "./tools/tools.controller";
@@ -42,6 +44,7 @@ export const API_CONTROLLERS = [
   MembersController,
   NumbersController,
   ReadinessController,
+  TestCallController,
   ToolsController,
 ];
 
@@ -74,6 +77,20 @@ export const API_CONTROLLERS = [
           return null;
         }
       },
+    },
+    {
+      /**
+       * The one thing besides `TenantGateway` that is handed the pool, and it is handed it
+       * here for the same reason the gateway is: this module is the wiring, and
+       * `routes.test.ts` exempts it from the scan that keeps `API_DATA_SOURCE` out of every
+       * other file. `origination.ts` does not query with it — it passes it to
+       * `placeOutboundCall`, which needs one to read the consent record inside the tenant's
+       * own scope.
+       */
+      provide: ORIGINATION,
+      inject: [API_DATA_SOURCE],
+      useFactory: (dataSource: Db | null) =>
+        createOrigination({ dataSource, log: createLogger({ component: "api-testcall" }) }),
     },
     TenantGateway,
     TenantContext,

@@ -4,6 +4,7 @@ import {
   loadCurrentTenantConfig,
   loadTenantConfigVersion,
   publishTenantConfig,
+  type ConfigVersion,
   type TenantConfigFields,
 } from "@ansa/db";
 import { Controller, Get, Inject, NotFoundException, Post } from "@nestjs/common";
@@ -14,10 +15,11 @@ import { Endpoint } from "../http/endpoint";
 import { pageQuery, pageResponse, toPageBody, toPageRequest } from "../http/pagination";
 import { ValidationFailed } from "../http/problem";
 import { apiRoute, FromBody, FromPath, FromQuery } from "../http/request";
-import { flag, integer, list, nullable, object, text, type Infer } from "../http/schema";
-import { timestamp, uuid } from "../schemas";
+import { flag, integer, list, nullable, object, optional, text, type Infer } from "../http/schema";
+import { phoneNumber, timestamp, uuid } from "../schemas";
 import { TenantContext } from "../tenancy/tenant-context";
 
+import { diffConfigurations } from "./diff";
 import { effectiveKeyterms, publicationProblems, publishedGuarantees } from "./publication";
 
 /**
@@ -44,6 +46,25 @@ import { effectiveKeyterms, publicationProblems, publishedGuarantees } from "./p
  */
 
 /**
+ * Two more things this surface does, both of which fall out of the append-only table rather
+ * than needing anything added to it.
+ *
+ * **A diff, because the question is always "it was working yesterday".** On a voice agent
+ * the regression was *heard*, so the reader is looking for the sentence that changed and
+ * not for a shape difference between two JSON documents. `diff.ts` does the comparison and
+ * is pure.
+ *
+ * **A rollback is a publish, not an undo.** It reads an old version and publishes its
+ * content as a new one, through `publishTenantConfig` and after the same
+ * `publicationProblems` a hand-written publication faces. Nothing rewrites history, and
+ * that is the whole reason a call from three weeks ago can still be explained (R7.5): the
+ * version it recorded still says what the agent was actually working from. It also means a
+ * version that was valid under yesterday's rules and is not valid today is refused rather
+ * than quietly restored — a rollback that could route around a guarantee check would be a
+ * second publish path, which is the thing this file has one of.
+ */
+
+/**
  * A greeting is the first sentence of a call and a voice id is an identifier at the TTS
  * account. Neither has a platform limit — the call path will say whatever is stored — so
  * these are bounds on the request, chosen so an unbounded string cannot arrive at a write
@@ -54,16 +75,6 @@ const MAX_VOICE_ID_CHARS = 200;
 const MAX_KEYTERM_CHARS = 100;
 /** A version note is a sentence about why, not the change itself. */
 const MAX_NOTE_CHARS = 500;
-
-/**
- * E.164, as migration 0015's CHECK constraint spells it and as `handoff/destination.ts`
- * spells it for the environment fallback. A third copy, because the other two are a SQL
- * constraint and a module-private constant; the database remains the boundary and this only
- * moves the failure from a 500 to a 422 with the field named.
- */
-const E164 = /^\+[1-9][0-9]{6,14}$/;
-
-const phoneNumber = () => text({ maxLength: 16, pattern: E164 });
 
 /**
  * All three or none, which the object shape says by itself: a nullable object whose three
@@ -188,6 +199,62 @@ const published = object({ version: configVersion, vocabulary });
 
 const versionPath = object({ version: integer({ minimum: 1 }) });
 
+/**
+ * Which two versions to compare.
+ *
+ * Both required, and neither defaults to "the current one". A diff whose left-hand side is
+ * implicit is a diff that means something different tomorrow, and this is a URL somebody
+ * pastes into a conversation about a call that has already happened.
+ */
+const diffQuery = object({
+  from: integer({ minimum: 1 }),
+  to: integer({ minimum: 1 }),
+});
+
+/**
+ * One field that moved.
+ *
+ * No `maxLength` on the values, for the reason the transcript field on the calls endpoint
+ * gives: these come out of the database, the interceptor projects the response through this
+ * schema, and a bound here would turn one long persona into a 500 for the whole comparison.
+ * The bounds that matter are on the publish body, where the value arrived.
+ */
+const fieldChange = object({
+  /** Dotted path into the configuration, e.g. `greeting` or `escalation.ringSeconds`. */
+  field: text({ maxLength: 64 }),
+  /** Null where that version did not set the field, which is not the same as an empty one. */
+  before: nullable(text()),
+  after: nullable(text()),
+});
+
+const versionDiff = object({
+  from: versionSummary,
+  to: versionSummary,
+  /** True when the two versions would produce the same agent. Both lists are then empty. */
+  identical: flag(),
+  fields: list(fieldChange),
+  keyterms: object({
+    added: list(text({ maxLength: MAX_KEYTERM_CHARS })),
+    removed: list(text({ maxLength: MAX_KEYTERM_CHARS })),
+  }),
+});
+
+/**
+ * Shorter than a publish note, because the version this one is restored from is appended to
+ * whatever is written here and the whole thing has to stay inside `MAX_NOTE_CHARS` — a note
+ * that overflowed would fail the response projection and answer 500 on a successful publish.
+ */
+const MAX_ROLLBACK_NOTE = 400;
+
+const rollback = object({
+  /**
+   * Why. Optional here and required on a publish, which is the one difference between them:
+   * "restored from version 4" is already a reason, and the version it names is the rest of
+   * the explanation. Anything written here is kept and the provenance is appended to it.
+   */
+  note: optional(text({ minLength: 1, maxLength: MAX_ROLLBACK_NOTE })),
+});
+
 const callPath = object({ callId: uuid() });
 
 const callConfig = object({
@@ -223,6 +290,27 @@ const toConfigBody = (config: TenantConfigFields): Infer<typeof configFields> =>
   escalation: config.escalation,
 });
 
+/** The history row without the snapshot hanging off it, for the two ends of a diff. */
+const toSummary = (version: ConfigVersion): Infer<typeof versionSummary> => ({
+  version: version.version,
+  note: version.note,
+  publishedBy: version.publishedBy,
+  publishedAt: version.publishedAt,
+});
+
+/**
+ * The note a rollback records.
+ *
+ * The version it was restored from is always in it, whether or not the caller wrote
+ * anything. Without that the history reads as somebody having retyped an old configuration
+ * by hand, and the one question the history exists to answer — why does version 9 look like
+ * version 4 — has no answer in it.
+ */
+const rollbackNote = (from: number, note: string | undefined): string =>
+  note === undefined
+    ? `restored from version ${from}`
+    : `${note} (restored from version ${from})`;
+
 const toVocabulary = (configured: readonly string[]): Infer<typeof vocabulary> => ({
   base: [...BASE_KEYTERMS],
   effective: [...effectiveKeyterms(configured)],
@@ -250,6 +338,44 @@ export class ConfigController {
   })
   listGuarantees(): Infer<typeof guarantees> {
     return { guarantees: publishedGuarantees() };
+  }
+
+  /**
+   * Also a literal segment, and also declared before `versions/:version` — although this
+   * one would not collide, keeping every fixed path above every parameterised one is the
+   * rule that stops the next addition from having to think about it.
+   */
+  @Get("diff")
+  @Endpoint({
+    summary: "What changed between two configuration versions",
+    description:
+      "Only the fields that moved, with the nested shapes flattened to dotted paths — " +
+      "`businessHours.closesAtHour` rather than two objects to compare by eye. Keyterms are " +
+      "compared as a set, without regard to case, because they are a bias on the transcriber " +
+      "rather than a sequence and reordering them changes nothing on a call. 404 if either " +
+      "version has no snapshot behind it.",
+    capability: "config:read",
+    query: diffQuery,
+    response: versionDiff,
+  })
+  async diff(@FromQuery() query: Infer<typeof diffQuery>): Promise<Infer<typeof versionDiff>> {
+    // One transaction, one query after the other. Both ends of the comparison are read
+    // from the same snapshot, and two queries raced onto one connection is a driver
+    // problem rather than a speed-up.
+    const pair = await this.db.tx(async (scope) => ({
+      from: await loadTenantConfigVersion(scope, query.from),
+      to: await loadTenantConfigVersion(scope, query.to),
+    }));
+
+    // 404 for either, and deliberately without saying which: under RLS another
+    // organisation's version and one that never existed are the same query result.
+    const { from, to } = pair;
+    if (from === null || to === null) throw new NotFoundException();
+    return {
+      from: toSummary(from),
+      to: toSummary(to),
+      ...diffConfigurations(from.config, to.config),
+    };
   }
 
   @Get("versions")
@@ -301,6 +427,82 @@ export class ConfigController {
       // Returned on publish and not only on read, because this is the moment a keyterm list
       // becomes real and the moment its cost is worth seeing.
       vocabulary: toVocabulary(version.config.keyterms),
+    };
+  }
+
+  /**
+   * R7.5's other half: getting back to a configuration that worked.
+   *
+   * **It publishes; it does not restore.** The old snapshot's content becomes a new version
+   * with a new number, and every row that was there before is still there and still says
+   * what it said. That is not tidiness — `calls.config_version` points into this table, so
+   * a row edited or removed here would make a call from three weeks ago unexplainable, and
+   * the explanation is the only thing that makes a recording of a bad call actionable.
+   *
+   * **Through the same validation as a publish**, which is the part that is easy to skip
+   * and would quietly matter. A guarantee added to `prompts/guarantees.ts` since version 4
+   * was published means version 4's persona now contains a sentence the platform refuses;
+   * restoring it without checking would put the organisation back on a configuration the
+   * publish endpoint would not accept from them today, and the field would be dropped from
+   * the prompt on every call instead — silently, exactly as it would have been before
+   * `publication.ts` existed.
+   *
+   * Rolling back to the current version is allowed and publishes an identical version. It
+   * is a no-op with a note, which is the honest way to record "we considered it and put it
+   * back where it was".
+   */
+  @Post("versions/:version/rollback")
+  @Endpoint({
+    summary: "Publish an earlier version's configuration as a new version",
+    description:
+      "Never rewrites history: the version being rolled back to stays exactly as it was and " +
+      "a new version number is issued, so a call that recorded an older one can still be " +
+      "explained. Runs the same guarantee and keyterm checks a publish does and answers 422 " +
+      "with the field named if the stored version would not be accepted today. Tool and " +
+      "event configuration is carried forward from the live document, not from the snapshot — " +
+      "the version table does not hold it.",
+    capability: "config:write",
+    params: versionPath,
+    body: rollback,
+    response: published,
+    status: 201,
+  })
+  async rollback(
+    @FromPath() path: Infer<typeof versionPath>,
+    @FromBody() body: Infer<typeof rollback>,
+  ): Promise<Infer<typeof published>> {
+    const restored = await this.db.tx(async (scope) => {
+      const source = await loadTenantConfigVersion(scope, path.version);
+      if (source === null) throw new NotFoundException();
+
+      const problems = publicationProblems(source.config);
+      if (problems.length > 0) {
+        // Re-pointed at the version rather than at a request body, because there is no
+        // field in this request to correct. What has to change is the stored configuration,
+        // and naming `body.persona` would send somebody looking for a persona they did not
+        // send.
+        throw new ValidationFailed(
+          problems.map((problem) => ({
+            ...problem,
+            path: problem.path.replace(/^body\./, `versions.${path.version}.`),
+          })),
+        );
+      }
+
+      const number = await publishTenantConfig(
+        scope,
+        source.config,
+        rollbackNote(path.version, body.note),
+      );
+      // Read back inside the same transaction, as the publish endpoint does: the response
+      // is the row the database wrote rather than an echo of the row it was copied from.
+      return loadTenantConfigVersion(scope, number);
+    });
+
+    if (restored === null) throw new Error("published a version that cannot be read back");
+    return {
+      version: { ...restored, config: toConfigBody(restored.config) },
+      vocabulary: toVocabulary(restored.config.keyterms),
     };
   }
 

@@ -34,6 +34,9 @@
       "name": "readiness"
     },
     {
+      "name": "test-calls"
+    },
+    {
       "name": "tools"
     }
   ],
@@ -2070,6 +2073,228 @@
         }
       }
     },
+    "/api/v1/config/diff": {
+      "get": {
+        "operationId": "config.diff",
+        "tags": [
+          "config"
+        ],
+        "summary": "What changed between two configuration versions",
+        "description": "Only the fields that moved, with the nested shapes flattened to dotted paths — `businessHours.closesAtHour` rather than two objects to compare by eye. Keyterms are compared as a set, without regard to case, because they are a bias on the transcriber rather than a sequence and reordering them changes nothing on a call. 404 if either version has no snapshot behind it.",
+        "x-ansa-capability": "config:read",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "from": {
+                      "type": "object",
+                      "properties": {
+                        "version": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 500
+                        },
+                        "publishedBy": {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        "publishedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "note",
+                        "publishedBy",
+                        "publishedAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "to": {
+                      "type": "object",
+                      "properties": {
+                        "version": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 500
+                        },
+                        "publishedBy": {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        "publishedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "note",
+                        "publishedBy",
+                        "publishedAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "identical": {
+                      "type": "boolean"
+                    },
+                    "fields": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string",
+                            "maxLength": 64
+                          },
+                          "before": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "after": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "before",
+                          "after"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "keyterms": {
+                      "type": "object",
+                      "properties": {
+                        "added": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 100
+                          }
+                        },
+                        "removed": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 100
+                          }
+                        }
+                      },
+                      "required": [
+                        "added",
+                        "removed"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "from",
+                    "to",
+                    "identical",
+                    "fields",
+                    "keyterms"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/config/guarantees": {
       "get": {
         "operationId": "config.listGuarantees",
@@ -2897,6 +3122,310 @@
           },
           "403": {
             "description": "The caller's role does not hold config:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/versions/{version}/rollback": {
+      "post": {
+        "operationId": "config.rollback",
+        "tags": [
+          "config"
+        ],
+        "summary": "Publish an earlier version's configuration as a new version",
+        "description": "Never rewrites history: the version being rolled back to stays exactly as it was and a new version number is issued, so a call that recorded an older one can still be explained. Runs the same guarantee and keyterm checks a publish does and answers 422 with the field named if the stored version would not be accepted today. Tool and event configuration is carried forward from the live document, not from the snapshot — the version table does not hold it.",
+        "x-ansa-capability": "config:write",
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "note": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 400
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": {
+                      "type": "object",
+                      "properties": {
+                        "version": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 500
+                        },
+                        "publishedBy": {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        "publishedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "config": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120
+                            },
+                            "voiceId": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 200
+                            },
+                            "greeting": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 500
+                            },
+                            "persona": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 400
+                            },
+                            "instructions": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 2000
+                            },
+                            "keyterms": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              },
+                              "maxItems": 100
+                            },
+                            "businessHours": {
+                              "type": [
+                                "object",
+                                "null"
+                              ],
+                              "properties": {
+                                "opensAtHour": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 23
+                                },
+                                "closesAtHour": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 24
+                                },
+                                "openDays": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 7
+                                  },
+                                  "maxItems": 7
+                                }
+                              },
+                              "required": [
+                                "opensAtHour",
+                                "closesAtHour",
+                                "openDays"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "escalation": {
+                              "type": [
+                                "object",
+                                "null"
+                              ],
+                              "properties": {
+                                "toNumber": {
+                                  "type": "string",
+                                  "maxLength": 16,
+                                  "pattern": "^\\+[1-9][0-9]{6,14}$"
+                                },
+                                "fromNumber": {
+                                  "type": "string",
+                                  "maxLength": 16,
+                                  "pattern": "^\\+[1-9][0-9]{6,14}$"
+                                },
+                                "ringSeconds": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 5,
+                                  "maximum": 120
+                                }
+                              },
+                              "required": [
+                                "toNumber",
+                                "fromNumber",
+                                "ringSeconds"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "voiceId",
+                            "greeting",
+                            "persona",
+                            "instructions",
+                            "keyterms",
+                            "businessHours",
+                            "escalation"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "note",
+                        "publishedBy",
+                        "publishedAt",
+                        "config"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "vocabulary": {
+                      "type": "object",
+                      "properties": {
+                        "base": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 100
+                          }
+                        },
+                        "effective": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 100
+                          }
+                        },
+                        "cap": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "required": [
+                        "base",
+                        "effective",
+                        "cap"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "vocabulary"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:write",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5125,6 +5654,142 @@
         }
       }
     },
+    "/api/v1/test-calls": {
+      "post": {
+        "operationId": "test-calls.place",
+        "tags": [
+          "test-calls"
+        ],
+        "summary": "Ring a number and let this organisation's agent answer it",
+        "description": "Placed from the organisation's own number, through the same consent gate every outbound call goes through: refused with 422 and the reason if the destination has no consent on record, is on the do-not-call list, or it is outside calling hours. There is no flag that skips that. Answers 202 with the carrier's own status — the call is queued, not answered — and everything after that shows up on the call itself.",
+        "x-ansa-capability": "config:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string",
+                    "maxLength": 16,
+                    "pattern": "^\\+[1-9][0-9]{6,14}$"
+                  }
+                },
+                "required": [
+                  "to"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "carrierCallId": {
+                      "type": "string",
+                      "maxLength": 128
+                    },
+                    "status": {
+                      "type": "string",
+                      "maxLength": 32
+                    },
+                    "to": {
+                      "type": "string",
+                      "maxLength": 16,
+                      "pattern": "^\\+[1-9][0-9]{6,14}$"
+                    },
+                    "from": {
+                      "type": "string",
+                      "maxLength": 16,
+                      "pattern": "^\\+[1-9][0-9]{6,14}$"
+                    },
+                    "configVersion": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "carrierCallId",
+                    "status",
+                    "to",
+                    "from",
+                    "configVersion"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts; see the Retry-After header",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/tools": {
       "get": {
         "operationId": "tools.read",
@@ -5805,6 +6470,224 @@
           },
           "422": {
             "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tools/{name}/test": {
+      "post": {
+        "operationId": "tools.test",
+        "tags": [
+          "tools"
+        ],
+        "summary": "Run one of this organisation's tools with test arguments",
+        "description": "Through the same dispatch path a call uses, so the risk tiers apply: a `write` tool answers `confirm` with the readback the caller would hear and does not fire, and an `irreversible` tool answers `transfer` and never runs. Returns the raw response beside the summary and the normalized speech, which is where a template that silently renders its fallback becomes visible. 404 if this organisation has no tool by that name — including the platform's own call-control tools, which need a call.",
+        "x-ansa-capability": "config:write",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "argumentsJson": {
+                    "type": "string",
+                    "format": "json",
+                    "minLength": 2,
+                    "maxLength": 20000
+                  },
+                  "confirmed": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "fact": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "value": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        }
+                      },
+                      "required": [
+                        "fact",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 16
+                  }
+                },
+                "required": [
+                  "argumentsJson"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tool": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "riskTier": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "read",
+                        "write",
+                        "irreversible"
+                      ]
+                    },
+                    "outcome": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "confirm",
+                        "transfer",
+                        "failed"
+                      ]
+                    },
+                    "raw": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "speech": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "route": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 32
+                    },
+                    "latencyMs": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "tool",
+                    "riskTier",
+                    "outcome",
+                    "raw",
+                    "summary",
+                    "speech",
+                    "reason",
+                    "route",
+                    "latencyMs"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts; see the Retry-After header",
             "content": {
               "application/problem+json": {
                 "schema": {

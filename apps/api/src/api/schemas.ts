@@ -19,7 +19,18 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  */
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
+/**
+ * E.164, as migration 0015's CHECK constraint spells it and as `handoff/destination.ts`
+ * spells it for the environment fallback. Those two are a SQL constraint and a
+ * module-private constant, so this is a third copy rather than a shared one; what it buys is
+ * that a malformed number is a 422 with the field named instead of a 500 from the database.
+ */
+const E164 = /^\+[1-9][0-9]{6,14}$/;
+
 export const uuid = (): Schema<string> => text({ format: "uuid", pattern: UUID });
+
+/** A number in E.164, which is the only form anything downstream of the API accepts. */
+export const phoneNumber = (): Schema<string> => text({ maxLength: 16, pattern: E164 });
 
 export const email = (): Schema<string> => text({ format: "email", maxLength: 320, pattern: EMAIL });
 
