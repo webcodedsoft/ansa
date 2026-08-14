@@ -7,7 +7,7 @@ import { ApiGuard } from "./auth/api.guard";
 import { AuthController } from "./auth/auth.controller";
 import { AuthService } from "./auth/auth.service";
 import { CallsController } from "./calls/calls.controller";
-import { loadApiConfig } from "./config";
+import { loadApiConfig } from "./api-config";
 import { ConfigController } from "./config/config.controller";
 import { EndpointInterceptor } from "./http/endpoint.interceptor";
 import { ProblemFilter } from "./http/problem";

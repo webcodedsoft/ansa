@@ -1,4 +1,9 @@
-import type { TenantScope } from "@ansa/db";
+import {
+  publishConfiguration as dbPublishConfiguration,
+  readStoredConfiguration,
+  type StoredConfiguration as DbStoredConfiguration,
+  type TenantScope,
+} from "@ansa/db";
 
 /**
  * The statements this endpoint area runs, each taking a scope it cannot widen.
@@ -23,82 +28,22 @@ import type { TenantScope } from "@ansa/db";
  * history would then be a lie about what the agent was doing that day.
  */
 
-/** Every column `app.publish_tenant_config` rewrites, as it stands right now. */
-export interface StoredConfiguration {
-  readonly name: string;
-  readonly voiceId: string | null;
-  readonly greeting: string | null;
-  readonly persona: string | null;
-  readonly instructions: string | null;
-  readonly keyterms: readonly string[];
-  readonly businessOpenHour: number | null;
-  readonly businessCloseHour: number | null;
-  readonly businessDays: readonly number[] | null;
-  readonly escalationToNumber: string | null;
-  readonly escalationFromNumber: string | null;
-  readonly escalationRingSeconds: number | null;
-  /** The `tools` document, exactly as stored. Its shape belongs to `@ansa/tools`. */
-  readonly toolConfig: unknown;
-  /** The `events` document, exactly as stored. Same. */
-  readonly eventConfig: unknown;
-  readonly configVersion: number;
-}
+/**
+ * Reading and publishing the configuration document now live in `@ansa/db`.
+ *
+ * They were here, and there was a near-identical pair in `packages/db/src/tenant-config.ts`
+ * for agent configuration. Both went through the one SQL function, so there was never a
+ * second path into the table — but each carried the other's columns forward by hand, and
+ * adding a column would have meant editing both. Forgetting one would have nulled a
+ * tenant's configuration on their next publish, with the version history recording the loss
+ * as intentional.
+ *
+ * `publishConfiguration` there takes a patch and does the carrying itself, so a caller says
+ * what it is changing and nothing else. These aliases keep the names this area already uses.
+ */
+export type StoredConfiguration = DbStoredConfiguration;
 
-interface ConfigurationRow {
-  name: string;
-  voice_id: string | null;
-  greeting: string | null;
-  persona: string | null;
-  instructions: string | null;
-  keyterms: string[] | null;
-  business_open_hour: number | null;
-  business_close_hour: number | null;
-  business_days: number[] | null;
-  escalation_to_number: string | null;
-  escalation_from_number: string | null;
-  escalation_ring_seconds: number | null;
-  tool_config: unknown;
-  event_config: unknown;
-  config_version: number;
-}
-
-const CONFIGURATION_COLUMNS = `
-  name, voice_id, greeting, persona, instructions, keyterms,
-  business_open_hour, business_close_hour, business_days,
-  escalation_to_number, escalation_from_number, escalation_ring_seconds,
-  tool_config, event_config, config_version`;
-
-/** Null when the organisation has been deleted out from under a live session. */
-export const readConfiguration = async (
-  scope: TenantScope,
-): Promise<StoredConfiguration | null> => {
-  const rows = await scope.query<ConfigurationRow>(
-    `select ${CONFIGURATION_COLUMNS} from tenants`,
-  );
-  const row = rows[0];
-  if (row === undefined) return null;
-
-  return {
-    name: row.name,
-    voiceId: row.voice_id,
-    greeting: row.greeting,
-    persona: row.persona,
-    instructions: row.instructions,
-    keyterms: row.keyterms ?? [],
-    businessOpenHour: row.business_open_hour,
-    businessCloseHour: row.business_close_hour,
-    businessDays: row.business_days,
-    escalationToNumber: row.escalation_to_number,
-    escalationFromNumber: row.escalation_from_number,
-    escalationRingSeconds: row.escalation_ring_seconds,
-    // `undefined` when migration 0013 or 0014 has not been applied — the row comes back
-    // without the column at all — and that has to read as "nothing configured" rather than
-    // reaching a parser as a value.
-    toolConfig: row.tool_config ?? null,
-    eventConfig: row.event_config ?? null,
-    configVersion: row.config_version,
-  };
-};
+export const readConfiguration = readStoredConfiguration;
 
 /** What this publish is changing. Everything else is carried over from `current`. */
 export interface ConfigurationChange {
@@ -110,51 +55,17 @@ export interface ConfigurationChange {
   readonly note: string;
 }
 
-/** jsonb wants text on the wire; null has to stay null rather than become `"null"`. */
-const asJsonb = (value: unknown): string | null =>
-  value === null || value === undefined ? null : JSON.stringify(value);
-
-/**
- * Bump the configuration version and snapshot it, in one statement.
- *
- * The function refuses to run unless `app.tenant_id` names the tenant it was passed, which
- * is why the id is an argument at all — it is the function checking the scope, not this
- * layer choosing an organisation. The value comes off the scope, which came off the
- * principal, which came out of a session row RLS agreed to show.
- */
 export const publishConfiguration = async (
   scope: TenantScope,
   current: StoredConfiguration,
   change: ConfigurationChange,
-): Promise<number> => {
-  const rows = await scope.query<{ version: number }>(
-    `select app.publish_tenant_config(
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
-     ) as version`,
-    [
-      scope.tenantId,
-      current.name,
-      current.voiceId,
-      current.greeting,
-      current.persona,
-      current.instructions,
-      current.keyterms,
-      current.businessOpenHour,
-      current.businessCloseHour,
-      current.businessDays,
-      asJsonb(change.toolConfig),
-      asJsonb(change.eventConfig),
-      current.escalationToNumber,
-      current.escalationFromNumber,
-      current.escalationRingSeconds,
-      change.note,
-    ],
+): Promise<number> =>
+  dbPublishConfiguration(
+    scope,
+    current,
+    { toolConfig: change.toolConfig, eventConfig: change.eventConfig },
+    change.note,
   );
-
-  const version = rows[0]?.version;
-  if (version === undefined) throw new Error("publish_tenant_config returned no version");
-  return version;
-};
 
 // ---------------------------------------------------------------------------
 // Credentials
