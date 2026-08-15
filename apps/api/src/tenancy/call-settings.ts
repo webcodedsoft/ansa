@@ -43,6 +43,7 @@ export interface CallSettings {
   readonly keyterms: readonly string[];
   /** Which voice speaks. Theirs if they configured one. */
   readonly voiceId: string;
+  readonly speakingRate: number | undefined;
   /** The first thing the caller hears. Theirs if they configured one. */
   readonly greeting: string;
   /** The five-layer prompt with their layer in it, composed at config load. */
@@ -102,6 +103,9 @@ export const callSettings = (
     name: resolved.name,
     keyterms: resolved.keyterms,
     voiceId: chosen(resolved.voiceId, platform.voiceId),
+    // Undefined rather than a number: the adapter omits the field entirely, which is not
+    // the same as sending 1.0 — a cloned voice keeps its speaker's own pace.
+    speakingRate: resolved.speakingRate ?? undefined,
     greeting: chosen(resolved.greeting, platform.greeting),
     systemPrompt: resolved.systemPrompt,
     businessHours: resolved.businessHours,

@@ -47,6 +47,8 @@ export const updateAgent = async (
     readonly dialledNumber?: string | null;
     readonly bargeIn?: boolean;
     readonly answeringMachineDetection?: boolean;
+    /** Null is the voice's own pace, which is not the same as 1.0. */
+    readonly speakingRate?: number | null;
   },
 ) => (await api()).agents.update({ path: { agentId }, body });
 

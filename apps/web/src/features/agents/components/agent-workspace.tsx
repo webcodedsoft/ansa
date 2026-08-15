@@ -187,7 +187,7 @@ export const AgentWorkspace = ({
               label: "Knowledge",
               panel: <KnowledgeTab agent={agent} knowledge={knowledge} />,
             },
-            { id: "voice", label: "Voice", panel: <VoiceTab config={config} errors={errors} /> },
+            { id: "voice", label: "Voice", panel: <VoiceTab config={config} agent={agent} errors={errors} /> },
             { id: "routing", label: "Routing & hours", panel: <RoutingTab config={config} operatorManaged={operatorManaged} errors={errors} /> },
             { id: "versions", label: "Versions", panel: <VersionsTab versions={versions} liveVersion={agent.configVersion} /> },
           ]}

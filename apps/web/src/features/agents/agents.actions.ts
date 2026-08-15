@@ -672,3 +672,41 @@ export const saveAgentKnowledgeAction = async (
     return failedForm(failureMessage(error));
   }
 };
+
+
+export type SpeakingRateState = FormState<{ readonly speakingRate: number | null }>;
+
+/**
+ * How fast this agent reads, saved on the agent rather than published.
+ *
+ * The same path `bargeIn` takes, and the same reasoning: voice *identity* is part of the
+ * configuration a version captures, while the pace it is read at is a dial somebody turns
+ * while listening to a call. It takes effect on the next call either way.
+ *
+ * Blank means the voice's own pace, which is not the same as 1.0 — a cloned voice keeps its
+ * speaker's rhythm when nothing is sent, and pinning it to 1.0 would flatten that.
+ */
+export const saveSpeakingRateAction = async (
+  _previous: SpeakingRateState,
+  form: FormData,
+): Promise<SpeakingRateState> => {
+  const agentId = String(form.get("agentId") ?? "");
+  const raw = String(form.get("speakingRate") ?? "").trim();
+  if (agentId === "") return failedForm("The form could not be read.");
+
+  const speakingRate = raw === "" ? null : Number(raw);
+  if (speakingRate !== null && (!Number.isFinite(speakingRate) || speakingRate < 0.7 || speakingRate > 1.2)) {
+    return failedForm("Between 0.7 and 1.2, or blank for the voice's own pace.");
+  }
+
+  try {
+    const saved = await updateAgent(agentId, { speakingRate });
+    revalidatePath("/agents", "layout");
+    return succeededForm(
+      { speakingRate: saved.speakingRate },
+      speakingRate === null ? "Back to the voice's own pace." : `Speaking rate ${speakingRate}×.`,
+    );
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+};

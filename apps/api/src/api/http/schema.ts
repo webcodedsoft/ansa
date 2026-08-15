@@ -20,6 +20,7 @@
 export type SchemaNode =
   | { readonly type: "string"; readonly format?: string; readonly minLength?: number; readonly maxLength?: number; readonly pattern?: string; readonly enum?: readonly string[]; readonly nullable?: boolean; readonly optional?: boolean }
   | { readonly type: "integer"; readonly minimum?: number; readonly maximum?: number; readonly nullable?: boolean; readonly optional?: boolean }
+  | { readonly type: "number"; readonly minimum?: number; readonly maximum?: number; readonly nullable?: boolean; readonly optional?: boolean }
   | { readonly type: "boolean"; readonly nullable?: boolean; readonly optional?: boolean }
   | { readonly type: "array"; readonly items: SchemaNode; readonly maxItems?: number; readonly nullable?: boolean; readonly optional?: boolean }
   | { readonly type: "object"; readonly properties: Readonly<Record<string, SchemaNode>>; readonly nullable?: boolean; readonly optional?: boolean }
@@ -79,6 +80,18 @@ export const choice = <const T extends string>(values: readonly T[]): Schema<T> 
 
 export const integer = (options: { readonly minimum?: number; readonly maximum?: number } = {}): Schema<number> => ({
   node: defined({ type: "integer" as const, minimum: options.minimum, maximum: options.maximum }),
+});
+
+/**
+ * A number that need not be whole — a speaking rate, a threshold, a ratio.
+ *
+ * Separate from `integer` rather than a flag on it, because the two refuse different things
+ * and a caller reading the schema should be able to tell at a glance which one a field is.
+ */
+export const number = (
+  options: { readonly minimum?: number; readonly maximum?: number } = {},
+): Schema<number> => ({
+  node: defined({ type: "number" as const, minimum: options.minimum, maximum: options.maximum }),
 });
 
 export const flag = (): Schema<boolean> => ({ node: { type: "boolean" } });
@@ -185,6 +198,24 @@ const parseInteger = (node: Extract<SchemaNode, { type: "integer" }>, raw: unkno
   return { ok: true, value };
 };
 
+/** Fractional, unlike `parseInteger`. Coerced from a string for query parameters. */
+const parseNumber = (
+  node: { readonly minimum?: number; readonly maximum?: number },
+  raw: unknown,
+  path: string,
+  coerce: boolean,
+): ParseResult<unknown> => {
+  const value = coerce && typeof raw === "string" && raw.trim() !== "" ? Number(raw) : raw;
+  if (typeof value !== "number" || !Number.isFinite(value)) return fail(path, "must be a number");
+  if (node.minimum !== undefined && value < node.minimum) {
+    return fail(path, `must be at least ${node.minimum}`);
+  }
+  if (node.maximum !== undefined && value > node.maximum) {
+    return fail(path, `must be at most ${node.maximum}`);
+  }
+  return { ok: true, value };
+};
+
 const parseBoolean = (raw: unknown, path: string, coerce: boolean): ParseResult<unknown> => {
   const value = coerce && (raw === "true" || raw === "false") ? raw === "true" : raw;
   if (typeof value !== "boolean") return fail(path, "must be a boolean");
@@ -201,6 +232,8 @@ const parseNode = (node: SchemaNode, value: unknown, path: string, options: Pars
       return parseString(node, value, path);
     case "integer":
       return parseInteger(node, value, path, options.coerce === true);
+    case "number":
+      return parseNumber(node, value, path, options.coerce === true);
     case "boolean":
       return parseBoolean(value, path, options.coerce === true);
     case "array": {
@@ -288,8 +321,9 @@ export const toJsonSchema = (node: SchemaNode): JsonSchema => {
           pattern: node.pattern,
           enum: node.enum,
         });
+      case "number":
       case "integer":
-        return defined({ type: "integer", minimum: node.minimum, maximum: node.maximum });
+        return defined({ type: node.type, minimum: node.minimum, maximum: node.maximum });
       case "boolean":
         return { type: "boolean" };
       case "array":

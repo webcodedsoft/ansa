@@ -2255,6 +2255,43 @@ in the one dispatch path, grounded-only answering, ingestion endpoints and the t
 - [ ] `searchKnowledge` takes no `AbortSignal`, so the dispatcher's three-second ceiling
       releases the caller but not the Postgres query.
 
+### The two flags the voice agent raised, closed (2026-08-16)
+
+**Speaking rate is built** (migration 0035). Nullable on `agents`, bounded 0.7–1.2 — the
+range ElevenLabs renders without artefacts, and outside it the voice does not sound fast, it
+sounds broken. Null means the voice's own pace and is the default, which is **not** the same
+as 1.0: sending nothing lets a voice cloned at its speaker's rhythm keep it, and pinning it
+flattens that. The adapter omits `voice_settings` entirely when unset for exactly that
+reason.
+
+Saved by `PATCH /agents/{id}`, the path `bargeIn` takes, not by publishing. Which voice
+answers is configuration a version should capture; the pace it reads at is a dial somebody
+turns while listening. The Voice tab's "not stored" row is now a control.
+
+`number()` is new in the request-schema DSL — there was only `integer`, and a rate is
+fractional. Separate rather than a flag on `integer`, because the two refuse different
+things and a reader should be able to tell which a field is at a glance.
+
+- [ ] Not versioned. `barge_in` and `answering_machine_detection` are not either, so there
+      is precedent — but it means "what did this call sound like" is not answerable from a
+      version, which is the same gap 0029 closed for captured fields.
+
+**Per-agent endpointing is deliberately not built.** The voice agent flagged
+wait-before-answering as "arguably genuinely per-agent", and it is arguable — a form-heavy
+agent reading NINs back wants a longer silence than a chatty one. It stays deployment-wide
+anyway:
+
+- It is a turn-taking threshold, and turn-taking is where this product is most easily made
+  worse. Set too low the agent talks over people; too high it feels dead. Neither failure
+  looks like a bad setting on a screen, both look like a bad agent on a call.
+- No organisation has asked. The only evidence for it is a mockup.
+- There is no way to judge a value without hearing it, and nothing in the console lets
+  somebody hear one. A knob you cannot evaluate is a knob that gets set once and blamed
+  later.
+
+Worth revisiting when a real call gives a reason. Recorded here so it is a decision rather
+than an omission.
+
 ### The call that is still owed
 
 `packages/db/seeds/dev-organization.mjs` had rotted — it wrote `organizations.dialled_number`,

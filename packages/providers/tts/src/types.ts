@@ -4,6 +4,14 @@ export interface SynthesisRequest {
   readonly text: string;
   readonly voiceId: string;
   /**
+   * How fast to read it, or undefined for the voice's own pace.
+   *
+   * On the request rather than on the provider, because it belongs to the agent that is
+   * speaking and one process serves many. Vendors that cannot vary pace ignore it, which is
+   * the same treatment the interface gives every other capability not all of them have.
+   */
+  readonly speakingRate?: number | undefined;
+  /**
    * Requested output format. A provider that cannot emit telephony audio natively
    * forces a transcoding hop, which R4.2.4 treats as a cost against it.
    */

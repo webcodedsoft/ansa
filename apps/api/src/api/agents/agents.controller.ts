@@ -30,6 +30,7 @@ import {
   integer,
   list,
   nullable,
+  number,
   object,
   optional,
   text,
@@ -133,6 +134,8 @@ const agent = object({
   /** House rules, layered onto the base prompt and never replacing it. */
   instructions: nullable(text({ maxLength: INSTRUCTIONS_LIMIT })),
   voiceId: nullable(text({ maxLength: VOICE_LIMIT })),
+  /** Null is the voice's own pace. 0.7 to 1.2, the range ElevenLabs renders cleanly. */
+  speakingRate: nullable(number({ minimum: 0.7, maximum: 1.2 })),
   /** The number that reaches this agent. Null while unrouted, which is a real state. */
   dialledNumber: nullable(phoneNumber()),
   /** Per agent. Two agents both on version 3 is ordinary and means nothing. */
@@ -191,6 +194,7 @@ const agentEdit = object({
   voiceId: optional(nullable(text({ maxLength: VOICE_LIMIT }))),
   dialledNumber: optional(nullable(phoneNumber())),
   bargeIn: optional(flag()),
+  speakingRate: optional(nullable(number({ minimum: 0.7, maximum: 1.2 }))),
   answeringMachineDetection: optional(flag()),
 });
 

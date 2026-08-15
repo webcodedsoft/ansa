@@ -48,6 +48,7 @@ export interface CallAgent {
   /** Base vocabulary merged with the organization's own (R4.1.3). */
   readonly keyterms: readonly string[];
   readonly voiceId: string | null;
+  readonly speakingRate: number | null;
   readonly greeting: string | null;
   readonly persona: string | null;
   readonly instructions: string | null;
@@ -131,6 +132,7 @@ export const UNKNOWN_AGENT: CallAgent = {
   name: "unknown",
   keyterms: BASE_KEYTERMS,
   voiceId: null,
+  speakingRate: null,
   greeting: null,
   persona: null,
   instructions: null,
@@ -285,6 +287,7 @@ const toCallAgent = async (
     name: config.name,
     keyterms: mergeKeyterms(config.keyterms, log, config.organizationId),
     voiceId: config.voiceId,
+    speakingRate: config.speakingRate,
     greeting: config.greeting,
     persona: config.persona,
     instructions: config.instructions,

@@ -89,6 +89,8 @@ export interface OrchestratorDeps {
   readonly llm: LlmProvider;
   readonly tts: TtsProvider;
   readonly voiceId: string;
+  /** Undefined leaves the voice at its own pace, which is the default for every agent. */
+  readonly speakingRate?: number | undefined;
   readonly log: Logger;
   readonly greeting: string;
   /**
@@ -901,6 +903,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     const synthesis = deps.tts.synthesize({
       text: spoken,
       voiceId: deps.voiceId,
+      speakingRate: deps.speakingRate,
       format: stream.format,
     });
     current.synthesis = synthesis;

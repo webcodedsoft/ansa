@@ -114,7 +114,16 @@ export const createElevenLabsTts = (options: ElevenLabsOptions): TtsProvider => 
               "Content-Type": "application/json",
               Accept: "audio/*",
             },
-            body: JSON.stringify({ text: request.text, model_id: modelId }),
+            body: JSON.stringify({
+              text: request.text,
+              model_id: modelId,
+              /* Omitted entirely when unset rather than sent as 1.0. The two are not the
+                 same to ElevenLabs: an explicit speed pins the voice to a rate, while its
+                 absence lets a voice cloned at its speaker's own pace keep it. */
+              ...(request.speakingRate === undefined
+                ? {}
+                : { voice_settings: { speed: request.speakingRate } }),
+            }),
           });
 
           if (!response.ok) {

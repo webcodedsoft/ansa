@@ -89,6 +89,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly greeting: string | null;
         readonly instructions: string | null;
         readonly voiceId: string | null;
+        readonly speakingRate: number | null;
         readonly dialledNumber: string | null;
         readonly configVersion: number;
         readonly enabledTools: readonly (string)[];
@@ -132,6 +133,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly greeting: string | null;
         readonly instructions: string | null;
         readonly voiceId: string | null;
+        readonly speakingRate: number | null;
         readonly dialledNumber: string | null;
         readonly configVersion: number;
         readonly enabledTools: readonly (string)[];
@@ -168,6 +170,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly greeting: string | null;
         readonly instructions: string | null;
         readonly voiceId: string | null;
+        readonly speakingRate: number | null;
         readonly dialledNumber: string | null;
         readonly configVersion: number;
         readonly enabledTools: readonly (string)[];
@@ -205,6 +208,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
           readonly voiceId?: string | null;
           readonly dialledNumber?: string | null;
           readonly bargeIn?: boolean;
+          readonly speakingRate?: number | null;
           readonly answeringMachineDetection?: boolean;
         };
       }) =>
@@ -215,6 +219,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly greeting: string | null;
         readonly instructions: string | null;
         readonly voiceId: string | null;
+        readonly speakingRate: number | null;
         readonly dialledNumber: string | null;
         readonly configVersion: number;
         readonly enabledTools: readonly (string)[];
@@ -276,6 +281,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly greeting: string | null;
         readonly instructions: string | null;
         readonly voiceId: string | null;
+        readonly speakingRate: number | null;
         readonly dialledNumber: string | null;
         readonly configVersion: number;
         readonly enabledTools: readonly (string)[];
@@ -316,6 +322,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly greeting: string | null;
         readonly instructions: string | null;
         readonly voiceId: string | null;
+        readonly speakingRate: number | null;
         readonly dialledNumber: string | null;
         readonly configVersion: number;
         readonly enabledTools: readonly (string)[];
@@ -356,6 +363,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly greeting: string | null;
         readonly instructions: string | null;
         readonly voiceId: string | null;
+        readonly speakingRate: number | null;
         readonly dialledNumber: string | null;
         readonly configVersion: number;
         readonly enabledTools: readonly (string)[];

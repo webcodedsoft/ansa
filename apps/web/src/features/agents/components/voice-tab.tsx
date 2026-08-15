@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 
 import { Pause, Play, Search } from "lucide-react";
 
-import { Card, CONTROL, Notice, Stack, Tag, Td, TextField, type Tone } from "@/components/ui";
+import { Button, Card, CONTROL, Notice, Stack, Tag, Td, TextField, type Tone } from "@/components/ui";
+import { idleForm } from "@/lib/form-state";
+import { useFormToast } from "@/stores/toast.store";
 import { cn } from "@/lib/cn";
 
-import { loadVoiceCatalogue } from "../agents.actions";
-import type { LiveConfiguration, VoiceChoice } from "../agents.service";
+import { loadVoiceCatalogue, saveSpeakingRateAction, type SpeakingRateState } from "../agents.actions";
+import type { AgentSummary, LiveConfiguration, VoiceChoice } from "../agents.service";
 
 /**
  * How the agent sounds, and what it does with what it hears.
@@ -33,6 +35,7 @@ import type { LiveConfiguration, VoiceChoice } from "../agents.service";
 
 interface VoiceTabProps {
   readonly config: LiveConfiguration["config"];
+  readonly agent: AgentSummary;
   readonly errors: Readonly<Record<string, string>>;
 }
 
@@ -292,7 +295,7 @@ const Picker = ({
   );
 };
 
-export const VoiceTab = ({ config, errors }: VoiceTabProps) => {
+export const VoiceTab = ({ config, agent, errors }: VoiceTabProps) => {
   const [catalogue, setCatalogue] = useState<Catalogue>({ status: "loading" });
   const [voiceId, setVoiceId] = useState(config.voiceId ?? "");
 
@@ -320,6 +323,8 @@ export const VoiceTab = ({ config, errors }: VoiceTabProps) => {
 
   return (
     <Stack>
+      <SpeakingRate agent={agent} />
+
       <Card
         title="Voice"
         description="Which of the speech account's voices answers the phone."
@@ -440,25 +445,57 @@ export const VoiceTab = ({ config, errors }: VoiceTabProps) => {
                 </Td>
               </tr>
             ))}
-            {/* Not a listening setting, but the same answer and the same reason for being
-                written down: the prototype drew a slider, no column stores a rate, and a
-                slider over nothing is worse than a sentence. */}
-            <tr>
-              <Td className="border-b-0 align-top whitespace-nowrap text-[var(--ink-3)]">
-                Speaking rate
-              </Td>
-              <Td className="border-b-0 align-top">
-                <span className="font-mono text-[12.5px]">not stored</span>
-                <span className="mt-0.5 block max-w-[62ch] text-[12.5px] text-[var(--ink-3)]">
-                  Nothing in the agent row or the published configuration carries a rate, so
-                  each voice speaks at its own. Adding one is a migration and a change to the
-                  synthesis request, not a control on this page.
-                </span>
-              </Td>
-            </tr>
+
           </tbody>
         </table>
       </Card>
     </Stack>
+  );
+};
+
+/**
+ * How fast this agent reads.
+ *
+ * Saved on the agent by `PATCH`, not published — the same path `bargeIn` takes, and for the
+ * same reason: which voice answers is part of the configuration a version captures, while
+ * the pace it reads at is a dial somebody turns while listening to a call. It takes effect
+ * on the next call either way.
+ *
+ * Blank is the default and is not 1.0. Sending nothing lets a voice cloned at its speaker's
+ * own pace keep it; pinning it to 1.0 flattens that, and on an 8 kHz line the difference is
+ * audible.
+ */
+const SpeakingRate = ({ agent }: { readonly agent: AgentSummary }) => {
+  const [state, action, pending] = useActionState(
+    saveSpeakingRateAction,
+    idleForm() as SpeakingRateState,
+  );
+  useFormToast(state, () => "Saved.");
+
+  return (
+    <Card title="Speaking rate" description="Slower is easier to follow on a poor line; too slow sounds broken.">
+      <form action={action}>
+        <input type="hidden" name="agentId" value={agent.agentId} />
+        <Stack>
+          <div className="max-w-[220px]">
+            <TextField
+              label="Rate"
+              name="speakingRate"
+              defaultValue={agent.speakingRate === null ? "" : String(agent.speakingRate)}
+              placeholder="1.0"
+              hint="0.7 to 1.2. Blank leaves the voice at its own pace."
+            />
+          </div>
+          {(state.status === "failed" || state.status === "invalid") && (
+            <Notice tone="error">{state.message}</Notice>
+          )}
+          <div>
+            <Button type="submit" disabled={pending}>
+              {pending ? "Saving…" : "Save rate"}
+            </Button>
+          </div>
+        </Stack>
+      </form>
+    </Card>
   );
 };

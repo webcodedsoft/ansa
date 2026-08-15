@@ -77,6 +77,8 @@ export interface AgentSummary {
    */
   readonly instructions: string | null;
   readonly voiceId: string | null;
+  /** Null is the voice's own pace, which is what almost every agent should use. */
+  readonly speakingRate: number | null;
   readonly dialledNumber: string | null;
   readonly configVersion: number;
   readonly enabledTools: readonly string[];
@@ -106,6 +108,7 @@ interface AgentRow {
   greeting: string | null;
   instructions: string | null;
   voice_id: string | null;
+  speaking_rate: number | null;
   dialled_number: string | null;
   config_version: number;
   enabled_tools: string[] | null;
@@ -129,6 +132,7 @@ const toSummary = (row: AgentRow): AgentSummary => ({
   greeting: row.greeting,
   instructions: row.instructions,
   voiceId: row.voice_id,
+  speakingRate: row.speaking_rate,
   dialledNumber: row.dialled_number,
   configVersion: row.config_version,
   enabledTools: row.enabled_tools ?? [],
@@ -142,6 +146,7 @@ const toSummary = (row: AgentRow): AgentSummary => ({
 
 const COLUMNS = `
   a.id, a.organization_id, a.name, a.persona, a.greeting, a.instructions, a.voice_id,
+  a.speaking_rate,
   a.dialled_number,
   a.config_version, a.barge_in, a.answering_machine_detection, a.captured_fields,
   a.deleted_at, a.created_at,
@@ -190,6 +195,7 @@ export interface NewAgent {
   readonly greeting?: string | null;
   readonly instructions?: string | null;
   readonly voiceId?: string | null;
+  readonly speakingRate?: number | null;
   /** Optional. An agent can be written and reviewed before it is given a line. */
   readonly dialledNumber?: string | null;
 }
@@ -237,6 +243,7 @@ export interface AgentEdit {
   readonly greeting?: string | null;
   readonly instructions?: string | null;
   readonly voiceId?: string | null;
+  readonly speakingRate?: number | null;
   /** Null unroutes the agent, a number moves it, omitted leaves it alone. */
   readonly dialledNumber?: string | null;
   readonly bargeIn?: boolean;
@@ -269,6 +276,7 @@ export const updateAgent = async (
   if (edit.greeting !== undefined) set("greeting", edit.greeting);
   if (edit.instructions !== undefined) set("instructions", edit.instructions);
   if (edit.voiceId !== undefined) set("voice_id", edit.voiceId);
+  if (edit.speakingRate !== undefined) set("speaking_rate", edit.speakingRate);
   if (edit.dialledNumber !== undefined) set("dialled_number", edit.dialledNumber);
   if (edit.bargeIn !== undefined) set("barge_in", edit.bargeIn);
   if (edit.answeringMachineDetection !== undefined) {

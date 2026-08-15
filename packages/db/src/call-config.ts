@@ -32,6 +32,7 @@ export interface AgentConfig {
   /** Vocabulary the transcriber should expect: products, staff names, places (R4.1.3). */
   readonly keyterms: readonly string[];
   readonly voiceId: string | null;
+  readonly speakingRate: number | null;
   readonly greeting: string | null;
   readonly persona: string | null;
   /**
@@ -125,6 +126,7 @@ interface ConfigRow {
   name: string;
   keyterms: string[] | null;
   voice_id: string | null;
+  speaking_rate: number | null;
   greeting: string | null;
   persona: string | null;
   instructions: string | null;
@@ -203,6 +205,7 @@ const toConfig = (row: ConfigRow): AgentConfig => ({
   name: row.name,
   keyterms: row.keyterms ?? [],
   voiceId: row.voice_id,
+  speakingRate: row.speaking_rate ?? null,
   greeting: row.greeting,
   persona: row.persona,
   instructions: row.instructions ?? null,
