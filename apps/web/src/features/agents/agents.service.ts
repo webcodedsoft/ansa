@@ -111,6 +111,21 @@ export type ToolsDocument = Awaited<ReturnType<typeof readTools>>;
  * Server-side, like everything else here: the API enables no CORS, and the credential is
  * resolved inside the API from the vault — the browser never holds one.
  */
+export const readKnowledge = async () => (await api()).knowledge.list();
+export type KnowledgeDocument = Awaited<ReturnType<typeof readKnowledge>>;
+
+export const createKnowledgeSource = async (body: {
+  name: string;
+  kind: "faq" | "table" | "document";
+  units: readonly { question: string | null; body: string }[];
+}) => (await api()).knowledge.create({ body: body as never });
+
+export const removeKnowledgeSource = async (sourceId: string) =>
+  (await api()).knowledge.remove({ path: { sourceId } });
+
+export const setAgentKnowledge = async (agentId: string, sources: readonly string[]) =>
+  (await api()).agents.setKnowledge({ path: { agentId }, body: { sources: [...sources] } });
+
 /** Run a tool that has not been saved, through the real dispatch path. */
 export const tryTool = async (input: {
   tool: Record<string, unknown>;

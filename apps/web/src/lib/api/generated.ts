@@ -92,6 +92,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly dialledNumber: string | null;
         readonly configVersion: number;
         readonly enabledTools: readonly (string)[];
+        readonly knowledgeSources: readonly (string)[];
         readonly bargeIn: boolean;
         readonly answeringMachineDetection: boolean;
         readonly capturedFields: readonly ({
@@ -134,6 +135,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly dialledNumber: string | null;
         readonly configVersion: number;
         readonly enabledTools: readonly (string)[];
+        readonly knowledgeSources: readonly (string)[];
         readonly bargeIn: boolean;
         readonly answeringMachineDetection: boolean;
         readonly capturedFields: readonly ({
@@ -169,6 +171,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly dialledNumber: string | null;
         readonly configVersion: number;
         readonly enabledTools: readonly (string)[];
+        readonly knowledgeSources: readonly (string)[];
         readonly bargeIn: boolean;
         readonly answeringMachineDetection: boolean;
         readonly capturedFields: readonly ({
@@ -215,6 +218,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly dialledNumber: string | null;
         readonly configVersion: number;
         readonly enabledTools: readonly (string)[];
+        readonly knowledgeSources: readonly (string)[];
         readonly bargeIn: boolean;
         readonly answeringMachineDetection: boolean;
         readonly capturedFields: readonly ({
@@ -275,6 +279,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly dialledNumber: string | null;
         readonly configVersion: number;
         readonly enabledTools: readonly (string)[];
+        readonly knowledgeSources: readonly (string)[];
         readonly bargeIn: boolean;
         readonly answeringMachineDetection: boolean;
         readonly capturedFields: readonly ({
@@ -291,6 +296,46 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly deletedAt: string | null;
         readonly createdAt: string;
       }>(options, "PUT", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}/fields`, input),
+
+    /**
+     * Replace which of the organisation's sources this agent may answer from
+     * Sources belong to the organisation; this is one agent's slice, exactly as tools are. An empty list means the agent has no knowledge base at all — `search_knowledge_base` is then not registered and the model is never told it can look anything up, rather than being offered a search that can only come back empty.
+     */
+    setKnowledge: (input: {
+        readonly path: {
+          readonly agentId: string;
+        };
+        readonly body: {
+          readonly sources: readonly (string)[];
+        };
+      }) =>
+      send<{
+        readonly agentId: string;
+        readonly name: string;
+        readonly persona: string | null;
+        readonly greeting: string | null;
+        readonly instructions: string | null;
+        readonly voiceId: string | null;
+        readonly dialledNumber: string | null;
+        readonly configVersion: number;
+        readonly enabledTools: readonly (string)[];
+        readonly knowledgeSources: readonly (string)[];
+        readonly bargeIn: boolean;
+        readonly answeringMachineDetection: boolean;
+        readonly capturedFields: readonly ({
+        readonly key: string;
+        readonly type: "name" | "reference" | "phone" | "email" | "address" | "date" | "time" | "amount" | "nin" | "bvn" | "otp" | "quantity" | "choice" | "text";
+        readonly prompt: string;
+        readonly capture: "speech" | "keypad" | "either";
+        readonly confirm: "none" | "readback" | "spellback";
+        readonly pattern: string;
+        readonly attempts: number;
+        readonly required: boolean;
+        readonly options: readonly (string)[];
+      })[];
+        readonly deletedAt: string | null;
+        readonly createdAt: string;
+      }>(options, "PUT", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}/knowledge`, input),
 
     /**
      * Replace which shared tools this agent may call
@@ -314,6 +359,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly dialledNumber: string | null;
         readonly configVersion: number;
         readonly enabledTools: readonly (string)[];
+        readonly knowledgeSources: readonly (string)[];
         readonly bargeIn: boolean;
         readonly answeringMachineDetection: boolean;
         readonly capturedFields: readonly ({
@@ -1092,6 +1138,112 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly role: "owner" | "admin" | "member";
         readonly createdUser: boolean;
       }>(options, "POST", `/api/v1/invitations/accept`, input),
+  },
+
+  knowledge: {
+    /**
+     * What this organisation's agents can answer from
+     * Every source the organisation holds, with how many pieces each carries and how often anything in it was retrieved on a call in the last seven days. Retired sources are absent: unlike an agent, a source that is gone has nothing pointing back at it that still needs its name.
+     */
+    list: () =>
+      send<{
+        readonly items: readonly ({
+        readonly sourceId: string;
+        readonly name: string;
+        readonly kind: "faq" | "table" | "document";
+        readonly unitCount: number;
+        readonly retrievalsLast7Days: number;
+        readonly createdAt: string;
+        readonly updatedAt: string;
+      })[];
+      }>(options, "GET", `/api/v1/knowledge`, {}),
+
+    /**
+     * Store something the agent may answer from
+     * Units are sent whole and are exactly what retrieval will return, so they are also what a caller will hear. Creating a source does not give it to any agent — that is `PUT /agents/{agentId}/knowledge`, so writing a FAQ cannot accidentally change what a live line says.
+     */
+    create: (input: {
+        readonly body: {
+          readonly name: string;
+          readonly kind: "faq" | "table" | "document";
+          readonly units: readonly ({
+          readonly question?: string | null;
+          readonly body: string;
+        })[];
+        };
+      }) =>
+      send<{
+        readonly sourceId: string;
+        readonly name: string;
+        readonly kind: "faq" | "table" | "document";
+        readonly unitCount: number;
+        readonly retrievalsLast7Days: number;
+        readonly createdAt: string;
+        readonly updatedAt: string;
+      }>(options, "POST", `/api/v1/knowledge`, input),
+
+    /**
+     * One source, with the pieces retrieval can return
+     */
+    read: (input: {
+        readonly path: {
+          readonly sourceId: string;
+        };
+      }) =>
+      send<{
+        readonly source: {
+        readonly sourceId: string;
+        readonly name: string;
+        readonly kind: "faq" | "table" | "document";
+        readonly unitCount: number;
+        readonly retrievalsLast7Days: number;
+        readonly createdAt: string;
+        readonly updatedAt: string;
+      };
+        readonly units: readonly ({
+        readonly unitId: string;
+        readonly question: string | null;
+        readonly body: string;
+      })[];
+      }>(options, "GET", `/api/v1/knowledge/${encodeURIComponent(input.path.sourceId)}`, input),
+
+    /**
+     * Retire a source
+     * A soft delete. Retrieval stops immediately for every agent using it, and the retrieval history it accumulated stays readable — a call that quoted this source last week still has something to point at.
+     */
+    remove: (input: {
+        readonly path: {
+          readonly sourceId: string;
+        };
+      }) =>
+      send<{
+        readonly deleted: boolean;
+      }>(options, "DELETE", `/api/v1/knowledge/${encodeURIComponent(input.path.sourceId)}`, input),
+
+    /**
+     * Replace what a source holds
+     * Whole, not patched: the order of the units is their position, and a patch protocol over an ordered list is a reorder API nobody asked for. Every agent using this source sees the change on its next call — that is the point of a shared source, and the reason to know which agents use one before rewriting it.
+     */
+    replaceUnits: (input: {
+        readonly path: {
+          readonly sourceId: string;
+        };
+        readonly body: {
+          readonly units: readonly ({
+          readonly question?: string | null;
+          readonly body: string;
+        })[];
+        };
+      }) =>
+      send<{
+        readonly sourceId: string;
+        readonly name: string;
+        readonly kind: "faq" | "table" | "document";
+        readonly unitCount: number;
+        readonly retrievalsLast7Days: number;
+        readonly createdAt: string;
+        readonly updatedAt: string;
+      }>(options, "PUT", `/api/v1/knowledge/${encodeURIComponent(input.path.sourceId)}/units`, input),
   },
 
   members: {

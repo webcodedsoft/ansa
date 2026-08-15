@@ -80,6 +80,8 @@ export interface AgentSummary {
   readonly dialledNumber: string | null;
   readonly configVersion: number;
   readonly enabledTools: readonly string[];
+  /** Which of the organisation's knowledge sources this agent may answer from. */
+  readonly knowledgeSources: readonly string[];
   /** The caller may interrupt. See migration 0020 for why this one is settable. */
   readonly bargeIn: boolean;
   /** Outbound calls that reach voicemail hang up instead of talking to a greeting. */
@@ -107,6 +109,7 @@ interface AgentRow {
   dialled_number: string | null;
   config_version: number;
   enabled_tools: string[] | null;
+  knowledge_sources: string[] | null;
   barge_in: boolean;
   answering_machine_detection: boolean;
   captured_fields: unknown[] | null;
@@ -129,6 +132,7 @@ const toSummary = (row: AgentRow): AgentSummary => ({
   dialledNumber: row.dialled_number,
   configVersion: row.config_version,
   enabledTools: row.enabled_tools ?? [],
+  knowledgeSources: row.knowledge_sources ?? [],
   bargeIn: row.barge_in,
   answeringMachineDetection: row.answering_machine_detection,
   capturedFields: row.captured_fields ?? [],
@@ -142,7 +146,14 @@ const COLUMNS = `
   a.config_version, a.barge_in, a.answering_machine_detection, a.captured_fields,
   a.deleted_at, a.created_at,
   (select coalesce(array_agg(t.tool_name order by t.tool_name), '{}')
-     from agent_tools t where t.agent_id = a.id) as enabled_tools
+     from agent_tools t where t.agent_id = a.id) as enabled_tools,
+  /* Live sources only. A retired one stays joined so the retrieval history it earned still
+     resolves, but offering it back on the selection screen would invite somebody to tick a
+     source that can never be searched. */
+  (select coalesce(array_agg(k.source_id::text order by k.source_id), '{}')
+     from agent_knowledge_sources k
+     join knowledge_sources s on s.id = k.source_id
+    where k.agent_id = a.id and s.deleted_at is null) as knowledge_sources
 `;
 
 /**

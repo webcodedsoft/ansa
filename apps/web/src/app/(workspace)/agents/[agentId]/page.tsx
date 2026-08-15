@@ -5,6 +5,7 @@ import {
   findAgent,
   listVersions,
   readinessReport,
+  readKnowledge,
   readTools,
 } from "@/features/agents/agents.service";
 import { AgentWorkspace } from "@/features/agents/components/agent-workspace";
@@ -104,9 +105,10 @@ const AgentWorkspacePage = async ({
   const since = new Date(now - WINDOW_DAYS * DAY_MS).toISOString();
   const previousStart = new Date(now - 2 * WINDOW_DAYS * DAY_MS).toISOString();
 
-  const [liveConfiguration, tools, readiness, versionPage] = await Promise.all([
+  const [liveConfiguration, tools, knowledge, readiness, versionPage] = await Promise.all([
     currentConfiguration(),
     readTools(),
+    readKnowledge(),
     readinessReport(),
     listVersions(),
   ]);
@@ -201,6 +203,7 @@ const AgentWorkspacePage = async ({
       agent={agent}
       liveConfiguration={liveConfiguration}
       tools={tools}
+      knowledge={knowledge}
       versions={versionPage.items}
       stats={stats}
       attention={attention}

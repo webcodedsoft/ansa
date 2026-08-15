@@ -9,6 +9,7 @@ import { failedForm, invalidForm, succeededForm, type FormState } from "@/lib/fo
 import {
   httpToolBodySchema,
 } from "./http-tool.schema";
+import { knowledgeFormSchema } from "./knowledge.schema";
 import {
   capturedFieldsSchema,
   publishFormInput,
@@ -22,6 +23,9 @@ import {
   diffVersions,
   listVoices,
   readTools,
+  createKnowledgeSource,
+  removeKnowledgeSource,
+  setAgentKnowledge,
   sampleEndpoint,
   tryTool,
   placeTestCall,
@@ -575,6 +579,94 @@ export const tryToolAction = async (
         latencyMs: result.latencyMs,
       },
       `Ran ${String(tool["name"])}.`,
+    );
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+};
+
+
+export type KnowledgeState = FormState<{ readonly sourceId: string }>;
+
+/**
+ * Store a source, already split into the pieces retrieval will return.
+ *
+ * The units arrive parsed because the operator has just seen them in a preview — what was
+ * on screen is what is saved, rather than something a server-side splitter produced from
+ * the same paste and might have split differently.
+ *
+ * Creating a source deliberately does not give it to any agent. Writing a FAQ should not
+ * change what a live line says; that takes a second, explicit action.
+ */
+export const saveKnowledgeSourceAction = async (
+  _previous: KnowledgeState,
+  form: FormData,
+): Promise<KnowledgeState> => {
+  const parsed = knowledgeFormSchema.safeParse({
+    name: form.get("name") ?? "",
+    kind: form.get("kind") ?? "faq",
+    unitsJson: form.get("unitsJson") ?? "[]",
+  });
+  if (!parsed.success) return invalidForm(parsed.error);
+
+  let units: { question: string | null; body: string }[];
+  try {
+    units = JSON.parse(parsed.data.unitsJson) as { question: string | null; body: string }[];
+  } catch {
+    return failedForm("The form could not be read. Reload the page and try again.");
+  }
+  if (units.length === 0) return failedForm("There is nothing to store.");
+
+  try {
+    const created = await createKnowledgeSource({
+      name: parsed.data.name,
+      kind: parsed.data.kind,
+      units,
+    });
+    revalidatePath("/agents", "layout");
+    return succeededForm(
+      { sourceId: created.sourceId },
+      `Stored ${created.name} — ${created.unitCount} piece${created.unitCount === 1 ? "" : "s"}.`,
+    );
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+};
+
+/** Retire a source. Retrieval stops for every agent using it, on the next call. */
+export const removeKnowledgeSourceAction = async (
+  _previous: KnowledgeState,
+  form: FormData,
+): Promise<KnowledgeState> => {
+  const sourceId = String(form.get("sourceId") ?? "");
+  if (sourceId === "") return failedForm("The form could not be read.");
+
+  try {
+    await removeKnowledgeSource(sourceId);
+    revalidatePath("/agents", "layout");
+    return succeededForm({ sourceId }, "Source retired.");
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+};
+
+/** Which of the organisation's sources this agent may answer from. */
+export const saveAgentKnowledgeAction = async (
+  _previous: KnowledgeState,
+  form: FormData,
+): Promise<KnowledgeState> => {
+  const agentId = String(form.get("agentId") ?? "");
+  const sources = form.getAll("sources").map(String);
+  if (agentId === "") return failedForm("The form could not be read.");
+
+  try {
+    await setAgentKnowledge(agentId, sources);
+    revalidatePath("/agents", "layout");
+    return succeededForm(
+      { sourceId: agentId },
+      sources.length === 0
+        ? "This agent now answers from nothing — it will say it does not know."
+        : `This agent answers from ${sources.length} source${sources.length === 1 ? "" : "s"}.`,
     );
   } catch (error) {
     return failedForm(failureMessage(error));

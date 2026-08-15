@@ -2221,10 +2221,39 @@ registry pattern: one registry per organisation, per-agent enablement through a 
 so a second agent reuses what the first already ingested rather than uploading it again.
 `agent_tools` is the model to copy.
 
-Still unbuilt, and it is a slice rather than a screen: storage, ingestion, retrieval through
-`search_knowledge_base` in the one dispatch path, grounded-only answering, and the screen.
-The tab holds an empty state until then, which is honest — a list of sources the agent
-cannot use would be furniture.
+**Built 2026-08-15/16.** Storage (migration 0034), retrieval through `search_knowledge_base`
+in the one dispatch path, grounded-only answering, ingestion endpoints and the tab.
+
+- [x] Four tables, RLS forced, append-only enforced as a *grant* on `knowledge_retrievals`
+      rather than a convention. `agent_knowledge_sources` is `agent_tools`' shape exactly.
+- [x] `GET|POST /knowledge`, `GET|PUT /knowledge/{id}[/units]`, `DELETE /knowledge/{id}`, and
+      `PUT /agents/{agentId}/knowledge` beside the tool selection it mirrors.
+- [x] **Splitting happens in the browser, in front of a preview.** A unit is what retrieval
+      returns and therefore what a caller hears, so a bad split is somebody being read half a
+      sentence — and the only cheap moment to notice is before it is saved. A parser behind
+      an upload would make the first sighting a phone call. The API takes units already split
+      for the same reason.
+- [x] Three shapes, each with a real decision in it. A table row carries its column names
+      into the body, because retrieval is full-text and a caller asks "when does Ikeja
+      close", not for a cell reference. A document heading becomes the question and the
+      passage the body, because "Cancellations" alone answers nothing and the passage without
+      it loses the word the caller will say. A lone FAQ line is kept rather than dropped —
+      it is still something somebody wrote down.
+- [x] Creating a source does not give it to an agent. Writing a FAQ must not change what a
+      live line says.
+- [x] `apps/web` has a test runner for the first time, and eleven tests on the splitters.
+      There were none, which was defensible for pages that compose server components and not
+      for pure logic that decides what a caller is read.
+
+**Still open.**
+
+- [ ] No editing of an existing source's units in the console — `PUT /knowledge/{id}/units`
+      exists and nothing calls it. Retire and re-add is the only path.
+- [ ] Retrieval has never run on a real call. Keyword search over English `tsvector` is
+      untested against Nigerian phrasing and Pidgin, which is the whole question the
+      no-embeddings decision was deferring.
+- [ ] `searchKnowledge` takes no `AbortSignal`, so the dispatcher's three-second ceiling
+      releases the caller but not the Postgres query.
 
 ### The call that is still owed
 

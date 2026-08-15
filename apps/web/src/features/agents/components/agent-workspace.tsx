@@ -4,7 +4,7 @@ import { useActionState } from "react";
 
 import Link from "next/link";
 
-import { Blip, EmptyState, Notice, Panel, SubmitButton, Tabs, Tag } from "@/components/ui";
+import { Blip, Notice, SubmitButton, Tabs, Tag } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 import { dayLabel, when } from "@/lib/format";
 import { useFormToast } from "@/stores/toast.store";
@@ -12,12 +12,13 @@ import { useFormToast } from "@/stores/toast.store";
 import type { CallSummary } from "@/features/calls/calls.service";
 
 import { publish, type PublishState } from "../agents.actions";
-import type { AgentSummary, LiveConfiguration, readTools } from "../agents.service";
+import type { AgentSummary, KnowledgeDocument, LiveConfiguration, readTools } from "../agents.service";
 import { ConversationTab } from "./conversation-tab";
 import { DataCapturedTab } from "./data-captured-tab";
 import { FlowCanvas } from "./flow-canvas";
 import { OverviewTab, type AgentStats, type AttentionItem } from "./overview-tab";
 import { RoutingTab } from "./routing-tab";
+import { KnowledgeTab } from "./knowledge-tab";
 import { ToolsTab } from "./tools-tab";
 import { VersionsTab, type VersionRow } from "./versions-tab";
 import { VoiceTab } from "./voice-tab";
@@ -32,6 +33,7 @@ interface AgentWorkspaceProps {
   readonly agent: AgentSummary;
   readonly liveConfiguration: LiveConfiguration;
   readonly tools: Awaited<ReturnType<typeof readTools>>;
+  readonly knowledge: KnowledgeDocument;
   readonly versions: readonly VersionRow[];
   readonly stats: AgentStats;
   readonly attention: readonly AttentionItem[];
@@ -55,6 +57,7 @@ export const AgentWorkspace = ({
   agent,
   liveConfiguration,
   tools,
+  knowledge,
   versions,
   stats,
   attention,
@@ -182,16 +185,7 @@ export const AgentWorkspace = ({
             {
               id: "knowledge",
               label: "Knowledge",
-              panel: (
-                <Panel>
-                  <EmptyState title="No knowledge base yet">
-                    Documents the agent can quote from — policy wordings, price lists, FAQs
-                    — with the retrieval that decides which passage answers a question. The
-                    API has no store for them yet, so this tab holds nothing rather than a
-                    demonstration of something that would not survive a call.
-                  </EmptyState>
-                </Panel>
-              ),
+              panel: <KnowledgeTab agent={agent} knowledge={knowledge} />,
             },
             { id: "voice", label: "Voice", panel: <VoiceTab config={config} errors={errors} /> },
             { id: "routing", label: "Routing & hours", panel: <RoutingTab config={config} operatorManaged={operatorManaged} errors={errors} /> },

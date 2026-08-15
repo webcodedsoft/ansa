@@ -14,6 +14,7 @@ import { EndpointInterceptor } from "./http/endpoint.interceptor";
 import { ProblemFilter } from "./http/problem";
 import { RateLimitGuard } from "./http/rate-limit.guard";
 import { RequestIdMiddleware } from "./http/request-id.middleware";
+import { KnowledgeController } from "./knowledge/knowledge.controller";
 import { InvitationsController } from "./invitations/invitations.controller";
 import { MembersController } from "./members/members.controller";
 import { NumbersController } from "./numbers/numbers.controller";
@@ -45,6 +46,7 @@ export const API_CONTROLLERS = [
   CredentialsController,
   EventSubscriptionsController,
   InvitationsController,
+  KnowledgeController,
   MembersController,
   NumbersController,
   OrganizationController,

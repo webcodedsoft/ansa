@@ -5,6 +5,7 @@ import {
   findAgent,
   listAgents,
   NumberNotRoutable,
+  setAgentKnowledgeSources,
   setAgentTools,
   updateAgent,
 } from "@ansa/db";
@@ -141,6 +142,8 @@ const agent = object({
    * never all of them.
    */
   enabledTools: list(text({ maxLength: TOOL_NAME_LIMIT })),
+  /** Ids of the organisation's knowledge sources this agent answers from. */
+  knowledgeSources: list(text({ maxLength: 64 }), { maxItems: 200 }),
   /**
    * The caller may cut the agent off mid-sentence. On unless somebody turns it off.
    *
@@ -189,6 +192,11 @@ const agentEdit = object({
   dialledNumber: optional(nullable(phoneNumber())),
   bargeIn: optional(flag()),
   answeringMachineDetection: optional(flag()),
+});
+
+const knowledgeSelection = object({
+  /** Source ids from the organisation's own list. One this organisation does not hold is ignored. */
+  sources: list(uuid(), { maxItems: 200 }),
 });
 
 const toolSelection = object({
@@ -326,6 +334,31 @@ export class AgentsController {
       // Read back inside the same transaction rather than assembling a response from the
       // request: what the caller renders is then what the database holds, deduplication
       // and ordering included.
+      return findAgent(scope, path.agentId);
+    });
+    if (saved === null) throw new NotFoundException();
+    return toResponse(saved);
+  }
+
+  @Put(":agentId/knowledge")
+  @Endpoint({
+    summary: "Replace which of the organisation's sources this agent may answer from",
+    description:
+      "Sources belong to the organisation; this is one agent's slice, exactly as tools are. An empty list means the agent has no knowledge base at all — `search_knowledge_base` is then not registered and the model is never told it can look anything up, rather than being offered a search that can only come back empty.",
+    capability: "config:write",
+    params: agentPath,
+    body: knowledgeSelection,
+    response: agent,
+  })
+  async setKnowledge(
+    @FromPath() path: Infer<typeof agentPath>,
+    @FromBody() body: Infer<typeof knowledgeSelection>,
+  ): Promise<Infer<typeof agent>> {
+    const saved = await this.db.tx(async (scope) => {
+      const applied = await setAgentKnowledgeSources(scope, path.agentId, body.sources);
+      if (applied === null) return null;
+      // Read back inside the same transaction, so what the caller renders is what the
+      // database holds rather than what the request hoped for.
       return findAgent(scope, path.agentId);
     });
     if (saved === null) throw new NotFoundException();
