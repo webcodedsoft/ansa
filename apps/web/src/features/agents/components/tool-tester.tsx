@@ -17,23 +17,32 @@ const OUTCOME_TONE: Record<ToolTestResult["outcome"], Tone> = {
 };
 
 /**
- * Run a registered tool through the real dispatch path with test arguments.
+ * Run a registered MCP tool through the real dispatch path with test arguments.
  *
  * `POST /tools/{name}/test` applies the same risk tier a call would: a `write` tool answers
  * `confirm` and does not fire, an `irreversible` one answers `transfer` and never runs. This
  * is where a speech template that silently renders its fallback becomes visible, which is
  * why the raw response and the normalized speech are both shown rather than just "success".
+ *
+ * **HTTP tools are not listed here.** They are tested from their own form, on the last step,
+ * against the draft on screen — no save needed, and the raw response sits beside the spoken
+ * sentence while you are still writing it. Two testers doing the same job would only raise
+ * the question of which one was telling the truth. What is left is the case that form
+ * cannot reach: MCP has no editor, so this is the only way to run one.
  */
 export const ToolTester = ({ names }: { readonly names: readonly string[] }) => {
   const [state, action, pending] = useActionState(testToolAction, START);
 
   return (
-    <Card title="Test a tool" description="Runs through the same dispatch path a call uses. Risk tiers apply.">
+    <Card
+      title="Test an MCP tool"
+      description="Runs through the same dispatch path a call uses. Risk tiers apply. HTTP tools are tested from their own form."
+    >
       <form action={action}>
         <Stack>
           <SelectField label="Tool" name="name" error={state.fieldErrors["name"]} disabled={names.length === 0}>
             {names.length === 0 ? (
-              <option value="">No tools registered</option>
+              <option value="">No MCP tools registered</option>
             ) : (
               names.map((name) => (
                 <option key={name} value={name}>

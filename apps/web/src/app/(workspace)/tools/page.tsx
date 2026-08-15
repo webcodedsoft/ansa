@@ -18,7 +18,11 @@ const ToolsPage = async () => {
   /* The credential *names* only. No value, ciphertext or mask ever leaves the API, so this
      is a list to pick from and nothing more. */
   const [document, credentials] = await Promise.all([readTools(), listCredentials()]);
-  const names = [...document.http.map((t) => t.name), ...document.mcp.flatMap((s) => s.tools.map((t) => t.name))];
+  /* MCP only. An HTTP tool is tested from its own form, on step five, against the draft on
+     screen — which is strictly better: it needs no save, shows the raw response beside the
+     spoken sentence, and is where somebody already is when they want to try something.
+     MCP tools have no editor, so this stays as the only way to run one. */
+  const mcpNames = document.mcp.flatMap((server) => server.tools.map((tool) => tool.name));
 
   return (
     <>
@@ -33,9 +37,11 @@ const ToolsPage = async () => {
         credentials={credentials.items.map((entry) => entry.ref)}
       />
 
-      <div className="mt-3.5">
-        <ToolTester names={names} />
-      </div>
+      {mcpNames.length > 0 && (
+        <div className="mt-3.5">
+          <ToolTester names={mcpNames} />
+        </div>
+      )}
     </>
   );
 };
