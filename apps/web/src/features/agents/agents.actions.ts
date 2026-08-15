@@ -15,7 +15,6 @@ import {
   publishSchema,
   testCallSchema,
   testToolSchema,
-  toolsFormSchema,
   type CapturedField,
 } from "./agents.schema";
 import {
@@ -108,33 +107,6 @@ export interface ToolsPublished {
 }
 
 export type ToolsState = FormState<ToolsPublished>;
-
-export const replaceToolsAction = async (_previous: ToolsState, form: FormData): Promise<ToolsState> => {
-  const parsed = toolsFormSchema.safeParse({
-    expectedVersion: form.get("expectedVersion") ?? "",
-    note: form.get("note") ?? undefined,
-    allowedHosts: form.get("allowedHosts") ?? "",
-    allowPlaintextHttp: form.get("allowPlaintextHttp") !== null,
-    documentJson: form.get("documentJson") ?? "",
-  });
-  if (!parsed.success) return invalidForm(parsed.error);
-
-  try {
-    const { expectedVersion, note, allowedHosts, allowPlaintextHttp, documentJson } = parsed.data;
-    const result = await replaceTools(
-      expectedVersion,
-      note,
-      { allowedHosts, allowPlaintextHttp },
-      documentJson.http,
-      documentJson.mcp,
-    );
-    revalidatePath("/tools");
-    revalidatePath("/agents", "layout");
-    return succeededForm({ configVersion: result.configVersion }, "Tool registry published.");
-  } catch (error) {
-    return failedForm(failureMessage(error));
-  }
-};
 
 export interface ToolTestResult {
   readonly outcome: "ok" | "confirm" | "transfer" | "failed";

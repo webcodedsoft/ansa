@@ -24,6 +24,7 @@ import {
   text,
   type Infer,
 } from "../http/schema";
+import { timestamp } from "../schemas";
 import { OrganizationContext } from "../tenancy/organization-context";
 
 import { checkToolConfig, eventsOrNothing, orConflict, orRefuse } from "./refusals";
@@ -142,6 +143,15 @@ const httpTool = object({
    * host would let an argument choose which server is called.
    */
   send: choice(["query", "body"]),
+  /**
+   * When this tool was first stored, and when its definition last changed.
+   *
+   * Stamped by the server on every publish, never trusted from the request: a client clock
+   * is not evidence of anything, and these are read as a record of what happened. Accepted
+   * in the body only so a read-then-write does not look like a change to every tool at once.
+   */
+  createdAt: optional(timestamp()),
+  updatedAt: optional(timestamp()),
   /**
    * Fixed headers sent with every request. Never authentication.
    *
@@ -397,6 +407,8 @@ const toStoredTool = (tool: HttpToolInput): Record<string, unknown> => ({
   ...(tool.headers === undefined || Object.keys(tool.headers).length === 0
     ? {}
     : { headers: tool.headers }),
+  ...(tool.createdAt === undefined ? {} : { createdAt: tool.createdAt }),
+  ...(tool.updatedAt === undefined ? {} : { updatedAt: tool.updatedAt }),
   ...(tool.timeoutMs === undefined ? {} : { timeoutMs: tool.timeoutMs }),
   ...(tool.credentialRef === undefined ? {} : { credentialRef: tool.credentialRef }),
   ...tierPart(tool),
@@ -423,8 +435,33 @@ export const toToolDocument = (body: Infer<typeof replacement>): Record<string, 
 });
 
 /** The parsed document, as the response. The inverse of the above, and tested as one. */
+/**
+ * Stamps read from the stored document rather than from the parsed config.
+ *
+ * `ConnectorConfig` deliberately does not carry them: it is what the dispatch path acts on,
+ * and when a tool was written is no business of the code that calls it. So they are looked
+ * up by name from the column, which is also where they are written.
+ */
+const stampsIn = (stored: unknown): ReadonlyMap<string, { createdAt?: string; updatedAt?: string }> => {
+  const out = new Map<string, { createdAt?: string; updatedAt?: string }>();
+  const http = (stored as { http?: unknown } | null)?.http;
+  if (!Array.isArray(http)) return out;
+  for (const entry of http) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const tool = entry as Record<string, unknown>;
+    const name = typeof tool["name"] === "string" ? tool["name"] : null;
+    if (name === null) continue;
+    out.set(name, {
+      ...(typeof tool["createdAt"] === "string" ? { createdAt: tool["createdAt"] } : {}),
+      ...(typeof tool["updatedAt"] === "string" ? { updatedAt: tool["updatedAt"] } : {}),
+    });
+  }
+  return out;
+};
+
 export const toToolResponseBody = (
   parsed: ConnectorConfig,
+  stored: unknown = null,
 ): Omit<Infer<typeof toolConfiguration>, "configVersion"> => ({
   egress: {
     allowedHosts: parsed.egress.allowedHosts,
@@ -439,6 +476,7 @@ export const toToolResponseBody = (
     method: tool.method,
     send: tool.send,
     ...(tool.headers === undefined ? {} : { headers: tool.headers }),
+    ...stampsIn(stored).get(tool.name),
     ...(tool.timeoutMs === undefined ? {} : { timeoutMs: tool.timeoutMs }),
     ...(tool.credentialRef === undefined ? {} : { credentialRef: tool.credentialRef }),
     ...(tool.speech === undefined ? {} : { speech: tool.speech }),
@@ -468,6 +506,46 @@ const draftRun = object({
   confirmed: optional(list(confirmedFact, { maxItems: 16 })),
 });
 
+/**
+ * Server-side timestamps for each HTTP tool.
+ *
+ * `createdAt` is carried over from whatever is already stored, so it means what it says
+ * rather than "when this document was last written". `updatedAt` moves only when the tool's
+ * definition actually differs — a publish that changed one tool must not restamp the other
+ * nine, or the column stops being able to answer "when did this last change".
+ *
+ * Compared with the stamps stripped, so yesterday's `updatedAt` is not itself the difference
+ * that causes a new one.
+ */
+export const stamped = (document: Record<string, unknown>, previous: unknown): Record<string, unknown> => {
+  const before = stampsIn(previous);
+  const priorHttp = (previous as { http?: unknown } | null)?.http;
+  const prior = new Map<string, string>();
+  if (Array.isArray(priorHttp)) {
+    for (const entry of priorHttp) {
+      const tool = entry as Record<string, unknown>;
+      if (typeof tool["name"] !== "string") continue;
+      const { createdAt: _c, updatedAt: _u, ...rest } = tool;
+      prior.set(tool["name"], JSON.stringify(rest));
+    }
+  }
+
+  const now = new Date().toISOString();
+  const http = (document["http"] as Record<string, unknown>[]).map((tool) => {
+    const name = String(tool["name"]);
+    const { createdAt: _c, updatedAt: _u, ...rest } = tool;
+    const unchanged = prior.get(name) === JSON.stringify(rest);
+    const was = before.get(name);
+    return {
+      ...rest,
+      createdAt: was?.createdAt ?? now,
+      updatedAt: unchanged ? (was?.updatedAt ?? now) : now,
+    };
+  });
+
+  return { ...document, http };
+};
+
 @Controller(apiRoute("tools"))
 export class ToolsController {
   constructor(@Inject(OrganizationContext) private readonly db: OrganizationContext) {}
@@ -494,7 +572,7 @@ export class ToolsController {
        * call path logs as an error and this reports as a 409.
        */
       const parsed = orConflict(() => parseConnectorConfig(current.toolConfig));
-      return { configVersion: current.configVersion, ...toToolResponseBody(parsed) };
+      return { configVersion: current.configVersion, ...toToolResponseBody(parsed, current.toolConfig) };
     });
   }
 
@@ -529,7 +607,7 @@ export class ToolsController {
       orRefuse(() => refuseUnusableReferences(uses, new Set(sealed.keys()), kinds));
 
       const version = await publishConfiguration(scope, current, {
-        toolConfig: document,
+        toolConfig: stamped(document, current.toolConfig),
         // Carried over untouched. A publish rewrites every column it takes, so leaving this
         // out would stop every delivery this organisation is expecting.
         eventConfig: current.eventConfig,

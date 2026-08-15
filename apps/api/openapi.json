@@ -8558,6 +8558,14 @@
                               "body"
                             ]
                           },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "updatedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
                           "headers": {
                             "type": "object",
                             "additionalProperties": {
@@ -8906,6 +8914,14 @@
                             "query",
                             "body"
                           ]
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
                         },
                         "headers": {
                           "type": "object",
@@ -9625,6 +9641,14 @@
                           "query",
                           "body"
                         ]
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
                       },
                       "headers": {
                         "type": "object",

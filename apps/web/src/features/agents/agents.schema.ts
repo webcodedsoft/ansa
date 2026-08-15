@@ -145,67 +145,6 @@ export type TestCallInput = z.infer<typeof testCallSchema>;
  * today without inventing form fields the API does not need and a reviewer would have to
  * guess the intent of.
  */
-const httpTool = z.object({
-  name: z.string().min(1),
-  description: z.string().min(1),
-  parametersJson: z.string().min(1),
-  riskTier: z.enum(["read", "write", "irreversible"]),
-  url: z.string().min(1),
-  method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
-  send: z.enum(["query", "body"]),
-  timeoutMs: z.number().int().positive().optional(),
-  credentialRef: z.string().min(1).optional(),
-  speech: z.object({ template: z.string(), fallback: z.string() }).optional(),
-  readback: z.string().optional(),
-  transferReason: z.string().optional(),
-  identifiers: z.array(z.object({ argument: z.string(), fact: z.string() })).optional(),
-});
-
-const mcpTool = z.object({
-  name: z.string().min(1),
-  riskTier: z.enum(["read", "write", "irreversible"]),
-  timeoutMs: z.number().int().positive().optional(),
-  speech: z.object({ template: z.string(), fallback: z.string() }).optional(),
-  readback: z.string().optional(),
-  transferReason: z.string().optional(),
-  identifiers: z.array(z.object({ argument: z.string(), fact: z.string() })).optional(),
-});
-
-const mcpServer = z.object({
-  url: z.string().min(1),
-  credentialRef: z.string().min(1).optional(),
-  tools: z.array(mcpTool),
-});
-
-/** The `http` and `mcp` halves of `PUT /tools`, shared by the JSON pipe below and its type. */
-const toolsBody = z.object({ http: z.array(httpTool), mcp: z.array(mcpServer) });
-
-export const toolsFormSchema = z.object({
-  expectedVersion: z.coerce.number().int(),
-  note: z.string().trim().max(500).optional(),
-  allowedHosts: z
-    .string()
-    .transform((raw) => raw.split(/[\n,]/).map((h) => h.trim()).filter((h) => h !== "")),
-  allowPlaintextHttp: z.boolean(),
-  documentJson: z
-    .string()
-    .min(1, "The tools document cannot be empty.")
-    .transform((raw, context) => {
-      try {
-        return JSON.parse(raw) as unknown;
-      } catch {
-        context.addIssue({ code: "custom", message: "That is not valid JSON." });
-        return z.NEVER;
-      }
-    })
-    .pipe(toolsBody),
-});
-
-export type ToolsFormOutput = z.infer<typeof toolsFormSchema>;
-export type ToolsDocumentBody = z.infer<typeof toolsBody> & {
-  readonly egress: { readonly allowedHosts: readonly string[]; readonly allowPlaintextHttp?: boolean };
-};
-
 /** Arguments for running a tool with `POST /tools/{name}/test`. */
 export const testToolSchema = z.object({
   name: z.string().min(1),

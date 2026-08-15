@@ -1,6 +1,6 @@
 import { api } from "@/lib/api/server";
 
-import type { PublishBody, TestCallInput, ToolsDocumentBody } from "./agents.schema";
+import type { PublishBody, TestCallInput } from "./agents.schema";
 
 /**
  * Everything this app does with the agent's configuration.
@@ -112,12 +112,21 @@ export const sampleEndpoint = async (input: {
   credentialRef?: string;
 }) => (await api()).tools.sample({ body: input });
 
+/**
+ * The whole document, replaced.
+ *
+ * Typed from the generated client rather than from a hand-written copy: the copy existed
+ * only to type this one call, and a second description of the request body is a second
+ * thing to forget when the first changes.
+ */
+type ToolsBody = Parameters<Awaited<ReturnType<typeof api>>["tools"]["replace"]>[0]["body"];
+
 export const replaceTools = async (
   expectedVersion: number,
   note: string | undefined,
-  egress: ToolsDocumentBody["egress"],
-  http: ToolsDocumentBody["http"],
-  mcp: ToolsDocumentBody["mcp"],
+  egress: ToolsBody["egress"],
+  http: ToolsBody["http"],
+  mcp: ToolsBody["mcp"],
 ) =>
   (await api()).tools.replace({
     body: { expectedVersion, note, egress, http, mcp },

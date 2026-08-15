@@ -4,26 +4,22 @@ import { useActionState, useState } from "react";
 
 import {
   Button,
-  Card,
-  CheckboxField,
   EmptyState,
   Notice,
   Panel,
   Stack,
-  SubmitButton,
   Table,
   Tag,
   Td,
-  TextAreaField,
-  TextField,
   Th,
   Tr,
   type Tone,
 } from "@/components/ui";
+import { when } from "@/lib/format";
 import { idleForm } from "@/lib/form-state";
 import { useFormToast } from "@/stores/toast.store";
 
-import { deleteHttpToolAction, replaceToolsAction, type ToolsState } from "../agents.actions";
+import { deleteHttpToolAction, type ToolsState } from "../agents.actions";
 import type { ToolsDocument } from "../agents.service";
 import { draftFromApi, type HttpToolDraft } from "../http-tool.schema";
 
@@ -49,6 +45,14 @@ const hostOrRaw = (url: string): string => {
 
 /**
  * The organisation's tools: a list, and one form for the tool being worked on.
+ *
+ * The egress allowlist used to be edited here and is not any more. It is not a boundary
+ * against the person editing it — egress and tools live in one document written by one
+ * endpoint, so whoever can add a tool can widen the list in the same request. Saving a tool
+ * adds its host, which covers the only case the field was really serving, while the field
+ * itself accepted `*.com` and matched every host under it. It is still enforced, still
+ * cross-checked against every tool URL at publish time, and still writable by
+ * `tools/organization/config.mjs` for a wildcard somebody genuinely needs.
  *
  * This replaced a single textarea holding the whole document as JSON. That was honest —
  * nothing pretended a tool was added until the document round-tripped through the same
@@ -123,6 +127,8 @@ export const ToolRegistry = ({
                 <Th>Tool</Th>
                 <Th>Route</Th>
                 <Th>Risk tier</Th>
+                <Th>Added</Th>
+                <Th>Updated</Th>
                 <Th>&nbsp;</Th>
               </tr>
             </thead>
@@ -135,6 +141,14 @@ export const ToolRegistry = ({
                   </Td>
                   <Td>
                     <Tag tone={TIER_TONE[tool.riskTier]}>{tool.riskTier}</Tag>
+                  </Td>
+                  {/* Em dash for a tool stored before the stamps existed. Guessing a date
+                      from the configuration version would be inventing a fact. */}
+                  <Td className="whitespace-nowrap text-[12.5px] text-[var(--ink-3)]">
+                    {tool.createdAt === undefined ? "—" : when(tool.createdAt)}
+                  </Td>
+                  <Td className="whitespace-nowrap text-[12.5px] text-[var(--ink-3)]">
+                    {tool.updatedAt === undefined ? "—" : when(tool.updatedAt)}
                   </Td>
                   <Td>
                     <div className="flex justify-end gap-2">
@@ -161,6 +175,10 @@ export const ToolRegistry = ({
                     <Td>
                       <Tag tone={TIER_TONE[tool.riskTier]}>{tool.riskTier}</Tag>
                     </Td>
+                    {/* An MCP tool is discovered from its server at handshake, not written
+                        here, so there is no moment this console could call its creation. */}
+                    <Td className="text-[12.5px] text-[var(--ink-3)]">—</Td>
+                    <Td className="text-[12.5px] text-[var(--ink-3)]">—</Td>
                     <Td>
                       <span className="block text-right text-[12px] text-[var(--ink-3)]">
                         no editor
@@ -178,8 +196,6 @@ export const ToolRegistry = ({
         Enforced in code. An irreversible tool never runs — it transfers to a person, and no
         configuration here changes that.
       </Notice>
-
-      <EgressSettings doc={doc} />
     </Stack>
   );
 };
@@ -201,66 +217,6 @@ const RemoveTool = ({
       <Button type="submit" variant="secondary" disabled={pending}>
         {pending ? "Removing…" : "Remove"}
       </Button>
-    </form>
-  );
-};
-
-/**
- * The allowlist, still editable by hand.
- *
- * Saving a tool adds its host automatically, so this is now for removing an entry or adding
- * one ahead of time, rather than the thing standing between a tool and working at all. The
- * automatic add is one-way on purpose: nothing here guesses that a host has become unused,
- * because two tools can share one and removing it would break the other.
- */
-const EgressSettings = ({ doc }: { readonly doc: ToolsDocument }) => {
-  const [state, action, pending] = useActionState(replaceToolsAction, START);
-  useFormToast(state, (data) => `Published configuration version ${data.configVersion}.`);
-
-  return (
-    <form action={action}>
-      <input type="hidden" name="expectedVersion" value={doc.configVersion} />
-      <input
-        type="hidden"
-        name="documentJson"
-        value={JSON.stringify({ http: doc.http, mcp: doc.mcp })}
-      />
-
-      {(state.status === "failed" || state.status === "invalid") && (
-        <Notice tone="error" className="mb-3.5">
-          {state.message}
-        </Notice>
-      )}
-
-      <Card
-        title="Egress"
-        description="Hosts a tool's URL may point at. Anything else is refused at registration."
-      >
-        <Stack>
-          <TextAreaField
-            label="Allowed hosts"
-            name="allowedHosts"
-            defaultValue={doc.egress.allowedHosts.join("\n")}
-            error={state.fieldErrors["allowedHosts"]}
-            hint="One host per line. Saving a tool adds its host here for you."
-          />
-          <CheckboxField
-            label="Allow plaintext HTTP (not recommended)"
-            name="allowPlaintextHttp"
-            defaultChecked={doc.egress.allowPlaintextHttp ?? false}
-          />
-          <TextField
-            label="What changed"
-            name="note"
-            maxLength={500}
-            placeholder="Added api.acme.ng"
-            error={state.fieldErrors["note"]}
-          />
-          <div>
-            <SubmitButton pending={pending} idle="Save egress" busy="Saving…" />
-          </div>
-        </Stack>
-      </Card>
     </form>
   );
 };

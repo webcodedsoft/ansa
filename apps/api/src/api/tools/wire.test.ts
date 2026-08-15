@@ -5,7 +5,7 @@ import { parseConnectorConfig, parseEventConfig, sealCredential } from "@ansa/to
 import { describe, expect, it } from "vitest";
 
 import { toEventDocument, toEventResponseBody } from "./events.controller";
-import { toToolDocument, toToolResponseBody } from "./tools.controller";
+import { stamped, toToolDocument, toToolResponseBody } from "./tools.controller";
 import {
   classifyCredentials,
   credentialUses,
@@ -339,5 +339,57 @@ describe("credentials", () => {
     expect(() => vaultKey({ TOOL_CREDENTIAL_KEY: randomBytes(16).toString("base64") })).toThrow(
       "32 bytes",
     );
+  });
+});
+
+/**
+ * When a tool was added, and when it last changed.
+ *
+ * The rule worth testing is the second one. A publish rewrites the whole document, so the
+ * naive implementation restamps every tool on every save and `updatedAt` degrades into "when
+ * did anybody last touch anything" — which cannot answer the question it exists for.
+ */
+describe("tool timestamps", () => {
+  const tool = (name: string, over: Record<string, unknown> = {}) => ({
+    name,
+    description: "d",
+    parameters: { type: "object" },
+    riskTier: "read",
+    url: "https://api.partner.test/x",
+    method: "GET",
+    send: "query",
+    speech: { template: "{a}", fallback: "f" },
+    ...over,
+  });
+
+  const httpOf = (doc: Record<string, unknown>) => doc["http"] as Record<string, unknown>[];
+
+  it("stamps a tool nobody has stored before", () => {
+    const out = httpOf(stamped({ http: [tool("a")] }, null));
+    expect(typeof out[0]?.["createdAt"]).toBe("string");
+    expect(out[0]?.["updatedAt"]).toBe(out[0]?.["createdAt"]);
+  });
+
+  it("keeps createdAt across a later publish", () => {
+    const first = stamped({ http: [tool("a")] }, null);
+    const again = stamped({ http: [tool("a", { description: "changed" })] }, first);
+    expect(httpOf(again)[0]?.["createdAt"]).toBe(httpOf(first)[0]?.["createdAt"]);
+  });
+
+  it("leaves updatedAt alone on a tool the publish did not change", () => {
+    const first = stamped({ http: [tool("a"), tool("b")] }, null);
+    // Only `b` differs. `a` must come back with the stamp it already had, or the column
+    // stops meaning "when did this tool change".
+    const again = stamped({ http: [tool("a"), tool("b", { description: "changed" })] }, first);
+    expect(httpOf(again)[0]?.["updatedAt"]).toBe(httpOf(first)[0]?.["updatedAt"]);
+  });
+
+  it("does not treat yesterday's stamp as the change that earns a new one", () => {
+    /* The comparison strips the stamps before comparing. Without that, every tool differs
+       from its stored self on the second publish — by the very field being computed — and
+       nothing would ever look unchanged. */
+    const first = stamped({ http: [tool("a")] }, null);
+    const again = stamped({ http: httpOf(first) }, first);
+    expect(httpOf(again)[0]?.["updatedAt"]).toBe(httpOf(first)[0]?.["updatedAt"]);
   });
 });
