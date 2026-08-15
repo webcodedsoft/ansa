@@ -2252,8 +2252,20 @@ in the one dispatch path, grounded-only answering, ingestion endpoints and the t
 - [ ] Retrieval has never run on a real call. Keyword search over English `tsvector` is
       untested against Nigerian phrasing and Pidgin, which is the whole question the
       no-embeddings decision was deferring.
-- [ ] `searchKnowledge` takes no `AbortSignal`, so the dispatcher's three-second ceiling
-      releases the caller but not the Postgres query.
+- [x] **The query is bounded in Postgres** (2026-08-16). The retrieval agent flagged that
+      losing the dispatcher's three-second race abandons the promise while the query carries
+      on holding a connection for a turn nobody is listening to — and a full-text scan over a
+      large source is exactly the shape that runs long. An `AbortSignal` would not have fixed
+      it: node-postgres cannot stop a statement in flight without a second connection issuing
+      `pg_cancel_backend`. `searchKnowledge` sets `set local statement_timeout = '2500ms'`
+      instead, scoped to the transaction `withOrganization` already opens so it cannot leak
+      to the next borrower of a pooled connection. Deliberately under the tool ceiling: the
+      search should be what gives up, so the caller hears the source's fallback rather than
+      the dispatcher's apology. Verified against the database — it cancels, and the session
+      default is untouched afterwards.
+- [x] The mirrored `KnowledgeHit` is gone. It existed because `@ansa/db` is consumed from its
+      build output and the orchestrator had to compile before the storage layer had ever been
+      built; that stopped being true once 0034 landed, and the comment said to delete it then.
 
 ### The two flags the voice agent raised, closed (2026-08-16)
 

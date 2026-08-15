@@ -398,6 +398,21 @@ export const searchKnowledge = async (
   const wanted = Math.min(Math.max(Math.trunc(limit), 0), MAX_HITS);
   if (wanted === 0) return [];
 
+  /* Bounded in Postgres, not just in the caller.
+     The dispatcher races a three-second ceiling, so a caller never waits longer than that —
+     but losing the race only abandons the promise. The query itself carries on holding a
+     connection and burning CPU for a turn nobody is listening to any more, and a full-text
+     scan over a large source is exactly the shape that runs long. An `AbortSignal` would not
+     help: node-postgres has no way to stop a statement already in flight, short of a second
+     connection issuing `pg_cancel_backend`. `SET LOCAL` is scoped to the surrounding
+     transaction that `withOrganization` already opened, so it cannot leak to the next
+     borrower of a pooled connection.
+
+     Slightly under the tool ceiling on purpose: the search should be the thing that gives
+     up, so what the caller hears is the fallback sentence rather than the dispatcher's
+     apology for a tool that never answered. */
+  await scope.query("set local statement_timeout = '2500ms'");
+
   const rows = await scope.query<HitRow>(
     `select u.source_id, s.name as source_name, u.question, u.body,
             ts_rank(u.search, q.query) as rank

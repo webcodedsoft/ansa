@@ -1,3 +1,4 @@
+import type { KnowledgeHit } from "@ansa/db";
 import type { AgentId, OrganizationId } from "@ansa/shared";
 import type { AdapterCall, InternalTool, ToolArgs, ToolDefinition } from "@ansa/tools";
 
@@ -23,24 +24,6 @@ import type { AdapterCall, InternalTool, ToolArgs, ToolDefinition } from "@ansa/
 /* ------------------------------------------------------------------ the seam */
 
 /**
- * One retrieved passage, field for field the same as `KnowledgeHit` in `@ansa/db`.
- *
- * Declared here rather than imported because `@ansa/db` is consumed from its build output
- * and this module has to compile before the storage layer has been built once. Delete it
- * and import the real one the moment that stops being true — the shapes are identical and
- * a second copy of a type is a second thing to keep in step.
- */
-export interface KnowledgeHit {
-  readonly sourceId: string;
-  readonly sourceName: string;
-  /** The question this passage answers, when the source was written as a Q and A. */
-  readonly question: string | null;
-  readonly body: string;
-  /** The store's own ordering. Read below for why nothing here re-sorts on it. */
-  readonly rank: number;
-}
-
-/**
  * How this module reaches the store, and the only thing it knows about storage.
  *
  * Deliberately not `@ansa/db`'s own signature. That one takes a `OrganizationScope`, which is a
@@ -53,10 +36,10 @@ export interface KnowledgeHit {
  * it per call (CLAUDE.md rule 3), and the authoritative one is the call's, not one this
  * module snapshotted at construction.
  *
- * No `AbortSignal`, because the agreed contract has none. The dispatcher races the hard
- * ceiling either way, so the caller never waits past it; what a signal would buy is
- * releasing the query server-side when it does, and that is the wiring's to add when
- * `searchKnowledge` grows one.
+ * No `AbortSignal`, and it would not help if there were one: node-postgres cannot stop a
+ * statement already in flight. `searchKnowledge` sets a `statement_timeout` instead, so the
+ * query gives up on its own a little before the dispatcher's ceiling — which is the outcome
+ * a signal was wanted for, reached from the side that can actually deliver it.
  */
 export type SearchKnowledge = (
   organizationId: OrganizationId,

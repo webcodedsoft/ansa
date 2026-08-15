@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { KnowledgeHit } from "@ansa/db";
 import { asAgentId, asCallId, asOrganizationId, type AgentId, type OrganizationId } from "@ansa/shared";
 import { createToolDispatcher, createToolRegistry, modelMessage, registerInternalTools } from "@ansa/tools";
 
@@ -10,7 +11,6 @@ import {
   knowledgeTools,
   KNOWLEDGE_TOOL_NAME,
   MAX_PASSAGES,
-  type KnowledgeHit,
   type SearchKnowledge,
 } from "./knowledge";
 
