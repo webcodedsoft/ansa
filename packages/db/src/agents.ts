@@ -350,12 +350,17 @@ export const setCapturedFields = async (
   agentId: string,
   fields: readonly unknown[],
 ): Promise<AgentSummary | null> => {
-  const updated = await scope.query<{ id: string }>(
-    `update agents set captured_fields = $2::jsonb
-      where id = $1 and archived_at is null
-      returning id`,
-    [agentId, JSON.stringify(fields)],
+  /* Through the versioned path, not a bare update. Writing the column directly left
+     `config_version` unchanged, so two calls could record the same version and have
+     collected different things — and nothing anywhere recorded what an agent had been
+     asking callers for. For a form whose whole purpose is taking names and policy numbers
+     off people, that history is the audit (migration 0029). */
+  const published = await scope.query<{ version: number | null }>(
+    `select app.publish_captured_fields($1, $2::jsonb, $3) as version`,
+    [agentId, JSON.stringify(fields), "captured fields updated"],
   );
-  if (updated.length === 0) return null;
+  // Null rather than an exception for no such live agent, so the API answers 404 instead
+  // of 500 — the same three cases the function deliberately does not tell apart.
+  if (published[0]?.version === null || published[0]?.version === undefined) return null;
   return findAgent(scope, agentId);
 };

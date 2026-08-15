@@ -256,7 +256,14 @@ const retryLine = (field: { readonly prompt: string }): string =>
 const GAVE_UP =
   "I am still not getting that in a form I can use, and I do not want to keep you repeating it. Let us carry on without it for now.";
 
-const FACT_FIELD_FOR: Readonly<Partial<Record<EntityKind, IdentifierField>>> = {
+/*
+ * Exported for one guard test, and for one reason: `apps/web/.../tools-tab.tsx` keeps its
+ * own copy of this rule as `WITHOUT_A_FIELD`, to tell an operator which of a tool's
+ * identifiers this agent can never supply. The web app cannot import from the API, so the
+ * duplication is real; a test asserting the two agree is what stops the console confidently
+ * describing a rule the call path no longer follows.
+ */
+export const FACT_FIELD_FOR: Readonly<Partial<Record<EntityKind, IdentifierField>>> = {
   name: "callerName",
   reference: "policyNumber",
 };

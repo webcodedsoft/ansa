@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { CollectedField } from "../tenancy/captured-fields";
 
 import { createForm } from "./form";
+import { FACT_FIELD_FOR } from "./orchestrator";
 
 /**
  * The form director, and mostly its edges.
@@ -262,5 +263,20 @@ describe("attempts", () => {
     // Nothing can be re-asked for a key with no question behind it, so `again` must not
     // send the call round a loop it cannot leave.
     expect(createForm([]).reject("ghost").again).toBe(false);
+  });
+});
+
+describe("what a tool can be handed without a configured field", () => {
+  it("is exactly the set the Tools tab tells operators about", () => {
+    /* `apps/web/src/features/agents/components/tools-tab.tsx` holds `WITHOUT_A_FIELD` as
+       its own copy, because the web app cannot import from the API. It uses it to say
+       which of a tool's `identifiers` this agent will never resolve.
+
+       If a kind is added here and not there, the console tells an operator to add a field
+       they do not need. If one is removed here and not there, it stays quiet about a tool
+       that will refuse on every call — the silent failure the warning was added to end. */
+    expect(new Set(Object.values(FACT_FIELD_FOR))).toEqual(
+      new Set(["callerName", "policyNumber"]),
+    );
   });
 });

@@ -110,3 +110,57 @@ describe("renderFacts", () => {
     expect(renderFacts(store.facts)).toContain("Never change a name or a number yourself.");
   });
 });
+
+/**
+ * The operator's own fields, in the block the model reads.
+ *
+ * These were missing, and the symptom was the one thing capture exists to prevent: the
+ * caller gives their claim number, agrees to the readback, and is asked for it again a turn
+ * later — because the only place it had been written down was the fact store's `captured`
+ * map, and nothing rendered it.
+ */
+describe("renderFacts with configured fields", () => {
+  const withClaim = () => {
+    const store = facts();
+    store.observe({
+      captured: "claimNumber",
+      value: "CL8421",
+      source: "caller-confirmation",
+      atMs: 0,
+    });
+    return store;
+  };
+
+  it("gives the model a confirmed value it can actually use", () => {
+    const block = renderFacts(withClaim().facts);
+    expect(block).toContain("CL8421");
+    // By the key, because the task layer asks for it by the key. The model has to see the
+    // instruction and the value as the same subject.
+    expect(block).toContain("claimNumber");
+  });
+
+  it("withholds the value while it is still being checked", () => {
+    const store = facts();
+    store.observe({ captured: "claimNumber", value: "CL8421", source: "stt", atMs: 0 });
+
+    // Same rule as an identifier: unconfirmed means the model is told it exists and not
+    // what it is, so it cannot answer around a value nobody has agreed to.
+    const block = renderFacts(store.facts);
+    expect(block).not.toContain("CL8421");
+    expect(block).toContain("do not ask for it again");
+  });
+
+  it("tells the model a configured field was corrected", () => {
+    const store = withClaim();
+    store.observe({
+      captured: "claimNumber",
+      value: "CL8422",
+      source: "caller-confirmation",
+      atMs: 1,
+    });
+
+    // A correction the model is not told about is the one it undoes, going back to the
+    // value the caller has already rejected once.
+    expect(renderFacts(store.facts)).toContain("already corrected");
+  });
+});

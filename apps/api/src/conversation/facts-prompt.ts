@@ -68,6 +68,14 @@ export const renderFacts = (facts: CallFacts): string => {
     identifierLine(facts.callerName, "Their name"),
     identifierLine(facts.policyNumber, "Their policy number"),
     identifierLine(facts.customerId, "Their customer id"),
+    /* The operator's own fields, by the key the task layer already used to ask for them.
+       The key rather than a prettified noun on purpose: the model is told "collect
+       policyNumber" in one section and "you have policyNumber" in this one, and those have
+       to be recognisably the same thing. Without this the caller confirms their claim
+       number, the agent hears it, stores it, hands it to a tool — and then asks for it
+       again, because the only place it was written down was somewhere the model cannot
+       see. */
+    ...[...facts.captured].map(([key, fact]) => identifierLine(fact, `Their ${key}`)),
     interpretiveLine(facts.intent, "What they want"),
     interpretiveLine(facts.reasonForCall, "Why they called"),
     interpretiveLine(facts.currentTask, "What you are doing right now"),
@@ -76,11 +84,18 @@ export const renderFacts = (facts: CallFacts): string => {
       : `- You asked them: "${facts.pendingQuestion.value}". They have not answered yet.`,
   ];
 
-  for (const field of ["callerName", "policyNumber", "customerId"] as const) {
+  const NOUNS: Readonly<Record<string, string>> = {
+    callerName: "their name",
+    policyNumber: "their policy number",
+    customerId: "their customer id",
+  };
+
+  // Configured fields correct too, and a correction the model is not told about is the one
+  // it undoes: it goes back to the value the caller has already rejected once.
+  for (const field of [...Object.keys(NOUNS), ...facts.captured.keys()]) {
     const count = facts.previousCorrections.filter((c) => c.field === field).length;
     if (count === 0) continue;
-    const noun =
-      field === "callerName" ? "their name" : field === "policyNumber" ? "their policy number" : "their customer id";
+    const noun = NOUNS[field] ?? `their ${field}`;
     lines.push(
       `- They have already corrected ${noun} ${times(count)}. Do not go back to what you had before.`,
     );

@@ -109,6 +109,9 @@ const reportedIdentifiers = (
     ["callerName", facts.callerName],
     ["policyNumber", facts.policyNumber],
     ["customerId", facts.customerId],
+    // The operator's own fields. An organisation that configured the agent to collect a
+    // claim number and subscribed to this event was getting an empty object.
+    ...facts.captured,
   ] as const) {
     const value = reported(fact);
     if (value !== null) out[field] = value;
@@ -128,7 +131,13 @@ const reportedIdentifiers = (
 export const capturedIdentifierValues = (facts: CallFacts | null): readonly string[] => {
   if (facts === null) return [];
   const values = new Set<string>();
-  for (const fact of [facts.callerName, facts.policyNumber, facts.customerId]) {
+  /* Configured fields included, and this one is not a feature gap but a privacy defect.
+     The redactor matches on this list. A NIN, a BVN or a one-time code collected through a
+     configured field was never in it, so an organisation that switched `captured-identifier`
+     masking on got the two built-ins masked and their national identity numbers left in
+     the transcript in full — the exact "two out of three masked" failure the comment above
+     calls broken. */
+  for (const fact of [facts.callerName, facts.policyNumber, facts.customerId, ...facts.captured.values()]) {
     if (fact.value !== null) values.add(fact.value);
     for (const heard of fact.heard) values.add(heard);
   }

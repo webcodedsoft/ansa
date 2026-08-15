@@ -1998,6 +1998,41 @@ are that decision. Capture was purely reactive — `classify()` on what a caller
       agent. One agent per organisation hides it; two will not.
 - [ ] **None of this has been heard on a real call.** See below.
 
+### What reviewing those claims turned up (2026-08-15)
+
+Checking my own summary found four defects, three of them from the same root: the fact
+store learned to hold configured fields and its *other* consumers were never told.
+
+- [x] **Configured identifiers were not being redacted.** `capturedIdentifierValues` feeds
+      the transcript redactor and enumerated three built-in fields. An organisation that
+      switched `captured-identifier` masking on had the two reachable built-ins masked and
+      a NIN, BVN or one-time code collected through a configured field left in the
+      transcript in full. The function had no test at all, which is how it survived.
+- [x] **The model never saw a configured value.** `renderFacts` rendered the same three
+      built-ins, so a caller could confirm their claim number and be asked for it again a
+      turn later — the exact failure capture exists to prevent. Corrections had the same
+      hole: a correction the model is not told about is the one it undoes.
+- [x] **The `captured-identifier` webhook omitted them**, so an organisation collecting a
+      claim number received an empty object.
+- [x] **The form was absent from config history** (migration 0029). `setCapturedFields`
+      wrote the column directly: no version bump, no snapshot. Two calls could record the
+      same `config_version` and have collected different things, and nothing anywhere
+      recorded what an agent had been asking callers for. For a feature whose job is taking
+      names and policy numbers off people, that history *is* the audit. Editing the form now
+      goes through `app.publish_captured_fields`, which bumps and snapshots in one
+      transaction. Old rows keep an empty array, which reads as "not recorded" — backfilling
+      them would claim every past version collected today's form.
+- [x] A guard test pins `FACT_FIELD_FOR` against the Tools tab's `WITHOUT_A_FIELD`. The web
+      app cannot import from the API, so that duplication is real; without the test the
+      console can confidently describe a rule the call path no longer follows.
+- [x] A `@ts-expect-error` test pins the thing I claimed in the last commit message: the
+      captured arm takes `EvidenceSource`, which has no `"model"` member.
+
+Not fixed, and deliberately: `customerId` remains an `IdentifierField` with no path that
+fills it. The configured path covers it properly — a field keyed `customerId` resolves —
+and removing the slot would change `IdentifierField` across the fact store, the prompt and
+the event payload for no behavioural gain.
+
 ### The call that is still owed
 
 `packages/db/seeds/dev-organization.mjs` had rotted — it wrote `organizations.dialled_number`,
@@ -2007,9 +2042,11 @@ call reach anything. Rewritten: it creates the organisation, registers the numbe
 operator, and creates the agent with a form. Verified idempotent, and
 `agent_config_for_number` returns the form including the pattern.
 
-The agent on `+18148592625` is armed with the probe form: `callerName` (name, readback),
-`policyNumber` (reference, `PM\d{7}`, readback) and `contactEmail` (email, spellback). To
-disarm: `update agents set captured_fields = '[]' where id = 'cfe50134-3d05-4a62-b90b-9ed1d9091ba8';`
+The dev agent is armed with the probe form: `callerName` (name, readback), `policyNumber`
+(reference, `PM\d{7}`, readback) and `contactEmail` (email, spellback). Which number that
+is stays out of the repo — it is `SEED_DIALLED_NUMBER`, for the same reason the seed reads
+it from the environment. To disarm, clear the form on the agent holding that number; do it
+through `PUT /agents/:agentId/fields` rather than with SQL, so the change is versioned.
 
 What to listen for, in order of what is actually in doubt:
 
