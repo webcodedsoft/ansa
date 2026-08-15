@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 
 import type { Db } from "@ansa/db";
-import { asTenantId } from "@ansa/shared";
+import { asOrganizationId } from "@ansa/shared";
 import {
   createToolDispatcher,
   createToolRegistry,
@@ -24,7 +24,7 @@ import { fillerSetup, scenario, type Scenario } from "./harness";
  * prove it rather than assume it, and two of them found that the honest answer was silence.
  *
  * They break things at the seams a real outage breaks them at: the listen socket dies, the
- * model hangs, the voice fails halfway through a word, a tenant's endpoint never answers,
+ * model hangs, the voice fails halfway through a word, a organization's endpoint never answers,
  * the database rejects every write, the carrier drops the line. Nothing here is polite
  * about it — a drill that passes because the fake was kind is worse than no drill, so the
  * fakes fail exactly as the real thing does and the assertions are on what the caller
@@ -40,7 +40,7 @@ const SILENCE_LIMIT_MS = 2_000;
 const heardSomething = (s: Scenario, sinceBytes: number): boolean =>
   s.stream.bytesSent() > sinceBytes;
 
-/** A tenant's endpoint that accepts the request and never answers it. */
+/** A organization's endpoint that accepts the request and never answers it. */
 const HANGING_ENDPOINT: InternalTool = {
   definition: {
     name: "check_policy",
@@ -218,7 +218,7 @@ describe("the model", () => {
   it("still recovers when the model asks for a tool on a call that has none", () => {
     // An unregistered number: tool calling is disabled outright for the whole call, and a
     // model that asks anyway must not leave the turn open with nothing coming.
-    const s = scenario({ tenantId: null });
+    const s = scenario({ organizationId: null });
     s.greetingPlays();
 
     s.says("Is my policy active?");
@@ -321,7 +321,7 @@ describe("the voice", () => {
 });
 
 // ---------------------------------------------------------------------------
-describe("a tenant's endpoint hangs past the hard ceiling", () => {
+describe("a organization's endpoint hangs past the hard ceiling", () => {
   it("covers the wait with sound and tells the model nothing happened", async () => {
     vi.useFakeTimers();
     const s = scenario({ ...fillerSetup(), makeTools: withTools([HANGING_ENDPOINT]) });
@@ -407,7 +407,7 @@ describe("the database is unreachable mid-call", () => {
       const recorder = createCallRecorder({ dataSource: rejectingDb(), log: silentLog });
       const s = scenario({ alsoRecordTo: recorder });
       recorder.started({
-        tenantId: asTenantId("5c3d0a5e-1f6d-4f6f-9b3a-0f2d7c8a4e11"),
+        organizationId: asOrganizationId("5c3d0a5e-1f6d-4f6f-9b3a-0f2d7c8a4e11"),
         carrierCallId: "CA-drill",
         direction: "inbound",
         dialled: "unknown",

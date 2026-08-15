@@ -1,17 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { asTenantId } from "@ansa/shared";
+import { asOrganizationId } from "@ansa/shared";
 
 import { createCallRecorder, nullRecorder } from "./event-log";
 
-const TENANT = asTenantId("11111111-1111-4111-8111-111111111111");
+const ORGANIZATION = asOrganizationId("11111111-1111-4111-8111-111111111111");
 
 const silentLog = () => {
   const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), child: () => log };
   return log;
 };
 
-/** withTenant drives a transaction, so the fake has to honour that shape. */
+/** withOrganization drives a transaction, so the fake has to honour that shape. */
 const fakeDb = (onQuery: (sql: string) => unknown = () => []) => {
   const seen: string[] = [];
   const run = async (sql: string) => {
@@ -37,7 +37,7 @@ const fakeDb = (onQuery: (sql: string) => unknown = () => []) => {
 };
 
 const started = {
-  tenantId: TENANT,
+  organizationId: ORGANIZATION,
   carrierCallId: "CA1",
   direction: "outbound" as const,
   dialled: "+234",
@@ -94,7 +94,7 @@ describe("call recorder", () => {
     r.event("conversation started");
     r.event("agent turn played");
 
-    // withTenant runs set_config before the insert, so the chain has to get there before
+    // withOrganization runs set_config before the insert, so the chain has to get there before
     // there is anything to resolve.
     await settle();
     resolveInsert([{ id: "row-1" }]);

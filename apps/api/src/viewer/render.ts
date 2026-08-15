@@ -33,13 +33,13 @@ const esc = (value: unknown): string =>
 /**
  * Credentials that have to survive every link.
  *
- * There is no session here — the token and tenant live in the query string, so a link
+ * There is no session here — the token and organization live in the query string, so a link
  * that drops them is a link to a 403. The first version used a relative href and lost
  * both, and lost the /viewer prefix as well: "./id" against "/viewer" resolves to "/id".
  */
 export interface ViewerLink {
   readonly token: string;
-  readonly tenant: string;
+  readonly organization: string;
 }
 
 /**
@@ -51,7 +51,7 @@ export interface ViewerLink {
  */
 const href = (link: ViewerLink, path = ""): string =>
   `/viewer${path === "" ? "" : `/${path.split("/").map(encodeURIComponent).join("/")}`}` +
-  `?token=${encodeURIComponent(link.token)}&tenant=${encodeURIComponent(link.tenant)}`;
+  `?token=${encodeURIComponent(link.token)}&organization=${encodeURIComponent(link.organization)}`;
 
 /**
  * The credentials again, as form fields.
@@ -61,7 +61,7 @@ const href = (link: ViewerLink, path = ""): string =>
  */
 const credentials = (link: ViewerLink): string =>
   `<input type=hidden name=token value="${esc(link.token)}">` +
-  `<input type=hidden name=tenant value="${esc(link.tenant)}">`;
+  `<input type=hidden name=organization value="${esc(link.organization)}">`;
 
 const percent = (value: number | null): string =>
   value === null ? "—" : `${(value * 100).toFixed(1)}%`;
@@ -340,7 +340,7 @@ export const renderMetrics = (
       ) +
       `</table>` +
       `<h1>By configuration version</h1>` +
-      `<p class=muted>Which version of the tenant's configuration served each call (R7.5). ` +
+      `<p class=muted>Which version of the organization's configuration served each call (R7.5). ` +
       `Movement between versions is evidence that something changed, not evidence of what: ` +
       `provider, model and endpointing are deployment settings and do not appear here. Each ` +
       `call's own settings are in its claim file.</p>` +
@@ -403,7 +403,7 @@ export const renderReviewQueue = (
  * There is no button on this page and that is the design. `apps/api/src/tenancy/defaults.ts`
  * records that boosting a list of ordinary domain words — with no personal name in it —
  * deterministically turned a caller's name into a different name. A human reads this and
- * edits the tenant's keyterms through the configuration API if they agree.
+ * edits the organization's keyterms through the configuration API if they agree.
  */
 export const renderSuggestions = (
   keyterms: readonly KeytermCandidate[],
@@ -546,7 +546,7 @@ export const renderDeliveries = (
     `<h1>Event deliveries</h1>` +
       nav(link, "deliveries") +
       (deliveries.length === 0
-        ? "<p class=muted>Nothing queued. No receiver is configured for this tenant, " +
+        ? "<p class=muted>Nothing queued. No receiver is configured for this organization, " +
           "or no call has ended since one was.</p>"
         : `<table><tr><th>Queued<th>Event<th>To<th>Call<th>Cfg<th>Status<th>Tries<th>Last<th>Sent</tr>` +
           deliveries

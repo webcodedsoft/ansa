@@ -7,7 +7,7 @@ import type { ToolArgs } from "./types";
  * line rather than being left to whoever calls the logger.
  *
  * Key-name matching, not value sniffing. A value-based heuristic passes anything it has
- * not seen before, and the first thing it will not have seen is the tenant's own scheme.
+ * not seen before, and the first thing it will not have seen is the organization's own scheme.
  */
 const SECRET_KEY =
   /(token|secret|password|passwd|passphrase|auth|api[-_]?key|apikey|private[-_]?key|credential|bearer|cookie|session[-_]?id|signature|pin|otp|cvv|ssn)/i;
@@ -47,7 +47,7 @@ export const redactArgs = (args: ToolArgs): Record<string, unknown> =>
  * PII and it is not the organisation's data to receive either — it is material we hold in
  * trust, and it appearing in an outbound body is a defect and not a setting.
  *
- * **Everything else is the tenant's own data and goes complete unless they said otherwise.**
+ * **Everything else is the organization's own data and goes complete unless they said otherwise.**
  * `policy` is theirs, defaults to `NO_REDACTION`, and only then does free text get touched.
  *
  * No truncation, unlike `redactArgs`: this is a record of a conversation, and a transcript

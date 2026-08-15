@@ -5,7 +5,7 @@ import { DataSource } from "typeorm";
  *
  * Exported under our own name for the same reason no vendor type leaves a provider
  * package: swapping the driver should be a change here, not in the Nest module and the
- * tenant registry and everything else that happens to hold a connection.
+ * organization registry and everything else that happens to hold a connection.
  */
 export type Db = DataSource;
 

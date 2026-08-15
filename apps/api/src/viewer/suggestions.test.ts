@@ -46,7 +46,7 @@ describe("keyterm candidates", () => {
     expect(keytermCandidates([pair("Anza", "Ansa", "one")])).toEqual([]);
   });
 
-  it("does not suggest a term the tenant already carries, however it is capitalised", () => {
+  it("does not suggest a term the organization already carries, however it is capitalised", () => {
     const entries = [pair("naria", "naira", "one"), pair("naria", "naira", "two")];
 
     expect(keytermCandidates(entries)).not.toEqual([]);

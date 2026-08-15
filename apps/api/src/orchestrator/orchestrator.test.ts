@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type { AudioChunk } from "@ansa/shared";
 
-import { asCallId, asTenantId, type BusinessHours, type TenantId } from "@ansa/shared";
+import { asCallId, asOrganizationId, type BusinessHours, type OrganizationId } from "@ansa/shared";
 import {
   callControlTools,
   createToolDispatcher,
@@ -22,8 +22,8 @@ import { runConversation, type OrchestratorDeps } from "./orchestrator";
 
 const GREETING = "Thank you for calling Ansa. How can I help you?";
 
-/** Any registered tenant. Only the tool tests below care which, and only that it is set. */
-const TENANT = asTenantId("5c3d0a5e-1f6d-4f6f-9b3a-0f2d7c8a4e11");
+/** Any registered organization. Only the tool tests below care which, and only that it is set. */
+const ORGANIZATION = asOrganizationId("5c3d0a5e-1f6d-4f6f-9b3a-0f2d7c8a4e11");
 
 /** One rendered phrase per tier, so the tiering itself is what is under test. */
 const fillerSetup = () => ({
@@ -48,7 +48,7 @@ const setup = (
     systemPrompt?: string;
     makeHandoff?: (say: (text: string) => Promise<void>) => Handoff;
     /** Null is an unregistered number: tool calling is off for the whole call. */
-    tenantId?: TenantId | null;
+    organizationId?: OrganizationId | null;
     makeTools?: OrchestratorDeps["makeTools"];
   } = {},
 ) => {
@@ -65,7 +65,7 @@ const setup = (
     log: silentLog,
     greeting: GREETING,
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
-    tenantId: TENANT,
+    organizationId: ORGANIZATION,
     forSpeech: (t) => t.replace(/\bAnsa\b/g, "An-Sah"),
     // These tests drive transcripts directly to exercise turn logic and never fan in
     // audio, so the no-speech filter would discard every one of them. The filter has its
@@ -1083,18 +1083,18 @@ describe("handing the call to a person (R6.4)", () => {
 });
 
 describe("the prompt the call was configured with", () => {
-  it("sends the tenant's composed prompt, not the default one", () => {
-    // A tenant's persona has been loaded, validated and composed on every config load
+  it("sends the organization's composed prompt, not the default one", () => {
+    // A organization's persona has been loaded, validated and composed on every config load
     // since the prompt layers landed, and the orchestrator used the default anyway.
-    const tenantPrompt = "You are answering for a tenant whose own layer is in this text.";
-    const h = setup({ systemPrompt: tenantPrompt });
+    const organizationPrompt = "You are answering for a organization whose own layer is in this text.";
+    const h = setup({ systemPrompt: organizationPrompt });
 
     h.listen.final("What are your opening hours?");
 
     const system = h.llm.last().request.system;
-    expect(system.startsWith(tenantPrompt)).toBe(true);
+    expect(system.startsWith(organizationPrompt)).toBe(true);
     // The turn budget still lands last, which is how the layering already worked.
-    expect(system.length).toBeGreaterThan(tenantPrompt.length);
+    expect(system.length).toBeGreaterThan(organizationPrompt.length);
     assertInvariants(h);
   });
 });
@@ -1102,7 +1102,7 @@ describe("the prompt the call was configured with", () => {
 describe("what the agent knows about the call (§10)", () => {
   const newFacts = (): CallFactsStore =>
     createCallFacts({
-      tenantId: asTenantId("11111111-1111-4111-8111-111111111111"),
+      organizationId: asOrganizationId("11111111-1111-4111-8111-111111111111"),
       callId: asCallId("CA-facts"),
       callDirection: "inbound",
     });
@@ -1332,13 +1332,13 @@ describe("audio that arrived before the listener existed", () => {
       log: silentLog,
       greeting: GREETING,
       systemPrompt: DEFAULT_SYSTEM_PROMPT,
-      tenantId: TENANT,
+      organizationId: ORGANIZATION,
       forSpeech: (t) => t,
       minSpeechMs: 0,
       initialAudio: early,
     });
 
-    // Outbound loads its tenant on the socket; frames arriving in that window used to be
+    // Outbound loads its organization on the socket; frames arriving in that window used to be
     // dropped outright.
     expect(listen.written).toHaveLength(2);
     expect(listen.written[0]?.data[0]).toBe(0x01);
@@ -1356,7 +1356,7 @@ describe("audio that arrived before the listener existed", () => {
       log: silentLog,
       greeting: GREETING,
       systemPrompt: DEFAULT_SYSTEM_PROMPT,
-      tenantId: TENANT,
+      organizationId: ORGANIZATION,
       forSpeech: (t) => t,
       minSpeechMs: 0,
       initialAudio: [{ data: Buffer.alloc(160, 0x01), offsetMs: 0 }],
@@ -1618,9 +1618,9 @@ describe("tool calling", () => {
 
   // CLAUDE.md rule 3. An unregistered number may hold a conversation and must not reach
   // anybody's systems.
-  it("offers nothing at all on a call with no tenant", () => {
+  it("offers nothing at all on a call with no organization", () => {
     const tools = toolHarness([READ_TOOL]);
-    const h = setup({ tenantId: null, makeTools: tools.makeTools });
+    const h = setup({ organizationId: null, makeTools: tools.makeTools });
     started(h);
 
     h.listen.final("When do you open?");
@@ -1628,10 +1628,10 @@ describe("tool calling", () => {
     expect(h.llm.last().request.tools).toBeUndefined();
   });
 
-  it("never builds a dispatcher on a call with no tenant", () => {
+  it("never builds a dispatcher on a call with no organization", () => {
     let built = 0;
     setup({
-      tenantId: null,
+      organizationId: null,
       makeTools: (hooks) => {
         built += 1;
         const registry = createToolRegistry();
@@ -1920,7 +1920,7 @@ describe("the platform tools on a call", () => {
     expect(h.stream.hungUp).toBe(false);
   });
 
-  it("answers the opening hours from tenant configuration", async () => {
+  it("answers the opening hours from organization configuration", async () => {
     const h = setup({
       makeTools: platform({ opensAtHour: 9, closesAtHour: 17, openDays: [1, 2, 3, 4, 5] }),
     });
@@ -1935,7 +1935,7 @@ describe("the platform tools on a call", () => {
     expect(note).toMatch(/open now|closed at the moment/);
   });
 
-  it("says it does not know when the tenant has configured no hours", async () => {
+  it("says it does not know when the organization has configured no hours", async () => {
     const h = setup({ makeTools: platform(null) });
     started(h);
     h.listen.final("Are you open?");

@@ -4,7 +4,7 @@ import type { ToolArgs, ToolDefinition } from "../types";
 import type { InternalHandler, InternalTool } from "./adapter";
 
 /**
- * The platform's own tools: the three things the agent can do that need no tenant data.
+ * The platform's own tools: the three things the agent can do that need no organization data.
  *
  * They are deliberately the only tools registered today. Anything that answers a question
  * about a caller's account needs a real system behind it, and an agent answering
@@ -26,7 +26,7 @@ export interface CallControlOptions {
    * the goodbye off mid-word. The implementation waits for the mark.
    */
   readonly endCall: (reason: string) => void;
-  /** Null when this tenant has never configured any. The tool then says so. */
+  /** Null when this organization has never configured any. The tool then says so. */
   readonly businessHours: BusinessHours | null;
   /** Overridden in tests. */
   readonly now?: () => Date;
@@ -185,7 +185,7 @@ const REASON_PARAMETER = {
 /**
  * `end_call` is read tier, and that is a decision rather than an oversight.
  *
- * The tiers grade what a tool does to the tenant's records: `write` earns a readback
+ * The tiers grade what a tool does to the organization's records: `write` earns a readback
  * because a wrong value gets stored, `irreversible` earns a person because nothing can
  * undo it. Ending a call stores nothing and is undone by dialling again. Putting it
  * behind a spoken confirmation would mean answering "goodbye" with "are you sure?",
@@ -272,8 +272,8 @@ const handlersFor = (options: CallControlOptions): Readonly<Record<string, Inter
       throw new Error("transfer_to_human must never execute — the handoff module owns the transfer");
     },
 
-    // No lookup, so no tenant scoping to get wrong: the hours were resolved for this call
-    // from this call's tenant configuration before the registry was built.
+    // No lookup, so no organization scoping to get wrong: the hours were resolved for this call
+    // from this call's organization configuration before the registry was built.
     [BUSINESS_HOURS.name]: async () => answerHours(options.businessHours, now()),
   };
 };

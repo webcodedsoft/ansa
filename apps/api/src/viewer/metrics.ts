@@ -129,7 +129,7 @@ const words = (text: string): readonly string[] =>
  * Word-level edit distance — substitutions, insertions and deletions, as WER is defined.
  *
  * Two rows rather than a full matrix: a turn is short, but a corpus is not, and this runs
- * over every reviewed turn the tenant has.
+ * over every reviewed turn the organization has.
  */
 const editDistance = (a: readonly string[], b: readonly string[]): number => {
   if (a.length === 0) return b.length;
@@ -198,7 +198,7 @@ export const scoreCalls = (records: readonly CallRecord[]): QualityMetrics => {
         case "latency": {
           // The one stage R5.5 is written against: the caller stopped, and this is how
           // long until they heard something. The component stages are diagnosis, not
-          // the number a tenant is promised.
+          // the number a organization is promised.
           if (detail["stage"] === "turn_to_audio") latencies.push(Number(detail["ms"] ?? 0));
           break;
         }

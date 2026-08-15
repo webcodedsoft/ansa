@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { asTenantId } from "@ansa/shared";
+import { asOrganizationId } from "@ansa/shared";
 import { ServiceUnavailableException } from "@nestjs/common";
 import { describe, expect, it } from "vitest";
 
@@ -31,7 +31,7 @@ import {
  * need a database — which would be testing the seam rather than the rule.
  */
 
-const owner = asTenantId("00000000-0000-4000-8000-000000000000");
+const owner = asOrganizationId("00000000-0000-4000-8000-000000000000");
 
 const silent = {
   debug: () => undefined,
@@ -111,7 +111,7 @@ describe("a deployment that cannot place calls", () => {
   /**
    * A carrier that is configured and a database that is not is 503 and not a consent
    * refusal. `placeOutboundCall` would refuse it — correctly, since it cannot check consent
-   * — and the tenant would read "we may not call this number", which is a different and
+   * — and the organization would read "we may not call this number", which is a different and
    * false statement about their own records.
    */
   it("does not report a missing database as a consent problem", async () => {

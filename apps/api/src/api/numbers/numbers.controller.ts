@@ -4,7 +4,7 @@ import { Controller, Get, Inject } from "@nestjs/common";
 import { Endpoint } from "../http/endpoint";
 import { apiRoute } from "../http/request";
 import { choice, flag, list, nullable, object, text, type Infer } from "../http/schema";
-import { TenantContext } from "../tenancy/tenant-context";
+import { OrganizationContext } from "../tenancy/organization-context";
 
 import { expectedVoiceWebhookUrl, loadNumbersEnvironment } from "./environment";
 import { carrierDirectoryFor, probeCarrierWebhook } from "./probes";
@@ -21,12 +21,12 @@ import { clamp } from "./text";
  * `GET /numbers/provisioning` says so in a form a dashboard can render.
  *
  * "Attach a number I already own" is the useful half of that, and it is not here either.
- * `tenants.dialled_number` is the ingress routing table — `app.tenant_for_number` resolves
- * every inbound call through it — and `docs/TENANT_CONFIGURATION.md` §5 keeps it out of the
+ * `organizations.dialled_number` is the ingress routing table — `app.organization_for_number` resolves
+ * every inbound call through it — and `docs/ORGANIZATION_CONFIGURATION.md` §5 keeps it out of the
  * organisation's reach for a concrete reason: an organisation that could write it could
  * claim a number nobody assigned it. The unique index stops two organisations holding the
  * same number, but nothing stops the *first* claim on a number somebody else controls at
- * their carrier, and the next tenant to be onboarded onto it would find it taken and their
+ * their carrier, and the next organization to be onboarded onto it would find it taken and their
  * calls answered by a stranger's agent.
  *
  * Making that safe needs proof that the organisation controls the number, and there is
@@ -42,7 +42,7 @@ import { clamp } from "./text";
 /**
  * The bounds below are enforced on the way out as well as declared here.
  *
- * `tenants.dialled_number` is an unconstrained text column written by an operator in psql,
+ * `organizations.dialled_number` is an unconstrained text column written by an operator in psql,
  * and a URL comes back from a carrier. The interceptor answers 500 when a handler returns
  * something its own schema rejects, so a number typed with a paragraph in it would take
  * this endpoint down rather than being shown as the mistake it is.
@@ -81,7 +81,7 @@ const attachedNumber = object({
  * Not a keyset page, and not by oversight.
  *
  * A page exists because a list is long and written to constantly, and one number per
- * organisation is neither. `tenants.dialled_number` is a single column; a cursor over it
+ * organisation is neither. `organizations.dialled_number` is a single column; a cursor over it
  * would be a contract promising growth this schema cannot deliver, and it would have to be
  * broken on the day a numbers table arrives anyway.
  */
@@ -119,7 +119,7 @@ const WEBHOOK_DETAIL =
 
 @Controller(apiRoute("numbers"))
 export class NumbersController {
-  constructor(@Inject(TenantContext) private readonly db: TenantContext) {}
+  constructor(@Inject(OrganizationContext) private readonly db: OrganizationContext) {}
 
   @Get()
   @Endpoint({

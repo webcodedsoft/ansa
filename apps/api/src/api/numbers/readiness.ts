@@ -14,16 +14,16 @@ import { clamp } from "./text";
  *
  * The checks are not a checklist somebody wrote down. Each one is a failure that has
  * actually happened, most of them recorded in `docs/ONBOARDING_RUNBOOK.md` after onboarding
- * the second tenant by hand:
+ * the second organization by hand:
  *
- *   - a carrier webhook nobody checked, on a tenant that looked perfect in every column;
+ *   - a carrier webhook nobody checked, on a organization that looked perfect in every column;
  *   - a voice id that published happily and hung up the first call;
  *   - a missing vault key that failed loudly at sealing and *silently* at publish, leaving
- *     a tenant's tools dropped on every call with an error in a log nobody watches;
+ *     a organization's tools dropped on every call with an error in a log nobody watches;
  *   - an egress allowlist entry with a port in it, which matches no host and never fires.
  *
  * Three states carry the whole meaning, and the difference between the last two is the
- * reason this is worth building rather than printing the tenant row:
+ * reason this is worth building rather than printing the organization row:
  *
  *   `blocked`   a caller is being failed today, or would be by the next call.
  *   `attention` it works, and it is probably not what they meant.
@@ -126,7 +126,7 @@ const attachedCheck = (facts: OnboardingFacts): ReadinessCheck => {
       "number.attached",
       "A number is attached",
       "attention",
-      `The attached number is stored as "${number}", which is not E.164. The carrier reports the dialled number in E.164 and the tenant is resolved by an exact string match, so a call to this number will not resolve to this organisation.`,
+      `The attached number is stored as "${number}", which is not E.164. The carrier reports the dialled number in E.164 and the organization is resolved by an exact string match, so a call to this number will not resolve to this organisation.`,
       "An operator corrects the stored number to its E.164 form, leading plus and no separators.",
     );
   }
@@ -176,8 +176,8 @@ const webhookCheck = (probe: WebhookProbe): ReadinessCheck => {
  * The cheapest evidence in the product that the carrier is wired, and the only one that
  * works for a number no API of ours can see.
  *
- * A tenant provisioned with step 1 forgotten has a perfect configuration and no rows in
- * `calls`, for ever. This does not prove wiring — a new tenant has no traffic either — but
+ * A organization provisioned with step 1 forgotten has a perfect configuration and no rows in
+ * `calls`, for ever. This does not prove wiring — a new organization has no traffic either — but
  * an organisation that has been configured for a week and never received a call is the
  * exact shape of that mistake.
  */
@@ -272,7 +272,7 @@ const consentCheck = (facts: OnboardingFacts): ReadinessCheck => {
       "consent_policy",
       title,
       "unknown",
-      "This deployment's tenant row has no consent policy column, which means a migration has not been applied.",
+      "This deployment's organization row has no consent policy column, which means a migration has not been applied.",
       "Apply the outstanding database migrations.",
     );
   }
@@ -442,7 +442,7 @@ const toolsCheck = (facts: OnboardingFacts, parsed: ParsedConfig): ReadinessChec
  *
  * Sealing a credential refuses loudly without the vault key; publishing does not. A
  * configuration full of tools publishes fine, and every one that names a credential is
- * dropped at config load with an error in a log nobody is watching. The second tenant's
+ * dropped at config load with an error in a log nobody is watching. The second organization's
  * first published version was in exactly that state.
  */
 const credentialsCheck = (

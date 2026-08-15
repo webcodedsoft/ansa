@@ -67,7 +67,7 @@ describe("mayCall", () => {
     expect(mayCall(facts({ now: new Date("2026-08-08T19:00:00Z") }))).toMatchObject({ allowed: false });
   });
 
-  it("lets a tenant narrow the window but reports the one in force", () => {
+  it("lets a organization narrow the window but reports the one in force", () => {
     const verdict = mayCall(facts({ now: new Date("2026-08-08T16:30:00Z"), latestHour: 17 }));
     expect(verdict).toMatchObject({ allowed: false });
     expect(verdict.allowed === false && verdict.reason).toContain("allowed 8-17");
@@ -75,7 +75,7 @@ describe("mayCall", () => {
 });
 
 describe("an organisation's own consent policy", () => {
-  it("lets a tenant calling its own customers do so without a per-number record", () => {
+  it("lets a organization calling its own customers do so without a per-number record", () => {
     // An insurer ringing a policyholder about their renewal is not relying on marketing
     // consent and should not have to manufacture a record to say so.
     expect(mayCall(facts({ consent: null, policy: "existing_relationship" }))).toEqual({
@@ -92,7 +92,7 @@ describe("an organisation's own consent policy", () => {
   });
 
   it("never lets any policy override a do-not-call entry", () => {
-    // The line that must hold: a tenant chooses its lawful basis, not whether the check
+    // The line that must hold: a organization chooses its lawful basis, not whether the check
     // applies. Suppression is not theirs to switch off.
     for (const policy of ["per_number", "existing_relationship"] as const) {
       expect(mayCall(facts({ suppressed: true, policy })), policy).toMatchObject({
@@ -113,15 +113,15 @@ describe("an organisation's own consent policy", () => {
     ).toMatchObject({ allowed: false });
   });
 
-  it("lets a tenant narrow the calling window", () => {
-    // 16:30 WAT, tenant closes at 16:00.
+  it("lets a organization narrow the calling window", () => {
+    // 16:30 WAT, organization closes at 16:00.
     expect(
       mayCall(facts({ now: new Date("2026-08-08T15:30:00Z"), latestHour: 16 })),
     ).toMatchObject({ allowed: false });
   });
 
-  it("does not let a tenant widen it", () => {
-    // 22:00 WAT with a tenant asking to call until midnight, and 06:00 WAT with one
+  it("does not let a organization widen it", () => {
+    // 22:00 WAT with a organization asking to call until midnight, and 06:00 WAT with one
     // asking to start at dawn. Both are choices about someone else's day.
     expect(
       mayCall(facts({ now: new Date("2026-08-08T21:00:00Z"), latestHour: 24, earliestHour: 0 })),

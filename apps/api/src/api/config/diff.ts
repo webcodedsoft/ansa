@@ -1,4 +1,4 @@
-import type { TenantConfigFields } from "@ansa/db";
+import type { AgentConfigFields } from "@ansa/db";
 
 /**
  * What changed between two published configurations.
@@ -67,13 +67,13 @@ const renderDays = (days: readonly number[] | undefined): string | null =>
  * The leaves of one configuration, flattened to the paths the diff reports.
  *
  * Written out rather than derived by walking the object, so that adding a field to
- * `TenantConfigFields` and forgetting it here is a compile error: the record is keyed by a
+ * `AgentConfigFields` and forgetting it here is a compile error: the record is keyed by a
  * closed list of paths and the value expressions name every property of the two nested
  * shapes. A generic walker would silently ignore the new field, which is the failure that
  * makes a diff untrustworthy — a change it does not mention reads as a change that did not
  * happen.
  */
-const leaves = (config: TenantConfigFields): Readonly<Record<string, string | null>> => ({
+const leaves = (config: AgentConfigFields): Readonly<Record<string, string | null>> => ({
   name: config.name,
   voiceId: render(config.voiceId),
   greeting: render(config.greeting),
@@ -104,8 +104,8 @@ const missingFrom = (
 };
 
 export const diffConfigurations = (
-  before: TenantConfigFields,
-  after: TenantConfigFields,
+  before: AgentConfigFields,
+  after: AgentConfigFields,
 ): ConfigDiff => {
   const left = leaves(before);
   const right = leaves(after);

@@ -18,8 +18,8 @@ import {
 } from "@ansa/tools";
 import { Inject, Injectable, type OnApplicationBootstrap, type OnApplicationShutdown } from "@nestjs/common";
 
-import type { TenantRegistry } from "../tenancy/tenant-registry";
-import { DATA_SOURCE, LOGGER, TENANT_REGISTRY } from "../telephony/tokens";
+import type { AgentRegistry } from "../tenancy/agent-registry";
+import { DATA_SOURCE, LOGGER, ORGANIZATION_REGISTRY } from "../telephony/tokens";
 
 /**
  * The delivery worker.
@@ -29,7 +29,7 @@ import { DATA_SOURCE, LOGGER, TENANT_REGISTRY } from "../telephony/tokens";
  * with the conversation path is a database and a connection pool. A receiver that hangs for
  * its full timeout costs this sweep a slot and costs no caller anything.
  *
- * The circuit breaker is the Slice 6 one, keyed on `(tenantId, subject)` where the subject
+ * The circuit breaker is the Slice 6 one, keyed on `(organizationId, subject)` where the subject
  * is the subscription name rather than a tool. That was written for this: an organisation
  * whose receiver has been down since lunchtime should stop being posted to every fifteen
  * seconds, and it should stop for that receiver rather than for their other one.
@@ -56,7 +56,7 @@ export class EventDeliverySweeper implements OnApplicationBootstrap, OnApplicati
 
   constructor(
     @Inject(DATA_SOURCE) private readonly dataSource: Db | null,
-    @Inject(TENANT_REGISTRY) private readonly tenants: TenantRegistry,
+    @Inject(ORGANIZATION_REGISTRY) private readonly organizations: AgentRegistry,
     @Inject(LOGGER) private readonly log: Logger,
   ) {}
 
@@ -125,7 +125,7 @@ export class EventDeliverySweeper implements OnApplicationBootstrap, OnApplicati
   /**
    * Finds the receiver this row was queued for, as it is configured now.
    *
-   * The payload is fixed and the routing is not, which is the right way round. If a tenant
+   * The payload is fixed and the routing is not, which is the right way round. If a organization
    * removed a receiver between the event and the retry, they no longer want it delivered;
    * if they corrected its URL, the retry should go to the corrected one.
    */
@@ -133,20 +133,20 @@ export class EventDeliverySweeper implements OnApplicationBootstrap, OnApplicati
     delivery: ClaimedDelivery,
     type: EventType,
   ): Promise<{ readonly prepared: PreparedSubscription; readonly transport: Transport } | null> {
-    const tenant = await this.tenants.load(delivery.tenantId);
-    if (tenant === null || tenant.events.empty) return null;
-    const prepared = tenant.events
+    const organization = await this.organizations.load(delivery.organizationId);
+    if (organization === null || organization.events.empty) return null;
+    const prepared = organization.events
       .subscribersTo(type)
       .find((entry) => entry.subscription.name === delivery.subscription);
     if (prepared === undefined) return null;
-    return { prepared, transport: tenant.events.transport };
+    return { prepared, transport: organization.events.transport };
   }
 
   private async attempt(
     db: Db,
     delivery: ClaimedDelivery,
   ): Promise<"delivered" | "failed" | "retrying"> {
-    const log = this.log.child({ tenantId: delivery.tenantId });
+    const log = this.log.child({ organizationId: delivery.organizationId });
 
     // A row written by a newer version of this process than the one draining the queue.
     // Refused rather than guessed at: an event type we cannot name is one we cannot route.
@@ -174,7 +174,7 @@ export class EventDeliverySweeper implements OnApplicationBootstrap, OnApplicati
       return "failed";
     }
 
-    const key = breakerKey(delivery.tenantId, delivery.subscription);
+    const key = breakerKey(delivery.organizationId, delivery.subscription);
     if (!this.breaker.allows(key)) {
       // Not a failure and not an attempt. Put it back with a short delay: the circuit will
       // half-open shortly and this row should be there when it does.
@@ -188,7 +188,7 @@ export class EventDeliverySweeper implements OnApplicationBootstrap, OnApplicati
 
     const outcome = await deliverOnce(
       {
-        // The tenant's own prepared transport: one egress guard, one allowlist, one
+        // The organization's own prepared transport: one egress guard, one allowlist, one
         // address-pinned socket. There is no second HTTP client in this product.
         transport: found.transport,
         subscription: found.prepared.subscription,
@@ -198,7 +198,7 @@ export class EventDeliverySweeper implements OnApplicationBootstrap, OnApplicati
       {
         id: delivery.id,
         type,
-        tenantId: delivery.tenantId,
+        organizationId: delivery.organizationId,
         attempt: delivery.attempts,
         body: delivery.body,
       },

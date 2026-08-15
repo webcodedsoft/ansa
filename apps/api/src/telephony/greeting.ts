@@ -12,6 +12,6 @@ export const GREETING_TEXT = "Thank you for calling Ansa. How can I help you?";
 /**
  * Re-exported so the speech path keeps one import, but the implementation now lives in
  * packages/normalizer. Nothing reaches TTS unnormalized — greetings included, since a
- * static string today becomes a per-tenant template with a number in it tomorrow.
+ * static string today becomes a per-organization template with a number in it tomorrow.
  */
 export { forSpeech } from "@ansa/normalizer";

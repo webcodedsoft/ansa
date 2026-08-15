@@ -15,7 +15,7 @@ import { hashPassword } from "../auth/password";
  *
  * The unit tests above prove the judgement and the probes. This proves the parts a unit
  * test replaces: that the module wires up, that a request-scoped controller can open a
- * tenant transaction, and — the one that actually bites — that what each handler returns
+ * organization transaction, and — the one that actually bites — that what each handler returns
  * survives being projected through its own response schema. A field the schema does not
  * admit is a 500 at runtime and passes every test that does not make the request.
  *
@@ -49,7 +49,7 @@ let owner: Db;
 let app: INestApplication;
 let baseUrl: string;
 let token: string;
-const tenantId = randomUUID();
+const organizationId = randomUUID();
 const userId = randomUUID();
 
 interface Reply {
@@ -81,24 +81,36 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)(
       process.env["PUBLIC_BASE_URL"] = "https://readiness.test";
 
       owner = await createDataSource({ url: ownerUrl ?? "", poolSize: 2 }).initialize();
-      const email = `numbers-${tenantId}@invalid.test`;
+      const email = `numbers-${organizationId}@invalid.test`;
       const password = `${randomUUID()}-${randomUUID()}`;
 
-      // `dialled_number` is uniquely indexed, so a run interrupted before its cleanup would
-      // make every later run fail on the insert rather than on anything real.
-      await owner.query("delete from tenants where dialled_number = $1", [DIALLED]);
-      await owner.query("insert into tenants (id, name, dialled_number) values ($1, $2, $3)", [
-        tenantId,
+      /* The number is uniquely indexed, so a run interrupted before its cleanup would make
+         every later run fail on the insert rather than on anything real. Three tables now
+         rather than one: the organisation, the number it holds, and the agent that answers
+         it — migration 0018 moved routing to the agent and 0019 made ownership operator-
+         written. `owner` is the migration role, which is the only one that may seed a
+         number, and that restriction is the point of 0019. */
+      await owner.query("delete from agents where dialled_number = $1", [DIALLED]);
+      await owner.query("delete from organization_numbers where number = $1", [DIALLED]);
+      await owner.query("insert into organizations (id, name) values ($1, $2)", [
+        organizationId,
         "Readiness endpoints",
-        DIALLED,
       ]);
+      await owner.query(
+        "insert into organization_numbers (organization_id, number) values ($1, $2)",
+        [organizationId, DIALLED],
+      );
+      await owner.query(
+        "insert into agents (id, organization_id, name, dialled_number) values ($1, $1, $2, $3)",
+        [organizationId, "Readiness endpoints", DIALLED],
+      );
       await owner.query(
         "insert into users (id, email, password_hash, display_name) values ($1, $2, $3, $4)",
         [userId, email, await hashPassword(password), "Owner"],
       );
       await owner.query(
-        "insert into memberships (tenant_id, user_id, role) values ($1, $2, 'owner')",
-        [tenantId, userId],
+        "insert into memberships (organization_id, user_id, role) values ($1, $2, 'owner')",
+        [organizationId, userId],
       );
 
       app = await NestFactory.create(ApiModule, { logger: false });
@@ -108,14 +120,14 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)(
       const signIn = await fetch(`${baseUrl}/api/v1/auth/sessions`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email, password, organisationId: tenantId }),
+        body: JSON.stringify({ email, password, organisationId: organizationId }),
       });
       token = String(((await signIn.json()) as Record<string, unknown>)["token"]);
     });
 
     afterAll(async () => {
       await app?.close();
-      await owner?.query("delete from tenants where id = $1", [tenantId]);
+      await owner?.query("delete from organizations where id = $1", [organizationId]);
       await owner?.query("delete from users where id = $1", [userId]);
       await owner?.destroy();
     });

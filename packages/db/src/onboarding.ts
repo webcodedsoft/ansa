@@ -1,11 +1,11 @@
 import type { BusinessHours } from "@ansa/shared";
 
-import type { TenantScope } from "./tenant-scope";
+import type { OrganizationScope } from "./organization-scope";
 
 /**
  * Everything "is this organisation actually live?" is decided from, in one transaction.
  *
- * Deliberately not the same read as `tenant-config.ts` next door, which answers "what has
+ * Deliberately not the same read as `organization-config.ts` next door, which answers "what has
  * this organisation configured" and is the dashboard's configuration screen. This answers a
  * different question and needs three things that one has no reason to hold: the raw `tools`
  * and `events` documents (readiness re-parses them exactly as config load does, because a
@@ -13,10 +13,10 @@ import type { TenantScope } from "./tenant-scope";
  * credential vault, and whether a call has ever arrived at all.
  *
  * That last one is the cheapest evidence in the product that step 1 of the onboarding
- * runbook was done. A tenant provisioned with the carrier webhook forgotten looks perfect
+ * runbook was done. A organization provisioned with the carrier webhook forgotten looks perfect
  * in every column and has no rows in `calls`, forever.
  *
- * No `where` clause and no tenant id anywhere, which is the point: under RLS each of these
+ * No `where` clause and no organization id anywhere, which is the point: under RLS each of these
  * tables shows exactly this organisation's rows, so the query that reads somebody else's is
  * not a query with a missing condition — it is unwritable.
  *
@@ -60,7 +60,7 @@ export interface OnboardingFacts {
  * hours reading as "not configured" on such a deployment is exactly right — it is what the
  * call path does too.
  */
-type TenantRow = Record<string, unknown>;
+type OrganizationRow = Record<string, unknown>;
 
 const textOrNull = (value: unknown): string | null =>
   typeof value === "string" && value.trim() !== "" ? value.trim() : null;
@@ -72,7 +72,7 @@ const wholeNumberOrNull = (value: unknown): number | null => {
 };
 
 /** Three columns or none. Two thirds of an opening-hours row cannot be reasoned about. */
-const toBusinessHours = (row: TenantRow): BusinessHours | null => {
+const toBusinessHours = (row: OrganizationRow): BusinessHours | null => {
   const opens = wholeNumberOrNull(row["business_open_hour"]);
   const closes = wholeNumberOrNull(row["business_close_hour"]);
   const days = row["business_days"];
@@ -87,17 +87,33 @@ const toIsoOrNull = (value: unknown): string | null => {
 };
 
 /**
- * Null when no tenant row is visible in this scope, which through the dashboard cannot
+ * Null when no organization row is visible in this scope, which through the dashboard cannot
  * happen — a session exists because the row that owns it does. Reported rather than
  * asserted, because the alternative is a null dereference in a health endpoint.
  */
-export const loadOnboardingFacts = async (scope: TenantScope): Promise<OnboardingFacts | null> => {
-  const tenants = await scope.query<TenantRow>("select * from tenants limit 1");
-  const row = tenants[0];
+export const loadOnboardingFacts = async (scope: OrganizationScope): Promise<OnboardingFacts | null> => {
+  const organizations = await scope.query<OrganizationRow>("select * from organizations limit 1");
+  const row = organizations[0];
   if (row === undefined) return null;
 
+  /* Readiness is about the whole organisation, but three of its facts belong to an agent
+     now: the number it answers, the greeting it opens with and the voice it uses all moved
+     to `agents` in migration 0018, and 0026 dropped the stale copies here. The oldest live
+     agent, matching every other place that has to pick one without being told which.
+
+     No agent at all is a real state since 0025 stopped creating one — a brand-new
+     organisation looks exactly like this — and it reads as "not ready", which is true. */
+  const agents = await scope.query<Record<string, unknown>>(
+    `select greeting, voice_id, dialled_number, escalation_to_number, escalation_from_number
+       from agents
+      where archived_at is null
+      order by created_at, id
+      limit 1`,
+  );
+  const agent = agents[0] ?? {};
+
   const credentials = await scope.query<{ ref: string }>(
-    "select ref from tenant_credentials order by ref",
+    "select ref from organization_credentials order by ref",
   );
 
   // `::int` because the driver hands a bigint back as a string, and a count compared with
@@ -114,15 +130,15 @@ export const loadOnboardingFacts = async (scope: TenantScope): Promise<Onboardin
 
   return {
     organisationName: typeof row["name"] === "string" ? row["name"] : "",
-    dialledNumber: textOrNull(row["dialled_number"]),
-    greeting: textOrNull(row["greeting"]),
-    voiceId: textOrNull(row["voice_id"]),
+    dialledNumber: textOrNull(agent["dialled_number"]),
+    greeting: textOrNull(agent["greeting"]),
+    voiceId: textOrNull(agent["voice_id"]),
     businessHours: toBusinessHours(row),
     consentPolicy: textOrNull(row["consent_policy"]),
     consentBasis: textOrNull(row["consent_basis"]),
     escalationConfigured:
-      textOrNull(row["escalation_to_number"]) !== null &&
-      textOrNull(row["escalation_from_number"]) !== null,
+      textOrNull(agent["escalation_to_number"]) !== null &&
+      textOrNull(agent["escalation_from_number"]) !== null,
     toolConfig: row["tool_config"] ?? null,
     eventConfig: row["event_config"] ?? null,
     credentialRefs: credentials.map((entry) => entry.ref),

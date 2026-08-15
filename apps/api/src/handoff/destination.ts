@@ -3,10 +3,10 @@ import type { HandoffDestination, Logger } from "@ansa/shared";
 /**
  * The platform's fallback destination, read from the environment at boot.
  *
- * **A tenant's own destination wins over this.** Migration 0015 put escalation on the
- * tenant row where R6.5 always said it belonged, and `callSettings` prefers it; this is
- * what a deployment with one tenant and no rows filled in still gets. It is a fallback and
- * not a default in the ordinary sense: with two tenants configured, a call that lands here
+ * **A organization's own destination wins over this.** Migration 0015 put escalation on the
+ * organization row where R6.5 always said it belonged, and `callSettings` prefers it; this is
+ * what a deployment with one organization and no rows filled in still gets. It is a fallback and
+ * not a default in the ordinary sense: with two organizations configured, a call that lands here
  * is a call whose organisation has not said where its escalations go.
  *
  * Unconfigured returns null rather than a placeholder, and the escalation path says so out

@@ -1,21 +1,21 @@
-import type { TenantId } from "@ansa/shared";
+import type { OrganizationId } from "@ansa/shared";
 
 import type { ToolArgs } from "../types";
 import type { InternalTool } from "./adapter";
 
 /**
- * A worked internal tool set, standing in for a tenant's policy administration system.
+ * A worked internal tool set, standing in for a organization's policy administration system.
  *
  * It exists so the dispatch path is exercised end to end by something shaped like a real
  * tool rather than by a stub: one tool per risk tier, arguments that arrive from a model
  * and therefore cannot be trusted, results that have to become a sentence, and a lookup
- * that is scoped by tenant because every lookup in this product is.
+ * that is scoped by organization because every lookup in this product is.
  *
- * The book is in memory. Replacing it with the tenant's HTTP connector is a change to
+ * The book is in memory. Replacing it with the organization's HTTP connector is a change to
  * `PolicyBook` and nothing else.
  */
 export interface PolicyRecord {
-  readonly tenantId: TenantId;
+  readonly organizationId: OrganizationId;
   readonly policyNumber: string;
   readonly holder: string;
   readonly status: "active" | "lapsed" | "pending";
@@ -27,9 +27,9 @@ export interface PolicyRecord {
 }
 
 export interface PolicyBook {
-  find(tenantId: TenantId, policyNumber: string): Promise<PolicyRecord | null>;
+  find(organizationId: OrganizationId, policyNumber: string): Promise<PolicyRecord | null>;
   setContactNumber(
-    tenantId: TenantId,
+    organizationId: OrganizationId,
     policyNumber: string,
     contactNumber: string,
   ): Promise<PolicyRecord | null>;
@@ -38,21 +38,21 @@ export interface PolicyBook {
 const normaliseNumber = (raw: string): string => raw.replace(/[\s-]/g, "").toUpperCase();
 
 export const createInMemoryPolicyBook = (seed: readonly PolicyRecord[]): PolicyBook => {
-  // Keyed by tenant *and* number. A single flat map keyed by policy number would work
-  // right up until two tenants issued the same one, which insurers reliably do.
-  const key = (tenantId: TenantId, policyNumber: string): string =>
-    `${tenantId}::${normaliseNumber(policyNumber)}`;
+  // Keyed by organization *and* number. A single flat map keyed by policy number would work
+  // right up until two organizations issued the same one, which insurers reliably do.
+  const key = (organizationId: OrganizationId, policyNumber: string): string =>
+    `${organizationId}::${normaliseNumber(policyNumber)}`;
 
   const records = new Map<string, PolicyRecord>(
-    seed.map((record) => [key(record.tenantId, record.policyNumber), record]),
+    seed.map((record) => [key(record.organizationId, record.policyNumber), record]),
   );
 
   return {
-    async find(tenantId, policyNumber) {
-      return records.get(key(tenantId, policyNumber)) ?? null;
+    async find(organizationId, policyNumber) {
+      return records.get(key(organizationId, policyNumber)) ?? null;
     },
-    async setContactNumber(tenantId, policyNumber, contactNumber) {
-      const k = key(tenantId, policyNumber);
+    async setContactNumber(organizationId, policyNumber, contactNumber) {
+      const k = key(organizationId, policyNumber);
       const existing = records.get(k);
       if (existing === undefined) return null;
       const updated = { ...existing, contactNumber };
@@ -103,7 +103,7 @@ export const policyTools = (book: PolicyBook): readonly InternalTool[] => [
           ? sayPolicy(result)
           : "I can't find a policy with that number on our records.",
     },
-    handler: async ({ tenantId, args }) => book.find(tenantId, requireString(args, "policyNumber")),
+    handler: async ({ organizationId, args }) => book.find(organizationId, requireString(args, "policyNumber")),
   },
 
   {
@@ -129,9 +129,9 @@ export const policyTools = (book: PolicyBook): readonly InternalTool[] => [
           ? `Done — the number on policy ${result.policyNumber} is now ${result.contactNumber}.`
           : "I couldn't find that policy, so nothing has been changed.",
     },
-    handler: async ({ tenantId, args }) =>
+    handler: async ({ organizationId, args }) =>
       book.setContactNumber(
-        tenantId,
+        organizationId,
         requireString(args, "policyNumber"),
         requireString(args, "contactNumber"),
       ),

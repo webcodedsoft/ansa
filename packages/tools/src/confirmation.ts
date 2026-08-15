@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { CallId, TenantId } from "@ansa/shared";
+import type { CallId, OrganizationId } from "@ansa/shared";
 
 import type { ToolArgs } from "./types";
 
@@ -25,7 +25,7 @@ export const fingerprintArgs = (args: ToolArgs): string => canonical(args);
 
 /** Everything a confirmation is bound to. All four must match for the write to fire. */
 export interface ConfirmationSubject {
-  readonly tenantId: TenantId;
+  readonly organizationId: OrganizationId;
   readonly callId: CallId;
   readonly name: string;
   readonly fingerprint: string;
@@ -63,9 +63,9 @@ export const createConfirmationStore = (ttlMs: number): ConfirmationStore => {
       }
 
       const s = held.subject;
-      // Cross-call and cross-tenant reuse are mismatches, not staleness: the id is live,
+      // Cross-call and cross-organization reuse are mismatches, not staleness: the id is live,
       // it just does not belong to this conversation.
-      if (s.tenantId !== subject.tenantId || s.callId !== subject.callId || s.name !== subject.name) {
+      if (s.organizationId !== subject.organizationId || s.callId !== subject.callId || s.name !== subject.name) {
         return "mismatch";
       }
       if (s.fingerprint !== subject.fingerprint) return "mismatch";

@@ -121,11 +121,11 @@ export const probeCarrierWebhook = async (
  */
 export const probeVoice = async (
   environment: NumbersEnvironment,
-  tenantVoiceId: string | null,
+  organizationVoiceId: string | null,
   catalogue: VoiceCatalogue | null,
 ): Promise<VoiceProbe> => {
-  const voiceId = tenantVoiceId ?? environment.platformVoiceId;
-  const source = tenantVoiceId !== null ? "organisation" : "platform";
+  const voiceId = organizationVoiceId ?? environment.platformVoiceId;
+  const source = organizationVoiceId !== null ? "organisation" : "platform";
 
   if (voiceId === null) {
     return {

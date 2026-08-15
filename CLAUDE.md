@@ -36,9 +36,9 @@ code imports our interfaces. If `import { DeepgramClient }` appears in
 `apps/api/src/orchestrator`, that's a defect, not a shortcut. The whole point is that
 swapping STT is a one-file change.
 
-**3. `tenant_id` is not optional.** Every table, every query, every log line, every metric
+**3. `organization_id` is not optional.** Every table, every query, every log line, every metric
 label, every event. Isolation is enforced by Postgres RLS, not by remembering to add a
-`where` clause. A query that could return another tenant's row is a security bug even if
+`where` clause. A query that could return another organization's row is a security bug even if
 no one has hit it.
 
 ---
@@ -100,9 +100,9 @@ call kinds nobody has asked for.
 
 The differences that actually matter:
 
-- **Tenant resolution runs backwards.** Inbound resolves the tenant from the dialled
-  number at ingress (R7.3). Outbound already knows the tenant — it is the one that asked
-  for the call — so the tenant travels *out* with the origination and comes back on the
+- **Organization resolution runs backwards.** Inbound resolves the organization from the dialled
+  number at ingress (R7.3). Outbound already knows the organization — it is the one that asked
+  for the call — so the organization travels *out* with the origination and comes back on the
   media socket as a stream parameter. Do not resolve it a second time from the caller ID.
 - **The media path is identical once answered.** `<Connect><Stream>` is the same verb, the
   same socket, the same orchestrator. Everything below the answer is shared, and a second
@@ -115,7 +115,7 @@ The differences that actually matter:
   and billed.
 - **Consent is a hard gate, not a policy.** Nigerian NDPR and NCC rules on unsolicited
   calls, plus time-of-day limits and do-not-call suppression, belong in the dispatch path
-  and not in a prompt. Same rule as risk tiers: code cannot be talked out of it. A tenant
+  and not in a prompt. Same rule as risk tiers: code cannot be talked out of it. A organization
   configuring "call these numbers" must not be able to configure away the check.
 
 ## Voice is not chat
@@ -253,13 +253,13 @@ reshape the interface around it and don't leak the gap upward.
 ## Testing
 
 - `packages/normalizer` — exhaustive. Highest coverage in the repo.
-- Tenant isolation — an adversarial test proving tenant A cannot read tenant B's calls.
+- Organization isolation — an adversarial test proving organization A cannot read organization B's calls.
   Written in Slice 2, runs in CI forever.
 - Tool security — SSRF attempts, credential leakage into transcripts and LLM context,
-  cross-tenant tool access. Runs in CI.
+  cross-organization tool access. Runs in CI.
 - Eval harness — reruns on any provider or prompt change. **Number-accuracy regression
   blocks merge.**
-- Failure drills — STT down, LLM timeout, TTS failure, tenant endpoint hanging. Every one
+- Failure drills — STT down, LLM timeout, TTS failure, organization endpoint hanging. Every one
   must degrade into speech, never into silence.
 
 ---
@@ -275,7 +275,7 @@ reshape the interface around it and don't leak the gap upward.
 
 ## Things that will feel tempting and are wrong
 
-- Building the tenant dashboard because the internal viewer is ugly. The viewer is for
+- Building the organization dashboard because the internal viewer is ugly. The viewer is for
   debugging; ugly is fine.
 - Skipping the readback confirmation because STT confidence looks high. Confidence is not
   correctness on 8kHz audio.

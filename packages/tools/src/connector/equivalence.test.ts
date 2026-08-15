@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { asCallId, asTenantId, type LogFields, type Logger, type TenantId } from "@ansa/shared";
+import { asCallId, asOrganizationId, type LogFields, type Logger, type OrganizationId } from "@ansa/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createToolDispatcher, type HoldContext, type HoldingSpeech } from "../dispatch";
@@ -20,16 +20,16 @@ import { createInMemoryVault, sealCredential } from "./vault";
  * The R5.2.0 claim, tested rather than asserted.
  *
  * One backend — an ordinary object with three operations — is exposed twice by the same
- * loopback server: once as a REST API and once as an MCP server. Two tenants are
+ * loopback server: once as a REST API and once as an MCP server. Two organizations are
  * configured, one per route, and every behaviour that matters is compared between them.
  * If a control existed on one route and not the other, this is where it would show.
  *
- * Two tenants rather than one because a tenant may not register two tools of the same
+ * Two organizations rather than one because a organization may not register two tools of the same
  * name, and using the same names on both sides is the point.
  */
 
-const HTTP_TENANT = asTenantId("11111111-1111-4111-8111-111111111111");
-const MCP_TENANT = asTenantId("22222222-2222-4222-8222-222222222222");
+const HTTP_ORGANIZATION = asOrganizationId("11111111-1111-4111-8111-111111111111");
+const MCP_ORGANIZATION = asOrganizationId("22222222-2222-4222-8222-222222222222");
 const CALL = asCallId("call-equivalence");
 const KEY = Buffer.alloc(32, 3);
 
@@ -54,7 +54,7 @@ const recordingLogger = (): { lines: Line[]; log: Logger } => {
  * A guard that permits exactly the loopback test server.
  *
  * There is no configuration flag that relaxes the real guard, on purpose: a flag that
- * exists in the type is a flag a tenant's configuration can eventually reach. Tests get a
+ * exists in the type is a flag a organization's configuration can eventually reach. Tests get a
  * different implementation of the interface instead, and `egress.test.ts` exercises the
  * real one against a table of addresses.
  */
@@ -205,7 +205,7 @@ const startServer = async (backend: Backend): Promise<{ server: Server; host: st
                   inputSchema: { type: "object", properties: { reference: { type: "string" } } },
                 },
                 {
-                  // Offered by the server and given no tier by the tenant. Must not register.
+                  // Offered by the server and given no tier by the organization. Must not register.
                   name: "wipe_account",
                   description: "Delete everything.",
                   inputSchema: { type: "object" },
@@ -280,8 +280,8 @@ beforeAll(async () => {
   const vault = createInMemoryVault(
     KEY,
     new Map([
-      [HTTP_TENANT as TenantId, new Map([["partner", sealCredential(KEY, HTTP_TENANT, "partner", { kind: "bearer", token: "test-shared-secret" })]])],
-      [MCP_TENANT as TenantId, new Map([["partner", sealCredential(KEY, MCP_TENANT, "partner", { kind: "bearer", token: "test-shared-secret" })]])],
+      [HTTP_ORGANIZATION as OrganizationId, new Map([["partner", sealCredential(KEY, HTTP_ORGANIZATION, "partner", { kind: "bearer", token: "test-shared-secret" })]])],
+      [MCP_ORGANIZATION as OrganizationId, new Map([["partner", sealCredential(KEY, MCP_ORGANIZATION, "partner", { kind: "bearer", token: "test-shared-secret" })]])],
     ]),
   );
 
@@ -333,7 +333,7 @@ beforeAll(async () => {
   });
 
   registerHttpTools(registry, httpConfig.http, {
-    tenantId: HTTP_TENANT,
+    organizationId: HTTP_ORGANIZATION,
     transport,
     vault,
     log: recorder.log,
@@ -358,7 +358,7 @@ beforeAll(async () => {
 
   const first = mcpConfig.mcp[0];
   if (first === undefined) throw new Error("no mcp server configured");
-  const preparedMcp = await prepareMcpServer(first, { tenantId: MCP_TENANT, transport, vault, log: recorder.log });
+  const preparedMcp = await prepareMcpServer(first, { organizationId: MCP_ORGANIZATION, transport, vault, log: recorder.log });
   preparedMcp.register(registry);
 
   heard = [];
@@ -379,13 +379,13 @@ const bothRoutes = async (
   args: Record<string, unknown>,
   confirm?: (outcome: DispatchOutcome) => string | undefined,
 ): Promise<{ http: DispatchOutcome; mcp: DispatchOutcome }> => {
-  const run = async (tenantId: TenantId): Promise<DispatchOutcome> => {
-    const first = await dispatcher.dispatch({ tenantId, callId: CALL, name, args });
+  const run = async (organizationId: OrganizationId): Promise<DispatchOutcome> => {
+    const first = await dispatcher.dispatch({ organizationId, callId: CALL, name, args });
     const confirmationId = confirm?.(first);
     if (confirmationId === undefined) return first;
-    return dispatcher.dispatch({ tenantId, callId: CALL, name, args, confirmationId });
+    return dispatcher.dispatch({ organizationId, callId: CALL, name, args, confirmationId });
   };
-  return { http: await run(HTTP_TENANT), mcp: await run(MCP_TENANT) };
+  return { http: await run(HTTP_ORGANIZATION), mcp: await run(MCP_ORGANIZATION) };
 };
 
 /** Everything except the route label, which is the only thing allowed to differ. */
@@ -406,7 +406,7 @@ describe("the same backend, two routes, one dispatch path", () => {
     });
   }
 
-  it("says the tenant's own fallback line for a reference neither route can find", async () => {
+  it("says the organization's own fallback line for a reference neither route can find", async () => {
     const { http, mcp } = await bothRoutes("order_status", { reference: "NO-SUCH-REF" });
     expect(http.speech).toBe(SPEECH.status.fallback);
     expect(comparable(http)).toEqual(comparable(mcp));
@@ -443,7 +443,7 @@ describe("the same backend, two routes, one dispatch path", () => {
 
   it("refuses a confirmation whose arguments moved, on both routes", async () => {
     const asked = await dispatcher.dispatch({
-      tenantId: HTTP_TENANT,
+      organizationId: HTTP_ORGANIZATION,
       callId: CALL,
       name: "update_contact",
       args: { reference: "QT-4471", contactNumber: "0805 000 0001" },
@@ -451,7 +451,7 @@ describe("the same backend, two routes, one dispatch path", () => {
     if (asked.kind !== "confirm") throw new Error("expected a readback");
 
     const moved = await dispatcher.dispatch({
-      tenantId: HTTP_TENANT,
+      organizationId: HTTP_ORGANIZATION,
       callId: CALL,
       name: "update_contact",
       args: { reference: "QT-4471", contactNumber: "0805 000 0002" },
@@ -473,23 +473,23 @@ describe("the same backend, two routes, one dispatch path", () => {
     expect(heard).toEqual(["start:order_status", "stop:order_status", "start:order_status", "stop:order_status"]);
   });
 
-  it("does not register an MCP tool the tenant gave no risk tier", () => {
-    const names = registry.listFor(MCP_TENANT).map((definition) => definition.name);
+  it("does not register an MCP tool the organization gave no risk tier", () => {
+    const names = registry.listFor(MCP_ORGANIZATION).map((definition) => definition.name);
     expect(names).toContain("order_status");
     expect(names).not.toContain("wipe_account");
     expect(lines.some((line) => line.fields.tool === "wipe_account")).toBe(true);
   });
 
-  it("hides each tenant's tools from the other", async () => {
-    // The MCP tenant's registry entry for `order_status` exists; the HTTP tenant's is a
+  it("hides each organization's tools from the other", async () => {
+    // The MCP organization's registry entry for `order_status` exists; the HTTP organization's is a
     // different registration, and neither can reach the other's endpoint.
-    expect(registry.resolve(HTTP_TENANT, "order_status")?.adapter.route).toBe("http");
-    expect(registry.resolve(MCP_TENANT, "order_status")?.adapter.route).toBe("mcp");
+    expect(registry.resolve(HTTP_ORGANIZATION, "order_status")?.adapter.route).toBe("http");
+    expect(registry.resolve(MCP_ORGANIZATION, "order_status")?.adapter.route).toBe("mcp");
 
-    const stranger = asTenantId("33333333-3333-4333-8333-333333333333");
+    const stranger = asOrganizationId("33333333-3333-4333-8333-333333333333");
     expect(registry.resolve(stranger, "order_status")).toBeNull();
     expect(
-      await dispatcher.dispatch({ tenantId: stranger, callId: CALL, name: "order_status", args: {} }),
+      await dispatcher.dispatch({ organizationId: stranger, callId: CALL, name: "order_status", args: {} }),
     ).toMatchObject({ kind: "failed", reason: "unknown-tool" });
   });
 
@@ -509,8 +509,8 @@ describe("the same backend, two routes, one dispatch path", () => {
     });
     backend.slowMs = 400;
     try {
-      const http = await slow.dispatch({ tenantId: HTTP_TENANT, callId: CALL, name: "order_status", args: { reference: "QT-4471" } });
-      const mcp = await slow.dispatch({ tenantId: MCP_TENANT, callId: CALL, name: "order_status", args: { reference: "QT-4471" } });
+      const http = await slow.dispatch({ organizationId: HTTP_ORGANIZATION, callId: CALL, name: "order_status", args: { reference: "QT-4471" } });
+      const mcp = await slow.dispatch({ organizationId: MCP_ORGANIZATION, callId: CALL, name: "order_status", args: { reference: "QT-4471" } });
       expect(http).toMatchObject({ kind: "failed", reason: "timeout" });
       expect(mcp).toMatchObject({ kind: "failed", reason: "timeout" });
       expect(http.speech).toBe(mcp.speech);

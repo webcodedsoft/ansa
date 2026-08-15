@@ -34,7 +34,7 @@ describe("the default is the organisation's own data, complete", () => {
     expect(parseRedactionPolicy({}).categories).toEqual([]);
   });
 
-  it("leaves a payload untouched when the tenant configured nothing", () => {
+  it("leaves a payload untouched when the organization configured nothing", () => {
     const payload = { transcript: "My number is 08031234567", name: "Ifeoma Nwachukwu" };
     expect(redactPayload(payload)).toEqual(payload);
   });
@@ -151,7 +151,7 @@ describe("shape — written digit runs", () => {
     expect(out.text).toBe("Flat 12 on the 3rd floor.");
   });
 
-  it("honours a tenant's own threshold", () => {
+  it("honours a organization's own threshold", () => {
     const tight = redactText("Flat 12.", policy(["digit-sequence"], { minDigits: 2 }));
     expect(tight.text).toBe("Flat [redacted:digit-sequence].");
 
@@ -208,7 +208,7 @@ describe("categories compose without corrupting each other", () => {
   });
 });
 
-describe("secret material is not a tenant setting", () => {
+describe("secret material is not a organization setting", () => {
   it("removes credential-shaped keys even with no policy configured", () => {
     const out = redactPayload({
       transcript: "the caller said hello",
@@ -228,7 +228,7 @@ describe("secret material is not a tenant setting", () => {
     expect(out.transcript).toBe(long);
   });
 
-  it("applies the tenant's free-text policy through a nested payload", () => {
+  it("applies the organization's free-text policy through a nested payload", () => {
     const out = redactPayload(
       { turns: [{ speaker: "caller", text: "my number is 08031234567" }] },
       policy(["digit-sequence"]),

@@ -16,7 +16,7 @@ import { wasAnswered, type TelephonyProvider } from "@ansa/telephony";
 
 import type { AppConfig } from "../config/env";
 import { MediaGateway } from "./media.gateway";
-import type { TenantRegistry } from "../tenancy/tenant-registry";
+import type { AgentRegistry } from "../tenancy/agent-registry";
 import {
   APP_CONFIG,
   LOGGER,
@@ -28,8 +28,8 @@ import {
   DATA_SOURCE,
   MEDIA_STREAM_PATH,
   TELEPHONY_PROVIDER,
-  TENANT_PARAM,
-  TENANT_REGISTRY,
+  ORGANIZATION_PARAM,
+  ORGANIZATION_REGISTRY,
   VOICE_WEBHOOK_PATH,
 } from "./tokens";
 
@@ -44,7 +44,7 @@ export class VoiceController {
     @Inject(TELEPHONY_PROVIDER) private readonly telephony: TelephonyProvider,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(LOGGER) private readonly log: Logger,
-    @Inject(TENANT_REGISTRY) private readonly tenants: TenantRegistry,
+    @Inject(ORGANIZATION_REGISTRY) private readonly organizations: AgentRegistry,
     @Inject(DATA_SOURCE) private readonly dataSource: Db | null,
     // Injected by class rather than by token, and with an explicit @Inject so the import
     // stays a runtime value: Nest resolves a constructor parameter from emitted metadata,
@@ -79,12 +79,12 @@ export class VoiceController {
 
     // Resolved here, before anything else happens (R7.3). The media socket carries no
     // dialled number, so it travels to it as a stream parameter.
-    const tenant = await this.tenants.resolve(call.dialled);
-    log.info("tenant resolved", {
-      tenantId: tenant.tenantId,
-      name: tenant.name,
-      configVersion: tenant.configVersion,
-      keyterms: tenant.keyterms.length,
+    const organization = await this.organizations.resolve(call.dialled);
+    log.info("organization resolved", {
+      organizationId: organization.organizationId,
+      name: organization.name,
+      configVersion: organization.configVersion,
+      keyterms: organization.keyterms.length,
     });
 
     // Their voice may not be the platform's, and rendering a greeting was measured at
@@ -92,7 +92,7 @@ export class VoiceController {
     // and the media socket that will use the audio does not open until it has it. If the
     // render has not finished by then the call synthesises live, which is slower and
     // audible rather than silent (R6.2).
-    this.media.warmForTenant(tenant);
+    this.media.warmForOrganization(organization);
 
     const wsOrigin = this.config.publicBaseUrl.replace(/^http/, "ws");
     const answer = this.telephony.renderAnswer({
@@ -101,7 +101,7 @@ export class VoiceController {
         [DIRECTION_PARAM]: "inbound",
         [DIALLED_PARAM]: call.dialled,
         ...(call.caller === null ? {} : { [CALLER_PARAM]: call.caller }),
-        ...(tenant.tenantId === null ? {} : { [TENANT_PARAM]: tenant.tenantId }),
+        ...(organization.organizationId === null ? {} : { [ORGANIZATION_PARAM]: organization.organizationId }),
       },
     });
 
@@ -226,6 +226,6 @@ export class VoiceController {
     }
 
     // Slice 2's event log is where these belong once it is wired; R7.5 wants the whole
-    // lifecycle recoverable per tenant, not just the part that produced audio.
+    // lifecycle recoverable per organization, not just the part that produced audio.
   }
 }

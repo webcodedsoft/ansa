@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { asCallId, asTenantId, createLogger } from "@ansa/shared";
+import { asCallId, asOrganizationId, createLogger } from "@ansa/shared";
 import type { TransferRequest } from "@ansa/telephony";
 
 import type { CallRecorder } from "../telephony/event-log";
@@ -9,7 +9,7 @@ import { withHandoffJournal } from "./journal";
 import type { LoggedEvent } from "./summary";
 import { createWhisperRegistry } from "./whisper";
 
-const TENANT = asTenantId("22222222-2222-2222-2222-222222222222");
+const ORGANIZATION = asOrganizationId("22222222-2222-2222-2222-222222222222");
 
 const silentLog = () => {
   const log = createLogger();
@@ -51,7 +51,7 @@ const setup = (
   const handoff = createHandoff({
     telephony: { transferToNumber },
     callId: asCallId("CA1"),
-    tenantId: TENANT,
+    organizationId: ORGANIZATION,
     callerNumber: "+2348138178550",
     destination:
       options.destination === undefined
@@ -199,7 +199,7 @@ describe("escalate", () => {
     const handoff = createHandoff({
       telephony: { transferToNumber },
       callId: asCallId("CA1"),
-      tenantId: TENANT,
+      organizationId: ORGANIZATION,
       callerNumber: null,
       destination: { to: "+2348000000001", from: "+1", ringSeconds: 25 },
       events: () => [],

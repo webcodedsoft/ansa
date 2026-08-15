@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { asTenantId } from "@ansa/shared";
+import { asOrganizationId } from "@ansa/shared";
 
 import { createToolRegistry } from "./registry";
 import type { ToolAdapter, ToolDefinition } from "./types";
 
-const TENANT_A = asTenantId("11111111-1111-4111-8111-111111111111");
-const TENANT_B = asTenantId("22222222-2222-4222-8222-222222222222");
+const ORGANIZATION_A = asOrganizationId("11111111-1111-4111-8111-111111111111");
+const ORGANIZATION_B = asOrganizationId("22222222-2222-4222-8222-222222222222");
 
 const adapter: ToolAdapter = { route: "test", execute: async () => ({ ok: true }) };
 
@@ -69,45 +69,45 @@ describe("registration", () => {
     expect(() => registry.register(read({ timeoutMs: 30_000 }), adapter)).toThrow(/timeoutMs/);
   });
 
-  it("refuses the same name twice for one tenant", () => {
+  it("refuses the same name twice for one organization", () => {
     const registry = createToolRegistry();
-    registry.register(read({ tenantId: TENANT_A }), adapter);
-    expect(() => registry.register(read({ tenantId: TENANT_A }), adapter)).toThrow(/already registered/);
+    registry.register(read({ organizationId: ORGANIZATION_A }), adapter);
+    expect(() => registry.register(read({ organizationId: ORGANIZATION_A }), adapter)).toThrow(/already registered/);
   });
 
-  it("refuses a tenant tool that shadows a platform tool", () => {
+  it("refuses a organization tool that shadows a platform tool", () => {
     const registry = createToolRegistry();
     registry.register(read(), adapter);
-    // Otherwise a tenant redefines transfer_to_human as read tier and the guarantee is
+    // Otherwise a organization redefines transfer_to_human as read tier and the guarantee is
     // configuration rather than code.
-    expect(() => registry.register(read({ tenantId: TENANT_A }), adapter)).toThrow(
+    expect(() => registry.register(read({ organizationId: ORGANIZATION_A }), adapter)).toThrow(
       /already a platform tool/,
     );
   });
 
-  it("accepts the same name for two different tenants", () => {
+  it("accepts the same name for two different organizations", () => {
     const registry = createToolRegistry();
-    registry.register(read({ tenantId: TENANT_A }), adapter);
-    expect(() => registry.register(read({ tenantId: TENANT_B }), adapter)).not.toThrow();
+    registry.register(read({ organizationId: ORGANIZATION_A }), adapter);
+    expect(() => registry.register(read({ organizationId: ORGANIZATION_B }), adapter)).not.toThrow();
   });
 });
 
-describe("tenant scoping", () => {
-  it("does not resolve another tenant's tool", () => {
+describe("organization scoping", () => {
+  it("does not resolve another organization's tool", () => {
     const registry = createToolRegistry();
-    registry.register(read({ name: "tenant_a_only", tenantId: TENANT_A }), adapter);
+    registry.register(read({ name: "organization_a_only", organizationId: ORGANIZATION_A }), adapter);
 
-    expect(registry.resolve(TENANT_A, "tenant_a_only")).not.toBeNull();
-    expect(registry.resolve(TENANT_B, "tenant_a_only")).toBeNull();
+    expect(registry.resolve(ORGANIZATION_A, "organization_a_only")).not.toBeNull();
+    expect(registry.resolve(ORGANIZATION_B, "organization_a_only")).toBeNull();
   });
 
-  it("lists platform tools plus the tenant's own, and nobody else's", () => {
+  it("lists platform tools plus the organization's own, and nobody else's", () => {
     const registry = createToolRegistry();
     registry.register(read({ name: "everyones_tool" }), adapter);
-    registry.register(read({ name: "a_tool", tenantId: TENANT_A }), adapter);
-    registry.register(read({ name: "b_tool", tenantId: TENANT_B }), adapter);
+    registry.register(read({ name: "a_tool", organizationId: ORGANIZATION_A }), adapter);
+    registry.register(read({ name: "b_tool", organizationId: ORGANIZATION_B }), adapter);
 
-    expect(registry.listFor(TENANT_A).map((d) => d.name).sort()).toEqual(["a_tool", "everyones_tool"]);
-    expect(registry.listFor(TENANT_B).map((d) => d.name).sort()).toEqual(["b_tool", "everyones_tool"]);
+    expect(registry.listFor(ORGANIZATION_A).map((d) => d.name).sort()).toEqual(["a_tool", "everyones_tool"]);
+    expect(registry.listFor(ORGANIZATION_B).map((d) => d.name).sort()).toEqual(["b_tool", "everyones_tool"]);
   });
 });

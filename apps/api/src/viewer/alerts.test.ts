@@ -111,7 +111,7 @@ describe("the caller's experience", () => {
   });
 });
 
-describe("a tenant's own systems", () => {
+describe("a organization's own systems", () => {
   it("fires when their endpoint fails often enough for callers to hear it", () => {
     const records = window(25, [
       fast,

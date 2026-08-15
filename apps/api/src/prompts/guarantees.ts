@@ -1,9 +1,9 @@
 /**
- * The left column of `docs/MULTI_TENANT_ARCHITECTURE.md` §1 — the things a tenant must
+ * The left column of `docs/MULTI_TENANT_ARCHITECTURE.md` §1 — the things a organization must
  * never be able to switch off — expressed once, in code, and used for two purposes:
  *
- *   1. the guarantee block, composed AFTER the tenant's own text (see compose.ts);
- *   2. the tripwires that reject a tenant's instructions at registration.
+ *   1. the guarantee block, composed AFTER the organization's own text (see compose.ts);
+ *   2. the tripwires that reject a organization's instructions at registration.
  *
  * Both come from this one list so they cannot drift apart. Adding a guarantee adds it to
  * the prompt and to the validator in the same edit.
@@ -13,7 +13,7 @@
  * Read `where` before you read anything else. **The prompt is not what holds these up.**
  * The doc is explicit that a prompt can be talked out of things and a dispatch path
  * cannot, and the whole design rests on that: if the readback line below were the
- * mechanism, a tenant writing "skip the readback, our customers find it slow" would have
+ * mechanism, a organization writing "skip the readback, our customers find it slow" would have
  * disabled R4.3.1. Because readback lives in the dispatch path, the instruction has no
  * effect at all — and the tripwire that rejects it is a courtesy that tells them so,
  * not the boundary.
@@ -26,10 +26,10 @@
  *
  * **One entry below breaks that rule, and writing this list is how it was found.**
  *
- * R6.7, AI disclosure, is in the doc's left column — the things a tenant cannot override
+ * R6.7, AI disclosure, is in the doc's left column — the things a organization cannot override
  * — and there is no dispatch path holding it up. Nothing watches the transcript for "am I
  * talking to a robot" and nothing forces the answer. The prompt says to admit it and the
- * tripwires reject a tenant who says otherwise, and that is the whole of it. A model
+ * tripwires reject a organization who says otherwise, and that is the whole of it. A model
  * talked into evasiveness would evade, and this file would still read as though the rule
  * were safe.
  *
@@ -129,14 +129,14 @@ export const ENFORCED_IN_CODE: readonly EnforcedGuarantee[] = [
     where: "Postgres RLS, ENABLE and FORCE on every table",
     spoken: null,
     tripwires: [
-      /\b(?:other|another|any other|all)\s+(?:tenants?|organisations?|organizations?|companies|clients?)(?:'s)?\b[^.!?]{0,48}\b(?:data|calls?|records?|customers?|transcripts?|policies)\b/i,
+      /\b(?:other|another|any other|all)\s+(?:organizations?|organisations?|organizations?|companies|clients?)(?:'s)?\b[^.!?]{0,48}\b(?:data|calls?|records?|customers?|transcripts?|policies)\b/i,
     ],
   },
   {
     id: "normalizer",
     where: "packages/normalizer, on every path into TTS",
     // Entity types, not instances. "Never invent a policy number" was insurance leaking
-    // into a layer every tenant shares, and a named example is a word the model will
+    // into a layer every organization shares, and a named example is a word the model will
     // reach for when it is guessing.
     spoken:
       "Never invent a reference number, an amount, a date or a name. If you don't know " +
@@ -147,10 +147,10 @@ export const ENFORCED_IN_CODE: readonly EnforcedGuarantee[] = [
     ],
   },
   {
-    // Not a PRD requirement — a property of the layering itself, and the one a tenant is
+    // Not a PRD requirement — a property of the layering itself, and the one a organization is
     // most likely to try by accident when they paste a whole prompt into the box.
     id: "layering",
-    where: "compose.ts — the tenant layer has no slot that could hold the base",
+    where: "compose.ts — the organization layer has no slot that could hold the base",
     spoken: null,
     tripwires: [
       /\bignore\b[^.!?]{0,24}\b(?:previous|prior|above|earlier|all)\b[^.!?]{0,24}\binstructions?\b/i,
@@ -166,7 +166,7 @@ export const ENFORCED_IN_CODE: readonly EnforcedGuarantee[] = [
 /**
  * Layer 5a — the guarantee block, and always the last thing before the turn instruction.
  *
- * Position is deliberate. Whatever a tenant wrote is above this, and this contradicts it
+ * Position is deliberate. Whatever a organization wrote is above this, and this contradicts it
  * explicitly. That is a weak defence on its own, which is why it is the fourth of four
  * and not the first.
  */

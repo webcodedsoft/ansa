@@ -14,7 +14,7 @@ import type { EgressPolicy } from "../connector/egress";
  * and let the model decide whether an organisation receives its own data — wrong in both
  * directions at once.
  *
- * So it is a different key in tenant configuration and a different validator, and it
+ * So it is a different key in organization configuration and a different validator, and it
  * deliberately reuses everything below the seam: the egress allowlist, the credential
  * vault, the address-pinning transport and the circuit breaker are the Slice 6 ones. There
  * is one outbound HTTP path in this product and this is not a second one.
@@ -33,7 +33,7 @@ export type EventType = "call.ended" | "call.transferred";
 export const EVENT_TYPES: readonly EventType[] = ["call.ended", "call.transferred"];
 
 export interface EventSubscription {
-  /** The tenant's own name for this receiver. Appears in the delivery log they are shown. */
+  /** The organization's own name for this receiver. Appears in the delivery log they are shown. */
   readonly name: string;
   readonly url: string;
   readonly events: readonly EventType[];
@@ -54,16 +54,16 @@ export interface EventSubscription {
   /** Attempts before the delivery is given up on and recorded as failed. */
   readonly maxAttempts: number;
   /**
-   * This receiver's masking rules, or the tenant's, or none.
+   * This receiver's masking rules, or the organization's, or none.
    *
-   * Per subscription as well as per tenant because the same organisation reasonably wants
+   * Per subscription as well as per organization because the same organisation reasonably wants
    * its own CRM to get the policy number and an analytics vendor not to.
    */
   readonly redaction: RedactionPolicy;
 }
 
 export interface EventConfig {
-  /** R5.2.2, and the same allowlist semantics as tools. A tenant declares its receivers. */
+  /** R5.2.2, and the same allowlist semantics as tools. A organization declares its receivers. */
   readonly egress: EgressPolicy;
   readonly subscriptions: readonly EventSubscription[];
 }
@@ -118,7 +118,7 @@ const asEvents = (value: unknown, where: string): readonly EventType[] => {
 const parseSubscription = (
   value: unknown,
   index: number,
-  tenantRedaction: RedactionPolicy,
+  organizationRedaction: RedactionPolicy,
 ): EventSubscription => {
   const where = `subscriptions[${index}]`;
   const raw = asRecord(value, where);
@@ -141,11 +141,11 @@ const parseSubscription = (
       DEFAULT_MAX_ATTEMPTS,
       MAX_ATTEMPTS_CEILING,
     ),
-    // The tenant's rules unless this receiver names its own. Absent everywhere means the
+    // The organization's rules unless this receiver names its own. Absent everywhere means the
     // organisation gets its own data complete, which is the default this slice defends.
     redaction:
       raw.redaction === undefined || raw.redaction === null
-        ? tenantRedaction
+        ? organizationRedaction
         : parseRedactionPolicy(raw.redaction, `${where}.redaction`),
   };
 };
@@ -173,7 +173,7 @@ export const parseEventConfig = (value: unknown): EventConfig => {
     throw new Error("event config: subscriptions must be an array");
   }
 
-  const tenantRedaction = parseRedactionPolicy(raw.redaction, "event config.redaction");
+  const organizationRedaction = parseRedactionPolicy(raw.redaction, "event config.redaction");
 
   const parsed: EventConfig = {
     egress: {
@@ -183,12 +183,12 @@ export const parseEventConfig = (value: unknown): EventConfig => {
       allowPlaintextHttp: egressRaw.allowPlaintextHttp === true,
     },
     subscriptions: (subscriptions as unknown[]).map((entry, index) =>
-      parseSubscription(entry, index, tenantRedaction),
+      parseSubscription(entry, index, organizationRedaction),
     ),
   };
 
   // Same check and same reasoning as the tool config: a receiver outside the allowlist the
-  // tenant declared beside it is refused by the guard on every attempt, and it should be a
+  // organization declared beside it is refused by the guard on every attempt, and it should be a
   // publication error rather than a delivery that never arrives and nobody watches.
   for (const subscription of parsed.subscriptions) {
     requireAllowed(subscription.url, parsed.egress, `event config.${subscription.name}.url`);
@@ -197,7 +197,7 @@ export const parseEventConfig = (value: unknown): EventConfig => {
   return parsed;
 };
 
-/** Which of a tenant's receivers asked for this event. */
+/** Which of a organization's receivers asked for this event. */
 export const subscribersTo = (
   config: EventConfig,
   type: EventType,

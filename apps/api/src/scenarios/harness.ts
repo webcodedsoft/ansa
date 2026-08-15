@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 
 import type { CallRecord, MetricEvent, RecordedTranscript, RecordedTurn } from "@ansa/db";
-import { asTenantId, type AudioChunk, type TenantId } from "@ansa/shared";
+import { asOrganizationId, type AudioChunk, type OrganizationId } from "@ansa/shared";
 
 import { chunkOf, fakeListen, fakeLlm, fakeStream, fakeTts, silentLog } from "../orchestrator/fakes";
 import { DEFAULT_SYSTEM_PROMPT } from "../prompts/compose";
@@ -28,8 +28,8 @@ import { runConversation, type OrchestratorDeps } from "../orchestrator/orchestr
 
 const GREETING = "Thank you for calling Ansa. How can I help you?";
 
-/** Any registered tenant. Nothing in these scenarios turns on which one. */
-const SCENARIO_TENANT = asTenantId("5c3d0a5e-1f6d-4f6f-9b3a-0f2d7c8a4e11");
+/** Any registered organization. Nothing in these scenarios turns on which one. */
+const SCENARIO_ORGANIZATION = asOrganizationId("5c3d0a5e-1f6d-4f6f-9b3a-0f2d7c8a4e11");
 
 /** One rendered phrase per tier, so a scenario can exercise the thinking gap. */
 export const fillerSetup = (): {
@@ -83,10 +83,10 @@ export interface ScenarioOptions {
   readonly transcriptWatchdogMs?: number;
   readonly minSpeechMs?: number;
   /** Null is an unregistered number, which disables tool calling for the whole call. */
-  readonly tenantId?: TenantId | null;
+  readonly organizationId?: OrganizationId | null;
   readonly makeTools?: OrchestratorDeps["makeTools"];
   /**
-   * The three values a tenant's configuration decides about how a call sounds.
+   * The three values a organization's configuration decides about how a call sounds.
    *
    * Overridable because `isolation.test.ts` runs the same conversation twice, once as each
    * of two organisations, and the whole question it asks is whether any of these three
@@ -109,6 +109,13 @@ export interface ScenarioOptions {
    * nothing except that the harness is forgiving.
    */
   readonly alsoRecordTo?: CallRecorder;
+  /**
+   * The agent's configured form. Absent means capture stays reactive, as it did before
+   * forms existed, which is what every other scenario in this file exercises.
+   */
+  readonly fields?: OrchestratorDeps["fields"];
+  /** The call's fact store, for a scenario asking where a captured value ended up. */
+  readonly facts?: OrchestratorDeps["facts"];
 }
 
 export interface Scenario {
@@ -188,7 +195,7 @@ export const scenario = (options: ScenarioOptions = {}): Scenario => {
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     // A registered number. Tool calling still needs `makeTools`, which the scenarios that
     // care about it supply; this only says the call belongs to somebody.
-    tenantId: SCENARIO_TENANT,
+    organizationId: SCENARIO_ORGANIZATION,
     // The real normaliser is @ansa/normalizer's forSpeech; the scenarios care about the
     // conversation, so this is the identity plus the one respelling that changes what a
     // transcriber would hear back.
@@ -256,7 +263,7 @@ export const scenario = (options: ScenarioOptions = {}): Scenario => {
       callId: "scenario",
       carrierCallId: "scenario",
       createdAt: new Date(0).toISOString(),
-      // A scenario runs against no tenant row, so there is no published configuration for
+      // A scenario runs against no organization row, so there is no published configuration for
       // it to have been served by. Null is what a real call with an unregistered number
       // records, which is the honest value rather than an invented version number.
       configVersion: null,

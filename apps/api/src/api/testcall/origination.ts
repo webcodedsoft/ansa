@@ -1,5 +1,5 @@
 import type { Db } from "@ansa/db";
-import type { Logger, TenantId } from "@ansa/shared";
+import type { Logger, OrganizationId } from "@ansa/shared";
 import { createTwilioTelephonyProvider, type PlacedCall } from "@ansa/telephony";
 import { ServiceUnavailableException } from "@nestjs/common";
 
@@ -14,13 +14,13 @@ import { AMD_WEBHOOK_PATH, MEDIA_STREAM_PATH, STATUS_WEBHOOK_PATH } from "../../
  * origination path is how the check ends up on one route and not the other, and the route
  * without it would be the one with a button on it.
  *
- * **This file holds a database handle, which is otherwise `TenantGateway`'s alone.** It is
+ * **This file holds a database handle, which is otherwise `OrganizationGateway`'s alone.** It is
  * a deliberate exception with a narrow shape, so it is worth stating what keeps it safe.
- * `placeOutboundCall` opens its own tenant scope to read the consent record — it has to,
+ * `placeOutboundCall` opens its own organization scope to read the consent record — it has to,
  * because it is called from the call path and from a script as well as from here — so it
  * takes a `Db`. What this file does with that handle is hand it to that function and
- * nothing else: there is no statement in this file, no `TenantScope` leaves it, and the
- * only exported operation takes the tenant from its caller. The five layers in
+ * nothing else: there is no statement in this file, no `OrganizationScope` leaves it, and the
+ * only exported operation takes the organization from its caller. The five layers in
  * `src/api/README.md` are untouched, because nothing here queries anything.
  *
  * **The carrier is configured separately from the rest of the process.** `AppConfig` throws
@@ -89,10 +89,10 @@ export const callbackUrls = (
 export interface TestCallRequest {
   /**
    * Whose call it is. Named `owner` rather than passed positionally for the reason
-   * `refusals.ts` gives — `routes.test.ts` is blunt about a tenant id in an argument list,
+   * `refusals.ts` gives — `routes.test.ts` is blunt about a organization id in an argument list,
    * and rightly, because that is the shape of the mistake this whole layer removes.
    */
-  readonly owner: TenantId;
+  readonly owner: OrganizationId;
   /** E.164, and it must have consent on record. `place.ts` decides that, not this. */
   readonly to: string;
   /** E.164, and it must be a number the carrier account owns. */
@@ -145,7 +145,7 @@ export const createOrigination = (deps: {
       return placeOutboundCall(
         { dataSource: deps.dataSource, telephony, log: deps.log },
         {
-          tenantId: request.owner,
+          organizationId: request.owner,
           to: request.to,
           from: request.from,
           ...callbackUrls(environment.publicBaseUrl),

@@ -16,6 +16,21 @@ import type { JsonSchema } from "../http/schema";
 
 const literal = (value: string): string => JSON.stringify(value);
 
+/**
+ * An operation id's tag as a property name on the client.
+ *
+ * Tags come from `operationId` and two of them are hyphenated — `test-calls`,
+ * `event-subscriptions` — which is fine in a spec and is a syntax error in an object
+ * literal. Emitting them raw produced a client that had never once compiled, and nothing
+ * noticed because nothing consumed the output until a frontend existed.
+ *
+ * Camel case rather than quoting, because the alternative reads `client["test-calls"]` at
+ * every call site for the lifetime of the API. The tag is a naming choice on this side of
+ * the wire; the operation id in the spec is unchanged and is still the contract.
+ */
+const propertyName = (tag: string): string =>
+  tag.replace(/[-_](.)/g, (_, character: string) => character.toUpperCase());
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
@@ -167,7 +182,10 @@ export interface AnsaClientOptions {
 }
 
 interface RequestInput {
-  readonly path?: Readonly<Record<string, string>>;
+  // Not every path parameter is a string: the configuration version endpoints take an
+  // integer, and narrowing this to string made the generated file fail to compile at the
+  // two call sites that pass one. encodeURIComponent accepts both, so widening is the fix.
+  readonly path?: Readonly<Record<string, string | number>>;
   readonly query?: Readonly<Record<string, unknown>>;
   readonly body?: unknown;
 }
@@ -248,7 +266,7 @@ export const renderClient = (document: JsonSchema): string => {
 
   const areas = [...groups.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([tag, methods]) => `${tag}: {\n${indent(methods.join("\n\n"), 1)}\n},`)
+    .map(([tag, methods]) => `${propertyName(tag)}: {\n${indent(methods.join("\n\n"), 1)}\n},`)
     .join("\n\n");
 
   return `${PREAMBLE}

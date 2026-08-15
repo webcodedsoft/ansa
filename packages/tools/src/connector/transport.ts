@@ -39,7 +39,7 @@ export interface ConnectorResponse {
 }
 
 /**
- * A refusal is not an exception — it is the expected outcome of a tenant pointing at
+ * A refusal is not an exception — it is the expected outcome of a organization pointing at
  * something they are not allowed to reach, and the caller logs it and speaks an apology.
  */
 export class EgressRefusedError extends Error {
@@ -59,7 +59,7 @@ export interface Transport {
 export interface TransportOptions {
   readonly guard: EgressGuard;
   /**
-   * A tenant endpoint that streams forever must not take the process down with it. The
+   * A organization endpoint that streams forever must not take the process down with it. The
    * default is generous for a JSON tool result and small enough to be harmless.
    */
   readonly maxBytes?: number;

@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import { BASE_CONDUCT, identityLine } from "./base";
+import type { CollectedField } from "../tenancy/captured-fields";
 import { composeSystemPrompt, DEFAULT_SYSTEM_PROMPT } from "./compose";
 import { ENFORCED_IN_CODE, GUARANTEES_LAYER } from "./guarantees";
 import { LOCALE_LAYER } from "./locale";
-import { compileTenantLayer } from "./tenant-layer";
+import { compileOrganizationLayer } from "./organization-layer";
 
 const layerFor = (persona: string | null, instructions: string | null = null) =>
-  compileTenantLayer({ name: "Kano General Insurance", persona, instructions });
+  compileOrganizationLayer({ name: "Kano General Insurance", persona, instructions });
 
 describe("the composition", () => {
   it("keeps every line of the prompt that was tuned on live calls", () => {
@@ -32,12 +33,12 @@ describe("the composition", () => {
     }
   });
 
-  it("names no example word, name or identifier in the layers every tenant shares", () => {
+  it("names no example word, name or identifier in the layers every organization shares", () => {
     // A model given a sample reaches for it. The old prompt listed five insurance terms
     // and the ordinary words they come back as, which is the same mechanism that made a
     // keyterm list corrupt an unrelated surname 3/3 on Deepgram — one level up the stack.
-    // Domain vocabulary belongs in the tenant's layer and in per-tenant keyterms.
-    const shared = composeSystemPrompt({ tenant: null, tools: [] });
+    // Domain vocabulary belongs in the organization's layer and in per-organization keyterms.
+    const shared = composeSystemPrompt({ organization: null, tools: [] });
     for (const instance of [
       "policy",
       "premium",
@@ -61,20 +62,20 @@ describe("the composition", () => {
   });
 
   it("puts the layers in the order the design specifies", () => {
-    const prompt = composeSystemPrompt({ tenant: layerFor("Warm, not chatty.").layer, tools: [] });
+    const prompt = composeSystemPrompt({ organization: layerFor("Warm, not chatty.").layer, tools: [] });
     const at = (needle: string) => prompt.indexOf(needle);
 
     expect(at(identityLine("Kano General Insurance"))).toBe(0);
     expect(at(BASE_CONDUCT)).toBeGreaterThan(0);
     expect(at(LOCALE_LAYER)).toBeGreaterThan(at(BASE_CONDUCT));
     expect(at("Warm, not chatty.")).toBeGreaterThan(at(LOCALE_LAYER));
-    // The guarantees are last, after the tenant's own words, on purpose.
+    // The guarantees are last, after the organization's own words, on purpose.
     expect(at(GUARANTEES_LAYER)).toBeGreaterThan(at("Warm, not chatty."));
   });
 
-  it("still carries every guarantee when a tenant has configured a persona", () => {
+  it("still carries every guarantee when a organization has configured a persona", () => {
     const prompt = composeSystemPrompt({
-      tenant: layerFor("Very brief. Nigerian English. Get them off the line fast.").layer,
+      organization: layerFor("Very brief. Nigerian English. Get them off the line fast.").layer,
       tools: [],
     });
     for (const guarantee of ENFORCED_IN_CODE) {
@@ -83,13 +84,13 @@ describe("the composition", () => {
   });
 
   it("names the organisation instead of 'a company in Nigeria'", () => {
-    const prompt = composeSystemPrompt({ tenant: layerFor(null).layer, tools: [] });
+    const prompt = composeSystemPrompt({ organization: layerFor(null).layer, tools: [] });
     // Quoted, and added as a value rather than spliced into our sentence. See base.ts.
     expect(prompt).toContain('Its name is "Kano General Insurance".');
   });
 
-  it("does not open an empty fence when a tenant configured nothing", () => {
-    const prompt = composeSystemPrompt({ tenant: layerFor(null).layer, tools: [] });
+  it("does not open an empty fence when a organization configured nothing", () => {
+    const prompt = composeSystemPrompt({ organization: layerFor(null).layer, tools: [] });
     // An organisation block with nothing in it reads as an instruction to invent rules.
     expect(prompt).not.toContain("--- end");
   });
@@ -100,7 +101,7 @@ describe("the composition", () => {
 
   it("describes a registered tool and what its risk tier will do to it", () => {
     const prompt = composeSystemPrompt({
-      tenant: null,
+      organization: null,
       tools: [
         { name: "policy_status", description: "current status of a policy", riskTier: "read" },
         { name: "cancel_policy", description: "cancels a policy", riskTier: "irreversible" },
@@ -109,5 +110,71 @@ describe("the composition", () => {
     expect(prompt).toContain("policy_status: current status of a policy (runs straight away)");
     expect(prompt).toContain("never by you — this one goes to a person");
     expect(prompt).not.toContain("You can't look anything up");
+  });
+});
+
+/**
+ * The voice form, in the prompt (migrations 0021, 0022).
+ *
+ * These assert the two things that make the feature real rather than decorative: the
+ * operator's own wording reaches the model, and the capture route and confirmation are
+ * stated rather than left to be inferred from it.
+ */
+describe("the collection section", () => {
+  const field = (over: Partial<CollectedField> = {}): CollectedField => ({
+    key: "policyNumber",
+    type: "identifier",
+    prompt: "Could you read me your policy number, one digit at a time?",
+    capture: "keypad",
+    confirm: "readback",
+    required: true,
+    pattern: "",
+    attempts: 3,
+    ...over,
+  });
+
+  it("says nothing at all when the agent has no form", () => {
+    const prompt = composeSystemPrompt({ organization: null, tools: [], fields: [] });
+    // Not an empty heading: a section title with nothing under it reads to a model as a
+    // list it is expected to have, and inventing its contents is the obvious next step.
+    expect(prompt).not.toContain("There are things you need from them");
+  });
+
+  it("carries the operator's own wording", () => {
+    const prompt = composeSystemPrompt({ organization: null, tools: [], fields: [field()] });
+    expect(prompt).toContain("Could you read me your policy number, one digit at a time?");
+  });
+
+  it("states the capture route rather than leaving it to be inferred", () => {
+    const keyed = composeSystemPrompt({ organization: null, tools: [], fields: [field()] });
+    expect(keyed).toContain("key it in on their phone");
+
+    const spoken = composeSystemPrompt({
+      organization: null,
+      tools: [],
+      fields: [field({ capture: "speech" })],
+    });
+    expect(spoken).toContain("ask them to say it");
+  });
+
+  it("tells the model a confirmed value is required before it acts", () => {
+    const prompt = composeSystemPrompt({ organization: null, tools: [], fields: [field()] });
+    expect(prompt).toContain("say it back to them and get a yes before you use it");
+  });
+
+  it("keeps the order the operator put them in, because that is the conversation", () => {
+    const prompt = composeSystemPrompt({
+      organization: null,
+      tools: [],
+      fields: [field({ key: "dateOfBirth" }), field({ key: "policyNumber" })],
+    });
+    expect(prompt.indexOf("dateOfBirth")).toBeLessThan(prompt.indexOf("policyNumber"));
+  });
+
+  it("still composes the guarantees after it", () => {
+    const prompt = composeSystemPrompt({ organization: null, tools: [], fields: [field()] });
+    // The form is in the task layer, so the non-negotiables still land last. A organization
+    // cannot reach past them by writing a field, because they did not write this section.
+    expect(prompt.indexOf("policyNumber")).toBeLessThan(prompt.lastIndexOf(GUARANTEES_LAYER));
   });
 });

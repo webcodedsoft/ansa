@@ -2,7 +2,7 @@ import { lookup as dnsLookup } from "node:dns/promises";
 import { isIP } from "node:net";
 
 /**
- * R5.2.2. The tenant supplies the URL, so the URL is hostile input.
+ * R5.2.2. The organization supplies the URL, so the URL is hostile input.
  *
  * This is not a formality. A connector is "make an HTTP request to a string somebody
  * else wrote", which is the textbook shape of SSRF: the string can name our own database,
@@ -10,7 +10,7 @@ import { isIP } from "node:net";
  * and privately a millisecond later. Three separate defences, because each one alone is
  * defeated by an attack the other two catch:
  *
- *   1. an allowlist of hosts the tenant declared, so an arbitrary host is refused before
+ *   1. an allowlist of hosts the organization declared, so an arbitrary host is refused before
  *      anything is resolved;
  *   2. an address filter over every address the host resolves to, so an allowlisted host
  *      pointed at 169.254.169.254 is refused as well;
@@ -18,10 +18,10 @@ import { isIP } from "node:net";
  *      to, which is what closes the gap between checking and connecting (see transport.ts).
  *
  * Redirects go through the whole thing again, because a redirect is a second URL that the
- * tenant's server chose rather than the tenant's operator.
+ * organization's server chose rather than the organization's operator.
  */
 
-/** Per tenant, and never inferred: a tenant that declared no hosts can reach none. */
+/** Per organization, and never inferred: a organization that declared no hosts can reach none. */
 export interface EgressPolicy {
   /**
    * Exact hostnames, or `*.example.com` for a subdomain wildcard.
@@ -35,7 +35,7 @@ export interface EgressPolicy {
    * Plaintext HTTP, off by default.
    *
    * A tool call carries a credential and often a caller's identifiers, and this product
-   * runs over networks it does not own. A tenant whose internal API is HTTP-only has to
+   * runs over networks it does not own. A organization whose internal API is HTTP-only has to
    * say so, in configuration, in writing.
    */
   readonly allowPlaintextHttp?: boolean;
@@ -69,7 +69,7 @@ export type EgressVerdict =
  *
  * An interface rather than a function so tests can supply one that permits loopback —
  * there is no configuration flag that turns the address filter off, because a flag that
- * exists in the type is a flag a tenant's configuration can eventually reach.
+ * exists in the type is a flag a organization's configuration can eventually reach.
  */
 export interface EgressGuard {
   check(rawUrl: string): Promise<EgressVerdict>;
@@ -172,7 +172,7 @@ const blockedV4 = (b: Uint8Array): boolean => {
     (a0 === 198 && (a1 === 18 || a1 === 19)) ||
     (a0 === 198 && a1 === 51 && a2 === 100) ||
     (a0 === 203 && a1 === 0 && a2 === 113) ||
-    // Multicast, reserved and broadcast. Nothing a tenant API is served from.
+    // Multicast, reserved and broadcast. Nothing a organization API is served from.
     a0 >= 224
   );
 };
@@ -241,7 +241,7 @@ export const isBlockedAddress = (address: string): boolean => {
  * One spelling of a host.
  *
  * Three normalisations, each of which was a real hole: the trailing dot that makes a
- * fully-qualified name (`example.com.`) a different string from the one the tenant wrote,
+ * fully-qualified name (`example.com.`) a different string from the one the organization wrote,
  * the case that DNS does not care about, and the brackets that `URL.hostname` keeps around
  * an IPv6 literal — `[::1]` is not an IP address as far as `isIP` is concerned, so without
  * this the literal-address branch is skipped and loopback goes to the resolver instead of
@@ -253,7 +253,7 @@ const normaliseHost = (host: string): string =>
 /**
  * Allowlist matching.
  *
- * Bracketed IPv6 literals arrive from `URL.hostname` without brackets, so a tenant who
+ * Bracketed IPv6 literals arrive from `URL.hostname` without brackets, so a organization who
  * allowlists a literal address writes it the way it is written everywhere else. Matching
  * is on the host string; whether the address behind it is reachable is a separate
  * question answered below, and both have to pass.
@@ -262,7 +262,7 @@ const normaliseHost = (host: string): string =>
  * Exported because configuration is checked against the same rule the guard enforces.
  *
  * `parseConnectorConfig` refuses a tool whose URL sits outside the allowlist the same
- * tenant declared beside it. That is not a second boundary — this function is still the
+ * organization declared beside it. That is not a second boundary — this function is still the
  * only definition of "allowed", and the guard below is still the thing standing between a
  * request and the network. It is validation, so a mistake surfaces at publication time
  * rather than as a tool the model is told it has and that refuses every caller.
@@ -298,7 +298,7 @@ export interface EgressGuardOptions {
 }
 
 /**
- * The guard for one tenant's policy.
+ * The guard for one organization's policy.
  *
  * Returns a verdict rather than throwing: a refusal is a routine outcome that the caller
  * turns into a spoken apology and a log line, not an exception path.

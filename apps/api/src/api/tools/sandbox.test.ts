@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { asTenantId } from "@ansa/shared";
+import { asOrganizationId } from "@ansa/shared";
 import { describe, expect, it } from "vitest";
 
 import { runToolInSandbox, type SandboxRun } from "./sandbox";
@@ -9,13 +9,13 @@ import { runToolInSandbox, type SandboxRun } from "./sandbox";
  * What a sandbox run is, and what these tests can and cannot establish.
  *
  * They establish the half that matters most and needs no server: that the risk tiers a
- * caller is protected by are the tiers a tenant meets here. A `write` tool comes back with
+ * caller is protected by are the tiers a organization meets here. A `write` tool comes back with
  * its readback and does not fire; an `irreversible` one comes back as a transfer; a tool
  * that identifies a person refuses until the caller's detail is asserted. Every one of those
  * decisions is taken before an adapter is invoked, so no endpoint has to exist for them.
  *
  * They cannot establish the `ok` path, and that is worth being plain about rather than
- * faking. Reaching it means a tenant endpoint answering over HTTPS on a public address —
+ * faking. Reaching it means a organization endpoint answering over HTTPS on a public address —
  * the egress guard refuses loopback deliberately, so a test server on this machine is not a
  * substitute — and a fake transport would be testing a fake. What sits underneath is tested
  * where it belongs: the connector's request and response handling in
@@ -23,7 +23,7 @@ import { runToolInSandbox, type SandboxRun } from "./sandbox";
  * response through in `packages/tools/src/dispatch.test.ts`.
  */
 
-const owner = asTenantId(randomUUID());
+const owner = asOrganizationId(randomUUID());
 
 const HOST = "api.example.invalid";
 
@@ -115,7 +115,7 @@ describe("the risk tier a caller is protected by", () => {
     expect(result?.route).toBeNull();
   });
 
-  it("transfers an irreversible tool, with the reason the tenant wrote", async () => {
+  it("transfers an irreversible tool, with the reason the organization wrote", async () => {
     const result = await run("cancel_policy");
 
     expect(result).toMatchObject({ outcome: "transfer", riskTier: "irreversible" });

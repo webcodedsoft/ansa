@@ -1,5 +1,5 @@
 /**
- * R5.2.4 — redaction that reaches free text, configured per tenant.
+ * R5.2.4 — redaction that reaches free text, configured per organization.
  *
  * `redact.ts` beside this matches credential-shaped *keys*. That rule is unconditional and
  * stays unconditional: an `authorization` header or a vault reference is not the caller's
@@ -12,10 +12,10 @@
  * their customer; the payload is a record of a conversation their own agent had. Withholding
  * their own data from them on a judgement we made about their compliance posture is not our
  * call, and it would break the obvious uses — a CRM that needs the policy number, a
- * ticketing system that needs the callback number. A tenant that configures no categories
+ * ticketing system that needs the callback number. A organization that configures no categories
  * gets everything, and `NO_REDACTION` is what that looks like.
  *
- * What the capability is for is the tenant who *does* want masking, and for them it has to
+ * What the capability is for is the organization who *does* want masking, and for them it has to
  * actually work. Two sources of signal, and they are not equal:
  *
  *   1. **What the call captured.** `apps/api/src/conversation/call-facts.ts` already knows
@@ -30,7 +30,7 @@
  *      list of known values, and adding one would be the mistake this project has a rule
  *      about.
  *
- * What shape provably cannot do is in `docs/EVENT_WEBHOOKS.md`, where a tenant switching
+ * What shape provably cannot do is in `docs/EVENT_WEBHOOKS.md`, where a organization switching
  * this on will read it. The short version: a name, an address, a date of birth and a
  * disclosure about somebody's health have no shape that distinguishes them from ordinary
  * prose, so categories 2 will not find them and category 1 only finds what capture caught.
@@ -39,18 +39,18 @@
  */
 
 /**
- * The categories a tenant may switch on.
+ * The categories a organization may switch on.
  *
  * Deliberately small and each one defensible on its own. A category that fires on prose it
  * cannot distinguish from the thing it is looking for would be worse than absent — the
- * tenant would believe the payload was clean.
+ * organization would believe the payload was clean.
  */
 export type RedactionCategory =
   /** Values this call recorded as identifiers. Not a pattern; a fact about the call. */
   | "captured-identifier"
   | "email"
   /** 13–19 digits that pass Luhn. A strict subset of digit-sequence, named separately so a
-   *  tenant can mask card numbers without masking every reference their agent handled. */
+   *  organization can mask card numbers without masking every reference their agent handled. */
   | "card-number"
   /** A run of digits at or over `minDigits`, written. */
   | "digit-sequence"
@@ -80,13 +80,13 @@ export const NO_REDACTION: RedactionPolicy = {
   minSpokenDigits: 4,
 };
 
-/** What this particular call knows, as opposed to what the tenant configured. */
+/** What this particular call knows, as opposed to what the organization configured. */
 export interface RedactionContext {
   /**
    * Values the capture layer recorded as identifiers on this call — a name, a policy
    * number, a customer id. Supplied by the caller because `@ansa/tools` must not reach
    * into the orchestrator's call state, and because it changes per call rather than per
-   * tenant.
+   * organization.
    */
   readonly capturedIdentifiers?: readonly string[];
 }
@@ -124,7 +124,7 @@ const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]
  *
  * `[A-Za-z0-9]` was the first version and it silently dropped every character outside
  * ASCII, which meant a name carrying a diacritic — Yorùbá, Norwegian, Spanish — produced a
- * pattern that could not match the value it was built from. The tenant would have seen the
+ * pattern that could not match the value it was built from. The organization would have seen the
  * name survive redaction and had no way to tell why.
  */
 const ALPHANUMERIC = /[\p{L}\p{N}]/u;
@@ -135,7 +135,7 @@ const ALPHANUMERIC = /[\p{L}\p{N}]/u;
  * A policy number confirmed as `AB123456` can appear in a transcript as `AB 123 456`,
  * `ab-123456`, or spelled out with the letters apart, because that is how people read
  * references aloud and how a transcriber writes them down. Matching the exact string only
- * would leave the commonest spelling in the payload, which is the failure the tenant
+ * would leave the commonest spelling in the payload, which is the failure the organization
  * switched this on to avoid.
  *
  * So the value's significant characters are matched with optional separators between them.
@@ -229,7 +229,7 @@ const replaceOutsideMasks = (
 const always = (): boolean => true;
 
 /**
- * One string, redacted under one tenant's policy.
+ * One string, redacted under one organization's policy.
  *
  * Order is not arbitrary. Captured identifiers go first because they are known rather than
  * inferred, and masking them first stops a policy number being reported as an anonymous
@@ -299,9 +299,9 @@ const asRun = (value: unknown, where: string, fallback: number): number => {
 };
 
 /**
- * A tenant's redaction rules, validated the same way the rest of their config is.
+ * A organization's redaction rules, validated the same way the rest of their config is.
  *
- * Throws rather than dropping an unrecognised category. A tenant who writes `phone-number`
+ * Throws rather than dropping an unrecognised category. A organization who writes `phone-number`
  * and gets silence has configured masking that is not happening, and would find out from a
  * payload rather than from the screen they typed it on.
  */

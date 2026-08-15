@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 
 import { describe, expect, it, vi } from "vitest";
-import { asCallId, asTenantId, type TenantId } from "@ansa/shared";
+import { asCallId, asOrganizationId, type OrganizationId } from "@ansa/shared";
 import {
   callControlTools,
   createToolDispatcher,
@@ -15,7 +15,7 @@ import { scenario } from "../scenarios/harness";
 
 import { callSettings, type CallSettings, type PlatformDefaults } from "./call-settings";
 import { BASE_KEYTERMS } from "./defaults";
-import { createTenantRegistry, type CallTenant } from "./tenant-registry";
+import { createAgentRegistry, type CallAgent } from "./agent-registry";
 
 /**
  * The layer above RLS.
@@ -25,14 +25,14 @@ import { createTenantRegistry, type CallTenant } from "./tenant-registry";
  * of organisation A is *used*. A prompt, a voice, a greeting, a keyterm list, a tool, an
  * escalation number and a redaction policy can all cross over without a single row
  * crossing a boundary — through a cache keyed wrong, a module-level singleton, or a
- * default that was written when there was one tenant.
+ * default that was written when there was one organization.
  *
  * Two of those had crossed over when this file was written, and neither was a database
  * problem:
  *
  *   - `voice_id` and `greeting` were stored, versioned and loaded, and the media gateway
- *     passed the platform's own to every call regardless. A second tenant could publish a
- *     voice and hear the first tenant's.
+ *     passed the platform's own to every call regardless. A second organization could publish a
+ *     voice and hear the first organization's.
  *   - the escalation destination was one environment variable for the whole process, so a
  *     second organisation's caller would have been dialled through to the first
  *     organisation's staff phone, and the whisper summary of a conversation they have no
@@ -48,13 +48,13 @@ import { createTenantRegistry, type CallTenant } from "./tenant-registry";
  * comparison rather than by inspection.
  */
 
-const TENANT_A = "11111111-1111-4111-8111-111111111111";
-const TENANT_B = "22222222-2222-4222-8222-222222222222";
+const ORGANIZATION_A = "11111111-1111-4111-8111-111111111111";
+const ORGANIZATION_B = "22222222-2222-4222-8222-222222222222";
 const NUMBER_A = "+15550001111";
 const NUMBER_B = "+15550002222";
 
 /**
- * The platform's own values, and every one of them is distinct from both tenants' so a
+ * The platform's own values, and every one of them is distinct from both organizations' so a
  * fallback leaking through reads as a failure rather than as a coincidence.
  */
 const PLATFORM: PlatformDefaults = {
@@ -65,9 +65,9 @@ const PLATFORM: PlatformDefaults = {
 
 const VAULT_KEY = randomBytes(32);
 
-const sealedFor = (tenantId: TenantId): Record<string, string> => ({
-  api: sealCredential(VAULT_KEY, tenantId, "api", { kind: "bearer", token: randomBytes(16).toString("hex") }),
-  hook: sealCredential(VAULT_KEY, tenantId, "hook", { kind: "signing", secret: randomBytes(24).toString("base64") }),
+const sealedFor = (organizationId: OrganizationId): Record<string, string> => ({
+  api: sealCredential(VAULT_KEY, organizationId, "api", { kind: "bearer", token: randomBytes(16).toString("hex") }),
+  hook: sealCredential(VAULT_KEY, organizationId, "hook", { kind: "signing", secret: randomBytes(24).toString("base64") }),
 });
 
 /**
@@ -77,8 +77,16 @@ const sealedFor = (tenantId: TenantId): Record<string, string> => ({
  * factory makes the two agree on everything the author forgot to vary, which is precisely
  * the class of value that leaks.
  */
+const AGENT_A2 = "aaaaaaaa-0002-4000-8000-aaaaaaaaaaaa";
+
 const ROW_A = {
-  id: TENANT_A,
+  id: ORGANIZATION_A,
+  // The agent that answers NUMBER_A, and the tools it is allowed to reach. Both columns
+  // are what `app.agent_config_for_number` returns since migration 0018 — the registry
+  // below belongs to the organisation, `enabled_tools` is this agent's slice of it. An
+  // agent naming nothing here reaches nothing, which is why the fixtures name theirs.
+  agent_id: ORGANIZATION_A,
+  enabled_tools: ["check_endorsement"],
   name: "Arewa Mutual Assurance",
   keyterms: ["Arewa Mutual", "endorsement", "underwriter"],
   voice_id: "voice-arewa",
@@ -120,12 +128,14 @@ const ROW_A = {
       },
     ],
   },
-  credentials: sealedFor(asTenantId(TENANT_A)),
+  credentials: sealedFor(asOrganizationId(ORGANIZATION_A)),
   config_version: 11,
 };
 
 const ROW_B = {
-  id: TENANT_B,
+  id: ORGANIZATION_B,
+  agent_id: ORGANIZATION_B,
+  enabled_tools: ["next_appointment"],
   name: "Riverbend Veterinary Group",
   keyterms: ["Riverbend", "vaccination", "deworming", "consultation"],
   voice_id: "voice-riverbend",
@@ -157,7 +167,7 @@ const ROW_B = {
   event_config: {
     egress: { allowedHosts: ["hooks.riverbend.example"] },
     // The opposite posture to A's, and the point of varying it: a redaction policy is a
-    // per-tenant object and a shared one would quietly apply somebody's caution to
+    // per-organization object and a shared one would quietly apply somebody's caution to
     // somebody else's data, or fail to.
     redaction: { categories: ["captured-identifier", "digit-sequence"] },
     subscriptions: [
@@ -169,7 +179,7 @@ const ROW_B = {
       },
     ],
   },
-  credentials: sealedFor(asTenantId(TENANT_B)),
+  credentials: sealedFor(asOrganizationId(ORGANIZATION_B)),
   config_version: 4,
 };
 
@@ -207,21 +217,21 @@ const silentLog = () => {
   return log;
 };
 
-/** Resolution by dialled number, as `app.tenant_config_for_number` does it. */
-const twoTenantDb = () => ({
+/** Resolution by dialled number, as `app.agent_config_for_number` does it. */
+const twoOrganizationDb = () => ({
   query: vi.fn(async (sql: string, params: readonly unknown[]) => {
     const key = String(params[0]);
-    if (!sql.includes("tenant_config_for_number") && !sql.includes("tenant_config_for_id")) {
+    if (!sql.includes("agent_config_for_number") && !sql.includes("agent_config_for_organization")) {
       return [];
     }
-    if (key === NUMBER_A || key === TENANT_A) return [ROW_A];
-    if (key === NUMBER_B || key === TENANT_B) return [ROW_B];
+    if (key === NUMBER_A || key === ORGANIZATION_A) return [ROW_A];
+    if (key === NUMBER_B || key === ORGANIZATION_B) return [ROW_B];
     return [];
   }),
 });
 
-const registryFor = (db: ReturnType<typeof twoTenantDb>) =>
-  createTenantRegistry({
+const registryFor = (db: ReturnType<typeof twoOrganizationDb>) =>
+  createAgentRegistry({
     dataSource: db as never,
     log: silentLog() as never,
     credentialKey: VAULT_KEY,
@@ -253,7 +263,7 @@ const perCallRegistry = (settings: CallSettings): ToolRegistry => {
 
 describe("two organisations, one platform", () => {
   it("gives each its own voice, greeting, prompt, vocabulary, hours and escalation", async () => {
-    const registry = registryFor(twoTenantDb());
+    const registry = registryFor(twoOrganizationDb());
     const a = await settingsFor(registry, NUMBER_A);
     const b = await settingsFor(registry, NUMBER_B);
 
@@ -277,7 +287,7 @@ describe("two organisations, one platform", () => {
   });
 
   it("puts each organisation's own words in its own prompt and neither in the other's", async () => {
-    const registry = registryFor(twoTenantDb());
+    const registry = registryFor(twoOrganizationDb());
     const a = await settingsFor(registry, NUMBER_A);
     const b = await settingsFor(registry, NUMBER_B);
 
@@ -286,7 +296,7 @@ describe("two organisations, one platform", () => {
     expect(b.systemPrompt).toContain(ROW_B.persona);
     expect(b.systemPrompt).toContain(ROW_B.instructions);
 
-    // The base is in both, whole. The tenant layer adds; it never replaces.
+    // The base is in both, whole. The organization layer adds; it never replaces.
     for (const shared of ["You're Ansa", "Nigerian English", "whoever you are answering for"]) {
       expect(a.systemPrompt).toContain(shared);
       expect(b.systemPrompt).toContain(shared);
@@ -294,7 +304,7 @@ describe("two organisations, one platform", () => {
   });
 
   it("does not leak one organisation's domain vocabulary into the other's transcription", async () => {
-    const registry = registryFor(twoTenantDb());
+    const registry = registryFor(twoOrganizationDb());
     const a = await settingsFor(registry, NUMBER_A);
     const b = await settingsFor(registry, NUMBER_B);
 
@@ -314,7 +324,7 @@ describe("two organisations, one platform", () => {
   });
 
   it("transfers each organisation's caller to that organisation's own people", async () => {
-    const registry = registryFor(twoTenantDb());
+    const registry = registryFor(twoOrganizationDb());
     const a = await settingsFor(registry, NUMBER_A);
     const b = await settingsFor(registry, NUMBER_B);
 
@@ -350,7 +360,7 @@ describe("two organisations, one platform", () => {
   it("an unregistered number gets the platform's and no organisation's", () => {
     const nobody = callSettings(null, PLATFORM);
 
-    expect(nobody.tenantId).toBeNull();
+    expect(nobody.organizationId).toBeNull();
     expect(nobody.voiceId).toBe(PLATFORM.voiceId);
     expect(nobody.greeting).toBe(PLATFORM.greeting);
     expect(nobody.connectors.tools).toHaveLength(0);
@@ -363,11 +373,11 @@ describe("two organisations, one platform", () => {
 
 describe("the cache is not a place two organisations meet", () => {
   it("answers the same for each number whichever order they are asked in", async () => {
-    const forwards = registryFor(twoTenantDb());
+    const forwards = registryFor(twoOrganizationDb());
     const a1 = await settingsFor(forwards, NUMBER_A);
     const b1 = await settingsFor(forwards, NUMBER_B);
 
-    const backwards = registryFor(twoTenantDb());
+    const backwards = registryFor(twoOrganizationDb());
     const b2 = await settingsFor(backwards, NUMBER_B);
     const a2 = await settingsFor(backwards, NUMBER_A);
 
@@ -378,21 +388,21 @@ describe("the cache is not a place two organisations meet", () => {
   });
 
   it("never hands the media socket one organisation's config under the other's id", async () => {
-    const registry = registryFor(twoTenantDb());
+    const registry = registryFor(twoOrganizationDb());
     await registry.resolve(NUMBER_A);
     await registry.resolve(NUMBER_B);
 
     // The media socket reads by id, synchronously, and this is the read that a cache keyed
     // by number alone would get wrong.
-    expect(registry.cached(TENANT_A)?.name).toBe(ROW_A.name);
-    expect(registry.cached(TENANT_B)?.name).toBe(ROW_B.name);
+    expect(registry.cached(ORGANIZATION_A)?.name).toBe(ROW_A.name);
+    expect(registry.cached(ORGANIZATION_B)?.name).toBe(ROW_B.name);
     expect(registry.cached("33333333-3333-4333-8333-333333333333")).toBeNull();
   });
 
   it("re-reading one organisation's config leaves the other's alone", async () => {
     let clock = 1_000;
-    const db = twoTenantDb();
-    const registry = createTenantRegistry({
+    const db = twoOrganizationDb();
+    const registry = createAgentRegistry({
       dataSource: db as never,
       log: silentLog() as never,
       credentialKey: VAULT_KEY,
@@ -407,35 +417,35 @@ describe("the cache is not a place two organisations meet", () => {
     await registry.resolve(NUMBER_A);
 
     expect((await registry.resolve(NUMBER_B)).systemPrompt).toBe(before);
-    expect(registry.cached(TENANT_B)?.name).toBe(ROW_B.name);
+    expect(registry.cached(ORGANIZATION_B)?.name).toBe(ROW_B.name);
   });
 });
 
 describe("the tool registry is per call and per organisation", () => {
   it("offers each organisation its own tools beside the platform's", async () => {
-    const registry = registryFor(twoTenantDb());
+    const registry = registryFor(twoOrganizationDb());
     const a = await settingsFor(registry, NUMBER_A);
     const b = await settingsFor(registry, NUMBER_B);
 
     const namesFor = (settings: CallSettings, id: string): readonly string[] =>
       perCallRegistry(settings)
-        .listFor(asTenantId(id))
+        .listFor(asOrganizationId(id))
         .map((d) => d.name);
 
-    expect(namesFor(a, TENANT_A)).toContain("check_endorsement");
-    expect(namesFor(a, TENANT_A)).not.toContain("next_appointment");
-    expect(namesFor(b, TENANT_B)).toContain("next_appointment");
-    expect(namesFor(b, TENANT_B)).not.toContain("check_endorsement");
+    expect(namesFor(a, ORGANIZATION_A)).toContain("check_endorsement");
+    expect(namesFor(a, ORGANIZATION_A)).not.toContain("next_appointment");
+    expect(namesFor(b, ORGANIZATION_B)).toContain("next_appointment");
+    expect(namesFor(b, ORGANIZATION_B)).not.toContain("check_endorsement");
 
-    // Every registered tenant gets the platform's three, and neither can shadow them.
+    // Every registered organization gets the platform's three, and neither can shadow them.
     for (const platform of ["end_call", "transfer_to_human", "business_hours"]) {
-      expect(namesFor(a, TENANT_A)).toContain(platform);
-      expect(namesFor(b, TENANT_B)).toContain(platform);
+      expect(namesFor(a, ORGANIZATION_A)).toContain(platform);
+      expect(namesFor(b, ORGANIZATION_B)).toContain(platform);
     }
   });
 
   it("refuses the other organisation's tool exactly as it refuses one that does not exist", async () => {
-    const registry = registryFor(twoTenantDb());
+    const registry = registryFor(twoOrganizationDb());
     const b = await settingsFor(registry, NUMBER_B);
 
     const dispatcher = createToolDispatcher({
@@ -444,13 +454,13 @@ describe("the tool registry is per call and per organisation", () => {
     });
 
     const stolen = await dispatcher.dispatch({
-      tenantId: asTenantId(TENANT_B),
+      organizationId: asOrganizationId(ORGANIZATION_B),
       callId: asCallId("CA-isolation"),
       name: "check_endorsement",
       args: { reference: "X" },
     });
     const absent = await dispatcher.dispatch({
-      tenantId: asTenantId(TENANT_B),
+      organizationId: asOrganizationId(ORGANIZATION_B),
       callId: asCallId("CA-isolation"),
       name: "no_such_tool_at_all",
       args: {},
@@ -464,7 +474,7 @@ describe("the tool registry is per call and per organisation", () => {
   });
 
   it("a registry built for one call carries nothing into the next", async () => {
-    const registry = registryFor(twoTenantDb());
+    const registry = registryFor(twoOrganizationDb());
     const a = await settingsFor(registry, NUMBER_A);
     const b = await settingsFor(registry, NUMBER_B);
 
@@ -473,15 +483,15 @@ describe("the tool registry is per call and per organisation", () => {
     const first = perCallRegistry(a);
     const second = perCallRegistry(b);
 
-    expect(first.resolve(asTenantId(TENANT_B), "next_appointment")).toBeNull();
-    expect(second.resolve(asTenantId(TENANT_A), "check_endorsement")).toBeNull();
-    expect(second.resolve(asTenantId(TENANT_B), "next_appointment")).not.toBeNull();
+    expect(first.resolve(asOrganizationId(ORGANIZATION_B), "next_appointment")).toBeNull();
+    expect(second.resolve(asOrganizationId(ORGANIZATION_A), "check_endorsement")).toBeNull();
+    expect(second.resolve(asOrganizationId(ORGANIZATION_B), "next_appointment")).not.toBeNull();
   });
 });
 
 describe("each organisation's own receivers and its own redaction", () => {
   it("delivers to the organisation that asked, under the policy it asked for", async () => {
-    const registry = registryFor(twoTenantDb());
+    const registry = registryFor(twoOrganizationDb());
     const a = await settingsFor(registry, NUMBER_A);
     const b = await settingsFor(registry, NUMBER_B);
 
@@ -506,14 +516,14 @@ describe("each organisation's own receivers and its own redaction", () => {
   });
 
   it("signs each organisation's deliveries with a secret the other's key cannot open", async () => {
-    const registry = registryFor(twoTenantDb());
+    const registry = registryFor(twoOrganizationDb());
     const a = await settingsFor(registry, NUMBER_A);
     const b = await settingsFor(registry, NUMBER_B);
 
     const sign = (settings: CallSettings): string =>
       settings.events.subscribersTo("call.ended")[0]?.signer.sign("the same body") ?? "";
 
-    // Sealed under the tenant id as additional authenticated data, so a ciphertext moved
+    // Sealed under the organization id as additional authenticated data, so a ciphertext moved
     // between rows does not decrypt. Two organisations signing identical bytes must not
     // produce the same signature, or a receiver could not tell them apart.
     expect(sign(a)).not.toBe("");
@@ -525,12 +535,12 @@ describe("a whole call, run twice as two organisations", () => {
   /**
    * The assertion the field-by-field ones cannot make: these values reached the wire.
    *
-   * `voice_id` and `greeting` were correct in `CallTenant` for two months and never
+   * `voice_id` and `greeting` were correct in `CallAgent` for two months and never
    * reached TTS, so anything that stops at the settings object is proving the wrong half.
    */
   const runCall = (settings: CallSettings) => {
     const call = scenario({
-      tenantId: settings.tenantId,
+      organizationId: settings.organizationId,
       greeting: settings.greeting,
       systemPrompt: settings.systemPrompt,
       voiceId: settings.voiceId,
@@ -542,7 +552,7 @@ describe("a whole call, run twice as two organisations", () => {
   };
 
   it("opens in the organisation's own words, in the organisation's own voice", async () => {
-    const registry = registryFor(twoTenantDb());
+    const registry = registryFor(twoOrganizationDb());
     const a = runCall(await settingsFor(registry, NUMBER_A));
     const b = runCall(await settingsFor(registry, NUMBER_B));
 
@@ -559,7 +569,7 @@ describe("a whole call, run twice as two organisations", () => {
   });
 
   it("says nothing of the other organisation, and is told nothing of it", async () => {
-    const registry = registryFor(twoTenantDb());
+    const registry = registryFor(twoOrganizationDb());
     const a = runCall(await settingsFor(registry, NUMBER_A));
     const b = runCall(await settingsFor(registry, NUMBER_B));
 
@@ -571,7 +581,7 @@ describe("a whole call, run twice as two organisations", () => {
   });
 
   it("keeps two calls' events apart when they run at the same time", async () => {
-    const registry = registryFor(twoTenantDb());
+    const registry = registryFor(twoOrganizationDb());
     const a = runCall(await settingsFor(registry, NUMBER_A));
     const b = runCall(await settingsFor(registry, NUMBER_B));
 
@@ -594,11 +604,11 @@ describe("a whole call, run twice as two organisations", () => {
 
 /**
  * The guarantees in `docs/MULTI_TENANT_ARCHITECTURE.md` §1, tried from the one place a
- * tenant can actually write: their own configuration row.
+ * organization can actually write: their own configuration row.
  *
- * `prompts/tenant-layer.test.ts` tests the compiler. This tests the same thing through the
+ * `prompts/organization-layer.test.ts` tests the compiler. This tests the same thing through the
  * registry, because the question here is not "does the filter work" but "is the filter
- * still on the path a second tenant travels".
+ * still on the path a second organization travels".
  */
 describe("a second organisation cannot configure a guarantee away", () => {
   const publishing = (fields: Record<string, unknown>) =>
@@ -623,7 +633,7 @@ describe("a second organisation cannot configure a guarantee away", () => {
       // The call still happens. A configuration problem must not become silence on the
       // line, and the guarantees hold in the dispatch paths regardless of the prompt.
       expect(settings.systemPrompt).toContain("whoever you are answering for");
-      // The other field survives, so a tenant can see which sentence to change.
+      // The other field survives, so a organization can see which sentence to change.
       const kept = attempt.field === "persona" ? ROW_B.instructions : ROW_B.persona;
       expect(settings.systemPrompt).toContain(kept);
     });
@@ -729,19 +739,19 @@ describe("a second organisation cannot configure a guarantee away", () => {
 });
 
 /**
- * `CallTenant` is what the registry produces and `CallSettings` is what the call consumes.
- * Every tenant-dependent value has to cross that boundary or it is configuration nobody
+ * `CallAgent` is what the registry produces and `CallSettings` is what the call consumes.
+ * Every organization-dependent value has to cross that boundary or it is configuration nobody
  * can hear — which is exactly how `voice_id` and `greeting` were lost.
  */
-describe("nothing a tenant configures stops at the registry", () => {
-  it("carries every field of CallTenant into the settings a call is run from", async () => {
-    const registry = registryFor(twoTenantDb());
-    const tenant: CallTenant = await registry.resolve(NUMBER_A);
-    const settings = callSettings(tenant, PLATFORM);
+describe("nothing a organization configures stops at the registry", () => {
+  it("carries every field of CallAgent into the settings a call is run from", async () => {
+    const registry = registryFor(twoOrganizationDb());
+    const organization: CallAgent = await registry.resolve(NUMBER_A);
+    const settings = callSettings(organization, PLATFORM);
 
     /**
-     * The fields of `CallTenant` that are *not* meant to reach `CallSettings`, each with a
-     * reason. Anything else added to `CallTenant` fails this until it is either wired into
+     * The fields of `CallAgent` that are *not* meant to reach `CallSettings`, each with a
+     * reason. Anything else added to `CallAgent` fails this until it is either wired into
      * `callSettings` or listed here on purpose — which is the check that would have caught
      * the original defect on the day it was written.
      */
@@ -752,9 +762,74 @@ describe("nothing a tenant configures stops at the registry", () => {
       "instructions",
     ]);
 
-    for (const field of Object.keys(tenant)) {
+    for (const field of Object.keys(organization)) {
       if (deliberatelyNotCarried.has(field)) continue;
       expect(Object.keys(settings)).toContain(field);
     }
+  });
+});
+
+/**
+ * One organisation, two agents, one shared tool registry (migration 0018).
+ *
+ * The registry is defined once per organisation — its URLs, risk tiers, egress allowlist
+ * and credential references. Which of those an agent may actually call is per agent, and
+ * these prove the difference is enforced rather than described.
+ *
+ * The threat is not another organisation here, it is the wrong agent in the same one: an
+ * after-hours line that only takes messages must not be able to reach the endpoint that
+ * cancels a policy, even though both agents' calls run on the same registry.
+ */
+describe("one organisation, two agents, one registry", () => {
+  /** Same organization and same registry as ROW_A; only the agent and its selection differ. */
+  const agentRow = (agentId: string, enabled: readonly string[]) => ({
+    ...ROW_A,
+    agent_id: agentId,
+    enabled_tools: enabled,
+  });
+
+  const dbServing = (row: Record<string, unknown>) => ({
+    query: vi.fn(async (sql: string) =>
+      sql.includes("agent_config_for_number") || sql.includes("agent_config_for_organization")
+        ? [row]
+        : [],
+    ),
+  });
+
+  const toolsFor = async (row: Record<string, unknown>): Promise<readonly string[]> => {
+    const registry = registryFor(dbServing(row) as never);
+    const settings = await settingsFor(registry, NUMBER_A);
+    return perCallRegistry(settings)
+      .listFor(asOrganizationId(ORGANIZATION_A))
+      .map((d) => d.name);
+  };
+
+  it("gives an agent only the tools it selected", async () => {
+    const names = await toolsFor(agentRow(ORGANIZATION_A, ["check_endorsement"]));
+    expect(names).toContain("check_endorsement");
+  });
+
+  it("gives an agent that selected nothing no organisation tools at all", async () => {
+    const names = await toolsFor(agentRow(AGENT_A2, []));
+
+    // The whole property. An empty selection is not "everything the organisation has" —
+    // the failure that would make creating an agent the most dangerous act in the product.
+    expect(names).not.toContain("check_endorsement");
+
+    // And it is still a working agent: the platform's own three are not the
+    // organisation's to grant, so they survive. An agent with no tools must still be able
+    // to end the call and reach a human.
+    for (const platform of ["end_call", "transfer_to_human", "business_hours"]) {
+      expect(names).toContain(platform);
+    }
+  });
+
+  it("does not let a selection name a tool the registry does not hold", async () => {
+    const names = await toolsFor(agentRow(AGENT_A2, ["check_endorsement", "wire_transfer"]));
+
+    // A selection is a filter over the registry, never a way into it. Naming a tool that
+    // was never registered — removed since, or invented — grants nothing.
+    expect(names).toContain("check_endorsement");
+    expect(names).not.toContain("wire_transfer");
   });
 });

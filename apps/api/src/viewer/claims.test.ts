@@ -130,7 +130,7 @@ describe("the configuration a result is only comparable with", () => {
     )[0];
 
     expect(configuration?.["endpointing"]).toBe("eot_threshold=0.8, eot_timeout_ms=3000");
-    // The count, not the list: the list is the tenant's configuration and is versioned
+    // The count, not the list: the list is the organization's configuration and is versioned
     // there. What a reader needs is whether a boost was in effect at all.
     expect(configuration?.["keyterms_sent"]).toBe(7);
   });

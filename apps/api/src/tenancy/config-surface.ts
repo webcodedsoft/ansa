@@ -6,12 +6,12 @@ import {
 } from "@ansa/tools";
 
 import { ENFORCED_IN_CODE } from "../prompts/guarantees";
-import { LIMITS } from "../prompts/tenant-layer";
+import { LIMITS } from "../prompts/organization-layer";
 
 import { BASE_KEYTERMS, MAX_KEYTERMS } from "./defaults";
 
 /**
- * `docs/TENANT_CONFIGURATION.md`, written from the code that enforces it.
+ * `docs/ORGANIZATION_CONFIGURATION.md`, written from the code that enforces it.
  *
  * The document answers one question — what can an organisation change, and what can it
  * not — and the only way that question stays answered is if the answer is derived rather
@@ -32,7 +32,7 @@ import { BASE_KEYTERMS, MAX_KEYTERMS } from "./defaults";
 
 const ms = (value: number): string => `${(value / 1000).toFixed(value % 1000 === 0 ? 0 : 1)}s`;
 
-/** One row per thing a tenant may set, and where it is bounded. */
+/** One row per thing a organization may set, and where it is bounded. */
 interface Configurable {
   readonly field: string;
   readonly what: string;
@@ -81,7 +81,7 @@ const CONFIGURABLE: readonly Configurable[] = [
     field: "`escalation`",
     what: "Where a transfer goes, and how long it rings.",
     bound:
-      "Both numbers E.164 or neither. Ring 5-120 seconds. Unset falls back to the platform's number, which is wrong once there is more than one tenant.",
+      "Both numbers E.164 or neither. Ring 5-120 seconds. Unset falls back to the platform's number, which is wrong once there is more than one organization.",
   },
   {
     field: "`tools`",
@@ -120,7 +120,7 @@ const table = (headers: readonly string[], rows: readonly (readonly string[])[])
 
 export const renderConfigurationSurface = (): string =>
   [
-    "# What a tenant can configure, and what it cannot",
+    "# What a organization can configure, and what it cannot",
     "",
     "**Generated.** `apps/api/src/tenancy/config-surface.ts` builds this from the code that",
     "enforces it, and `config-surface.test.ts` fails if this file and that code disagree. Edit",
@@ -135,9 +135,9 @@ export const renderConfigurationSurface = (): string =>
     "",
     "## 1. What an organisation sets",
     "",
-    "Published with `tools/tenant/config.mjs publish <file.json> \"<why>\"`, as a whole",
+    "Published with `tools/organization/config.mjs publish <file.json> \"<why>\"`, as a whole",
     "configuration rather than a patch. Every publish bumps `config_version` and snapshots the",
-    "whole thing into `tenant_prompt_versions`, and every call records the version that served",
+    "whole thing into `agent_prompt_versions`, and every call records the version that served",
     "it, so a call from three weeks ago can still be explained (R7.5).",
     "",
     table(
@@ -148,7 +148,7 @@ export const renderConfigurationSurface = (): string =>
     `Base vocabulary every organisation inherits, on top of which their own is merged: ${BASE_KEYTERMS.map((t) => `\`${t}\``).join(", ")}.`,
     "A term earns a place there by being true of every organisation on the platform, not by",
     "having been misheard once — the insurance words that used to be here moved to the",
-    "insurer's own list when the second tenant arrived.",
+    "insurer's own list when the second organization arrived.",
     "",
     "---",
     "",
@@ -216,11 +216,11 @@ export const renderConfigurationSurface = (): string =>
     "",
     "## 5. What the operator sets, not the organisation",
     "",
-    "These are on the tenant row and deliberately absent from `publish_tenant_config`, so the",
+    "These are on the organization row and deliberately absent from `publish_organization_config`, so the",
     "onboarding path cannot reach them:",
     "",
     "- **`dialled_number`** — the ingress routing table. An organisation that could write it",
-    "  could claim a number nobody assigned it. `tools/tenant/provision.mjs` sets it, as the",
+    "  could claim a number nobody assigned it. `tools/organization/provision.mjs` sets it, as the",
     "  database owner.",
     "- **`consent_policy`, `consent_basis`, `calling_earliest_hour`, `calling_latest_hour`** —",
     "  the gate on who may be dialled and when. An organisation asking to place calls must not",
@@ -228,8 +228,8 @@ export const renderConfigurationSurface = (): string =>
     "- **`audio_retention_days`** — how long a caller's voice is kept.",
     "",
     "Being absent from the tool is not the same as being unreachable. `ansa_app` still holds",
-    "`INSERT` on `tenants`, and the RLS policy passes for any row whose `id` matches the scope",
-    "the connection set, so a process holding `DATABASE_URL` could create a tenant and claim a",
+    "`INSERT` on `organizations`, and the RLS policy passes for any row whose `id` matches the scope",
+    "the connection set, so a process holding `DATABASE_URL` could create a organization and claim a",
     "free number. Nothing does, and the adversarial RLS suite needs the grant for its own",
     "fixtures. Column-level grants would close it and should, before anyone outside the team",
     "holds those credentials.",

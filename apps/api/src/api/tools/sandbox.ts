@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { forSpeech } from "@ansa/normalizer";
-import { asCallId, createLogger, type TenantId } from "@ansa/shared";
+import { asCallId, createLogger, type OrganizationId } from "@ansa/shared";
 import {
   createToolDispatcher,
   createToolRegistry,
@@ -23,7 +23,7 @@ import {
  * is no second execution route here and there must not be: `packages/tools/src/dispatch.ts`
  * is the only call site of `adapter.execute` in the repository and a test enforces it.
  *
- * The consequence a tenant meets immediately is that **a write tool does not fire**. It
+ * The consequence a organization meets immediately is that **a write tool does not fire**. It
  * comes back as `confirm` with the readback the caller would have heard, because that is
  * what the dispatcher does with a write nobody has said yes to yet, and an `irreversible`
  * tool comes back as `transfer`. A sandbox that ran them anyway would be teaching an
@@ -31,7 +31,7 @@ import {
  * found out otherwise would be a caller's policy being cancelled during a test.
  *
  * **Why the raw response is worth a field.** R5.4.3 is the rule that raw JSON is never
- * spoken, and the summariser is a template the tenant wrote against a shape they believe
+ * spoken, and the summariser is a template the organization wrote against a shape they believe
  * their endpoint returns. When those disagree the template renders its fallback, the agent
  * says "I cannot find that policy", and nothing anywhere reports that the lookup in fact
  * succeeded and the field was called `status` rather than `state`. Putting the JSON beside
@@ -62,7 +62,7 @@ export interface SandboxRun {
    * Whose tools these are. Called `owner` for the reason `refusals.ts` gives: it goes into
    * a registry key and a vault's authentication tag, never into a query.
    */
-  readonly owner: TenantId;
+  readonly owner: OrganizationId;
   /** The `tool_config` column, exactly as stored. */
   readonly toolConfig: unknown;
   readonly sealedCredentials: ReadonlyMap<string, string>;
@@ -70,12 +70,12 @@ export interface SandboxRun {
   readonly name: string;
   readonly args: ToolArgs;
   /**
-   * Call facts the tenant is asserting the caller had confirmed, as `fact` to value.
+   * Call facts the organization is asserting the caller had confirmed, as `fact` to value.
    *
    * A tool that identifies a person by an argument will not run until the caller has
    * confirmed that detail, and the sandbox has no caller. Rather than exempt it — which
    * would make the one gate that exists because of a measured transcription failure the one
-   * gate the sandbox lies about — the tenant states the confirmation themselves, and the
+   * gate the sandbox lies about — the organization states the confirmation themselves, and the
    * dispatcher still checks the argument against it. Assert nothing and the run comes back
    * as `unconfirmed-identity`, which is also the right answer to see.
    */
@@ -131,7 +131,7 @@ export const runToolInSandbox = async (run: SandboxRun): Promise<SandboxResult |
   // The same preparation the call path does — parse, drop what has no credential, build the
   // egress guard, discover MCP tools — rather than a second one that would drift from it.
   const prepared = await prepareConnectors({
-    tenantId: run.owner,
+    organizationId: run.owner,
     config: run.toolConfig,
     credentialKey: run.credentialKey,
     sealedCredentials: run.sealedCredentials,
@@ -139,7 +139,7 @@ export const runToolInSandbox = async (run: SandboxRun): Promise<SandboxResult |
   });
 
   /**
-   * The tenant's own tools and nothing else.
+   * The organization's own tools and nothing else.
    *
    * `CALL_CONTROL_DEFINITIONS` are deliberately absent: `end_call` and `transfer_to_human`
    * close over the effects of a call in progress, and there is no call. A registry holding
@@ -164,7 +164,7 @@ export const runToolInSandbox = async (run: SandboxRun): Promise<SandboxResult |
   });
 
   const outcome = await dispatcher.dispatch({
-    tenantId: run.owner,
+    organizationId: run.owner,
     callId: sandboxCallId(),
     name: run.name,
     args: run.args,
@@ -175,7 +175,7 @@ export const runToolInSandbox = async (run: SandboxRun): Promise<SandboxResult |
     riskTier: outcome.tier,
     outcome: outcome.kind,
     // `ran` and not `raw !== undefined`: an endpoint that legitimately returned nothing —
-    // a 404 the tenant's `speech.fallback` is written for — must not read as a tool that
+    // a 404 the organization's `speech.fallback` is written for — must not read as a tool that
     // never got that far.
     raw: ran ? asJson(raw) : null,
     summary: outcome.speech,

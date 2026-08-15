@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 
-import { asTenantId } from "@ansa/shared";
+import { asOrganizationId } from "@ansa/shared";
 import { parseConnectorConfig, parseEventConfig, sealCredential } from "@ansa/tools";
 import { describe, expect, it } from "vitest";
 
@@ -15,8 +15,8 @@ import {
   vaultKey,
 } from "./vault";
 
-const tenant = asTenantId(randomUUID());
-const other = asTenantId(randomUUID());
+const organization = asOrganizationId(randomUUID());
+const other = asOrganizationId(randomUUID());
 
 const HOST = "api.example.invalid";
 const RECEIVER = "hooks.example.invalid";
@@ -186,12 +186,12 @@ describe("credentials", () => {
 
   const sealed = (): Map<string, string> =>
     new Map([
-      ["partner_api", sealCredential(key, tenant, "partner_api", { kind: "bearer", token: secret })],
-      ["crm_hook", sealCredential(key, tenant, "crm_hook", { kind: "signing", secret })],
+      ["partner_api", sealCredential(key, organization, "partner_api", { kind: "bearer", token: secret })],
+      ["crm_hook", sealCredential(key, organization, "crm_hook", { kind: "signing", secret })],
     ]);
 
   it("tells an auth credential from a signing secret without revealing either", async () => {
-    const kinds = await classifyCredentials(key, tenant, sealed());
+    const kinds = await classifyCredentials(key, organization, sealed());
     expect(kinds.get("partner_api")).toBe("auth");
     expect(kinds.get("crm_hook")).toBe("signing");
     // The plaintext is in a closure the vault owns; nothing this layer produces contains it.
@@ -199,27 +199,27 @@ describe("credentials", () => {
   });
 
   /**
-   * The AAD binds the tenant id and the reference into the authentication tag, so a
+   * The AAD binds the organization id and the reference into the authentication tag, so a
    * ciphertext row copied into another organisation's row does not open. This is the test
-   * that a write bug in the credentials table cannot become a cross-tenant credential leak.
+   * that a write bug in the credentials table cannot become a cross-organization credential leak.
    */
   it("will not open a value sealed for another organisation", async () => {
     const stolen = new Map([
       ["partner_api", sealCredential(key, other, "partner_api", { kind: "bearer", token: secret })],
     ]);
-    expect((await classifyCredentials(key, tenant, stolen)).get("partner_api")).toBe("unreadable");
+    expect((await classifyCredentials(key, organization, stolen)).get("partner_api")).toBe("unreadable");
   });
 
   it("will not open a value sealed under a different name", async () => {
     const moved = new Map([
-      ["renamed", sealCredential(key, tenant, "partner_api", { kind: "bearer", token: secret })],
+      ["renamed", sealCredential(key, organization, "partner_api", { kind: "bearer", token: secret })],
     ]);
-    expect((await classifyCredentials(key, tenant, moved)).get("renamed")).toBe("unreadable");
+    expect((await classifyCredentials(key, organization, moved)).get("renamed")).toBe("unreadable");
   });
 
   it("reports a value it cannot open rather than pretending it is fine", async () => {
     const broken = new Map([["partner_api", "v1.aaaa.bbbb.cccc"]]);
-    expect((await classifyCredentials(key, tenant, broken)).get("partner_api")).toBe("unreadable");
+    expect((await classifyCredentials(key, organization, broken)).get("partner_api")).toBe("unreadable");
   });
 
   it("refuses a configuration that names a credential nobody has stored", async () => {
@@ -249,7 +249,7 @@ describe("credentials", () => {
    * publishing a configuration that swaps them is refused here rather than at 3am.
    */
   it("refuses a signing secret used as an auth credential, and the reverse", async () => {
-    const kinds = await classifyCredentials(key, tenant, sealed());
+    const kinds = await classifyCredentials(key, organization, sealed());
     const known = new Set(["partner_api", "crm_hook"]);
 
     expect(() =>

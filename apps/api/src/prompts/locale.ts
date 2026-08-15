@@ -13,17 +13,17 @@
  * more insurance words. Two reasons that is gone, and the second is the one that matters:
  *
  *   - it is domain vocabulary in a layer that is supposed to be about the line and the
- *     accent, so it would have to be deleted the day a non-insurance tenant existed;
+ *     accent, so it would have to be deleted the day a non-insurance organization existed;
  *   - a model handed a list of words to reach for reaches for them. That is the same
  *     mechanism that made the keyterm list corrupt an unrelated proper noun 3/3 on
  *     Deepgram (see tenancy/defaults.ts), one level up the stack. A caller's surname is
  *     unknown by definition and is exactly what a listed word will swallow.
  *
  * The rule survives without the instances: a word that makes no sense in context was
- * probably misheard. What the words are is the transcriber's problem, and per-tenant
+ * probably misheard. What the words are is the transcriber's problem, and per-organization
  * keyterms are where that is already solved.
  *
- * Nothing here is a guarantee. A tenant cannot switch it off, but that is because it is
+ * Nothing here is a guarantee. A organization cannot switch it off, but that is because it is
  * not exposed, not because anything is checking.
  */
 export const LOCALE_LAYER = [

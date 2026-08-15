@@ -1,5 +1,5 @@
 import { forSpeech } from "@ansa/normalizer";
-import type { CallId, HandoffDestination, Logger, TenantId } from "@ansa/shared";
+import type { CallId, HandoffDestination, Logger, OrganizationId } from "@ansa/shared";
 import type { TelephonyProvider } from "@ansa/telephony";
 
 import type { CallRecorder } from "../telephony/event-log";
@@ -26,7 +26,7 @@ export interface HandoffDeps {
   /** The adapter, narrowed to what a transfer needs. */
   readonly telephony: Pick<TelephonyProvider, "transferToNumber">;
   readonly callId: CallId;
-  readonly tenantId: TenantId | null;
+  readonly organizationId: OrganizationId | null;
   readonly callerNumber: string | null;
   /** Null when nothing is configured. The caller is then told the truth. */
   readonly destination: HandoffDestination | null;
@@ -121,7 +121,7 @@ const sayWithin = async (
 };
 
 export const createHandoff = (deps: HandoffDeps) => {
-  const log = deps.log.child({ callId: deps.callId, tenantId: deps.tenantId ?? "unknown" });
+  const log = deps.log.child({ callId: deps.callId, organizationId: deps.organizationId ?? "unknown" });
   let started = false;
 
   return {
@@ -139,7 +139,7 @@ export const createHandoff = (deps: HandoffDeps) => {
       started = true;
 
       const summary = summarise({
-        tenantId: deps.tenantId,
+        organizationId: deps.organizationId,
         carrierCallId: deps.callId,
         callerNumber: deps.callerNumber,
         events: deps.events(),

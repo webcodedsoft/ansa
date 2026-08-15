@@ -5,7 +5,7 @@ import { EventDeliverySweeper } from "./delivery.sweeper";
 
 /**
  * Its own module, importing the telephony one purely for the config, logger, database and
- * tenant registry it already exports — the same arrangement as `RetentionModule`, for the
+ * organization registry it already exports — the same arrangement as `RetentionModule`, for the
  * same reason.
  *
  * Event delivery is not telephony. It runs on a timer with no call in sight, and keeping it

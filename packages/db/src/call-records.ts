@@ -1,7 +1,7 @@
-import type { TenantId } from "@ansa/shared";
+import type { OrganizationId } from "@ansa/shared";
 
 import type { Db } from "./data-source";
-import { withTenant, type TenantScope } from "./tenant-scope";
+import { withOrganization, type OrganizationScope } from "./organization-scope";
 
 /**
  * The event log, read back in the shape a metric is computed from.
@@ -9,7 +9,7 @@ import { withTenant, type TenantScope } from "./tenant-scope";
  * Read-only, and deliberately narrow. It pulls the handful of event kinds the quality
  * metrics are defined over and the reviewed transcript pairs, and nothing else — no
  * caller text beyond what a reviewer has already read, because "count the barge-ins"
- * should not drag every policy number the tenant's callers ever read aloud into memory.
+ * should not drag every policy number the organization's callers ever read aloud into memory.
  *
  * The arithmetic lives in `apps/api/src/viewer/metrics.ts` rather than in SQL, so the
  * same definitions score a recorded call and a scenario test. A metric defined twice is
@@ -71,7 +71,7 @@ export interface CallRecord {
   readonly carrierCallId: string;
   readonly createdAt: string;
   /**
-   * Which version of the tenant's configuration served this call (R7.5).
+   * Which version of the organization's configuration served this call (R7.5).
    *
    * Carried so a quality figure can be sliced by the configuration that produced it — that
    * is the whole of R9.2.6, and without this column a provider change is attributable only
@@ -99,17 +99,17 @@ export interface CallRecord {
 /**
  * The most recent calls, with the events and review verdicts a score needs.
  *
- * Three statements in one tenant-scoped transaction rather than one join: a call has
+ * Three statements in one organization-scoped transaction rather than one join: a call has
  * hundreds of events and a join would return every one of them once per transcript.
  *
  * This is the scope-taking half, for the dashboard API, whose request already holds one
- * and has no way to name a tenant. `loadCallRecords` below is the same query for the
- * internal viewer, which is told the tenant. One body, because the quality figures the two
+ * and has no way to name a organization. `loadCallRecords` below is the same query for the
+ * internal viewer, which is told the organization. One body, because the quality figures the two
  * surfaces publish have to be the same figures — a metric computed from two different
  * reads is two metrics with one name, which is the mistake `metrics.ts` exists to avoid.
  */
 export const readCallRecords = async (
-  scope: TenantScope,
+  scope: OrganizationScope,
   limit = 200,
 ): Promise<readonly CallRecord[]> => {
   const calls = await scope.query<Record<string, unknown>>(
@@ -197,7 +197,7 @@ export const readCallRecords = async (
 /** The same read, for the internal viewer, which is told which organisation to act for. */
 export const loadCallRecords = async (
   dataSource: Db,
-  tenantId: TenantId,
+  organizationId: OrganizationId,
   limit = 200,
 ): Promise<readonly CallRecord[]> =>
-  withTenant(dataSource, tenantId, async (scope) => readCallRecords(scope, limit));
+  withOrganization(dataSource, organizationId, async (scope) => readCallRecords(scope, limit));

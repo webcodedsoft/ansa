@@ -1,9 +1,9 @@
 import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:crypto";
 
-import type { TenantId } from "@ansa/shared";
+import type { OrganizationId } from "@ansa/shared";
 
 /**
- * R5.2.1. Per-tenant encrypted credential vault.
+ * R5.2.1. Per-organization encrypted credential vault.
  *
  * "Never in logs, never in the LLM context, never in a transcript" is a property of where
  * the plaintext can go, so the design is about reachability rather than about discipline:
@@ -18,14 +18,14 @@ import type { TenantId } from "@ansa/shared";
  * There is no `reveal()`. If one is ever added, it becomes the thing to grep for.
  */
 
-/** A name in the tenant's own configuration. Not a secret; it is a pointer to one. */
+/** A name in the organization's own configuration. Not a secret; it is a pointer to one. */
 export type CredentialRef = string;
 
 /**
- * How the secret is presented to the tenant's endpoint.
+ * How the secret is presented to the organization's endpoint.
  *
  * Deliberately header-only. Query-string API keys exist and are refused: the URL is the
- * one part of a request that is logged by us, by the tenant's load balancer and by every
+ * one part of a request that is logged by us, by the organization's load balancer and by every
  * proxy in between, and a scheme that puts the secret there cannot satisfy R5.2.1 no
  * matter how careful this file is.
  */
@@ -111,7 +111,7 @@ const isMaterial = (value: unknown): value is CredentialMaterial => {
   if (raw.kind === "header") {
     return typeof raw.header === "string" && HEADER_NAME.test(raw.header) && typeof raw.value === "string";
   }
-  // Long enough that a signature over it means something. A tenant who picks a four
+  // Long enough that a signature over it means something. A organization who picks a four
   // character "secret" has a signature that anybody can forge, and it is cheaper to refuse
   // it at sealing time than to explain it after.
   if (raw.kind === "signing") return typeof raw.secret === "string" && raw.secret.length >= 16;
@@ -123,15 +123,15 @@ const IV_BYTES = 12;
 const KEY_BYTES = 32;
 
 /**
- * AES-256-GCM, with the tenant and the reference name as additional authenticated data.
+ * AES-256-GCM, with the organization and the reference name as additional authenticated data.
  *
  * The AAD is the part worth explaining. Without it, a ciphertext row is portable: anyone
- * who can write to the credentials table can copy tenant A's sealed value into tenant B's
- * row and the vault will happily decrypt it, which turns a write bug into a cross-tenant
- * credential leak. Binding the tenant id and the ref into the tag makes that ciphertext
+ * who can write to the credentials table can copy organization A's sealed value into organization B's
+ * row and the vault will happily decrypt it, which turns a write bug into a cross-organization
+ * credential leak. Binding the organization id and the ref into the tag makes that ciphertext
  * fail to open anywhere except where it was sealed.
  */
-const aad = (tenantId: TenantId, ref: CredentialRef): Buffer => Buffer.from(`${tenantId}:${ref}`, "utf8");
+const aad = (organizationId: OrganizationId, ref: CredentialRef): Buffer => Buffer.from(`${organizationId}:${ref}`, "utf8");
 
 const requireKey = (key: Buffer): Buffer => {
   if (key.length !== KEY_BYTES) {
@@ -143,21 +143,21 @@ const requireKey = (key: Buffer): Buffer => {
 /** Onboarding writes ciphertext with this; nothing on the call path calls it. */
 export const sealCredential = (
   key: Buffer,
-  tenantId: TenantId,
+  organizationId: OrganizationId,
   ref: CredentialRef,
   material: CredentialMaterial,
 ): string => {
   if (!isMaterial(material)) throw new Error("credential vault: unsupported credential material");
   const iv = randomBytes(IV_BYTES);
   const cipher = createCipheriv("aes-256-gcm", requireKey(key), iv, { authTagLength: 16 });
-  cipher.setAAD(aad(tenantId, ref));
+  cipher.setAAD(aad(organizationId, ref));
   const sealed = Buffer.concat([cipher.update(JSON.stringify(material), "utf8"), cipher.final()]);
   return [VERSION, iv.toString("base64"), cipher.getAuthTag().toString("base64"), sealed.toString("base64")].join(".");
 };
 
 const openCredential = (
   key: Buffer,
-  tenantId: TenantId,
+  organizationId: OrganizationId,
   ref: CredentialRef,
   sealed: string,
 ): CredentialMaterial => {
@@ -170,9 +170,9 @@ const openCredential = (
   const decipher = createDecipheriv("aes-256-gcm", requireKey(key), Buffer.from(iv, "base64"), {
     authTagLength: 16,
   });
-  decipher.setAAD(aad(tenantId, ref));
+  decipher.setAAD(aad(organizationId, ref));
   decipher.setAuthTag(Buffer.from(tag, "base64"));
-  // Throws on a bad tag, which is what a ciphertext moved between tenants produces.
+  // Throws on a bad tag, which is what a ciphertext moved between organizations produces.
   const opened = Buffer.concat([decipher.update(Buffer.from(payload, "base64")), decipher.final()]).toString("utf8");
 
   const material: unknown = JSON.parse(opened);
@@ -181,42 +181,42 @@ const openCredential = (
 };
 
 export interface CredentialVault {
-  /** Null when the tenant has no credential under that name. Throws when it will not open. */
-  resolve(tenantId: TenantId, ref: CredentialRef): Promise<Credential | null>;
+  /** Null when the organization has no credential under that name. Throws when it will not open. */
+  resolve(organizationId: OrganizationId, ref: CredentialRef): Promise<Credential | null>;
   /**
    * The same, for a secret sealed to sign with.
    *
    * Refuses a value sealed as an auth credential rather than quietly signing with it. The
    * two have different lifetimes and different blast radii — a receiver holds the signing
-   * secret, and it must never turn out to be the token that opens the tenant's own API.
+   * secret, and it must never turn out to be the token that opens the organization's own API.
    */
-  resolveSigner(tenantId: TenantId, ref: CredentialRef): Promise<Signer | null>;
+  resolveSigner(organizationId: OrganizationId, ref: CredentialRef): Promise<Signer | null>;
 }
 
 export interface VaultOptions {
-  /** 32 bytes. Held by the process, never by a tenant, never in the database. */
+  /** 32 bytes. Held by the process, never by a organization, never in the database. */
   readonly key: Buffer;
   /** Where the sealed values live. The vault never learns what storage they came from. */
-  load(tenantId: TenantId, ref: CredentialRef): Promise<string | null>;
+  load(organizationId: OrganizationId, ref: CredentialRef): Promise<string | null>;
 }
 
 export const createCredentialVault = (options: VaultOptions): CredentialVault => {
   const key = requireKey(options.key);
   return {
-    async resolve(tenantId, ref) {
-      const sealed = await options.load(tenantId, ref);
+    async resolve(organizationId, ref) {
+      const sealed = await options.load(organizationId, ref);
       if (sealed === null) return null;
-      const material = openCredential(key, tenantId, ref, sealed);
+      const material = openCredential(key, organizationId, ref, sealed);
       if (material.kind === "signing") {
         throw new Error(`credential vault: ${ref} is a signing secret, not an auth credential`);
       }
       return opaque(material);
     },
 
-    async resolveSigner(tenantId, ref) {
-      const sealed = await options.load(tenantId, ref);
+    async resolveSigner(organizationId, ref) {
+      const sealed = await options.load(organizationId, ref);
       if (sealed === null) return null;
-      const material = openCredential(key, tenantId, ref, sealed);
+      const material = openCredential(key, organizationId, ref, sealed);
       if (material.kind !== "signing") {
         throw new Error(`credential vault: ${ref} is an auth credential, not a signing secret`);
       }
@@ -227,16 +227,16 @@ export const createCredentialVault = (options: VaultOptions): CredentialVault =>
 
 /**
  * The vault backed by values already in hand — the shape the call path uses, because the
- * tenant's configuration is loaded once and cached rather than read per tool call.
+ * organization's configuration is loaded once and cached rather than read per tool call.
  *
- * Keyed by tenant as well as ref: a flat map would let a lookup miss on tenant A silently
- * find tenant B's key of the same name, and every tenant calls theirs `api_key`.
+ * Keyed by organization as well as ref: a flat map would let a lookup miss on organization A silently
+ * find organization B's key of the same name, and every organization calls theirs `api_key`.
  */
 export const createInMemoryVault = (
   key: Buffer,
-  sealedByTenant: ReadonlyMap<TenantId, ReadonlyMap<CredentialRef, string>>,
+  sealedByOrganization: ReadonlyMap<OrganizationId, ReadonlyMap<CredentialRef, string>>,
 ): CredentialVault =>
   createCredentialVault({
     key,
-    load: async (tenantId, ref) => sealedByTenant.get(tenantId)?.get(ref) ?? null,
+    load: async (organizationId, ref) => sealedByOrganization.get(organizationId)?.get(ref) ?? null,
   });

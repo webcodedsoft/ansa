@@ -6,13 +6,13 @@ import {
   listEventDeliveries,
   loadCall,
   loadCallRecords,
-  loadCurrentTenantConfig,
+  loadCurrentAgentConfig,
   readClaimSource,
   recordTranscriptCorrection,
-  withTenant,
+  withOrganization,
   type Db,
 } from "@ansa/db";
-import { asTenantId, type Logger } from "@ansa/shared";
+import { asOrganizationId, type Logger } from "@ansa/shared";
 import {
   BadRequestException,
   Body,
@@ -58,7 +58,7 @@ const METRIC_WINDOW = 200;
  *
  * Debugging tool, not a product surface. It is behind the same public tunnel the carrier
  * uses, and what it shows is transcripts — the one place in the system where callers say
- * their policy numbers out loud. So it needs a token, and it needs the tenant named
+ * their policy numbers out loud. So it needs a token, and it needs the organization named
  * explicitly rather than inferred, because there is no session here to infer one from.
  *
  * Route order is load-bearing: Nest matches in declaration order, so `metrics` and
@@ -92,11 +92,11 @@ export class ViewerController {
     }
   }
 
-  private scope(tenant: string | undefined): { db: Db; tenantId: ReturnType<typeof asTenantId> } {
+  private scope(organization: string | undefined): { db: Db; organizationId: ReturnType<typeof asOrganizationId> } {
     if (this.dataSource === null) throw new NotFoundException();
-    if (tenant === undefined) throw new ForbiddenException();
-    // asTenantId rejects a malformed value here rather than letting it reach the RLS cast.
-    return { db: this.dataSource, tenantId: asTenantId(tenant) };
+    if (organization === undefined) throw new ForbiddenException();
+    // asOrganizationId rejects a malformed value here rather than letting it reach the RLS cast.
+    return { db: this.dataSource, organizationId: asOrganizationId(organization) };
   }
 
   /** Form fields arrive as `unknown`; nothing is read off a body without checking it first. */
@@ -110,27 +110,27 @@ export class ViewerController {
   @Header("Content-Type", "text/html; charset=utf-8")
   @Header("Cache-Control", "no-store")
   @Header("Referrer-Policy", "no-referrer")
-  async index(@Query("token") token?: string, @Query("tenant") tenant?: string): Promise<string> {
+  async index(@Query("token") token?: string, @Query("organization") organization?: string): Promise<string> {
     this.authorise(token);
-    const { db, tenantId } = this.scope(tenant);
-    return renderCallList(await listCalls(db, tenantId), { token: token ?? "", tenant: tenant ?? "" });
+    const { db, organizationId } = this.scope(organization);
+    return renderCallList(await listCalls(db, organizationId), { token: token ?? "", organization: organization ?? "" });
   }
 
   @Get("metrics")
   @Header("Content-Type", "text/html; charset=utf-8")
   @Header("Cache-Control", "no-store")
   @Header("Referrer-Policy", "no-referrer")
-  async metrics(@Query("token") token?: string, @Query("tenant") tenant?: string): Promise<string> {
+  async metrics(@Query("token") token?: string, @Query("organization") organization?: string): Promise<string> {
     this.authorise(token);
-    const { db, tenantId } = this.scope(tenant);
-    const records = await loadCallRecords(db, tenantId, METRIC_WINDOW);
+    const { db, organizationId } = this.scope(organization);
+    const records = await loadCallRecords(db, organizationId, METRIC_WINDOW);
     // One pass over one set of records, feeding all three. Quality, what is outside its
     // threshold, and what the window cost are three readings of the same event log, and
     // computing any of them from a different source is how two of them start disagreeing.
     const metrics = scoreCalls(records);
     return renderMetrics(
       metrics,
-      { token: token ?? "", tenant: tenant ?? "" },
+      { token: token ?? "", organization: organization ?? "" },
       { calls: records.length },
       alertsFor(metrics),
       priceUsage(usageOverCalls(records), readCostRates(process.env)),
@@ -149,11 +149,11 @@ export class ViewerController {
   @Header("Content-Type", "text/html; charset=utf-8")
   @Header("Cache-Control", "no-store")
   @Header("Referrer-Policy", "no-referrer")
-  async review(@Query("token") token?: string, @Query("tenant") tenant?: string): Promise<string> {
+  async review(@Query("token") token?: string, @Query("organization") organization?: string): Promise<string> {
     this.authorise(token);
-    const { db, tenantId } = this.scope(tenant);
-    const records = await loadCallRecords(db, tenantId, METRIC_WINDOW);
-    return renderReviewQueue(reviewQueue(records), { token: token ?? "", tenant: tenant ?? "" }, {
+    const { db, organizationId } = this.scope(organization);
+    const records = await loadCallRecords(db, organizationId, METRIC_WINDOW);
+    return renderReviewQueue(reviewQueue(records), { token: token ?? "", organization: organization ?? "" }, {
       calls: records.length,
     });
   }
@@ -161,8 +161,8 @@ export class ViewerController {
   /**
    * What the corrections are evidence for, and what nobody has approved (R9.2.5).
    *
-   * The tenant's current keyterms are read only to subtract them: a candidate they already
-   * carry is not a suggestion. Falls back to the platform base alone when the tenant has no
+   * The organization's current keyterms are read only to subtract them: a candidate they already
+   * carry is not a suggestion. Falls back to the platform base alone when the organization has no
    * configuration row, which under-filters rather than over-filters — a duplicate suggestion
    * wastes a reader's second, a missing one loses the finding.
    */
@@ -172,23 +172,23 @@ export class ViewerController {
   @Header("Referrer-Policy", "no-referrer")
   async suggestions(
     @Query("token") token?: string,
-    @Query("tenant") tenant?: string,
+    @Query("organization") organization?: string,
   ): Promise<string> {
     this.authorise(token);
-    const { db, tenantId } = this.scope(tenant);
-    const entries = await exportCorpus(db, tenantId);
-    const current = await withTenant(db, tenantId, loadCurrentTenantConfig);
+    const { db, organizationId } = this.scope(organization);
+    const entries = await exportCorpus(db, organizationId);
+    const current = await withOrganization(db, organizationId, loadCurrentAgentConfig);
     const known = [...BASE_KEYTERMS, ...(current?.config.keyterms ?? [])];
     return renderSuggestions(
       keytermCandidates(entries, { known }),
       captureCases(entries),
-      { token: token ?? "", tenant: tenant ?? "" },
+      { token: token ?? "", organization: organization ?? "" },
       known,
     );
   }
 
   /**
-   * What we pushed to this tenant's own systems, and what happened to it (Slice 6a).
+   * What we pushed to this organization's own systems, and what happened to it (Slice 6a).
    *
    * Declared before `:id` for the same reason `metrics` is: Nest matches in declaration
    * order and `deliveries` would otherwise be read as a call id.
@@ -199,13 +199,13 @@ export class ViewerController {
   @Header("Referrer-Policy", "no-referrer")
   async deliveries(
     @Query("token") token?: string,
-    @Query("tenant") tenant?: string,
+    @Query("organization") organization?: string,
   ): Promise<string> {
     this.authorise(token);
-    const { db, tenantId } = this.scope(tenant);
-    return renderDeliveries(await listEventDeliveries(db, tenantId), {
+    const { db, organizationId } = this.scope(organization);
+    return renderDeliveries(await listEventDeliveries(db, organizationId), {
       token: token ?? "",
-      tenant: tenant ?? "",
+      organization: organization ?? "",
     });
   }
 
@@ -213,12 +213,12 @@ export class ViewerController {
   @Header("Content-Type", "text/html; charset=utf-8")
   @Header("Cache-Control", "no-store")
   @Header("Referrer-Policy", "no-referrer")
-  async corpus(@Query("token") token?: string, @Query("tenant") tenant?: string): Promise<string> {
+  async corpus(@Query("token") token?: string, @Query("organization") organization?: string): Promise<string> {
     this.authorise(token);
-    const { db, tenantId } = this.scope(tenant);
-    return renderCorpus(await exportCorpus(db, tenantId), {
+    const { db, organizationId } = this.scope(organization);
+    return renderCorpus(await exportCorpus(db, organizationId), {
       token: token ?? "",
-      tenant: tenant ?? "",
+      organization: organization ?? "",
     });
   }
 
@@ -234,11 +234,11 @@ export class ViewerController {
   @Header("Referrer-Policy", "no-referrer")
   async corpusFile(
     @Query("token") token?: string,
-    @Query("tenant") tenant?: string,
+    @Query("organization") organization?: string,
   ): Promise<string> {
     this.authorise(token);
-    const { db, tenantId } = this.scope(tenant);
-    return renderCorpusJsonl(await exportCorpus(db, tenantId));
+    const { db, organizationId } = this.scope(organization);
+    return renderCorpusJsonl(await exportCorpus(db, organizationId));
   }
 
   /**
@@ -259,11 +259,11 @@ export class ViewerController {
   async claim(
     @Param("id") id: string,
     @Query("token") token?: string,
-    @Query("tenant") tenant?: string,
+    @Query("organization") organization?: string,
   ): Promise<string> {
     this.authorise(token);
-    const { db, tenantId } = this.scope(tenant);
-    const source = await readClaimSource(db, tenantId, id);
+    const { db, organizationId } = this.scope(organization);
+    const source = await readClaimSource(db, organizationId, id);
     // Not theirs and not there are one answer, as on every other read here.
     if (source === null) throw new NotFoundException();
     return renderClaim(source);
@@ -276,15 +276,15 @@ export class ViewerController {
   async call(
     @Param("id") id: string,
     @Query("token") token?: string,
-    @Query("tenant") tenant?: string,
+    @Query("organization") organization?: string,
   ): Promise<string> {
     this.authorise(token);
-    const { db, tenantId } = this.scope(tenant);
-    const detail = await loadCall(db, tenantId, id);
-    // Indistinguishable from another tenant's call, on purpose: a viewer that told you a
+    const { db, organizationId } = this.scope(organization);
+    const detail = await loadCall(db, organizationId, id);
+    // Indistinguishable from another organization's call, on purpose: a viewer that told you a
     // call existed but was not yours would leak exactly what RLS is there to hide.
     if (detail === null) throw new NotFoundException();
-    return renderCall(detail, { token: token ?? "", tenant: tenant ?? "" });
+    return renderCall(detail, { token: token ?? "", organization: organization ?? "" });
   }
 
   /**
@@ -305,9 +305,9 @@ export class ViewerController {
   @Header("Referrer-Policy", "no-referrer")
   async correct(@Param("id") id: string, @Body() body: unknown): Promise<string> {
     const token = this.field(body, "token");
-    const tenant = this.field(body, "tenant");
+    const organization = this.field(body, "organization");
     this.authorise(token);
-    const { db, tenantId } = this.scope(tenant);
+    const { db, organizationId } = this.scope(organization);
 
     const transcriptId = this.field(body, "transcriptId");
     const correctedText = this.field(body, "correctedText");
@@ -315,7 +315,7 @@ export class ViewerController {
       throw new BadRequestException();
     }
 
-    const applied = await recordTranscriptCorrection(db, tenantId, {
+    const applied = await recordTranscriptCorrection(db, organizationId, {
       transcriptId,
       correctedText,
     });
@@ -326,8 +326,8 @@ export class ViewerController {
     // spoke, and a log line is the last place it should end up.
     this.log.info("transcript corrected", { callRowId: id, transcriptId });
 
-    const detail = await loadCall(db, tenantId, id);
+    const detail = await loadCall(db, organizationId, id);
     if (detail === null) throw new NotFoundException();
-    return renderCall(detail, { token: token ?? "", tenant: tenant ?? "" });
+    return renderCall(detail, { token: token ?? "", organization: organization ?? "" });
   }
 }

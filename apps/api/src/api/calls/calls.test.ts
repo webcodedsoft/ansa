@@ -15,7 +15,7 @@ import { hashPassword } from "../auth/password";
  *
  * Not unit tests with a fake scope, for the reason `isolation.test.ts` gives: a fake agrees
  * with whatever the code does, and the two properties worth proving here are both about
- * things outside the handler. That a correction is refused across a tenant boundary is a
+ * things outside the handler. That a correction is refused across a organization boundary is a
  * fact about RLS. That submitting an unchanged transcript still counts as reviewed is a
  * fact about what `corrected_at` ends up holding and what the metric then divides by.
  */
@@ -48,7 +48,7 @@ interface Person {
 }
 
 interface Organisation {
-  readonly tenantId: string;
+  readonly organizationId: string;
   readonly owner: Person;
   readonly reviewer: Person;
   /** The call everything below is about: two turns, one barged into, three events. */
@@ -61,7 +61,7 @@ interface Organisation {
 let owner: Db;
 let app: INestApplication;
 let baseUrl: string;
-const tenants: string[] = [];
+const organizations: string[] = [];
 const users: string[] = [];
 
 const person = async (label: string): Promise<Person> => {
@@ -84,82 +84,82 @@ const person = async (label: string): Promise<Person> => {
  * `transcripts` are the media gateway's, and the dashboard's only write is a verdict.
  */
 const seed = async (label: string): Promise<Organisation> => {
-  const tenantId = randomUUID();
+  const organizationId = randomUUID();
   const callId = randomUUID();
   const otherCallId = randomUUID();
 
-  await owner.query("insert into tenants (id, name) values ($1, $2)", [tenantId, `Org ${label}`]);
-  tenants.push(tenantId);
+  await owner.query("insert into organizations (id, name) values ($1, $2)", [organizationId, `Org ${label}`]);
+  organizations.push(organizationId);
 
   const orgOwner = await person(`${label}-owner`);
   const reviewer = await person(`${label}-member`);
-  await owner.query("insert into memberships (tenant_id, user_id, role) values ($1, $2, 'owner')", [
-    tenantId,
+  await owner.query("insert into memberships (organization_id, user_id, role) values ($1, $2, 'owner')", [
+    organizationId,
     orgOwner.userId,
   ]);
   await owner.query(
-    "insert into memberships (tenant_id, user_id, role) values ($1, $2, 'member')",
-    [tenantId, reviewer.userId],
+    "insert into memberships (organization_id, user_id, role) values ($1, $2, 'member')",
+    [organizationId, reviewer.userId],
   );
 
   await owner.query(
     `insert into calls
-       (id, tenant_id, carrier_call_id, direction, dialled, caller, answered_at, ended_at,
+       (id, organization_id, carrier_call_id, direction, dialled, caller, answered_at, ended_at,
         end_reason, duration_seconds, config_version, created_at)
      values ($1, $2, $3, 'inbound', $4, $5, now(), now(), 'caller hung up', 61, 7,
              now() - interval '1 hour')`,
-    [callId, tenantId, `probe-${callId}`, `+2341000000${label.length}`, "+2348000000001"],
+    [callId, organizationId, `probe-${callId}`, `+2341000000${label.length}`, "+2348000000001"],
   );
   await owner.query(
     `insert into calls
-       (id, tenant_id, carrier_call_id, direction, dialled, caller, answered_at, ended_at,
+       (id, organization_id, carrier_call_id, direction, dialled, caller, answered_at, ended_at,
         end_reason, duration_seconds, created_at)
      values ($1, $2, $3, 'inbound', $4, $5, now(), now(), 'escalated', 12, now() - interval '9 days')`,
-    [otherCallId, tenantId, `probe-${otherCallId}`, `+2341000000${label.length}`, "+2348000000002"],
+    [otherCallId, organizationId, `probe-${otherCallId}`, `+2341000000${label.length}`, "+2348000000002"],
   );
 
   await owner.query(
-    `insert into turns (tenant_id, call_id, seq, speaker, started_offset_ms, ended_offset_ms,
+    `insert into turns (organization_id, call_id, seq, speaker, started_offset_ms, ended_offset_ms,
                         barged_in_at_ms)
      values ($1, $2, 1, 'caller', 100, 900, null),
             ($1, $2, 2, 'agent', 1000, 4000, 2500)`,
-    [tenantId, callId],
+    [organizationId, callId],
   );
 
   await owner.query(
-    `insert into call_events (tenant_id, call_id, kind, offset_ms, detail)
+    `insert into call_events (organization_id, call_id, kind, offset_ms, detail)
      values ($1, $2, 'caller said', 900, '{"text":"my policy number is AB1234"}'::jsonb),
             ($1, $2, 'latency', 1000, '{"stage":"turn_to_audio","ms":740}'::jsonb),
             ($1, $2, 'barge-in', 2500, '{"reason":"caller interrupted","seq":2}'::jsonb),
             ($1, $2, 'call configuration', null, '{"listenProvider":"openai"}'::jsonb)`,
-    [tenantId, callId],
+    [organizationId, callId],
   );
 
   // The second call is the one the review scan should rank first: the agent invented words
   // and then gave up. Written as events rather than as an `end_reason` because that is what
   // the pipeline writes and what the scan reads.
   await owner.query(
-    `insert into call_events (tenant_id, call_id, kind, offset_ms, detail)
+    `insert into call_events (organization_id, call_id, kind, offset_ms, detail)
      values ($1, $2, 'hallucination discarded', 400, '{"text":"thank you","speechMs":0}'::jsonb),
             ($1, $2, 'escalated to a human', 800, '{"text":"let me get a colleague"}'::jsonb)`,
-    [tenantId, otherCallId],
+    [organizationId, otherCallId],
   );
 
   const first = await owner.query<{ id: string }[]>(
-    `insert into transcripts (tenant_id, call_id, kind, text, confidence, offset_ms, provider)
+    `insert into transcripts (organization_id, call_id, kind, text, confidence, offset_ms, provider)
      values ($1, $2, 'final', 'my policy number is AB1234', 0.62, 900, 'openai')
      returning id`,
-    [tenantId, callId],
+    [organizationId, callId],
   );
   const second = await owner.query<{ id: string }[]>(
-    `insert into transcripts (tenant_id, call_id, kind, text, confidence, offset_ms, provider)
+    `insert into transcripts (organization_id, call_id, kind, text, confidence, offset_ms, provider)
      values ($1, $2, 'final', 'yes that is right', 0.91, 300, 'openai')
      returning id`,
-    [tenantId, otherCallId],
+    [organizationId, otherCallId],
   );
 
   return {
-    tenantId,
+    organizationId,
     owner: orgOwner,
     reviewer,
     callId,
@@ -196,7 +196,7 @@ const request = async (
 
 const signIn = async (organisation: Organisation, who: Person): Promise<string> => {
   const reply = await request("POST", "/api/v1/auth/sessions", {
-    body: { email: who.email, password: who.password, organisationId: organisation.tenantId },
+    body: { email: who.email, password: who.password, organisationId: organisation.organizationId },
   });
   expect(reply.status, JSON.stringify(reply.body)).toBe(201);
   return String(reply.body["token"]);
@@ -225,7 +225,7 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("the call histor
 
   afterAll(async () => {
     await app?.close();
-    for (const tenantId of tenants) await owner.query("delete from tenants where id = $1", [tenantId]);
+    for (const organizationId of organizations) await owner.query("delete from organizations where id = $1", [organizationId]);
     for (const userId of users) await owner.query("delete from users where id = $1", [userId]);
     await owner?.destroy();
   });
@@ -404,7 +404,7 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("the call histor
      * aloud; a reviewer for one organisation editing another's is the same breach as
      * reading it, and it has to fail without saying which of the two reasons it failed for.
      */
-    it("refuses a correction across the tenant boundary, and says nothing about why", async () => {
+    it("refuses a correction across the organization boundary, and says nothing about why", async () => {
       const reply = await request(
         "POST",
         `/api/v1/calls/${alpha.callId}/transcripts/${alpha.transcriptId}/corrections`,

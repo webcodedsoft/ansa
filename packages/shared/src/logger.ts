@@ -14,7 +14,7 @@ export interface Logger {
   error(message: string, fields?: LogFields): void;
   /**
    * A logger that stamps `fields` onto every line it writes. Slice 1 uses this for
-   * call_id; tenant_id joins it the same way in Slice 2 (CLAUDE.md rule 3).
+   * call_id; organization_id joins it the same way in Slice 2 (CLAUDE.md rule 3).
    */
   child(fields: LogFields): Logger;
 }

@@ -1,4 +1,4 @@
-import type { Logger, TenantId } from "@ansa/shared";
+import type { Logger, OrganizationId } from "@ansa/shared";
 
 import type { ToolRegistry } from "../registry";
 import type { ToolAdapter, ToolArgs, ToolDefinition } from "../types";
@@ -9,7 +9,7 @@ import type { Transport } from "./transport";
 import type { CredentialVault } from "./vault";
 
 /**
- * Route B: the tenant already runs an MCP server, so we speak MCP to it.
+ * Route B: the organization already runs an MCP server, so we speak MCP to it.
  *
  * Secondary to the HTTP connector by design — most organisations have a REST API and have
  * never heard of MCP — and structurally identical to it where it counts: it is an adapter
@@ -26,7 +26,7 @@ import type { CredentialVault } from "./vault";
 const PROTOCOL_VERSION = "2025-06-18";
 const CLIENT_NAME = "ansa";
 
-/** Off the call path: discovery runs when a tenant's configuration is loaded. */
+/** Off the call path: discovery runs when a organization's configuration is loaded. */
 const DISCOVERY_TIMEOUT_MS = 10_000;
 
 interface JsonRpcResponse {
@@ -70,7 +70,7 @@ const messageFor = (id: number, contentType: string, body: string): JsonRpcRespo
 };
 
 interface McpClientOptions {
-  readonly tenantId: TenantId;
+  readonly organizationId: OrganizationId;
   readonly server: McpServerConfig;
   readonly transport: Transport;
   readonly vault: CredentialVault;
@@ -102,8 +102,8 @@ const createMcpClient = (options: McpClientOptions) => {
     };
     if (sessionId !== null) base["mcp-session-id"] = sessionId;
     if (server.credentialRef !== undefined) {
-      const credential = await options.vault.resolve(options.tenantId, server.credentialRef);
-      if (credential === null) throw new Error(`no credential named ${server.credentialRef} for this tenant`);
+      const credential = await options.vault.resolve(options.organizationId, server.credentialRef);
+      if (credential === null) throw new Error(`no credential named ${server.credentialRef} for this organization`);
       credential.applyTo(base);
     }
     return base;
@@ -238,13 +238,13 @@ const speak = (policy: McpToolPolicy, result: unknown): string => {
 const definitionFor = (
   policy: McpToolPolicy,
   discovered: DiscoveredTool,
-  tenantId: TenantId,
+  organizationId: OrganizationId,
 ): ToolDefinition => {
   const base = {
     name: discovered.name,
     description: discovered.description,
     parameters: discovered.parameters,
-    tenantId,
+    organizationId,
     timeoutMs: policy.timeoutMs,
     identifiers: policy.identifiers,
   };
@@ -269,7 +269,7 @@ const definitionFor = (
 };
 
 export interface McpConnectorOptions {
-  readonly tenantId: TenantId;
+  readonly organizationId: OrganizationId;
   readonly transport: Transport;
   readonly vault: CredentialVault;
   readonly log: Logger;
@@ -283,10 +283,10 @@ export interface PreparedServer {
 }
 
 /**
- * Discover a tenant's MCP tools and prepare the ones they assigned a tier to.
+ * Discover a organization's MCP tools and prepare the ones they assigned a tier to.
  *
  * Discovery and registration are split because they happen at different times: discovery
- * runs once, when the tenant's configuration is loaded, and registration runs per call
+ * runs once, when the organization's configuration is loaded, and registration runs per call
  * into that call's own registry. An MCP handshake on the answer path would be paid for by
  * the caller, in silence.
  *
@@ -294,7 +294,7 @@ export interface PreparedServer {
  * one handshake, one session, a warm socket.
  *
  * A discovered tool with no configured tier is skipped and logged. Registering it with a
- * default would be the platform deciding, on the tenant's behalf, that an unknown tool is
+ * default would be the platform deciding, on the organization's behalf, that an unknown tool is
  * safe to run without confirmation — and the first time that guess is wrong it is a
  * cancellation nobody agreed to.
  */
@@ -303,7 +303,7 @@ export const prepareMcpServer = async (
   options: McpConnectorOptions,
 ): Promise<PreparedServer> => {
   const client = createMcpClient({
-    tenantId: options.tenantId,
+    organizationId: options.organizationId,
     server,
     transport: options.transport,
     vault: options.vault,
@@ -317,7 +317,7 @@ export const prepareMcpServer = async (
   const adapter: ToolAdapter = {
     route: "mcp",
     execute: async (call) => {
-      if (call.tenantId !== options.tenantId) throw new Error("tool dispatched for the wrong tenant");
+      if (call.organizationId !== options.organizationId) throw new Error("tool dispatched for the wrong organization");
       return client.callTool(call.name, call.args, call.signal);
     },
   };
@@ -327,19 +327,19 @@ export const prepareMcpServer = async (
     const tool = byName.get(policy.name);
     if (tool === undefined) {
       options.log.warn("configured mcp tool is not offered by the server", {
-        tenantId: options.tenantId,
+        organizationId: options.organizationId,
         tool: policy.name,
       });
       continue;
     }
-    definitions.push(definitionFor(policy, tool, options.tenantId));
+    definitions.push(definitionFor(policy, tool, options.organizationId));
   }
 
   const configured = new Set(server.tools.map((policy) => policy.name));
   for (const tool of discovered) {
     if (!configured.has(tool.name)) {
       options.log.info("mcp tool offered but not registered — no risk tier configured", {
-        tenantId: options.tenantId,
+        organizationId: options.organizationId,
         tool: tool.name,
       });
     }

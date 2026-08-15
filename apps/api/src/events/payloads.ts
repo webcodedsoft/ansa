@@ -21,7 +21,7 @@ import type { HandoffSummary } from "../handoff/summary";
 
 /** The call, as an outside system needs to identify it. */
 export interface CallIdentity {
-  /** The carrier's id. What the tenant's own phone bill and call logs show. */
+  /** The carrier's id. What the organization's own phone bill and call logs show. */
   readonly callId: string;
   readonly direction: CallDirection;
   readonly dialled: string | null;
@@ -122,7 +122,7 @@ const reportedIdentifiers = (
  * The `heard` list matters as much as the settled value and is the reason this is not just
  * `facts.policyNumber.value`. A caller says a reference three times and the transcriber
  * writes it down three ways; the settled value is one of them and the other two are still
- * sitting in the transcript. A tenant who switched `captured-identifier` on and got two out
+ * sitting in the transcript. A organization who switched `captured-identifier` on and got two out
  * of three masked would reasonably call that broken.
  */
 export const capturedIdentifierValues = (facts: CallFacts | null): readonly string[] => {
@@ -189,7 +189,7 @@ export const callTransferredPayload = (input: {
  * The two things `redactPayload` does are not the same thing and it is worth saying which
  * is which at the one call site that matters. Credential-shaped keys go unconditionally,
  * because secret material is not the organisation's data to receive. Free text is touched
- * only if the tenant asked for it: the default is `NO_REDACTION` and the default is that
+ * only if the organization asked for it: the default is `NO_REDACTION` and the default is that
  * an organisation gets a complete record of a conversation its own agent had.
  */
 export const serialisePayload = (

@@ -5,7 +5,7 @@ import { Endpoint } from "../http/endpoint";
 import { apiRoute } from "../http/request";
 import { choice, flag, integer, list, nullable, object, text, type Infer } from "../http/schema";
 import { timestamp } from "../schemas";
-import { TenantContext } from "../tenancy/tenant-context";
+import { OrganizationContext } from "../tenancy/organization-context";
 
 import { loadNumbersEnvironment } from "./environment";
 import { carrierDirectoryFor, probeCarrierWebhook, probeVoice, voiceCatalogueFor } from "./probes";
@@ -20,7 +20,7 @@ import { CHECK_IDS, CHECK_STATES, evaluateReadiness } from "./readiness";
  * **Nothing here places a call.** A test call is the only thing that proves an organisation
  * is live, it is the last step of the onboarding runbook, and it is somebody else's task
  * because dialling a number on a caller's behalf has a consent question attached to it that
- * a health check must not answer on their behalf. Every check here is a read: the tenant's
+ * a health check must not answer on their behalf. Every check here is a read: the organization's
  * own rows, the carrier's record of a number, and whether a voice id resolves. Nothing is
  * written and nothing is sent to a third party's endpoint.
  */
@@ -48,7 +48,7 @@ const readinessReport = object({
 
 @Controller(apiRoute("readiness"))
 export class ReadinessController {
-  constructor(@Inject(TenantContext) private readonly db: TenantContext) {}
+  constructor(@Inject(OrganizationContext) private readonly db: OrganizationContext) {}
 
   @Get()
   @Endpoint({

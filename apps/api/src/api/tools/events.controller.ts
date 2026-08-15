@@ -18,7 +18,7 @@ import {
 import { Endpoint } from "../http/endpoint";
 import { apiRoute, FromBody } from "../http/request";
 import { choice, flag, integer, list, object, optional, text, type Infer } from "../http/schema";
-import { TenantContext } from "../tenancy/tenant-context";
+import { OrganizationContext } from "../tenancy/organization-context";
 
 import { checkEventConfig, orConflict, orRefuse, toolsOrNothing } from "./refusals";
 import { publishConfiguration, readConfiguration, sealedCredentials } from "./store";
@@ -152,11 +152,11 @@ const asRecord = (value: unknown): Record<string, unknown> | null =>
  * would quietly stop picking up the organisation's default.
  *
  * So the parsed config supplies the values and the raw document supplies which of them the
- * tenant wrote. The subscription array is in the same order in both, because the parser
+ * organization wrote. The subscription array is in the same order in both, because the parser
  * maps over it.
  */
 interface Declared {
-  readonly tenant: boolean;
+  readonly organization: boolean;
   readonly bySubscription: readonly boolean[];
 }
 
@@ -165,7 +165,7 @@ const declaredRedaction = (stored: unknown): Declared => {
   const subscriptions = Array.isArray(raw?.subscriptions) ? (raw.subscriptions as unknown[]) : [];
   const present = (value: unknown): boolean => value !== undefined && value !== null;
   return {
-    tenant: present(raw?.redaction),
+    organization: present(raw?.redaction),
     bySubscription: subscriptions.map((entry) => present(asRecord(entry)?.redaction)),
   };
 };
@@ -203,14 +203,14 @@ export const toEventResponseBody = (
   stored: unknown,
 ): Omit<Infer<typeof eventConfiguration>, "configVersion"> => {
   const declared = declaredRedaction(stored);
-  const tenantPolicy = parseRedactionPolicy(asRecord(stored)?.redaction, "redaction");
+  const organizationPolicy = parseRedactionPolicy(asRecord(stored)?.redaction, "redaction");
 
   return {
     egress: {
       allowedHosts: parsed.egress.allowedHosts,
       ...(parsed.egress.allowPlaintextHttp === true ? { allowPlaintextHttp: true } : {}),
     },
-    ...(declared.tenant ? { redaction: redactionOut(tenantPolicy) } : {}),
+    ...(declared.organization ? { redaction: redactionOut(organizationPolicy) } : {}),
     subscriptions: parsed.subscriptions.map((entry, index) => ({
       name: entry.name,
       url: entry.url,
@@ -228,7 +228,7 @@ export const toEventResponseBody = (
 
 @Controller(apiRoute("event-subscriptions"))
 export class EventSubscriptionsController {
-  constructor(@Inject(TenantContext) private readonly db: TenantContext) {}
+  constructor(@Inject(OrganizationContext) private readonly db: OrganizationContext) {}
 
   @Get()
   @Endpoint({
@@ -275,7 +275,7 @@ export class EventSubscriptionsController {
 
       const sealed = await sealedCredentials(scope);
       const key = vaultKey();
-      const kinds = key === null ? null : await classifyCredentials(key, scope.tenantId, sealed);
+      const kinds = key === null ? null : await classifyCredentials(key, scope.organizationId, sealed);
       const uses = credentialUses(toolsOrNothing(current.toolConfig), events);
       orRefuse(() => refuseUnusableReferences(uses, new Set(sealed.keys()), kinds));
 

@@ -3,11 +3,11 @@
 // A script and not an HTTP endpoint, deliberately. An unauthenticated "dial this number"
 // route sitting behind a public tunnel lets anyone who finds the URL make our carrier
 // account ring any number on earth at our expense. When outbound does get an API it needs
-// authentication, per-tenant rate limits, and the consent gate described in CLAUDE.md —
+// authentication, per-organization rate limits, and the consent gate described in CLAUDE.md —
 // none of which exist yet, and none of which should be skipped because a script was
 // convenient.
 //
-//   TENANT_ID=... node tools/outbound/place-call.mjs +2348138178550
+//   ORGANIZATION_ID=... node tools/outbound/place-call.mjs +2348138178550
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 
@@ -36,8 +36,8 @@ const provider = createTwilioTelephonyProvider({
 });
 
 const wsOrigin = env.PUBLIC_BASE_URL.replace(/^http/, "ws");
-const tenantId = process.env.TENANT_ID;
-if (tenantId === undefined) throw new Error("TENANT_ID is required: consent is per tenant");
+const organizationId = process.env.ORGANIZATION_ID;
+if (organizationId === undefined) throw new Error("ORGANIZATION_ID is required: consent is per organization");
 
 const dataSource = await createDataSource({ url: env.DATABASE_URL }).initialize();
 
@@ -48,7 +48,7 @@ try {
   const placed = await placeOutboundCall(
     { dataSource, telephony: provider, log: createLogger({ component: "outbound" }) },
     {
-      tenantId,
+      organizationId,
       to,
       from: env.OUTBOUND_FROM ?? "+18148592625",
       mediaStreamUrl: `${wsOrigin}/telephony/media`,

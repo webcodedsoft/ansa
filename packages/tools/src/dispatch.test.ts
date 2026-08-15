@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { asCallId, asTenantId, type LogFields, type Logger } from "@ansa/shared";
+import { asCallId, asOrganizationId, type LogFields, type Logger } from "@ansa/shared";
 
 import { createToolDispatcher, modelMessage, type HoldContext, type HoldingSpeech } from "./dispatch";
 import { createToolRegistry, type ToolRegistry } from "./registry";
 import type { ToolAdapter, ToolDefinition } from "./types";
 
-const TENANT_A = asTenantId("11111111-1111-4111-8111-111111111111");
-const TENANT_B = asTenantId("22222222-2222-4222-8222-222222222222");
+const ORGANIZATION_A = asOrganizationId("11111111-1111-4111-8111-111111111111");
+const ORGANIZATION_B = asOrganizationId("22222222-2222-4222-8222-222222222222");
 const CALL = asCallId("call-1");
 const OTHER_CALL = asCallId("call-2");
 
@@ -92,7 +92,7 @@ describe("read tier", () => {
     const dispatcher = createToolDispatcher({ registry: registryWith([LOOKUP], okAdapter), log });
 
     const outcome = await dispatcher.dispatch({
-      tenantId: TENANT_A,
+      organizationId: ORGANIZATION_A,
       callId: CALL,
       name: "policy_lookup",
       args: { policyNumber: "AXA4421" },
@@ -110,7 +110,7 @@ describe("read tier", () => {
     );
 
     const outcome = await createToolDispatcher({ registry, log }).dispatch({
-      tenantId: TENANT_A,
+      organizationId: ORGANIZATION_A,
       callId: CALL,
       name: "policy_lookup",
       args: {},
@@ -124,7 +124,7 @@ describe("read tier", () => {
 /**
  * The raw result, for the one reader allowed to see it.
  *
- * R5.4.3 keeps raw JSON out of speech; it does not say a tenant may never look at what
+ * R5.4.3 keeps raw JSON out of speech; it does not say a organization may never look at what
  * their own endpoint returned. The dashboard's tool sandbox shows both side by side, which
  * is where a template rendering its fallback because the field is named `status` and not
  * `state` becomes visible — and this hook is how it gets the left-hand side without a
@@ -139,7 +139,7 @@ describe("the result observer", () => {
       registry: registryWith([LOOKUP], okAdapter),
       log,
       onResult: (_call, result) => seen.push(result),
-    }).dispatch({ tenantId: TENANT_A, callId: CALL, name: "policy_lookup", args: {} });
+    }).dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "policy_lookup", args: {} });
 
     expect(seen).toEqual([{ status: "active" }]);
     expect(outcome).toMatchObject({ kind: "ok", speech: "The policy is active." });
@@ -155,9 +155,9 @@ describe("the result observer", () => {
     });
 
     // Irreversible: transferred. Write with no confirmation: read back, not fired.
-    await dispatcher.dispatch({ tenantId: TENANT_A, callId: CALL, name: "cancel_policy", args: {} });
+    await dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "cancel_policy", args: {} });
     await dispatcher.dispatch({
-      tenantId: TENANT_A,
+      organizationId: ORGANIZATION_A,
       callId: CALL,
       name: "update_number",
       args: { phone: "+10000000000" },
@@ -175,7 +175,7 @@ describe("the result observer", () => {
       onResult: () => {
         throw new Error("the observer is broken");
       },
-    }).dispatch({ tenantId: TENANT_A, callId: CALL, name: "policy_lookup", args: {} });
+    }).dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "policy_lookup", args: {} });
 
     expect(outcome).toMatchObject({ kind: "ok", speech: "The policy is active." });
     expect(lines.some((line) => line.message.includes("observer threw"))).toBe(true);
@@ -198,7 +198,7 @@ describe("holding speech", () => {
     };
 
     const dispatcher = createToolDispatcher({ registry: registryWith([LOOKUP], adapter), log, holding });
-    const pending = dispatcher.dispatch({ tenantId: TENANT_A, callId: CALL, name: "policy_lookup", args: {} });
+    const pending = dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "policy_lookup", args: {} });
 
     gate.resolve({ status: "active" });
     await pending;
@@ -220,7 +220,7 @@ describe("holding speech", () => {
       softTimeoutMs: 1,
       hardTimeoutMs: 2000,
     });
-    const pending = dispatcher.dispatch({ tenantId: TENANT_A, callId: CALL, name: "policy_lookup", args: {} });
+    const pending = dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "policy_lookup", args: {} });
 
     await new Promise((resolve) => setTimeout(resolve, 20));
     gate.resolve({ status: "active" });
@@ -235,9 +235,9 @@ describe("holding speech", () => {
     const registry = registryWith([LOOKUP, UPDATE, CANCEL], okAdapter);
     const dispatcher = createToolDispatcher({ registry, log, holding });
 
-    await dispatcher.dispatch({ tenantId: TENANT_A, callId: CALL, name: "cancel_policy", args: {} });
-    await dispatcher.dispatch({ tenantId: TENANT_A, callId: CALL, name: "update_number", args: { contactNumber: "08031112222" } });
-    await dispatcher.dispatch({ tenantId: TENANT_A, callId: CALL, name: "no_such_tool", args: {} });
+    await dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "cancel_policy", args: {} });
+    await dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "update_number", args: { contactNumber: "08031112222" } });
+    await dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "no_such_tool", args: {} });
 
     expect(events).toEqual([]);
   });
@@ -256,7 +256,7 @@ describe("write tier", () => {
     return createToolDispatcher({ registry: registryWith([UPDATE, CANCEL], adapter), log, now });
   };
 
-  const call = { tenantId: TENANT_A, callId: CALL, name: "update_number", args: { contactNumber: "08031112222" } };
+  const call = { organizationId: ORGANIZATION_A, callId: CALL, name: "update_number", args: { contactNumber: "08031112222" } };
 
   it("does not fire before the caller has heard the values back", async () => {
     const executed: string[] = [];
@@ -363,9 +363,9 @@ describe("irreversible tier", () => {
     const { log } = recordingLogger();
     const dispatcher = createToolDispatcher({ registry: registryWith([CANCEL], adapter), log });
 
-    const plain = await dispatcher.dispatch({ tenantId: TENANT_A, callId: CALL, name: "cancel_policy", args: {} });
+    const plain = await dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "cancel_policy", args: {} });
     const forced = await dispatcher.dispatch({
-      tenantId: TENANT_A,
+      organizationId: ORGANIZATION_A,
       callId: CALL,
       name: "cancel_policy",
       args: {},
@@ -399,7 +399,7 @@ describe("failure", () => {
       softTimeoutMs: 1,
       hardTimeoutMs: 10,
     });
-    const outcome = await dispatcher.dispatch({ tenantId: TENANT_A, callId: CALL, name: "policy_lookup", args: {} });
+    const outcome = await dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "policy_lookup", args: {} });
     gate.resolve(null);
 
     expect(outcome).toMatchObject({ kind: "failed", reason: "timeout" });
@@ -419,7 +419,7 @@ describe("failure", () => {
     const outcome = await createToolDispatcher({
       registry: registryWith([LOOKUP], adapter),
       log,
-    }).dispatch({ tenantId: TENANT_A, callId: CALL, name: "policy_lookup", args: {} });
+    }).dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "policy_lookup", args: {} });
 
     expect(outcome).toMatchObject({ kind: "failed", reason: "adapter-error" });
     expect(modelMessage(outcome)).toMatch(/FAILED/);
@@ -444,17 +444,17 @@ describe("one dispatch path", () => {
     const http: ToolAdapter = { route: "http", execute: async () => ({ status: "lapsed" }) };
 
     registry.register(LOOKUP, internal);
-    registry.register({ ...LOOKUP, name: "tenant_lookup", tenantId: TENANT_A }, http);
-    registry.register({ ...UPDATE, name: "tenant_update", tenantId: TENANT_A }, http);
+    registry.register({ ...LOOKUP, name: "organization_lookup", organizationId: ORGANIZATION_A }, http);
+    registry.register({ ...UPDATE, name: "organization_update", organizationId: ORGANIZATION_A }, http);
 
     const dispatcher = createToolDispatcher({ registry, log });
 
-    const viaInternal = await dispatcher.dispatch({ tenantId: TENANT_A, callId: CALL, name: "policy_lookup", args: {} });
-    const viaHttp = await dispatcher.dispatch({ tenantId: TENANT_A, callId: CALL, name: "tenant_lookup", args: {} });
+    const viaInternal = await dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "policy_lookup", args: {} });
+    const viaHttp = await dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "organization_lookup", args: {} });
     const httpWrite = await dispatcher.dispatch({
-      tenantId: TENANT_A,
+      organizationId: ORGANIZATION_A,
       callId: CALL,
-      name: "tenant_update",
+      name: "organization_update",
       args: { contactNumber: "08031112222" },
     });
 
@@ -463,23 +463,23 @@ describe("one dispatch path", () => {
     // The write gate is a property of the dispatcher, so it is already true of a route
     // that has not been written yet.
     expect(httpWrite.kind).toBe("confirm");
-    expect(lines.every((line) => line.fields.tenantId === TENANT_A && line.fields.callId === CALL)).toBe(true);
+    expect(lines.every((line) => line.fields.organizationId === ORGANIZATION_A && line.fields.callId === CALL)).toBe(true);
   });
 
-  it("reports another tenant's tool as one that does not exist", async () => {
+  it("reports another organization's tool as one that does not exist", async () => {
     const { log } = recordingLogger();
     const registry = createToolRegistry();
-    registry.register({ ...LOOKUP, name: "tenant_a_secret", tenantId: TENANT_A }, okAdapter);
+    registry.register({ ...LOOKUP, name: "organization_a_secret", organizationId: ORGANIZATION_A }, okAdapter);
 
     const outcome = await createToolDispatcher({ registry, log }).dispatch({
-      tenantId: TENANT_B,
+      organizationId: ORGANIZATION_B,
       callId: CALL,
-      name: "tenant_a_secret",
+      name: "organization_a_secret",
       args: {},
     });
 
     expect(outcome).toMatchObject({ kind: "failed", reason: "unknown-tool" });
-    expect(outcome.speech).not.toContain("tenant_a_secret");
+    expect(outcome.speech).not.toContain("organization_a_secret");
   });
 });
 
@@ -489,7 +489,7 @@ describe("logging", () => {
     const dispatcher = createToolDispatcher({ registry: registryWith([LOOKUP], okAdapter), log });
 
     await dispatcher.dispatch({
-      tenantId: TENANT_A,
+      organizationId: ORGANIZATION_A,
       callId: CALL,
       name: "policy_lookup",
       args: { policyNumber: "AXA4421", apiKey: "sk-live-do-not-log-me" },
@@ -497,7 +497,7 @@ describe("logging", () => {
 
     const line = lines.find((l) => l.message === "tool call ok");
     expect(line?.fields).toMatchObject({
-      tenantId: TENANT_A,
+      organizationId: ORGANIZATION_A,
       callId: CALL,
       tool: "policy_lookup",
       tier: "read",

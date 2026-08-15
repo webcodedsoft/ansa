@@ -57,7 +57,7 @@ describe("createLogger", () => {
   });
 
   // The property Slice 1 actually needs: once a call is bound, no line escapes without
-  // its call_id. Slice 2 binds tenant_id through the same mechanism.
+  // its call_id. Slice 2 binds organization_id through the same mechanism.
   it("stamps call_id on every line from a child logger", () => {
     const callId = asCallId("CA-test-0001");
     const log = createLogger({ component: "api" }).child({ callId });

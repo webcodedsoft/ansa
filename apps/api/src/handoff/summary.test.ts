@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { asTenantId } from "@ansa/shared";
+import { asOrganizationId } from "@ansa/shared";
 
 import { renderSummary, speakSummary, summarise, type LoggedEvent } from "./summary";
 
-const TENANT = asTenantId("11111111-1111-1111-1111-111111111111");
+const ORGANIZATION = asOrganizationId("11111111-1111-1111-1111-111111111111");
 
 const event = (
   kind: string,
@@ -14,7 +14,7 @@ const event = (
 
 const of = (events: readonly LoggedEvent[], escalation?: string) =>
   summarise({
-    tenantId: TENANT,
+    organizationId: ORGANIZATION,
     carrierCallId: "CA1",
     callerNumber: "+2348138178550",
     events,

@@ -8,7 +8,7 @@ import { Module } from "@nestjs/common";
 
 import { type AppConfig, loadConfig } from "../config/env";
 import { MediaGateway } from "./media.gateway";
-import { createTenantRegistry } from "../tenancy/tenant-registry";
+import { createAgentRegistry } from "../tenancy/agent-registry";
 import { resolveHandoffDestination } from "../handoff/destination";
 import { HandoffController } from "../handoff/handoff.controller";
 import { HANDOFF_DESTINATION, WHISPER_REGISTRY } from "../handoff/tokens";
@@ -19,7 +19,7 @@ import {
   LLM_PROVIDER,
   LOGGER,
   TELEPHONY_PROVIDER,
-  TENANT_REGISTRY,
+  ORGANIZATION_REGISTRY,
   TTS_PROVIDER,
 } from "./tokens";
 import { ViewerController } from "../viewer/viewer.controller";
@@ -90,10 +90,10 @@ import { VoiceController } from "./voice.controller";
       },
     },
     {
-      provide: TENANT_REGISTRY,
+      provide: ORGANIZATION_REGISTRY,
       inject: [DATA_SOURCE, LOGGER, APP_CONFIG],
       useFactory: (dataSource: Db | null, log: Logger, config: AppConfig) =>
-        createTenantRegistry({ dataSource, log, credentialKey: config.toolCredentialKey }),
+        createAgentRegistry({ dataSource, log, credentialKey: config.toolCredentialKey }),
     },
     {
       // One registry per process, not per call: the carrier fetches the summary from
@@ -103,8 +103,8 @@ import { VoiceController } from "./voice.controller";
     },
     {
       // Null when unconfigured, and escalation then says so out loud rather than
-      // transferring to a placeholder. R6.5 moves this into per-tenant config; the shape
-      // here is the one a tenants row will fill.
+      // transferring to a placeholder. R6.5 moves this into per-organization config; the shape
+      // here is the one a organizations row will fill.
       provide: HANDOFF_DESTINATION,
       inject: [LOGGER],
       useFactory: (log: Logger) => resolveHandoffDestination(process.env, log),
@@ -114,6 +114,6 @@ import { VoiceController } from "./voice.controller";
   exports: [MediaGateway, APP_CONFIG, LOGGER, DATA_SOURCE, WHISPER_REGISTRY, HANDOFF_DESTINATION,
     // EventsModule injects the registry to resolve a call's webhook subscriptions.
     // Providing it without exporting it is a boot failure, not a lint error.
-    TENANT_REGISTRY],
+    ORGANIZATION_REGISTRY],
 })
 export class TelephonyModule {}

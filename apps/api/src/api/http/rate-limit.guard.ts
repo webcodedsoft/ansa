@@ -19,7 +19,7 @@ import { clientAddress, isApiPath, type ApiRequest } from "./request";
  * process.
  *
  * Most endpoints declare nothing and are not limited here. They are already behind a
- * session, and a signed-in tenant hammering their own call list is a capacity question for
+ * session, and a signed-in organization hammering their own call list is a capacity question for
  * a proxy, not a security one.
  */
 @Injectable()

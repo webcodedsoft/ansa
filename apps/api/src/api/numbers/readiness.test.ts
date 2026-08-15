@@ -121,14 +121,14 @@ describe("the readiness report", () => {
    */
   it("keeps every sentence inside the bound its response schema declares", () => {
     const manyTools = {
-      egress: { allowedHosts: ["api.tenant.test"] },
+      egress: { allowedHosts: ["api.organization.test"] },
       http: Array.from({ length: 80 }, (_unused, index) => ({
         name: `look_up_a_thing_number_${index}`,
         description: "Look something up",
         parameters: { type: "object", properties: {} },
         riskTier: "read",
         route: "http",
-        url: "https://api.tenant.test/thing",
+        url: "https://api.organization.test/thing",
         method: "GET",
         send: "query",
         speech: { template: "It is {status}.", fallback: "I could not find it." },
@@ -151,7 +151,7 @@ describe("the number", () => {
   });
 
   /**
-   * A number stored in any other form resolves nothing, because `app.tenant_for_number`
+   * A number stored in any other form resolves nothing, because `app.organization_for_number`
    * compares the carrier's E.164 string exactly. It looks entirely correct in the column.
    */
   it("flags a number that is not E.164, because resolution is an exact match", () => {
@@ -270,23 +270,23 @@ const HTTP_TOOL = {
   parameters: { type: "object", properties: {} },
   riskTier: "read",
   route: "http",
-  url: "https://api.tenant.test/policy",
+  url: "https://api.organization.test/policy",
   method: "GET",
   send: "query",
   speech: { template: "It is {status}.", fallback: "I could not find it." },
 };
 
 const TOOLS = (overrides: Record<string, unknown> = {}): unknown => ({
-  egress: { allowedHosts: ["api.tenant.test"] },
+  egress: { allowedHosts: ["api.organization.test"] },
   http: [{ ...HTTP_TOOL, ...overrides }],
 });
 
 const EVENTS = (overrides: Record<string, unknown> = {}): unknown => ({
-  egress: { allowedHosts: ["hooks.tenant.test"] },
+  egress: { allowedHosts: ["hooks.organization.test"] },
   subscriptions: [
     {
       name: "crm",
-      url: "https://hooks.tenant.test/ansa",
+      url: "https://hooks.organization.test/ansa",
       events: ["call.ended"],
       signingSecretRef: "crm_signing",
       ...overrides,
@@ -319,7 +319,7 @@ describe("tools", () => {
    */
   it("blocks an allowlist entry with a port in it, which can never match a host", () => {
     const withPort = {
-      egress: { allowedHosts: ["api.tenant.test:8443"] },
+      egress: { allowedHosts: ["api.organization.test:8443"] },
       http: [HTTP_TOOL],
     };
     expect(stateOf("tools", { toolConfig: withPort })).toBe("blocked");

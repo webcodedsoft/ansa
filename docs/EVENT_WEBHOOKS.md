@@ -91,7 +91,7 @@ Every delivery carries:
 ```
 ansa-event-id:          <uuid, stable across retries — deduplicate on this>
 ansa-event-type:        call.ended
-ansa-tenant-id:         <your tenant id>
+ansa-organization-id:         <your organization id>
 ansa-timestamp:         <unix seconds>
 ansa-delivery-attempt:  <1, 2, 3 …>
 ansa-signature:         v1=<hex>
@@ -165,7 +165,7 @@ records which version of these rules was in force when the payload was built.
 The signing secret itself never appears in that file. It is sealed separately:
 
 ```
-TENANT_ID=… node tools/tenant/config.mjs credential crm_hook signing <shared-secret>
+ORGANIZATION_ID=… node tools/organization/config.mjs credential crm_hook signing <shared-secret>
 ```
 
 Add `"credentialRef": "…"` to a subscription if your endpoint also wants an
@@ -181,13 +181,13 @@ own data from you on a judgement we made about your compliance posture is not ou
 and it would break the obvious uses — the CRM that needs the policy number, the ticketing
 system that needs the callback number.
 
-If you want masking, ask for it. Per tenant:
+If you want masking, ask for it. Per organization:
 
 ```json
 { "events": { "redaction": { "categories": ["captured-identifier", "card-number"] } } }
 ```
 
-…or per receiver, which overrides the tenant rule for that receiver alone — the shape most
+…or per receiver, which overrides the organization rule for that receiver alone — the shape most
 organisations actually want, where the CRM gets everything and the analytics vendor does
 not:
 

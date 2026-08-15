@@ -38,5 +38,5 @@ export const timestamp = (): Schema<string> => text({ format: "date-time" });
 
 export const role = (): Schema<MemberRole> => choice(MEMBER_ROLES);
 
-/** An organisation, as the dashboard shows it. It is a `tenants` row; see migration 0016. */
+/** An organisation, as the dashboard shows it. It is a `organizations` row; see migration 0016. */
 export const organisation = object({ id: uuid(), name: text({ maxLength: 200 }) });

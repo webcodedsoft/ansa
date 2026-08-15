@@ -79,14 +79,14 @@ export interface AppConfig {
    * Where to write raw caller audio, for replaying one call through several transcribers.
    *
    * Unset means no recording, which is the default deliberately: this is a caller's voice
-   * saying their policy number out loud, and `tenants.audio_retention_days` exists but is
+   * saying their policy number out loud, and `organizations.audio_retention_days` exists but is
    * not yet enforced by anything. Turn it on to diagnose, off again afterwards.
    */
   readonly recordAudioDir: string | undefined;
   /**
-   * The key that opens a tenant's stored credentials (R5.2.1). 32 bytes, base64.
+   * The key that opens a organization's stored credentials (R5.2.1). 32 bytes, base64.
    *
-   * Optional, and null is a working configuration: without it, a tenant's tools that need
+   * Optional, and null is a working configuration: without it, a organization's tools that need
    * a credential are not registered and the agent says it cannot check — rather than
    * making an anonymous request to somebody's customer API. Tools with no credential at
    * all still work.
@@ -101,7 +101,7 @@ export interface AppConfig {
  * 32 bytes or nothing, and it fails at boot rather than on a call.
  *
  * A key of the wrong length means every credential in the vault is unopenable, which
- * would present as "the tenant's tools are all broken" three layers away from the cause.
+ * would present as "the organization's tools are all broken" three layers away from the cause.
  */
 const credentialKey = (env: NodeJS.ProcessEnv): Buffer | null => {
   const raw = env["TOOL_CREDENTIAL_KEY"];

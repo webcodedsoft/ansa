@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createEgressGuard, isBlockedAddress, type AddressResolver, type ResolvedAddress } from "./egress";
 
 /**
- * R5.2.2. The tenant supplies the URL, so this suite is the adversary.
+ * R5.2.2. The organization supplies the URL, so this suite is the adversary.
  *
  * Table-driven throughout: a guard that only rejects the one address somebody thought of
  * is not a guard, and a table is what makes a change that helps a single literal fail
@@ -83,7 +83,7 @@ describe("blocked addresses", () => {
 describe("the guard", () => {
   const policy = { allowedHosts: ["api.partner.test", "*.shard.partner.test"] };
 
-  it("refuses a host the tenant never declared, before resolving anything", async () => {
+  it("refuses a host the organization never declared, before resolving anything", async () => {
     const guard = createEgressGuard({
       policy,
       resolve: () => {
@@ -94,7 +94,7 @@ describe("the guard", () => {
     expect(verdict).toMatchObject({ ok: false, reason: "host-not-allowed" });
   });
 
-  it("refuses plaintext http unless the tenant asked for it", async () => {
+  it("refuses plaintext http unless the organization asked for it", async () => {
     const resolve = resolverFor({ "api.partner.test": [v4("8.8.8.8")] });
     const strict = createEgressGuard({ policy, resolve });
     expect(await strict.check("http://api.partner.test/x")).toMatchObject({
@@ -157,7 +157,7 @@ describe("the guard", () => {
     });
   });
 
-  it("refuses a literal private address even when the tenant allowlisted it", async () => {
+  it("refuses a literal private address even when the organization allowlisted it", async () => {
     const guard = createEgressGuard({
       policy: { allowedHosts: ["169.254.169.254", "127.0.0.1", "[::1]"] },
       resolve: resolverFor({}),
@@ -214,7 +214,7 @@ describe("the guard", () => {
     });
   });
 
-  it("refuses a tenant who declared no hosts at all", async () => {
+  it("refuses a organization who declared no hosts at all", async () => {
     const guard = createEgressGuard({ policy: { allowedHosts: [] }, resolve: resolverFor({}) });
     expect(await guard.check("https://api.partner.test/x")).toMatchObject({
       ok: false,

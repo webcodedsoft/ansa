@@ -18,7 +18,7 @@ import { pageQuery, pageResponse, toPageBody, toPageRequest } from "../http/pagi
 import { apiRoute, FromBody, FromPath, FromQuery } from "../http/request";
 import { flag, nullable, object, text, type Infer } from "../http/schema";
 import { email, role, timestamp, uuid } from "../schemas";
-import { TenantContext } from "../tenancy/tenant-context";
+import { OrganizationContext } from "../tenancy/organization-context";
 
 /**
  * Getting a colleague into the organisation.
@@ -81,7 +81,7 @@ const ACCEPT_LIMIT = { limit: 20, windowMs: 60 * 60_000, by: "ip" } as const;
 @Controller(apiRoute("invitations"))
 export class InvitationsController {
   constructor(
-    @Inject(TenantContext) private readonly db: TenantContext,
+    @Inject(OrganizationContext) private readonly db: OrganizationContext,
     @Inject(AuthService) private readonly auth: AuthService,
   ) {}
 
@@ -133,7 +133,7 @@ export class InvitationsController {
         scope,
         {
           // Lowercased here as well as constrained in the schema, so the partial unique
-          // index on (tenant_id, email) sees one spelling of an address and not two.
+          // index on (organization_id, email) sees one spelling of an address and not two.
           email: body.email.toLowerCase(),
           role: body.role,
           tokenHash: minted.hash,
@@ -155,7 +155,7 @@ export class InvitationsController {
   })
   async list(@FromQuery() query: Infer<typeof pageQuery>): Promise<Infer<typeof invitationPage>> {
     const page = toPageRequest(query);
-    return toPageBody(await this.db.tx((scope) => listInvitations(scope, page)));
+    return toPageBody(await this.db.tx((scope) => listInvitations(scope, page)), query);
   }
 
   @Delete(":id")

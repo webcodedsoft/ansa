@@ -1,4 +1,4 @@
-import type { TenantId } from "@ansa/shared";
+import type { OrganizationId } from "@ansa/shared";
 
 import { HARD_TIMEOUT_MS } from "./limits";
 import type { ToolAdapter, ToolDefinition } from "./types";
@@ -12,10 +12,10 @@ export interface Registration {
 export interface ToolRegistry {
   /** Throws on anything the dispatcher could not safely execute later. */
   register(definition: ToolDefinition, adapter: ToolAdapter): void;
-  /** Platform tools plus this tenant's own. What the model is told it can call. */
-  listFor(tenantId: TenantId): readonly ToolDefinition[];
-  /** Null when this tenant has no such tool, including when another tenant does. */
-  resolve(tenantId: TenantId, name: string): Registration | null;
+  /** Platform tools plus this organization's own. What the model is told it can call. */
+  listFor(organizationId: OrganizationId): readonly ToolDefinition[];
+  /** Null when this organization has no such tool, including when another organization does. */
+  resolve(organizationId: OrganizationId, name: string): Registration | null;
 }
 
 const NAME = /^[a-z][a-z0-9_]{2,63}$/;
@@ -28,7 +28,7 @@ const isNonEmptyString = (value: unknown): boolean =>
  * Validated against the runtime shape rather than the compile-time one.
  *
  * The type union already makes a tierless literal impossible, but the tools that matter
- * most arrive as tenant configuration — JSON from a database — where the type system was
+ * most arrive as organization configuration — JSON from a database — where the type system was
  * never present. Registration is the last place a bad tool can be stopped cheaply.
  */
 const validate = (definition: ToolDefinition): void => {
@@ -106,15 +106,15 @@ const validate = (definition: ToolDefinition): void => {
  */
 export const createToolRegistry = (): ToolRegistry => {
   const platform = new Map<string, Registration>();
-  const tenants = new Map<TenantId, Map<string, Registration>>();
+  const organizations = new Map<OrganizationId, Map<string, Registration>>();
 
   return {
     register(definition, adapter) {
       validate(definition);
       const { name } = definition;
-      const owner = definition.tenantId ?? null;
+      const owner = definition.organizationId ?? null;
 
-      // A tenant redefining `transfer_to_human` as a read-tier no-op would configure its
+      // A organization redefining `transfer_to_human` as a read-tier no-op would configure its
       // way out of a platform guarantee. Shadowing is refused rather than resolved.
       if (platform.has(name)) {
         throw new Error(`tool registration: ${name} is already a platform tool`);
@@ -125,24 +125,24 @@ export const createToolRegistry = (): ToolRegistry => {
         return;
       }
 
-      const own = tenants.get(owner) ?? new Map<string, Registration>();
+      const own = organizations.get(owner) ?? new Map<string, Registration>();
       if (own.has(name)) {
-        throw new Error(`tool registration: ${name} is already registered for this tenant`);
+        throw new Error(`tool registration: ${name} is already registered for this organization`);
       }
       own.set(name, { definition, adapter });
-      tenants.set(owner, own);
+      organizations.set(owner, own);
     },
 
-    listFor(tenantId) {
-      const own = tenants.get(tenantId);
+    listFor(organizationId) {
+      const own = organizations.get(organizationId);
       return [
         ...[...platform.values()].map((r) => r.definition),
         ...(own === undefined ? [] : [...own.values()].map((r) => r.definition)),
       ];
     },
 
-    resolve(tenantId, name) {
-      return tenants.get(tenantId)?.get(name) ?? platform.get(name) ?? null;
+    resolve(organizationId, name) {
+      return organizations.get(organizationId)?.get(name) ?? platform.get(name) ?? null;
     },
   };
 };

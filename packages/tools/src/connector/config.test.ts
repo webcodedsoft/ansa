@@ -9,7 +9,7 @@ import { renderTemplate, templateFields } from "./template";
  * example in the brief is not a rule.
  */
 
-describe("rendering a tenant's sentence", () => {
+describe("rendering a organization's sentence", () => {
   const cases: readonly [string, unknown, string | null][] = [
     ["Order {id} is {state}.", { id: "A-99", state: "on its way" }, "Order A-99 is on its way."],
     ["Balance is {account.balance} naira.", { account: { balance: 12_500 } }, "Balance is 12500 naira."],
@@ -54,7 +54,7 @@ const httpTool = (over: Record<string, unknown> = {}): Record<string, unknown> =
   ...over,
 });
 
-describe("parsing a tenant's tool configuration", () => {
+describe("parsing a organization's tool configuration", () => {
   it("accepts a complete read tool", () => {
     const config = parseConnectorConfig({
       egress: { allowedHosts: ["api.partner.test"] },
@@ -113,7 +113,7 @@ describe("parsing a tenant's tool configuration", () => {
     expect(config.http[0]?.readback).toContain("{contactNumber}");
   });
 
-  it("requires a tier for every MCP tool the tenant wants registered", () => {
+  it("requires a tier for every MCP tool the organization wants registered", () => {
     expect(() =>
       parseConnectorConfig({ mcp: [{ url: "https://mcp.partner.test/rpc", tools: [{ name: "lookup" }] }] }),
     ).toThrow(/riskTier/);
@@ -128,10 +128,10 @@ describe("parsing a tenant's tool configuration", () => {
   /**
    * The guard refuses this at request time and always will. What it cannot do is say so
    * before a caller hits it: the tool registers, the model is told it can look the thing
-   * up, and every attempt comes back as an apology. Two lines of the same tenant's
+   * up, and every attempt comes back as an apology. Two lines of the same organization's
    * configuration disagreeing is a publication error.
    */
-  it("refuses a tool whose host the same tenant's allowlist does not cover", () => {
+  it("refuses a tool whose host the same organization's allowlist does not cover", () => {
     expect(() =>
       parseConnectorConfig({
         egress: { allowedHosts: ["api.partner.test"] },

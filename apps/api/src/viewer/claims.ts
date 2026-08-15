@@ -160,7 +160,7 @@ const configurationsFor = (
       language: stringOr(recorded["language"], null),
       endpointing,
       // Deepgram records how many keyterms were sent rather than which; the list is the
-      // tenant's configuration and is versioned there. The count is what a reader needs to
+      // organization's configuration and is versioned there. The count is what a reader needs to
       // know a boost was in effect at all, which is the thing `defaults.ts` warns about.
       keyterms_sent: numberOr(recorded["keyterms"], null),
       config_version: source.configVersion,

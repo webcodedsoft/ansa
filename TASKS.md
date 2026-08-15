@@ -1569,6 +1569,72 @@ first thing a Nigerian organisation needs and the one thing we cannot currently 
   copied in. Regenerating in place would have committed another agent's uncommitted routes
   into the spec, and `openapi.test.ts` would then have failed on the commit that did it.
 
+## Slice 10 — The dashboard itself (`apps/web`)
+
+Next.js 16 in the monorepo, consuming the Slice 9 API. Built so that testing a change stops
+requiring a second person to read server logs: change a setting, press a button, answer the
+phone, read the call turn by turn.
+
+- [x] Next.js app at `apps/web`, port 3100, Tailwind v4, zod, zustand, lucide, clsx
+- [x] Sign in, including the organisation picker when an address belongs to several
+- [x] Sign up — create an organisation and the account that owns it (`POST /auth/sign-ups`,
+      migration 0017, `app.create_organisation`)
+- [x] Accept an invitation, which had no screen at all and made the dashboard unenterable
+- [x] Agent screen — identity, behaviour, vocabulary, hours, escalation, publish
+- [x] Calls screen — list with cursor pagination, and the test-call button
+- [x] Call review — turns and transcripts merged by offset, corrections, event timeline
+- [x] `pnpm lint`, `pnpm typecheck`, `next build` and the wiring check all green
+
+### What this settled, and what it cost
+
+**Every request is server-side, and that was not a preference.** The API enables no CORS, so
+a browser cannot reach it at all. The session token therefore lives in an httpOnly cookie,
+Server Components read and Server Actions write, and there is no `NEXT_PUBLIC_` variable
+anywhere. A relay route handler would have put the token where page scripts can read it.
+
+**The generated client had never compiled.** `apps/api/src/api/openapi/client.ts` has existed
+and been tested since Slice 9, but nothing consumed its output until now. Two defects fell
+out on first use: it emitted `test-calls:` and `event-subscriptions:` as object keys, which
+are syntax errors, and it typed path parameters as `string` when the configuration version
+endpoints take an integer. Both fixed in the generator; the frontend building is now the
+check. The client is committed for the same reason `openapi.json` is.
+
+**The publish form carries every field, deliberately.** `POST /config/versions` rewrites the
+whole document — business hours and escalation are on the agent screen not because the
+testing loop needs them but because a form that could not see them would clear them, and the
+version history would record the loss as intentional.
+
+**Toasts exist because of `revalidatePath`.** A publish revalidates the page, the form
+re-renders, and an inline success message goes with it. The zustand store lives outside that
+subtree so the confirmation survives the refresh that proves it worked. Failures stay inline,
+next to the field that caused them.
+
+**There was no way into the product.** `owner.mjs` mints an invitation and prints a token, and
+nothing could redeem it — the dashboard had a sign-in page and no screen behind it. Worse, a
+person arriving without an operator had no path at all. Both doors now exist, and both go
+through a definer function because `ansa_app` has no INSERT on `users` and `tenants` is behind
+an RLS policy keyed to the current tenant. Loosening either was the alternative and both are
+load-bearing.
+
+**Sign-up authenticates before it creates.** An address that already has an account may start
+a second organisation, so the password is verified first and a wrong one is refused with the
+same 401 a failed sign-in gets. Without that check anyone could type a stranger's address and
+attach that account to an organisation they own; the stranger gains no exposure but finds an
+organisation they never joined in their list. Proven three ways against the running API: new
+address creates, existing address with the right password creates and reports
+`createdUser: false`, existing address with the wrong password gets 401 and writes nothing.
+
+**Structure.** Each feature owns `*.schema.ts` (zod, and the API body it becomes),
+`*.service.ts` (the only place that feature talks to the API) and `*.actions.ts` (parse, call,
+report), plus its own components. Pages read services; nothing outside a feature's service
+builds a client for it.
+
+### Deliberately not built
+
+Members, invitations, credentials, numbers, event subscriptions and the tools registry all
+have complete endpoints and no screen. None is in the configure-call-read loop, and each is
+a surface that would be built twice if built before somebody needs it.
+
 ## Not now
 
 **Outbound calling is the big one, and it has a named gate.** Do not start it until Slice
@@ -1585,6 +1651,418 @@ All Phase 2 or 3. Every one of them is more fun to build than Slice 0. That is e
 why they are listed here.
 
 ---
+
+## Multi-agent (2026-08-15)
+
+`tenants` was the agent: one row held the organisation *and* its persona, voice, greeting,
+vocabulary, hours, escalation and number. An organisation now runs many agents, and a
+number reaches exactly one.
+
+**Done, and proven against the dev database.**
+
+- [x] `0018_agents.sql` — `agents` table, `agent_tools` selection, `tenant_prompt_versions`
+      re-keyed to `(agent_id, version)`, `calls.agent_id`. Backfilled 33 tenants to 33
+      agents; all 4 versions and all 111 calls carry an agent. Ingress
+      (`app.tenant_config_for_number`) still answers in one round trip and now returns
+      `agent_id` and `enabled_tools`.
+- [x] `0019_tenant_numbers.sql` — closes a hole 0018 opened. Moving `dialled_number` onto
+      a table organisations write would have let one claim a line it does not control,
+      which is exactly what `numbers.controller.ts` was written to prevent. Ownership now
+      lives in operator-written `tenant_numbers` (ansa_app has SELECT only); agents hold
+      the routing, joined by a composite FK. **The first draft of the
+      `tenant_number_routing` view leaked every organisation's numbers** — a Postgres view
+      runs as its owner, so RLS was inert until `security_invoker = true`. Verified: base
+      table 0 rows, view 2 rows, before the fix.
+- [x] Per-agent tools. The registry stays per organisation; `agent_tools` says which of it
+      an agent may call, filtered in `prepareConnectors` *before* the model is briefed, so
+      an agent never offers a tool it would then be refused. Empty selection means no
+      tools, never all of them.
+- [x] The answering agent is recorded on the call (`CallTenant` → `CallSettings` →
+      `recordCallStarted`). `configVersion` alone stopped identifying a configuration the
+      moment two agents could both be on version 3.
+- [x] Three adversarial tests in `isolation.test.ts`: an agent gets only what it selected,
+      an empty selection gets no organisation tools but keeps the platform's three, and a
+      selection naming an unregistered tool grants nothing.
+
+1062 API tests, 302 tools tests, repo lint and typecheck green.
+
+**Endpoints and page, done.**
+
+- [x] `GET/POST/GET:id/PATCH/DELETE /agents` and `PUT /agents/:id/tools`, on `config:read`
+      / `config:write` — an agent *is* the configuration, so a second `agents:*` vocabulary
+      would have meant two names for one permission. `agents.ts` reshaped to take a
+      `TenantScope` like the rest of the API surface, so no call site names a tenant.
+- [x] Routing here, ownership not: an organisation picks which of its agents answers a line
+      it already holds, and still cannot add a line. Both database refusals collapse into
+      one 409 that does not say which fired — telling "already routed" from "not yours"
+      apart lets somebody walk a number range to find who is a customer.
+- [x] `agentId` filter on `GET /calls`. Distinct from `dialled`: a number can move between
+      agents, so this survives a reassignment where filtering by number does not.
+- [x] `openapi.json` and the web client regenerated; drift test green.
+- [x] `/agents` reads `GET /agents` and renders N rows with per-agent counts. Verified with
+      two agents: the second showed 0 calls and a dash rather than the org's 66 and 0%.
+      Archiving it removed it from the list.
+
+1062 API tests, 302 tools tests, repo lint and typecheck green.
+
+**Agent detail page redesigned (2026-08-15).**
+
+- [x] Entity header carrying All agents / Test call / Publish. Publish submits the form
+      below it through the plain `form` attribute, so the control sits where it belongs
+      with no client state and no second copy of it.
+- [x] Overview rebuilt: three figures with week-on-week movement, an attention list, then
+      recent calls. A readiness checklist used to lead here, which answered a question
+      nobody with a working agent was asking.
+- [x] Deltas are measured — four total-only call queries across two consecutive seven-day
+      windows — and suppressed when the previous window was empty, so a first week cannot
+      claim a triumph. Latency compares the live version's p50 against the previous
+      version's, since a rollout is the usual reason it moves.
+- [x] Attention rows use each readiness check's `detail`, not its `title`. The titles are
+      phrased as the state you want ("A number is attached"), so beside a "blocked" tag
+      they read as contradictions.
+- [x] Knowledge tab added to match the design, holding an honest empty state — there is no
+      document store behind it yet.
+
+**Behaviour switches wired end to end (2026-08-15).**
+
+- [x] `0020_agent_behaviour.sql` — `agents.barge_in` (default true) and
+      `agents.answering_machine_detection` (default false), returned by all three
+      `app.*_config_*` functions so the answer path still costs one round trip.
+- [x] Reaches the AI. Barge-in threads `TenantConfig` → `CallTenant` → `CallSettings` →
+      `runConversation`, and gates the `stopSpeaking("caller interrupted")` teardown only —
+      the turn start is still stamped and the transcript still commits, so switching it off
+      makes the agent finish its sentence rather than stop listening. AMD rides the
+      existing `Promise.all` in `place.ts` and is expressed by withholding
+      `amdCallbackUrl`, because Twilio only detects when it has somewhere to report to.
+- [x] `PATCH /agents/:id` accepts both; the console saves on flip, with optimistic state
+      that reverts if the write is refused. Verified in the browser against the database:
+      each flip landed on the right agent and left the sibling alone.
+- [x] Transfer-on-escalation is deliberately NOT a column. It is enforced in the dispatch
+      path so neither a setting nor a prompt can talk it out of it; the row is drawn
+      because it is true, and fixed because a switch for disabling a safety rail should
+      not exist.
+- [x] Per-section Save on the Conversation tab. The switches save instantly on their own;
+      the script sections each publish. One caveat worth knowing: the API's configuration
+      is a single atomic document, so a section Save publishes the whole of it as one
+      version with the untouched fields carried along.
+
+**The voice form reaches the call (2026-08-15).**
+
+- [x] `0021` stores it, `0022` puts it on the answer path — one more jsonb column on the
+      ingress query that was already happening, so the 800ms budget is untouched.
+- [x] `parseCapturedFields` never throws. `captured_fields` is jsonb an operator can write
+      by hand, so a malformed entry costs that one field and is logged with the agent —
+      the promise `prepareConnectors` makes about tools, for the same reason.
+- [x] Composed into the **task layer**, not the tenant layer. It is structured
+      configuration built in the console rather than free text typed at the model, so it is
+      not fenced and not filtered — every sentence is generated from a closed set of routes
+      and confirmations, and the only tenant string in it is the question's wording. The
+      guarantees still compose after it, so a field cannot reach past them.
+- [x] The route is stated, not inferred: an agent that says "read it to me" when the caller
+      should key it in loses digits the line would have carried intact.
+- [x] Six tests in `compose.test.ts` — empty form says nothing at all, the operator's
+      wording survives, route and confirmation are stated, order is preserved, guarantees
+      still land last.
+
+**Publishing was broken by 0018, and is fixed (2026-08-15).**
+
+Asked "is the Conversation tab actually wired to the call agent?", the answer was no, in
+three places. 0018 re-pointed every *read* at `agents` and left the *writes* behind.
+
+- [x] `0023` — `app.publish_tenant_config` wrote to `tenants`, which nothing on the answer
+      path reads any more, and its version insert omitted the `agent_id` that 0018 made NOT
+      NULL. **Every publish since 0018 threw.** It now writes the agent-shaped columns to
+      `agents`, keeps the shared registry on `tenants`, and stamps the history with its
+      agent. Verified against the database: publish returns v2 and the call path reads the
+      new greeting, persona and keyterms.
+- [x] `0024` — `app.create_organisation` made a tenant and a membership but no agent, so
+      every organisation signing up after 0018 had none: it could not publish and its agent
+      list was empty. Now a trigger on `tenants`, not a line in that function, because
+      sign-up, the db tests and an operator's psql session are three doors and three
+      chances to forget.
+- [x] `tenant-config.ts` — `readStoredConfiguration` and `loadCurrentTenantConfig` still
+      selected the agent-shaped columns from `tenants`, which compiles and silently returns
+      pre-0018 values. Re-pointed at the tenant's oldest live agent, matching the rule
+      `app.tenant_config_for_id` and `publish_tenant_config` use.
+- [x] Call tracing keys on `agent_id`, falling back to tenant-plus-version for calls
+      answered before 0018 — those have no agent and never will, and R7.5 is the
+      requirement that they stay explicable.
+
+**Process note.** `pnpm --filter @ansa/db test` runs against a real database and had been
+failing since 0018; the gate being used was lint, typecheck and the API suite, which mock
+it. Run the db suite after any migration. The broken half here was loud, the dangerous half
+silent — a screen reporting a new version over a script the caller never hears.
+
+**"Tenant" is now "organization" (2026-08-15).**
+
+One concept had two names and the person it confused most was the one who owns the product.
+
+- [x] `0025` — `tenants` → `organizations`, `tenant_id` → `organization_id` on 19 tables,
+      `tenant_credentials`/`tenant_numbers` renamed, and `tenant_prompt_versions` →
+      `agent_prompt_versions` because 0018 re-keyed it on the agent and the old name had
+      been describing the wrong owner since. The setting moved too: `app.tenant_id` →
+      `app.organization_id`, so old code against the new schema is scoped to nothing and
+      reads no rows — loud and empty, never someone else's data.
+- [x] Function bodies were read out of `pg_get_functiondef` and transformed mechanically,
+      not retyped, so none could quietly lose a clause. Dropped and recreated rather than
+      replaced, because renaming an OUT parameter changes the return type.
+- [x] Two renamed for accuracy rather than vocabulary: `tenant_config_for_number` →
+      `agent_config_for_number`, `tenant_config_for_id` → `agent_config_for_organization`.
+      Both return the agent's configuration and have since 0018.
+- [x] 20 RLS policies recreated against `app.current_organization()`. `do_not_call` was
+      written out by hand rather than generated: its `OR organization_id IS NULL` is the
+      platform-wide suppression list, and generating it would have dropped that clause.
+- [x] ~2,900 TypeScript sites renamed by script with `multi-tenant` and `tenancy` guarded —
+      multi-tenancy is the architecture and keeps its name; the entity is an organisation.
+      Files renamed to match, including `tenants.ts` → `call-config.ts`, which was never
+      about the organisation: it loads the answering agent's config at ingress.
+
+Verified: zero objects named tenant remain in the database, an unscoped `ansa_app` session
+reads 0 rows from every table, and a scoped one reads only its own. 51 db + 302 tools +
+1069 API tests, lint, typecheck and the web build all green.
+
+**No agent is created automatically.**
+
+- [x] `0025` drops the 0024 trigger. An organisation with no agent is now a real state —
+      what a new sign-up looks like — and `app.publish_agent_config` refuses loudly rather
+      than guessing. The db fixtures create their agent explicitly, as the console will.
+
+**Organisation and agent are separate documents (2026-08-15).**
+
+Not defaults-and-overrides. They answer different questions, and the organisation is where
+billing, roles and retention will land — none of which an agent should inherit a field from.
+
+- [x] `0026` — dropped 13 agent-shaped columns from `organizations` that 0018 had left
+      behind "in case the copy was wrong". The copy was right, and what remained was a
+      greeting no caller had heard since August sitting in a column called `greeting`. That
+      is the shape of the next bug, not merely untidy.
+- [x] `0027`/`0028` — **business hours moved back to the organisation.** 0018 swept them
+      onto the agent because they sat in the same block, which was wrong on inspection: a
+      greeting differs between agents, "when is this company open" has one answer. It also
+      made the after-hours agent incoherent — it exists because the office is shut, so it
+      must not be able to believe otherwise. Publish writes them to the organisation; the
+      three config functions read them from there.
+- [x] `GET/PATCH /organization` — name, created, and read-only `audioRetentionDays` and
+      `consent`. One writable field, because one is what an organisation may change about
+      itself today. The endpoint offers no way to change the operator-set values rather
+      than accepting and ignoring them.
+
+The split, as it now stands:
+
+| Agent | Organisation |
+|---|---|
+| greeting, persona, instructions, voice, keyterms | name |
+| escalation, dialled number, config version | business hours |
+| barge-in, AMD, captured fields, tool selection | audio retention, consent (operator-set) |
+| version history (`agent_prompt_versions`) | tool registry, webhook subscriptions |
+
+**Known loss, on the record.** Opening hours are no longer in an agent's version snapshot,
+because the organisation is not versioned. A call from three weeks ago can no longer be
+explained in terms of the hours it ran under. `organization-config.test.ts` asserts this
+so it stays a decision rather than a surprise. Versioning the organisation is the fix.
+
+**Agent templates with preview.**
+
+- [x] Five templates (customer service, after hours, appointment booking, renewals, blank),
+      each carrying persona, greeting, instructions, ordered captured fields and the two
+      switches. Nigerian throughout. `/agents/new` shows them as cards with a live preview
+      of the resulting call, generated from the template rather than written out.
+- [x] Creation is `POST /agents` → `PUT /agents/:id/fields` → `PATCH /agents/:id`, the last
+      only when the switches differ from defaults.
+- [x] Fixed a real bug the preview exposed: the spell-out rule keyed off whether the sample
+      contained a space, which read "R e n e w" back to a caller who said "Renew". The
+      field's *type* decides now — identifier, number and phone are spelled; name, date,
+      choice and text are said.
+
+**Tools tab, per agent (2026-08-15).**
+
+- [x] The tab was read-only and its notice said per-agent selection did not exist — which
+      stopped being true when `agent_tools`, `PUT /agents/:id/tools` and the `enabledTools`
+      filter in `prepareConnectors` landed. It is now the screen for that.
+- [x] Every registered tool with its tier, and beside each one what the tier actually does:
+      read runs on request, write only after a spoken readback, irreversible never runs and
+      transfers. Written per row rather than once at the top, because the tier is the whole
+      decision being made — switching on an irreversible tool is agreeing it never fires.
+- [x] Credential reference and route host shown; the full URL is not, since a path can
+      carry an identifier and this is a list somebody reads.
+- [x] Selections naming a tool the registry no longer holds are surfaced rather than left
+      invisible until dispatch refuses them mid-call.
+- [x] `saveAgentTools` saves the whole selection, unversioned — revoking a tool should take
+      effect on the next call without publishing whatever is half-written elsewhere.
+
+Verified end to end against a seeded registry: enabling `check_policy` wrote one
+`agent_tools` row for that agent and left its sibling untouched. Registry restored to null.
+
+**A test that was never flaky, and the API's own validation.**
+
+- [x] `onboarding.test.ts > counts calls and deliveries as numbers` had been failing
+      intermittently since the start of the session. It was not flaky: the fixture inserts a
+      `pending` delivery with the default `next_attempt_at = now()`, and
+      `app.claim_due_event_deliveries` claims exactly that. **Any locally running API would
+      pick it up, fail to deliver it, and mark it failed** — so the test read three failures
+      where it seeded two, and passed or failed depending on whether someone had an API
+      running. The fixture now dates its rows a day out.
+- [x] Teardown moved to the operator role: deleting an organisation cascades into
+      `organization_numbers`, which `ansa_app` may only read, so the final statement failed
+      and rolled back the whole transaction — cleaning nothing.
+- [x] Worth recording: seeding a registry by hand was refused twice by the API's own rules —
+      once for a tool with no `speech` (raw JSON is never spoken, R5.4.3) and once for a
+      `speech.template` with no placeholders, which would say the same thing every call.
+      Both are good rules and both caught me.
+
+**Capture driven by agent fields — foundation (2026-08-15).**
+
+`CAPTURE_WIRING.md` §7 left `expecting(kind)` unwired: "who decides *when* to ask belongs
+to the conversation director, and nothing decides it yet". The agent's configured fields
+are that decision. Capture was purely reactive — `classify()` on what a caller volunteered
+— so an agent could confirm a value but never ask for one.
+
+- [x] **One vocabulary.** The engine knows twelve entity kinds; the field builder offered
+      seven that mapped to five, so email, NIN, BVN, OTP, address and time could not be
+      configured at all even though the engine captures them well — including an eleven
+      digit check and an email spelling fallback. The captured-field `type` is now the
+      engine's own kind, so there is no translation to get wrong.
+- [x] Documents written under the old vocabulary normalise on read (`identifier` →
+      `reference`, `number` → `quantity`). A stored identifier silently becoming free text
+      would have stopped it being read back — a downgrade invisible until a call went wrong.
+- [x] **One preview.** `field-builder.tsx` and `conversation-preview.tsx` each had their own
+      copy of the samples and spelling rules and had already drifted: one decided whether to
+      spell a value out by asking if the string contained a space. Both now use
+      `capture-vocabulary.ts`.
+- [x] `form.ts` — the director. Ordered fields, what is outstanding, where an answer
+      belongs. Pure: no speech, no state machine, never sees a transcript.
+- [x] 16 tests, mostly edges:
+      an agent with **no form is inert in every direction** (the case that matters most —
+      it is every agent today, and a call that worked yesterday must not change);
+      `choice` and `text` are required-but-uncapturable and must not hold a call open;
+      a volunteered value goes to the first outstanding field of that kind and a **directed
+      answer beats it**, because two `reference` fields cannot be told apart from a value;
+      a duplicate key is ignored rather than given two questions and one answer slot;
+      a declined optional field is settled, and accepted if the caller later gives it;
+      a correction overwrites; unconfirmed is stored as unconfirmed.
+
+**Wired into the call (2026-08-15).**
+
+- [x] `call-facts.ts` gained a `captured` map keyed by the operator's field key, as a third
+      arm of `Observation`. Its own arm rather than a widened `field`, and that is the
+      safety argument: the arm takes `EvidenceSource`, which has no `"model"` member, so a
+      model-sourced capture does not compile. Configured values follow the identifier rules
+      exactly — they are collected because a tool will act on them.
+- [x] `orchestrator.ts` routes a confirmed value to the field the agent asked for, falling
+      back to the first outstanding one of that kind, and only then to `FACT_FIELD_FOR`.
+      That last path is not cruft: an agent with no form still captures reactively, and a
+      caller who volunteers their name should still have it recorded.
+- [x] `armNextField()` puts the engine into `awaiting` for the next field — at the greeting
+      and after each answer. The question is deliberately **not** spoken by the engine: the
+      prompt already tells the model what to collect, and both speaking would ask the
+      caller the same thing twice. What is taken is directed parsing, which is §7's whole
+      argument — "the fourteenth" is a fragment in free speech and a date in answer to a
+      question. Armed only from idle, so it cannot discard a readback in progress.
+- [x] `media.gateway.ts` resolves a tool's `identifiers` from the captured map first, then
+      the built-in three. A tool naming `claimNumber` used to answer `unconfirmed-identity`
+      on every call, silently, discoverable only by making one.
+- [x] Six tests on the captured facts, including the precedence rule I got wrong first
+      time: a **transcriber** contradicting a confirmed value is contested, a **caller**
+      correcting themselves is applied. The caller is the authority; contesting them would
+      leave the agent holding a number they had just said was wrong.
+
+1091 API + 51 db + 302 tools, lint, typecheck and a full build green.
+
+**Still open.**
+
+- [x] **`pattern` and `attempts` honoured (2026-08-15).** The operator's regex runs after
+      the readback, not before. Deliberate: the engine establishes what was *said*, and
+      asking "did I hear PM eight five nine two" about a value that is about to be rejected
+      is the only way the caller learns they were heard correctly and the number is still
+      wrong. Checking first says "sorry, say that again" to someone who said it perfectly.
+- [x] Anchored like HTML's own `pattern` attribute, because `PM\d{7}` unanchored accepts
+      `PM8592625-OLD` — right prefix, wrong record, and the agent would look it up.
+- [x] An invalid regex accepts everything at runtime and is refused at write time. Both
+      halves are needed: a stray bracket must not become a call that cannot get past its
+      first question, and it must not silently become a format check that never runs.
+- [x] Values over 256 characters fail rather than match. There is no regex timeout in
+      JavaScript, so a backtracking pattern would block the event loop of a process
+      carrying other people's calls. A cap is a ceiling, not a fix — worth knowing.
+- [x] `attempts` counts per field, then escalates. With no handoff configured the agent
+      says so plainly and carries on: a configuration dead end degrades into speech, never
+      into silence.
+- [x] Five scenarios in `conversation.test.ts` §20 drive a form through the whole
+      orchestrator — the first tests exercising the director, the capture engine and the
+      fact store agreeing on one call rather than each alone.
+- [x] **The Tools tab names what it cannot feed (2026-08-15).** Each row says which of its
+      `identifiers` this agent never collects, and an enabled one raises a notice. Only
+      `callerName` and `policyNumber` resolve without a field — `customerId` has a slot in
+      the fact store and no path that fills one.
+- [ ] `redact: true` is stored and shown but does not yet suppress a value in transcripts.
+- [ ] `publish_agent_config` still takes the organisation and resolves the oldest live
+      agent. One agent per organisation hides it; two will not.
+- [ ] **None of this has been heard on a real call.** See below.
+
+### The call that is still owed
+
+`packages/db/seeds/dev-organization.mjs` had rotted — it wrote `organizations.dialled_number`,
+a column 0026 dropped when the organisation stopped being the agent. Nothing imports the
+seed, so the first symptom was a working tunnel, a working carrier and no way to make a
+call reach anything. Rewritten: it creates the organisation, registers the number as the
+operator, and creates the agent with a form. Verified idempotent, and
+`agent_config_for_number` returns the form including the pattern.
+
+The agent on `+18148592625` is armed with the probe form: `callerName` (name, readback),
+`policyNumber` (reference, `PM\d{7}`, readback) and `contactEmail` (email, spellback). To
+disarm: `update agents set captured_fields = '[]' where id = 'cfe50134-3d05-4a62-b90b-9ed1d9091ba8';`
+
+What to listen for, in order of what is actually in doubt:
+
+1. **Does it ask at all**, in the operator's wording rather than the model's paraphrase.
+2. **`PM8592625` accepted, five bare digits re-asked.** The pattern path has never run
+   against a real transcript. Say the wrong-shaped number *clearly* — the interesting case
+   is being heard perfectly and rejected anyway.
+3. **Three wrong shapes reaches a person**, or says something honest if there is nobody.
+4. **The email.** The one genuinely in doubt. 8 kHz destroys the consonant contrasts an
+   address is made of — m/n, s/f — and no readback logic repairs a channel that never
+   carried the distinction. If it fails, the answer is probably that email is a keypad or
+   an SMS field and not a spoken one. That is a finding, not a defeat.
+
+**Still open.**
+
+- [x] `instructions` on `POST /agents` and `PATCH /agents/:id` (2026-08-15). A template's
+      house rules now ride along on the create, so an agent is complete when the wizard
+      returns and nothing has to be pasted in afterwards. Bounded at 2000 to match what
+      `config.publish` already accepted, so a template can travel either route. The warning
+      on the create page is gone, replaced by the field itself and a line saying it can be
+      edited later. Verified against the database: create, patch and the call path all
+      carry it.
+- [ ] The Routing & hours tab still edits hours as though they were the agent's. They are
+      the organisation's now; that tab needs to move to an organisation settings screen.
+- [ ] `conversation-preview.tsx` and `field-builder.tsx` duplicate the sample values and
+      read-back wording. One module.
+- [ ] `config.*` is still organisation-scoped and resolves the oldest live agent.
+
+- [ ] Agent templates to pick from when creating the first one, and the create form itself.
+- [ ] Organisation-level general config that an agent's own settings override. Today an
+      agent carries every value outright and there is no organisation default beneath it.
+- [ ] `config.*` is still organisation-scoped and resolves the oldest live agent. Three
+      places share that rule so they move together.
+
+- [ ] Capture *enforcement* is still the model's job on this path. The prompt tells it to
+      confirm before using a value, and risk tiers stop a write-tier tool firing — but
+      nothing yet tracks per-field state on the call: `attempts` does not count, `pattern`
+      does not reject and re-ask, and `redact` does not hide anything in a transcript. Those
+      need a capture state machine in the orchestrator holding a value per field with a
+      confirmed flag. That is the next real slice, and until it lands those three settings
+      describe an intention rather than a behaviour.
+
+- [ ] `config.*` reads and writes the tenant's oldest live agent via
+      `app.tenant_config_for_id`. Correct with one agent, a coin toss with two. **This is
+      the blocker on creating a second agent through the UI** — the wizard at `/agents/new`
+      and the workspace at `/agents/[agentId]` both publish through `config.publish`, so
+      today they would edit whichever agent that function picks. Make them agent-scoped
+      before wiring a create form to `POST /agents`.
+- [ ] Only `GET /agents` is exercised over HTTP. The mutations are typechecked, schema-
+      checked by the drift test and unit-covered, but no test drives them through the
+      pipeline — the constraint behaviour underneath them was proven directly in psql.
+- [ ] Readiness is organisation-wide, so a failing check pauses every agent. Honest today
+      (none of them can answer) and wrong once checks become per agent.
 
 ## Session discipline
 

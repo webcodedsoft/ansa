@@ -4,6 +4,7 @@ import { Module, type MiddlewareConsumer, type NestModule } from "@nestjs/common
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 
 import { ApiGuard } from "./auth/api.guard";
+import { AgentsController } from "./agents/agents.controller";
 import { AuthController } from "./auth/auth.controller";
 import { AuthService } from "./auth/auth.service";
 import { CallsController } from "./calls/calls.controller";
@@ -16,9 +17,10 @@ import { RequestIdMiddleware } from "./http/request-id.middleware";
 import { InvitationsController } from "./invitations/invitations.controller";
 import { MembersController } from "./members/members.controller";
 import { NumbersController } from "./numbers/numbers.controller";
+import { OrganizationController } from "./organization/organization.controller";
 import { ReadinessController } from "./numbers/readiness.controller";
-import { TenantContext } from "./tenancy/tenant-context";
-import { TenantGateway } from "./tenancy/tenant-gateway";
+import { OrganizationContext } from "./tenancy/organization-context";
+import { OrganizationGateway } from "./tenancy/organization-gateway";
 import { API_DATA_SOURCE } from "./tenancy/tokens";
 import { createOrigination, ORIGINATION } from "./testcall/origination";
 import { TestCallController } from "./testcall/testcall.controller";
@@ -27,7 +29,7 @@ import { EventSubscriptionsController } from "./tools/events.controller";
 import { ToolsController } from "./tools/tools.controller";
 
 /**
- * The tenant-facing dashboard API.
+ * The organization-facing dashboard API.
  *
  * One list of controllers, used three times: to register them, to attach the middleware,
  * and — in `routes.test.ts` — to check every route they declare is under the prefix and
@@ -35,6 +37,7 @@ import { ToolsController } from "./tools/tools.controller";
  * the same act of adding it; one added anywhere else fails the test.
  */
 export const API_CONTROLLERS = [
+  AgentsController,
   AuthController,
   CallsController,
   ConfigController,
@@ -43,6 +46,7 @@ export const API_CONTROLLERS = [
   InvitationsController,
   MembersController,
   NumbersController,
+  OrganizationController,
   ReadinessController,
   TestCallController,
   ToolsController,
@@ -80,11 +84,11 @@ export const API_CONTROLLERS = [
     },
     {
       /**
-       * The one thing besides `TenantGateway` that is handed the pool, and it is handed it
+       * The one thing besides `OrganizationGateway` that is handed the pool, and it is handed it
        * here for the same reason the gateway is: this module is the wiring, and
        * `routes.test.ts` exempts it from the scan that keeps `API_DATA_SOURCE` out of every
        * other file. `origination.ts` does not query with it — it passes it to
-       * `placeOutboundCall`, which needs one to read the consent record inside the tenant's
+       * `placeOutboundCall`, which needs one to read the consent record inside the organization's
        * own scope.
        */
       provide: ORIGINATION,
@@ -92,8 +96,8 @@ export const API_CONTROLLERS = [
       useFactory: (dataSource: Db | null) =>
         createOrigination({ dataSource, log: createLogger({ component: "api-testcall" }) }),
     },
-    TenantGateway,
-    TenantContext,
+    OrganizationGateway,
+    OrganizationContext,
     AuthService,
 
     // Order matters, and only for the guards. The rate limiter runs first so that the

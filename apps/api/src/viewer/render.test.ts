@@ -13,7 +13,7 @@ import {
 } from "./render";
 import { trendByConfigVersion } from "./trends";
 
-const LINK = { token: "t", tenant: "abc-123" };
+const LINK = { token: "t", organization: "abc-123" };
 
 const summary = {
   id: "c1",
@@ -104,7 +104,7 @@ describe("the viewer answers the question a reviewer is asking", () => {
 });
 
 describe("links have to survive being clicked", () => {
-  const link = { token: "tok en", tenant: "abc-123" };
+  const link = { token: "tok en", organization: "abc-123" };
 
   it("keeps the /viewer prefix, which a relative href silently dropped", () => {
     // "./id" against "/viewer" resolves to "/id" — the browser went to the root and got
@@ -116,12 +116,12 @@ describe("links have to survive being clicked", () => {
   it("carries the credentials, since there is no session to fall back on", () => {
     const html = renderCallList([summary], link);
     expect(html).toContain("token=tok%20en");
-    expect(html).toContain("tenant=abc-123");
+    expect(html).toContain("organization=abc-123");
   });
 
   it("points back at the list from a call, credentials intact", () => {
     const html = renderCall({ summary, events: [], transcripts: [] }, link);
-    expect(html).toContain('href="/viewer?token=tok%20en&amp;tenant=abc-123"');
+    expect(html).toContain('href="/viewer?token=tok%20en&amp;organization=abc-123"');
   });
 
   it("encodes an id rather than pasting it into a URL", () => {
@@ -157,7 +157,7 @@ describe("recording a correction (R9.2.3)", () => {
     // in the Referer of anything the page links to.
     const html = renderCall(detail, LINK);
     expect(html).toContain('type=hidden name=token value="t"');
-    expect(html).toContain('type=hidden name=tenant value="abc-123"');
+    expect(html).toContain('type=hidden name=organization value="abc-123"');
   });
 
   it("escapes a transcript before putting it inside an attribute", () => {

@@ -1,6 +1,6 @@
 /**
  * Layer 4 of 5 — the task. Derived per call, from what is registered rather than from
- * anything a tenant wrote.
+ * anything a organization wrote.
  *
  * §3 of the architecture doc describes this layer as "which tools are registered and when
  * to use them". The registry that will supply them is being built separately (R5.2.0, one
@@ -12,6 +12,8 @@
  * model that plainly is what turns an invented policy status into "I can't check that for
  * you, let me put you through to someone who can".
  */
+
+import type { CaptureRoute, CollectedField, Confirmation } from "../tenancy/captured-fields";
 
 /**
  * What the composer needs to know about a tool. Deliberately not the registry's own type:
@@ -37,11 +39,84 @@ const TIER_NOTE: Readonly<Record<AvailableTool["riskTier"], string>> = {
   irreversible: "never by you — this one goes to a person",
 };
 
-export const taskLayer = (tools: readonly AvailableTool[]): string => {
+/**
+ * How each field is asked for, in the model's own terms.
+ *
+ * The route matters to the wording, not just to the plumbing: an agent that says "read it
+ * to me" when the caller is meant to key it in gets speech on a line where the digits would
+ * have survived intact. So the instruction names the route rather than leaving the model to
+ * infer it from the operator's prompt.
+ */
+const ROUTE_NOTE: Readonly<Record<CaptureRoute, string>> = {
+  speech: "ask them to say it",
+  keypad: "ask them to key it in on their phone",
+  either: "let them say it or key it in, whichever they prefer",
+};
+
+/**
+ * And how it is pinned down before anything acts on it.
+ *
+ * This is the model's *expectation*, not the enforcement. Confirmation is enforced in the
+ * dispatch path — a write-tier tool will not fire on an unconfirmed value however sure the
+ * transcriber was — and stating it here only keeps the turn plan matching what the code is
+ * about to do. A model that thinks it may act on an unconfirmed policy number phrases the
+ * turn as though it already has.
+ */
+const CONFIRM_NOTE: Readonly<Record<Confirmation, string>> = {
+  none: "no need to check it back",
+  readback: "say it back to them and get a yes before you use it",
+  spellback: "spell it back to them and get a yes before you use it",
+};
+
+/**
+ * The form this agent conducts, if it has one (migration 0021).
+ *
+ * Part of the task layer rather than the organization layer, and that placement is the point:
+ * this is structured configuration the operator built in the console, not the bounded free
+ * text a organization types. It is not fenced and not filtered, because it cannot say anything —
+ * every sentence here is generated from a closed set of routes and confirmations, and the
+ * only organization-authored string in it is the wording of the question itself.
+ */
+/**
+ * `callbackNumber` → `callback number`, for the fallback wording only.
+ *
+ * The key is an identifier because tools receive it; it is not something to say out loud.
+ * When an operator has not written the question themselves, the model still has to ask
+ * one, and "ask for their callbackNumber" is a phrase no person would use.
+ */
+const spoken = (key: string): string =>
+  key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .toLowerCase();
+
+const collectionSection = (fields: readonly CollectedField[]): readonly string[] => {
+  if (fields.length === 0) return [];
+
+  return [
+    "",
+    "There are things you need from them on this call. Ask for them in this order, one at a",
+    "time, and don't read the list out:",
+    ...fields.map((field) => {
+      const asked = field.prompt === "" ? `ask for their ${spoken(field.key)}` : `"${field.prompt}"`;
+      const need = field.required ? "needed" : "optional — move on if they won't say";
+      return `- ${field.key}: ${asked} — ${ROUTE_NOTE[field.capture]}, ${CONFIRM_NOTE[field.confirm]} (${need})`;
+    }),
+    "Fit them into the conversation rather than marching through them. If they have already",
+    "told you one, don't ask again. If they ask a question mid-way, answer it and come back.",
+  ];
+};
+
+export const taskLayer = (
+  tools: readonly AvailableTool[],
+  fields: readonly CollectedField[] = [],
+): string => {
+  const collection = collectionSection(fields);
+
   if (tools.length === 0) {
     // Deliberately says "their records" rather than naming what kind of records this
-    // organisation keeps. Naming them is the tenant's job, in their own layer, and a
-    // domain baked in here would be wrong for the next tenant and a word the model
+    // organisation keeps. Naming them is the organization's job, in their own layer, and a
+    // domain baked in here would be wrong for the next organization and a word the model
     // reaches for on this one.
     return [
       "You can't look anything up on this call. You have no access to their account or to",
@@ -49,6 +124,7 @@ export const taskLayer = (tools: readonly AvailableTool[]): string => {
       "If they ask for something only those records could answer, say so plainly in a few",
       "words and offer to put them through to someone who can check. Don't guess, don't",
       "approximate, and don't say you'll check and come back.",
+      ...collection,
     ].join("\n");
   }
 
@@ -62,5 +138,6 @@ export const taskLayer = (tools: readonly AvailableTool[]): string => {
     "Ask for one instead of answering, and wait. The pause is covered for you.",
     "You'll be told what came back, in plain words. Never say a lookup worked, or that",
     "anything has been changed, until you have been told it did.",
+    ...collection,
   ].join("\n");
 };

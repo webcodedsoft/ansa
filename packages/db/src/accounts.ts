@@ -1,21 +1,29 @@
-import type { TenantId } from "@ansa/shared";
+import type { OrganizationId } from "@ansa/shared";
 
 import type { Db } from "./data-source";
-import { keysetOrder, keysetParams, keysetWhere, toSlice, type PageRequest, type PageSlice } from "./paging";
-import type { TenantScope } from "./tenant-scope";
+import {
+  TOTAL_COLUMN,
+  pageOrder,
+  pageParams,
+  toSlice,
+  type PageRequest,
+  type PageSlice,
+  type WithTotal,
+} from "./paging";
+import type { OrganizationScope } from "./organization-scope";
 
 /**
  * People, organisations, sessions and invitations — the dashboard's half of the schema.
  *
- * **Every function that reads or writes a tenant's data takes a `TenantScope` and does
- * not take a tenant id.** That is not a style preference. A `TenantScope` can only come
- * out of `withTenant`, which means the transaction has already done
- * `set_config('app.tenant_id', …)` and RLS is filtering; and because there is no tenant
- * id parameter, there is no tenant id to pass the wrong value for. The two ways a
- * tenant-scoped query normally goes wrong are both absent from the signature.
+ * **Every function that reads or writes a organization's data takes a `OrganizationScope` and does
+ * not take a organization id.** That is not a style preference. A `OrganizationScope` can only come
+ * out of `withOrganization`, which means the transaction has already done
+ * `set_config('app.organization_id', …)` and RLS is filtering; and because there is no organization
+ * id parameter, there is no organization id to pass the wrong value for. The two ways a
+ * organization-scoped query normally goes wrong are both absent from the signature.
  *
  * The three functions at the bottom are the exception, and they are the only exception:
- * signing in cannot happen inside a tenant scope because which tenant is the answer, not
+ * signing in cannot happen inside a organization scope because which organization is the answer, not
  * the question. They take a `Db` and are named for exactly what they do.
  */
 
@@ -49,12 +57,12 @@ interface SessionRow {
  *
  * Null covers every failure the same way — unknown token, expired, revoked, membership
  * withdrawn, or a token for a different organisation than the one this scope opened.
- * That last case is what makes the tenant id inside the token safe to act on before it
- * has been verified: the scope was opened with the claimed tenant, so a session
+ * That last case is what makes the organization id inside the token safe to act on before it
+ * has been verified: the scope was opened with the claimed organization, so a session
  * belonging to anyone else is simply not visible here.
  */
 export const findSessionByToken = async (
-  scope: TenantScope,
+  scope: OrganizationScope,
   tokenHash: Buffer,
   now: Date,
 ): Promise<AuthenticatedSession | null> => {
@@ -62,7 +70,7 @@ export const findSessionByToken = async (
     `select s.id as session_id, u.id as user_id, u.email, u.display_name, m.role
        from sessions s
        join users u on u.id = s.user_id
-       join memberships m on m.user_id = s.user_id and m.tenant_id = s.tenant_id
+       join memberships m on m.user_id = s.user_id and m.organization_id = s.organization_id
       where s.token_hash = $1
         and s.revoked_at is null
         and s.expires_at > $2
@@ -89,7 +97,7 @@ export const findSessionByToken = async (
  * every request would make each read a write.
  */
 export const touchSession = async (
-  scope: TenantScope,
+  scope: OrganizationScope,
   sessionId: string,
   now: Date,
 ): Promise<void> => {
@@ -110,12 +118,12 @@ export interface NewSession {
   readonly expiresAt: Date;
 }
 
-export const createSession = async (scope: TenantScope, session: NewSession): Promise<string> => {
+export const createSession = async (scope: OrganizationScope, session: NewSession): Promise<string> => {
   const rows = await scope.query<{ id: string }>(
-    `insert into sessions (tenant_id, user_id, token_hash, user_agent, expires_at)
+    `insert into sessions (organization_id, user_id, token_hash, user_agent, expires_at)
      values ($1, $2, $3, $4, $5)
      returning id`,
-    [scope.tenantId, session.userId, session.tokenHash, session.userAgent, session.expiresAt],
+    [scope.organizationId, session.userId, session.tokenHash, session.userAgent, session.expiresAt],
   );
   const id = rows[0]?.id;
   // The insert either returns a row or raises; a silent undefined here would mean the
@@ -126,7 +134,7 @@ export const createSession = async (scope: TenantScope, session: NewSession): Pr
 
 /** Idempotent: signing out twice is not an error, and neither is a session already expired. */
 export const revokeSession = async (
-  scope: TenantScope,
+  scope: OrganizationScope,
   sessionId: string,
   now: Date,
 ): Promise<void> => {
@@ -157,19 +165,19 @@ interface MemberRow {
 }
 
 export const listMembers = async (
-  scope: TenantScope,
+  scope: OrganizationScope,
   page: PageRequest,
 ): Promise<PageSlice<Member>> => {
-  const rows = await scope.query<MemberRow>(
-    `select m.user_id, u.email, u.display_name, m.role, m.created_at
+  const rows = await scope.query<MemberRow & WithTotal>(
+    `select m.user_id, u.email, u.display_name, m.role, m.created_at, ${TOTAL_COLUMN}
        from memberships m
        join users u on u.id = m.user_id
-      where ${keysetWhere("m.created_at", "m.user_id")}
-      ${keysetOrder("m.created_at", "m.user_id")}`,
-    keysetParams(page),
+      ${pageOrder("m.created_at", "m.user_id")}`,
+    pageParams(page),
   );
 
-  const members = rows.map(
+  return toSlice(
+    rows,
     (row): Member => ({
       userId: row.user_id,
       email: row.email,
@@ -178,7 +186,6 @@ export const listMembers = async (
       createdAt: row.created_at.toISOString(),
     }),
   );
-  return toSlice(members, page, (member) => ({ createdAt: member.createdAt, id: member.userId }));
 };
 
 /**
@@ -190,7 +197,7 @@ export const listMembers = async (
  * Demoting the last owner raises, from the deferred constraint trigger in migration 0016.
  */
 export const setMemberRole = async (
-  scope: TenantScope,
+  scope: OrganizationScope,
   userId: string,
   role: MemberRole,
 ): Promise<boolean> => {
@@ -201,7 +208,7 @@ export const setMemberRole = async (
   return rows.length > 0;
 };
 
-export const removeMember = async (scope: TenantScope, userId: string): Promise<boolean> => {
+export const removeMember = async (scope: OrganizationScope, userId: string): Promise<boolean> => {
   const rows = await scope.mutate<{ user_id: string }>(
     `delete from memberships where user_id = $1 returning user_id`,
     [userId],
@@ -257,12 +264,12 @@ export interface NewInvitation {
  * Issues an invitation, superseding any live one for the same address.
  *
  * The revoke and the insert are one call because they are one intention. There is a
- * partial unique index on `(tenant_id, email) where accepted_at is null and revoked_at is
+ * partial unique index on `(organization_id, email) where accepted_at is null and revoked_at is
  * null`, so skipping the revoke would not produce two live tokens — it would produce a
  * constraint violation and an owner who cannot re-send an invitation that went to spam.
  */
 export const createInvitation = async (
-  scope: TenantScope,
+  scope: OrganizationScope,
   invitation: NewInvitation,
   now: Date,
 ): Promise<Invitation> => {
@@ -273,11 +280,11 @@ export const createInvitation = async (
   );
 
   const rows = await scope.query<InvitationRow>(
-    `insert into invitations (tenant_id, email, role, token_hash, invited_by, expires_at)
+    `insert into invitations (organization_id, email, role, token_hash, invited_by, expires_at)
      values ($1, $2, $3, $4, $5, $6)
      returning ${INVITATION_COLUMNS}`,
     [
-      scope.tenantId,
+      scope.organizationId,
       invitation.email,
       invitation.role,
       invitation.tokenHash,
@@ -292,24 +299,19 @@ export const createInvitation = async (
 };
 
 export const listInvitations = async (
-  scope: TenantScope,
+  scope: OrganizationScope,
   page: PageRequest,
 ): Promise<PageSlice<Invitation>> => {
-  const rows = await scope.query<InvitationRow>(
-    `select ${INVITATION_COLUMNS} from invitations
-      where ${keysetWhere("created_at", "id")}
-      ${keysetOrder("created_at", "id")}`,
-    keysetParams(page),
+  const rows = await scope.query<InvitationRow & WithTotal>(
+    `select ${INVITATION_COLUMNS}, ${TOTAL_COLUMN} from invitations
+      ${pageOrder("created_at", "id")}`,
+    pageParams(page),
   );
-  const invitations = rows.map(toInvitation);
-  return toSlice(invitations, page, (invitation) => ({
-    createdAt: invitation.createdAt,
-    id: invitation.id,
-  }));
+  return toSlice(rows, toInvitation);
 };
 
 export const revokeInvitation = async (
-  scope: TenantScope,
+  scope: OrganizationScope,
   invitationId: string,
   now: Date,
 ): Promise<boolean> => {
@@ -327,7 +329,7 @@ export const revokeInvitation = async (
 // ---------------------------------------------------------------------------
 //
 // Three functions, all wrapping a `security definer` routine from migration 0016, all
-// taking a `Db` rather than a `TenantScope` because there is no tenant yet. This is the
+// taking a `Db` rather than a `OrganizationScope` because there is no organization yet. This is the
 // entire unscoped surface of the API. Nothing else in `apps/api/src/api` may hold a `Db`
 // — see the eslint rule in apps/api/eslint.config.mjs.
 
@@ -354,7 +356,7 @@ export const credentialsForEmail = async (
 };
 
 export interface UserOrganisation {
-  readonly tenantId: TenantId;
+  readonly organizationId: OrganizationId;
   readonly name: string;
   readonly role: MemberRole;
 }
@@ -364,14 +366,66 @@ export const organisationsForUser = async (
   db: Db,
   userId: string,
 ): Promise<readonly UserOrganisation[]> => {
-  const rows = (await db.query("select tenant_id, name, role from app.organisations_for_user($1)", [
+  const rows = (await db.query("select organization_id, name, role from app.organisations_for_user($1)", [
     userId,
-  ])) as { tenant_id: TenantId; name: string; role: MemberRole }[];
-  return rows.map((row) => ({ tenantId: row.tenant_id, name: row.name, role: row.role }));
+  ])) as { organization_id: OrganizationId; name: string; role: MemberRole }[];
+  return rows.map((row) => ({ organizationId: row.organization_id, name: row.name, role: row.role }));
+};
+
+export interface CreatedOrganisation {
+  readonly organizationId: OrganizationId;
+  readonly userId: string;
+  /** False when the address already had an account and the supplied password was ignored. */
+  readonly createdUser: boolean;
+}
+
+/**
+ * Creates an organisation and makes the caller its owner.
+ *
+ * **This performs no authentication and the caller must have done it.** When the address
+ * already has an account, its password has to have been verified first — otherwise anyone
+ * could name a stranger's address and attach that account to an organisation they control.
+ * `AuthService.signUp` is the only caller and does exactly that check; see the comment on
+ * `app.create_organisation` in migration 0017 for the full reasoning.
+ *
+ * `passwordHash` is used only for an address that is genuinely new. For one that exists it
+ * is ignored, in the same way and for the same reason as in `acceptInvitation`: being able
+ * to overwrite a password by naming an address would be a takeover.
+ */
+export const createOrganisation = async (
+  db: Db,
+  organisation: {
+    readonly name: string;
+    readonly email: string;
+    readonly passwordHash: string;
+    readonly displayName: string;
+  },
+  now: Date,
+): Promise<CreatedOrganisation> => {
+  const rows = (await db.query(
+    `select out_organization_id as organization_id, out_user_id as user_id,
+            out_created_user as created_user
+       from app.create_organisation($1, $2, $3, $4, $5)`,
+    [
+      organisation.name,
+      organisation.email,
+      organisation.passwordHash,
+      organisation.displayName,
+      now,
+    ],
+  )) as { organization_id: OrganizationId; user_id: string; created_user: boolean }[];
+
+  const row = rows[0];
+  // Unlike redeeming an invitation there is no "it did not apply" case: the function either
+  // inserts or raises. No row back means it changed under us, and treating that as an
+  // ordinary refusal would report a broken deployment as a rejected sign-up.
+  if (row === undefined) throw new Error("app.create_organisation returned no row");
+
+  return { organizationId: row.organization_id, userId: row.user_id, createdUser: row.created_user };
 };
 
 export interface AcceptedInvitation {
-  readonly tenantId: TenantId;
+  readonly organizationId: OrganizationId;
   readonly userId: string;
   readonly role: MemberRole;
   /** False when the address already had an account and the supplied password was ignored. */
@@ -396,16 +450,16 @@ export const acceptInvitation = async (
   now: Date,
 ): Promise<AcceptedInvitation | null> => {
   const rows = (await db.query(
-    `select out_tenant_id as tenant_id, out_user_id as user_id,
+    `select out_organization_id as organization_id, out_user_id as user_id,
             out_role as role, out_created_user as created_user
        from app.accept_invitation($1, $2, $3, $4)`,
     [invitation.tokenHash, invitation.passwordHash, invitation.displayName, now],
-  )) as { tenant_id: TenantId; user_id: string; role: MemberRole; created_user: boolean }[];
+  )) as { organization_id: OrganizationId; user_id: string; role: MemberRole; created_user: boolean }[];
 
   const row = rows[0];
   if (row === undefined) return null;
   return {
-    tenantId: row.tenant_id,
+    organizationId: row.organization_id,
     userId: row.user_id,
     role: row.role,
     createdUser: row.created_user,

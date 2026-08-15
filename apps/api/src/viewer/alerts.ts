@@ -36,9 +36,9 @@ export interface AlertThresholds {
    * **Not from the PRD.** Nothing states a tool failure budget, so this is chosen rather
    * than cited, and the reasoning is written down so the next person can disagree with it:
    * the dispatcher's circuit breaker opens after four consecutive failures on one endpoint,
-   * which means a tenant's system is expected to be reliable enough that failures are
+   * which means a organization's system is expected to be reliable enough that failures are
    * isolated. A sustained rate above one in ten is not isolated — at that point callers
-   * regularly hear an apology instead of an answer, and the tenant needs telling.
+   * regularly hear an apology instead of an answer, and the organization needs telling.
    */
   readonly toolFailureRate: number;
   /**

@@ -36,14 +36,14 @@ export interface NumbersEnvironment {
   readonly carrier: CarrierCredentials | null;
   /** Credentials for the speech vendor. Null disables the voice check, never fails it. */
   readonly voice: VoiceCredentials | null;
-  /** The voice a tenant who has configured none falls back to. Null means there is none. */
+  /** The voice a organization who has configured none falls back to. Null means there is none. */
   readonly platformVoiceId: string | null;
   /**
    * Whether the vault key is present *and* the right length.
    *
    * Both matter and they fail differently. Absent, every tool and every event subscription
    * that names a credential is dropped at config load with a log line nobody is watching —
-   * the failure `docs/ONBOARDING_RUNBOOK.md` records the second tenant shipping with. The
+   * the failure `docs/ONBOARDING_RUNBOOK.md` records the second organization shipping with. The
    * wrong length is worse: the call process refuses to boot, so a dashboard reporting this
    * as fine would be describing a deployment that is not running.
    */

@@ -1,6 +1,6 @@
 import { createServer, type Server } from "node:http";
 
-import { asCallId, asTenantId, type LogFields, type Logger } from "@ansa/shared";
+import { asCallId, asOrganizationId, type LogFields, type Logger } from "@ansa/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createToolDispatcher } from "../dispatch";
@@ -16,11 +16,11 @@ import { createInMemoryVault, sealCredential } from "./vault";
  * The failure modes of somebody else's endpoint.
  *
  * The happy path is proved in `equivalence.test.ts` against both routes. What is here is
- * what a tenant's server does when it is having a bad day, plus the one thing that must
+ * what a organization's server does when it is having a bad day, plus the one thing that must
  * never happen when it does: the credential appearing in something we wrote down.
  */
 
-const TENANT = asTenantId("44444444-4444-4444-8444-444444444444");
+const ORGANIZATION = asOrganizationId("44444444-4444-4444-8444-444444444444");
 const CALL = asCallId("call-http");
 const KEY = Buffer.alloc(32, 5);
 const SECRET = "tok-never-write-this-down";
@@ -110,9 +110,9 @@ const dispatcherFor = (path: string, credentialRef: string | undefined, sealed: 
   });
 
   registerHttpTools(registry, config.http, {
-    tenantId: TENANT,
+    organizationId: ORGANIZATION,
     transport: createTransport({ guard }),
-    vault: createInMemoryVault(KEY, new Map([[TENANT, sealed]])),
+    vault: createInMemoryVault(KEY, new Map([[ORGANIZATION, sealed]])),
     log: recorder.log,
   });
 
@@ -122,13 +122,13 @@ const dispatcherFor = (path: string, credentialRef: string | undefined, sealed: 
   };
 };
 
-const withCredential = new Map([["partner", sealCredential(KEY, TENANT, "partner", { kind: "bearer", token: SECRET })]]);
+const withCredential = new Map([["partner", sealCredential(KEY, ORGANIZATION, "partner", { kind: "bearer", token: SECRET })]]);
 
-describe("when the tenant's endpoint misbehaves", () => {
+describe("when the organization's endpoint misbehaves", () => {
   it("turns a 500 into an apology and never quotes the body back into a log", async () => {
     const { lines, dispatcher } = dispatcherFor("/broken", "partner", withCredential);
     const outcome = await dispatcher.dispatch({
-      tenantId: TENANT,
+      organizationId: ORGANIZATION,
       callId: CALL,
       name: "order_status",
       args: { reference: "QT-1" },
@@ -145,21 +145,21 @@ describe("when the tenant's endpoint misbehaves", () => {
   it("refuses a response that is not JSON rather than reading markup aloud", async () => {
     const { dispatcher } = dispatcherFor("/html", "partner", withCredential);
     expect(
-      await dispatcher.dispatch({ tenantId: TENANT, callId: CALL, name: "order_status", args: {} }),
+      await dispatcher.dispatch({ organizationId: ORGANIZATION, callId: CALL, name: "order_status", args: {} }),
     ).toMatchObject({ kind: "failed", reason: "adapter-error" });
   });
 
   it("will not fall back to an unauthenticated request when the credential is missing", async () => {
     const { dispatcher } = dispatcherFor("/anonymous", "partner", new Map());
     expect(
-      await dispatcher.dispatch({ tenantId: TENANT, callId: CALL, name: "order_status", args: {} }),
+      await dispatcher.dispatch({ organizationId: ORGANIZATION, callId: CALL, name: "order_status", args: {} }),
     ).toMatchObject({ kind: "failed", reason: "adapter-error" });
   });
 
   it("logs the endpoint it called without the arguments in the query string", async () => {
     const { lines, dispatcher } = dispatcherFor("/anonymous", undefined, new Map());
     await dispatcher.dispatch({
-      tenantId: TENANT,
+      organizationId: ORGANIZATION,
       callId: CALL,
       name: "order_status",
       args: { reference: "ZR/88/AA" },

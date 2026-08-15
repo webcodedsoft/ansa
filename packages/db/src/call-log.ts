@@ -1,7 +1,7 @@
-import type { TenantId } from "@ansa/shared";
+import type { OrganizationId } from "@ansa/shared";
 
 import type { Db } from "./data-source";
-import { withTenant } from "./tenant-scope";
+import { withOrganization } from "./organization-scope";
 
 /**
  * Writing calls down.
@@ -17,11 +17,21 @@ import { withTenant } from "./tenant-scope";
  */
 
 export interface StartedCall {
-  readonly tenantId: TenantId;
+  readonly organizationId: OrganizationId;
   readonly carrierCallId: string;
   readonly direction: "inbound" | "outbound";
   readonly dialled: string;
   readonly caller: string | null;
+  /**
+   * Which of the organisation's agents took this call (migration 0018).
+   *
+   * Optional only so a caller with no agent in hand still compiles; every path that has
+   * resolved a configuration has one, because the ingress lookup returns it. Without it
+   * `configVersion` cannot be read back — two agents are routinely both on version 3, so
+   * the version alone stopped identifying a configuration the moment an organisation had
+   * a second agent.
+   */
+  readonly agentId?: string | null;
   readonly configVersion: number | null;
   /** Snapshotted for outbound, so a later policy change cannot rewrite this call. */
   readonly consentPolicy?: string | null;
@@ -33,19 +43,20 @@ export const recordCallStarted = async (
   dataSource: Db,
   call: StartedCall,
 ): Promise<string | null> =>
-  withTenant(dataSource, call.tenantId, async (scope) => {
+  withOrganization(dataSource, call.organizationId, async (scope) => {
     const rows = await scope.query<{ id: string }>(
       `insert into calls
-         (tenant_id, carrier_call_id, direction, dialled, caller, config_version,
+         (organization_id, carrier_call_id, direction, dialled, caller, agent_id, config_version,
           consent_policy, consent_basis, answered_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, now())
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
        returning id`,
       [
-        call.tenantId,
+        call.organizationId,
         call.carrierCallId,
         call.direction,
         call.dialled,
         call.caller,
+        call.agentId ?? null,
         call.configVersion,
         call.consentPolicy ?? null,
         call.consentBasis ?? null,
@@ -59,29 +70,29 @@ export const recordCallStarted = async (
 /** Batched, because a call produces far more events than it does round trips worth spending. */
 export const recordCallEvents = async (
   dataSource: Db,
-  tenantId: TenantId,
+  organizationId: OrganizationId,
   callRowId: string,
   events: readonly { kind: string; offsetMs?: number | null; detail?: Readonly<Record<string, unknown>> }[],
 ): Promise<void> => {
   if (events.length === 0) return;
-  await withTenant(dataSource, tenantId, async (scope) => {
+  await withOrganization(dataSource, organizationId, async (scope) => {
     // One statement, one round trip. A call that produced two hundred events should not
     // cost two hundred transactions to Ohio.
     const values: unknown[] = [];
     const tuples = events.map((e, i) => {
       const base = i * 5;
-      values.push(tenantId, callRowId, e.kind, e.offsetMs ?? null, JSON.stringify(e.detail ?? {}));
+      values.push(organizationId, callRowId, e.kind, e.offsetMs ?? null, JSON.stringify(e.detail ?? {}));
       return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`;
     });
     await scope.query(
-      `insert into call_events (tenant_id, call_id, kind, offset_ms, detail) values ${tuples.join(", ")}`,
+      `insert into call_events (organization_id, call_id, kind, offset_ms, detail) values ${tuples.join(", ")}`,
       values,
     );
   });
 };
 
 export interface EndedCall {
-  readonly tenantId: TenantId;
+  readonly organizationId: OrganizationId;
   readonly callRowId: string;
   readonly endReason: string;
   readonly carrierStatus?: string | null;
@@ -89,7 +100,7 @@ export interface EndedCall {
 }
 
 export const recordCallEnded = async (dataSource: Db, call: EndedCall): Promise<void> => {
-  await withTenant(dataSource, call.tenantId, async (scope) => {
+  await withOrganization(dataSource, call.organizationId, async (scope) => {
     await scope.query(
       `update calls
           set ended_at = now(), end_reason = $2,
@@ -117,24 +128,24 @@ export interface RecordedTranscript {
  *
  * This table is where the R9.2 loop actually lives: `corrected_text` is a human's
  * correction of what the transcriber heard, and the pair of columns is what turns one
- * caller's mishearing into a test case and a keyterm for every tenant.
+ * caller's mishearing into a test case and a keyterm for every organization.
  */
 export const recordTranscripts = async (
   dataSource: Db,
-  tenantId: TenantId,
+  organizationId: OrganizationId,
   callRowId: string,
   transcripts: readonly RecordedTranscript[],
 ): Promise<void> => {
   if (transcripts.length === 0) return;
-  await withTenant(dataSource, tenantId, async (scope) => {
+  await withOrganization(dataSource, organizationId, async (scope) => {
     const values: unknown[] = [];
     const tuples = transcripts.map((t, i) => {
       const b = i * 6;
-      values.push(tenantId, callRowId, t.text, t.confidence, t.offsetMs, t.provider);
+      values.push(organizationId, callRowId, t.text, t.confidence, t.offsetMs, t.provider);
       return `($${b + 1}, $${b + 2}, 'final', $${b + 3}, $${b + 4}, $${b + 5}, $${b + 6})`;
     });
     await scope.query(
-      `insert into transcripts (tenant_id, call_id, kind, text, confidence, offset_ms, provider)
+      `insert into transcripts (organization_id, call_id, kind, text, confidence, offset_ms, provider)
        values ${tuples.join(", ")}`,
       values,
     );
@@ -151,24 +162,24 @@ export interface RecordedTurn {
 
 export const recordTurns = async (
   dataSource: Db,
-  tenantId: TenantId,
+  organizationId: OrganizationId,
   callRowId: string,
   turns: readonly RecordedTurn[],
 ): Promise<void> => {
   if (turns.length === 0) return;
-  await withTenant(dataSource, tenantId, async (scope) => {
+  await withOrganization(dataSource, organizationId, async (scope) => {
     const values: unknown[] = [];
     const tuples = turns.map((t, i) => {
       const b = i * 7;
       values.push(
-        tenantId, callRowId, t.seq, t.speaker,
+        organizationId, callRowId, t.seq, t.speaker,
         t.startedOffsetMs, t.endedOffsetMs, t.bargedInAtMs,
       );
       return `($${b + 1}, $${b + 2}, $${b + 3}, $${b + 4}, $${b + 5}, $${b + 6}, $${b + 7})`;
     });
     await scope.query(
       `insert into turns
-         (tenant_id, call_id, seq, speaker, started_offset_ms, ended_offset_ms, barged_in_at_ms)
+         (organization_id, call_id, seq, speaker, started_offset_ms, ended_offset_ms, barged_in_at_ms)
        values ${tuples.join(", ")}
        on conflict do nothing`,
       values,
@@ -196,10 +207,10 @@ export interface CallSummary {
 /** Most recent first, because a reviewer wants the call that just went wrong. */
 export const listCalls = async (
   dataSource: Db,
-  tenantId: TenantId,
+  organizationId: OrganizationId,
   limit = 50,
 ): Promise<readonly CallSummary[]> =>
-  withTenant(dataSource, tenantId, async (scope) => {
+  withOrganization(dataSource, organizationId, async (scope) => {
     const rows = await scope.query<Record<string, unknown>>(
       `select c.id, c.carrier_call_id, c.direction, c.dialled, c.caller,
               c.answered_at, c.ended_at, c.end_reason, c.duration_seconds,
@@ -240,16 +251,16 @@ export interface CallDetail {
 /**
  * One call, everything about it.
  *
- * Scoped like every other read: a viewer that could show another tenant's transcripts
+ * Scoped like every other read: a viewer that could show another organization's transcripts
  * would be the most damaging leak in the product, since transcripts are the one place
  * callers say their policy numbers out loud.
  */
 export const loadCall = async (
   dataSource: Db,
-  tenantId: TenantId,
+  organizationId: OrganizationId,
   callId: string,
 ): Promise<CallDetail | null> =>
-  withTenant(dataSource, tenantId, async (scope) => {
+  withOrganization(dataSource, organizationId, async (scope) => {
     const calls = await scope.query<Record<string, unknown>>(
       `select c.id, c.carrier_call_id, c.direction, c.dialled, c.caller,
               c.answered_at, c.ended_at, c.end_reason, c.duration_seconds,
@@ -301,7 +312,7 @@ export const loadCall = async (
   });
 
 /**
- * Records the carrier's own verdict on a call, from a webhook with no tenant context.
+ * Records the carrier's own verdict on a call, from a webhook with no organization context.
  *
  * See migration 0009 for why this bypasses RLS and why that is safe: one row, found by an
  * identifier the carrier issued, nothing returned.

@@ -10,7 +10,7 @@
 //   dead          nothing references it at all. Delete it.
 //   over-exported only its own file uses it. Drop the `export`.
 //
-// Conflating them cost a build: isTenantId looked dead and was in use one line below.
+// Conflating them cost a build: isOrganizationId looked dead and was in use one line below.
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 

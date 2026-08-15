@@ -1,4 +1,4 @@
-import { asCallId, asTenantId, type LogFields, type Logger } from "@ansa/shared";
+import { asCallId, asOrganizationId, type LogFields, type Logger } from "@ansa/shared";
 import { describe, expect, it } from "vitest";
 
 import { createToolDispatcher, modelMessage, type IdentityGate } from "./dispatch";
@@ -18,7 +18,7 @@ import type { ToolAdapter, ToolDefinition } from "./types";
  * never on any particular string.
  */
 
-const TENANT = asTenantId("55555555-5555-4555-8555-555555555555");
+const ORGANIZATION = asOrganizationId("55555555-5555-4555-8555-555555555555");
 const CALL = asCallId("call-identity");
 
 const silentLogger = (): Logger => {
@@ -36,7 +36,7 @@ const LOOKUP: ToolDefinition = {
   name: "account_lookup",
   description: "Look up the caller's account.",
   parameters: { type: "object" },
-  tenantId: TENANT,
+  organizationId: ORGANIZATION,
   riskTier: "read",
   identifiers: { reference: "policyNumber" },
   summarise: (result) => `Your account is ${String((result as { state: string }).state)}.`,
@@ -64,7 +64,7 @@ const setup = (identity: IdentityGate | undefined, definition: ToolDefinition = 
 };
 
 const run = (dispatcher: ReturnType<typeof setup>["dispatcher"], reference: unknown) =>
-  dispatcher.dispatch({ tenantId: TENANT, callId: CALL, name: "account_lookup", args: { reference } });
+  dispatcher.dispatch({ organizationId: ORGANIZATION, callId: CALL, name: "account_lookup", args: { reference } });
 
 describe("a tool that identifies a person", () => {
   /** Every one of these is a value the caller never agreed to. */
@@ -111,7 +111,7 @@ describe("a tool that identifies a person", () => {
       const outcome = await run(dispatcher, supplied);
 
       expect(outcome).toMatchObject({ kind: "ok" });
-      // Canonicalised to the value the caller actually agreed to, so the tenant's system
+      // Canonicalised to the value the caller actually agreed to, so the organization's system
       // is queried with the confirmed spelling rather than the model's paraphrase of it.
       expect(seen[0]).toEqual({ reference: confirmed });
     });
@@ -127,7 +127,7 @@ describe("a tool that identifies a person", () => {
   });
 
   it("refuses when the configured fact name is one the call does not know", async () => {
-    // A typo in a tenant's configuration disables the tool rather than opening it.
+    // A typo in a organization's configuration disables the tool rather than opening it.
     const { dispatcher } = setup(gateWith({ policyNumber: "AB-1234" }), {
       ...LOOKUP,
       identifiers: { reference: "polcyNumber" },
@@ -162,7 +162,7 @@ describe("a tool that identifies a person", () => {
       name: "account_lookup",
       description: "Change the number on the caller's account.",
       parameters: { type: "object" },
-      tenantId: TENANT,
+      organizationId: ORGANIZATION,
       riskTier: "write",
       identifiers: { reference: "policyNumber" },
       readback: (args) => `Updating ${String(args.reference)}. Should I go ahead?`,
@@ -180,7 +180,7 @@ describe("a tool that identifies a person", () => {
       name: "account_lookup",
       description: "Close the caller's account.",
       parameters: { type: "object" },
-      tenantId: TENANT,
+      organizationId: ORGANIZATION,
       riskTier: "irreversible",
       identifiers: { reference: "policyNumber" },
       transferReason: "account closure",

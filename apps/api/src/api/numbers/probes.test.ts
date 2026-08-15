@@ -123,7 +123,7 @@ describe("the voice probe", () => {
     expect(probe).toMatchObject({ state: "known", voiceId: "their-voice", source: "organisation" });
   });
 
-  /** The voice that will actually speak, which for an unconfigured tenant is the platform's. */
+  /** The voice that will actually speak, which for an unconfigured organization is the platform's. */
   it("falls back to the platform's voice, and says that is what it checked", async () => {
     const probe = await probeVoice(
       { ...ENVIRONMENT, platformVoiceId: "platform-voice" },

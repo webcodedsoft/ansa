@@ -51,7 +51,7 @@ best-trodden Twilio media-streams path.
       playback, which flatters a voice: the telephony band-pass is roughly 300–3400Hz, so
       bass thins and sibilance hardens. Judge it on the phone before trusting it.
 - [ ] Source a second voice. R4.2.2 wants male and female Nigerian options from day one of
-      tenant onboarding, and a second voice gives the first something to be compared with.
+      organization onboarding, and a second voice gives the first something to be compared with.
 - [ ] Check the library voice's commercial-use terms and whether its creator can withdraw
       it. A default voice that can vanish is a production risk, not a Slice 1 one.
 - [ ] Measure time-to-first-byte against the <300ms target (R4.2.3), from Lagos (R9.1.8).
@@ -185,7 +185,7 @@ that the model cannot handle Nigerian speech; it is that it has no domain vocabu
 **this provider offers no way to give it one**. The only mechanism available was the
 `prompt` field, which recited its contents back as phantom caller turns.
 
-That makes R4.1.3 (per-tenant keyterm boosting) a hard requirement of the provider
+That makes R4.1.3 (per-organization keyterm boosting) a hard requirement of the provider
 choice rather than a nice-to-have, and it is a structural gap here rather than something
 tuning can close. Weight it accordingly at Gate A: a provider that accepts real
 vocabulary boosting may beat one with better raw WER. It is also a second mark against
@@ -379,7 +379,7 @@ better than a regex — but that repairs meaning after decoding, not the decodin
 **This is the argument for R4.1.3 as a provider requirement rather than a feature.**
 Keyterm boosting changes what the transcriber is listening for; correction only edits
 what it already got wrong. A provider that accepts a vocabulary list containing "policy",
-"premium", "naira" and a tenant's product names is worth more here than one with better
+"premium", "naira" and a organization's product names is worth more here than one with better
 raw WER, and this provider offers no mechanism for it.
 
 ### Latency: the finding that outranks provider choice
@@ -439,7 +439,7 @@ Nigerian-line half — real Nigerian carriers, real line conditions, real latenc
 3. NCC regulatory route: a Nigerian entity, local presence, numbers assigned directly.
    Slowest, and probably where this ends up for production.
 
-**This must close before Slice 7** (first real design-partner tenant). It does not block
+**This must close before Slice 7** (first real design-partner organization). It does not block
 Slices 2–6, all of which are exercised over any working number.
 
 ---
@@ -618,3 +618,51 @@ that a transcript reading "Chike" does not.
 **A note on the test that hid this.** The trial asserted that a name-shaped token followed
 "my name is". It passed 6/6 while being wrong 6/6. Ground truth was known and unused. Any
 future measurement here must compare against what the caller actually said.
+
+---
+
+## 2026-08-14, fourth run — speech-to-speech does not fix it either
+
+The section above ends by making the case for speech-to-speech: a model consuming the audio
+has something to work with that a transcript reading "Chike" does not. That case has now
+been tested and it is wrong.
+
+`gpt-realtime` was fed the same real recording — 37.3s, μ-law 8kHz, live Twilio line — paced
+at 20ms frames as the carrier delivers them, with turn detection off, then asked in text:
+*"The caller said their name in the audio. Write only the name, spelled as you heard it."*
+Text out, so that reading the answer does not depend on a second transcription step.
+
+| Configuration | Answer |
+|---|---|
+| Cascade (Slice 3 adapter and the harness) | `Chike` × 6 |
+| Realtime, side transcriber attached | `Chike` |
+| Realtime, audio only, three trials | `Chike`, `Chike`, `Chikelu` |
+
+The side transcriber was removed deliberately. Realtime attaches the input transcript to the
+conversation item, so with transcription on the model may be *reading* "Chike" rather than
+hearing it — a confound that would have made a pass meaningless. Audio-only still returned
+`Chike`, so the confound was not load-bearing, and the failure survives without it.
+
+**The conclusion is the opposite of the one predicted.** The problem was never the seam
+between transcription and reasoning. Both architectures fail on the same name in the same
+direction, and the one variation — `Chikelu` — is a longer wrong answer, not a closer one.
+8kHz μ-law of this speaker saying this name does not carry enough for any current model to
+recover it. Ansa's architecture is not the reason the name is wrong.
+
+**What this closes.** Replacing the cascade with speech-to-speech is not an available fix
+for name accuracy and should not be re-proposed on those grounds. If it is adopted later it
+will be for latency or for naturalness, which are different arguments needing their own
+measurements.
+
+**What it leaves.** Names spoken over a phone line are not reliably recoverable, so the
+product must stop depending on recovering them. Three responses remain, in preference order:
+identify the caller by something with a checkable structure (keypad entry already works, and
+digits survive the codec), spell on demand when no identifier exists, and treat readback as
+the mechanism that *catches* the error rather than the one that prevents it. All three are
+already built. The change required is to the conversation design, not to the providers.
+
+**A note on the measurement.** Two audio-only trials returned an empty answer before these
+three, because the run was capped at 70s and the response had not arrived. The harness
+scored those as "the model did not get it either", which is a conclusion drawn from a
+measurement that did not happen — the same error as the 6/6 test that hid the original
+finding. The spike now exits 2 and refuses rather than scoring an empty answer.

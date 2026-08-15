@@ -15,7 +15,7 @@ import { Endpoint } from "../http/endpoint";
 import { apiRoute, FromBody, FromPath } from "../http/request";
 import { choice, flag, list, object, optional, text, type Infer } from "../http/schema";
 import { timestamp } from "../schemas";
-import { TenantContext } from "../tenancy/tenant-context";
+import { OrganizationContext } from "../tenancy/organization-context";
 
 import { orRefuse } from "./refusals";
 import {
@@ -39,8 +39,8 @@ import {
  * with.
  *
  * **Write-only, and there is no way round that.** A credential goes in as plaintext, is
- * sealed with AES-256-GCM inside `@ansa/tools` — the tenant id and the reference name bound
- * into the authentication tag, so a ciphertext row copied between tenants will not open —
+ * sealed with AES-256-GCM inside `@ansa/tools` — the organization id and the reference name bound
+ * into the authentication tag, so a ciphertext row copied between organizations will not open —
  * and the plaintext is never held in a field, never logged and never stored. Nothing here
  * reads one back. Not the plaintext, not the ciphertext, and not a masked form either: a
  * mask that preserves length tells an attacker whether they are looking at a 32-character
@@ -122,7 +122,7 @@ const NO_VAULT_KEY =
 
 @Controller(apiRoute("credentials"))
 export class CredentialsController {
-  constructor(@Inject(TenantContext) private readonly db: TenantContext) {}
+  constructor(@Inject(OrganizationContext) private readonly db: OrganizationContext) {}
 
   @Get()
   @Endpoint({
@@ -143,7 +143,7 @@ export class CredentialsController {
 
       const sealed = await sealedCredentials(scope);
       const key = vaultKey();
-      const kinds = key === null ? null : await classifyCredentials(key, scope.tenantId, sealed);
+      const kinds = key === null ? null : await classifyCredentials(key, scope.organizationId, sealed);
 
       return {
         items: stored.map((entry) => ({
@@ -188,7 +188,7 @@ export class CredentialsController {
     return this.db.tx(async (scope) => {
       // `sealCredential` is the refusal that counts, and its message never quotes the value
       // — it says what is wrong with the shape. `orRefuse` turns it into a 422.
-      const sealed = orRefuse(() => sealCredential(key, scope.tenantId, path.ref, material));
+      const sealed = orRefuse(() => sealCredential(key, scope.organizationId, path.ref, material));
       const written = await putCredential(scope, path.ref, sealed);
       return {
         ref: written.ref,

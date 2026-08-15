@@ -4,7 +4,7 @@ import type { Server } from "node:http";
 
 import {
   asCallId,
-  asTenantId,
+  asOrganizationId,
   TELEPHONY_AUDIO,
   type AudioChunk,
   type AudioFormat,
@@ -40,7 +40,7 @@ import { confirmedFact, createCallFacts } from "../conversation/call-facts";
 import { createCallRecorder } from "./event-log";
 import type { Db } from "@ansa/db";
 import { callSettings, type PlatformDefaults } from "../tenancy/call-settings";
-import type { CallTenant, TenantRegistry } from "../tenancy/tenant-registry";
+import type { CallAgent, AgentRegistry } from "../tenancy/agent-registry";
 import { runConversation, type ListenSession } from "../orchestrator/orchestrator";
 import { openDeepgramSocket } from "./ws-deepgram-socket";
 import { openListenSocket } from "./ws-listen-socket";
@@ -54,8 +54,8 @@ import {
   DIRECTION_PARAM,
   MEDIA_STREAM_PATH,
   TELEPHONY_PROVIDER,
-  TENANT_PARAM,
-  TENANT_REGISTRY,
+  ORGANIZATION_PARAM,
+  ORGANIZATION_REGISTRY,
   TTS_PROVIDER,
 } from "./tokens";
 import { fromWebSocket } from "./ws-media-socket";
@@ -63,10 +63,10 @@ import { fromWebSocket } from "./ws-media-socket";
 /**
  * The fixed phrases of one call, in the voice that call is answered in.
  *
- * One of these per (voice, greeting) pair rather than one per process. Two tenants with
+ * One of these per (voice, greeting) pair rather than one per process. Two organizations with
  * two voices need two sets, and the fillers matter as much as the greeting: an
  * acknowledgement rendered in the platform's default voice, played in the middle of a turn
- * spoken in the tenant's, is one organisation's voice audibly appearing on another's call.
+ * spoken in the organization's, is one organisation's voice audibly appearing on another's call.
  */
 interface WarmAudio {
   /** Null when the render failed; the greeting is then synthesised live. */
@@ -91,7 +91,7 @@ export class MediaGateway implements OnApplicationShutdown {
   private readonly warm = new Map<string, WarmAudio>();
   private readonly warming = new Set<string>();
   /**
-   * R5.2.3. Per process, and keyed inside by tenant and tool.
+   * R5.2.3. Per process, and keyed inside by organization and tool.
    *
    * It has to outlive a call to be worth anything — the point is that the fourth call to
    * a dead endpoint does not wait three seconds like the first three did.
@@ -104,7 +104,7 @@ export class MediaGateway implements OnApplicationShutdown {
     @Inject(LLM_PROVIDER) private readonly llm: LlmProvider,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(LOGGER) private readonly log: Logger,
-    @Inject(TENANT_REGISTRY) private readonly tenants: TenantRegistry,
+    @Inject(ORGANIZATION_REGISTRY) private readonly organizations: AgentRegistry,
     @Inject(DATA_SOURCE) private readonly dataSource: Db | null,
     @Inject(HANDOFF_DESTINATION) private readonly destination: HandoffDestination | null,
     @Inject(WHISPER_REGISTRY) private readonly whisper: WhisperRegistry,
@@ -180,8 +180,8 @@ export class MediaGateway implements OnApplicationShutdown {
    * Synchronous on purpose. A caller has been connected and the answer cannot wait on
    * ElevenLabs, so an unwarmed voice answers by synthesising live — slower, audible, and
    * exactly the fallback the platform voice has always had before boot finished. What is
-   * new is that a tenant with their own voice hits it on the first call after a restart,
-   * which is why `warmForTenant` runs at ingress: the carrier still has to fetch TwiML and
+   * new is that a organization with their own voice hits it on the first call after a restart,
+   * which is why `warmForOrganization` runs at ingress: the carrier still has to fetch TwiML and
    * open a socket, and that is usually enough.
    */
   private warmed(voiceId: string, greeting: string): WarmAudio {
@@ -215,12 +215,12 @@ export class MediaGateway implements OnApplicationShutdown {
   /**
    * Start rendering this organisation's voice, called from the voice webhook.
    *
-   * The tenant is resolved at ingress (R7.3) and the media socket opens a moment later, so
-   * this is the only free head start available on a per-tenant voice. It returns nothing
+   * The organization is resolved at ingress (R7.3) and the media socket opens a moment later, so
+   * this is the only free head start available on a per-organization voice. It returns nothing
    * and is never awaited: the TwiML must go back to the carrier now.
    */
-  warmForTenant(tenant: CallTenant): void {
-    const settings = callSettings(tenant, this.platform());
+  warmForOrganization(organization: CallAgent): void {
+    const settings = callSettings(organization, this.platform());
     this.warmed(settings.voiceId, settings.greeting);
   }
 
@@ -290,7 +290,7 @@ export class MediaGateway implements OnApplicationShutdown {
    * Writes the caller's audio to disk when RECORD_AUDIO_DIR is set.
    *
    * Off unless configured, and it should be turned off again after diagnosing: this is a
-   * caller reading their policy number aloud. `tenants.audio_retention_days` exists and
+   * caller reading their policy number aloud. `organizations.audio_retention_days` exists and
    * nothing enforces it yet, so nothing here pretends otherwise.
    */
   private recordAudio(stream: CallMediaStream, log: Logger): void {
@@ -375,11 +375,11 @@ export class MediaGateway implements OnApplicationShutdown {
 
     // One connection per call, serving both listen interfaces. Which vendor is behind
     // it is a config value: both stay available so they can be compared on real calls.
-    // Synchronous by design: ingress resolved the tenant a moment ago and warmed the
+    // Synchronous by design: ingress resolved the organization a moment ago and warmed the
     // cache, so this is a map read. If it somehow missed, the call proceeds on the base
     // vocabulary rather than waiting on a database — configuration must never become
     // silence on the line (R6.2).
-    // Buffering starts now, not after the tenant lookup. The carrier begins delivering
+    // Buffering starts now, not after the organization lookup. The carrier begins delivering
     // frames immediately and the conversation cannot exist until configuration is known,
     // so without this the gap between the two is simply deaf.
     const early: AudioChunk[] = [];
@@ -394,8 +394,8 @@ export class MediaGateway implements OnApplicationShutdown {
     // audio was gone the moment it was transcribed.
     this.recordAudio(stream, log);
 
-    const tenantId = stream.parameters[TENANT_PARAM];
-    void this.startConversation(stream, log, tenantId, () => {
+    const organizationId = stream.parameters[ORGANIZATION_PARAM];
+    void this.startConversation(stream, log, organizationId, () => {
       buffering = false;
       return early;
     });
@@ -406,9 +406,9 @@ export class MediaGateway implements OnApplicationShutdown {
    *
    * Async because of outbound. Inbound warms the cache at the voice webhook and this is
    * a map read; outbound inlines its TwiML and never touches a webhook, so the first
-   * time anyone asks about this tenant is here. One round trip is worth paying — the
+   * time anyone asks about this organization is here. One round trip is worth paying — the
    * alternative, seen on the first outbound call, is answering a caller as "unknown"
-   * with none of their tenant's vocabulary.
+   * with none of their organization's vocabulary.
    *
    * The greeting is pre-rendered and plays regardless, so the lookup happens behind
    * audio the caller is already hearing.
@@ -416,29 +416,29 @@ export class MediaGateway implements OnApplicationShutdown {
   private async startConversation(
     stream: CallMediaStream,
     log: Logger,
-    tenantId: string | undefined,
+    organizationId: string | undefined,
     /** Stops buffering and hands over whatever arrived while we were looking up config. */
     drainEarlyAudio: () => readonly AudioChunk[],
   ): Promise<void> {
-    const tenant =
-      tenantId === undefined
+    const organization =
+      organizationId === undefined
         ? null
-        : (this.tenants.cached(tenantId) ?? (await this.tenants.load(asTenantId(tenantId))));
+        : (this.organizations.cached(organizationId) ?? (await this.organizations.load(asOrganizationId(organizationId))));
 
-    if (tenantId !== undefined && tenant === null) {
-      log.warn("tenant on the media socket has no config, using base vocabulary", { tenantId });
+    if (organizationId !== undefined && organization === null) {
+      log.warn("organization on the media socket has no config, using base vocabulary", { organizationId });
     }
 
     /**
      * Every value on this call that depends on which organisation was dialled, derived in
      * one place (`tenancy/call-settings.ts`) rather than six times down this method. Two of
-     * those six used to read the platform's value and ignore the tenant's; nothing here
+     * those six used to read the platform's value and ignore the organization's; nothing here
      * reaches past `settings` for one of them any more.
      */
-    const settings = callSettings(tenant, this.platform());
+    const settings = callSettings(organization, this.platform());
     const { keyterms } = settings;
-    log.info("tenant for call", {
-      tenantId: settings.tenantId,
+    log.info("organization for call", {
+      organizationId: settings.organizationId,
       name: settings.name,
       configVersion: settings.configVersion,
       keyterms: keyterms.length,
@@ -453,23 +453,23 @@ export class MediaGateway implements OnApplicationShutdown {
     const direction: CallDirection =
       stream.parameters[DIRECTION_PARAM] === "outbound" ? "outbound" : "inbound";
 
-    // Only when the tenant resolved. A call on an unconfigured number is already running
+    // Only when the organization resolved. A call on an unconfigured number is already running
     // with base vocabulary and recording nothing; there is nothing to scope state to and
-    // CLAUDE.md rule 3 does not admit a placeholder tenant.
+    // CLAUDE.md rule 3 does not admit a placeholder organization.
     //
     // Created before the recorder, because the event publisher below reads it when a call
     // ends: the identifiers a call established are both part of the payload and the
-    // strongest signal a tenant's redaction has to work with.
+    // strongest signal a organization's redaction has to work with.
     const facts =
-      settings.tenantId === null
+      settings.organizationId === null
         ? undefined
         : createCallFacts({
-            tenantId: settings.tenantId,
+            organizationId: settings.organizationId,
             callId: asCallId(stream.callId),
             callDirection: direction,
           });
 
-    // Created here rather than at stream start: the tenant is what scopes every row,
+    // Created here rather than at stream start: the organization is what scopes every row,
     // and until the lookup above returned there was nothing to scope them to.
     const recorder = createCallRecorder({ dataSource: this.dataSource, log });
     // Tees the same events on their way to call_events. The recorder batches, so the last
@@ -482,7 +482,7 @@ export class MediaGateway implements OnApplicationShutdown {
      * A second tee, outside the journal, that queues an event webhook when the call ends
      * or is handed to a person (Slice 6a).
      *
-     * Returns the journal's recorder unchanged unless this tenant has configured a
+     * Returns the journal's recorder unchanged unless this organization has configured a
      * receiver, so on every call today this line does nothing. When it does do something,
      * all it does is write a row: no request is made on the call path and no receiver's
      * outage can reach a conversation.
@@ -491,12 +491,12 @@ export class MediaGateway implements OnApplicationShutdown {
      * the events the person answering the phone was given.
      */
     const record =
-      settings.tenantId === null
+      settings.organizationId === null
         ? journal.recorder
         : withEventPublisher(journal.recorder, {
             dataSource: this.dataSource,
             log,
-            tenantId: settings.tenantId,
+            organizationId: settings.organizationId,
             events: settings.events,
             call: {
               callId: stream.callId,
@@ -511,13 +511,14 @@ export class MediaGateway implements OnApplicationShutdown {
             callerNumber: stream.parameters[CALLER_PARAM] ?? null,
           });
 
-    if (settings.tenantId !== null) {
+    if (settings.organizationId !== null) {
       record.started({
-        tenantId: settings.tenantId,
+        organizationId: settings.organizationId,
         carrierCallId: stream.callId,
         direction,
         dialled: stream.parameters[DIALLED_PARAM] ?? "unknown",
         caller: stream.parameters[CALLER_PARAM] ?? null,
+        agentId: settings.agentId,
         configVersion: settings.configVersion,
       });
       stream.onClosed((reason) => {
@@ -534,12 +535,18 @@ export class MediaGateway implements OnApplicationShutdown {
     const listen = this.openListen(stream.format, keyterms);
 
     runConversation(stream, {
+      // The answering agent's own switch (migration 0020), resolved with its config at
+      // ingress so this costs no extra round trip on the answer path.
+      bargeIn: settings.bargeIn,
+      // The form this agent conducts, resolved with its config at ingress so the
+      // director costs no extra round trip on the answer path.
+      fields: settings.capturedFields,
       listen,
       facts,
       // Null for an unregistered number, and the orchestrator reads that as "no tools on
       // this call at all". Such a caller may hold a conversation and must not reach
       // anybody's systems (CLAUDE.md rule 3).
-      tenantId: settings.tenantId,
+      organizationId: settings.organizationId,
       /**
        * Built per call, given the two things only the orchestrator knows: when to make a
        * noise while a tool runs, and when the caller has actually heard the goodbye.
@@ -549,9 +556,9 @@ export class MediaGateway implements OnApplicationShutdown {
        * over this call's own effects, so a registry built once in the module could not
        * hold them. Three map writes per call is not a cost worth an indirection.
        *
-       * The platform tools, plus whatever this tenant has configured of their own — the
+       * The platform tools, plus whatever this organization has configured of their own — the
        * same registry and the same dispatcher for both, which is the whole of R5.2.0 at
-       * the call site. A tenant with nothing configured registers nothing and the call is
+       * the call site. A organization with nothing configured registers nothing and the call is
        * exactly what Slice 5 left: an agent that can end the call, ask for a person and
        * read the clock.
        */
@@ -561,19 +568,19 @@ export class MediaGateway implements OnApplicationShutdown {
           registry,
           callControlTools({
             endCall: hooks.endCall,
-            // Null until the tenant configures hours; the tool then says it does not know
+            // Null until the organization configures hours; the tool then says it does not know
             // rather than inventing a nine to five (R6.5, migration 0012).
             businessHours: settings.businessHours,
           }),
         );
-        // Prepared when the tenant's configuration was loaded, so this is map writes
+        // Prepared when the organization's configuration was loaded, so this is map writes
         // rather than a handshake on the answer path.
         settings.connectors.register(registry);
         return {
           registry,
           dispatcher: createToolDispatcher({
             registry,
-            log: log.child({ tenantId: settings.tenantId }),
+            log: log.child({ organizationId: settings.organizationId }),
             holding: hooks.holding,
             /**
              * Who the caller has been confirmed to be, read live rather than snapshotted:
@@ -583,12 +590,21 @@ export class MediaGateway implements OnApplicationShutdown {
              * `confirmedFact` is the only door to a value, and this is the second place
              * that matters — the first is the readback. Without `facts` (an unregistered
              * number) nothing is ever confirmed, which is the right answer for a call
-             * that has no tenant to look anything up in anyway.
+             * that has no organization to look anything up in anyway.
              */
             identity: {
               confirmed: (fact) => {
                 const snapshot = facts?.facts;
                 if (snapshot === undefined) return null;
+
+                /* The agent's own form first. A tool naming `claimNumber` could never be
+                   satisfied while this was a switch over three built-in names — it
+                   answered `unconfirmed-identity` on every call, silently, and the only
+                   way to find out was to make one. What an agent collects is configuration
+                   now, so what can open a tool has to be too. */
+                const collected = snapshot.captured.get(fact);
+                if (collected !== undefined) return confirmedFact(collected);
+
                 switch (fact) {
                   case "callerName":
                     return confirmedFact(snapshot.callerName);
@@ -597,9 +613,9 @@ export class MediaGateway implements OnApplicationShutdown {
                   case "customerId":
                     return confirmedFact(snapshot.customerId);
                   default:
-                    // A fact name this call does not know is never confirmed, so a typo
-                    // in a tenant's configuration disables the tool rather than opening
-                    // it.
+                    // A fact this call has neither collected nor built in is never
+                    // confirmed, so a typo in a tool's `identifiers` disables it rather
+                    // than opening it.
                     return null;
                 }
               },
@@ -617,10 +633,10 @@ export class MediaGateway implements OnApplicationShutdown {
         createHandoff({
           telephony: this.telephony,
           callId: asCallId(stream.callId),
-          tenantId: settings.tenantId,
+          organizationId: settings.organizationId,
           callerNumber: stream.parameters[CALLER_PARAM] ?? null,
           // Theirs, falling back to the platform's. Before migration 0015 this was always
-          // the platform's, which on a second tenant is somebody else's staff phone.
+          // the platform's, which on a second organization is somebody else's staff phone.
           destination: settings.handoff,
           events: journal.events,
           record,
@@ -669,7 +685,7 @@ export class MediaGateway implements OnApplicationShutdown {
       voiceId: settings.voiceId,
       log: this.log,
       greeting: settings.greeting,
-      // The tenant's own persona and instructions, already composed and cached at config
+      // The organization's own persona and instructions, already composed and cached at config
       // load. An unregistered number gets the default composition, which is exactly what
       // every call got before this line existed.
       systemPrompt: settings.systemPrompt,

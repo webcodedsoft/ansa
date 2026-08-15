@@ -9,13 +9,13 @@ import { AppModule } from "./app.module";
 import { EventDeliverySweeper } from "./events/delivery.sweeper";
 import { AudioRetentionSweeper } from "./retention/audio-retention";
 import { MediaGateway } from "./telephony/media.gateway";
-import { APP_CONFIG, DATA_SOURCE, LOGGER, TENANT_REGISTRY } from "./telephony/tokens";
+import { APP_CONFIG, DATA_SOURCE, LOGGER, ORGANIZATION_REGISTRY } from "./telephony/tokens";
 
 /**
  * The application starts.
  *
  * This test exists because on 2026-08-09 it did not, and nothing noticed. `EventsModule`
- * injected `TENANT_REGISTRY`; `TelephonyModule` provided it and did not export it; Nest
+ * injected `ORGANIZATION_REGISTRY`; `TelephonyModule` provided it and did not export it; Nest
  * exited 1 before listening. Two slices had shipped in that state with lint, typecheck and
  * the whole unit suite green, because every test in the repo constructs its collaborators
  * by hand and **nothing asserted that the Nest dependency graph resolves at all**.
@@ -96,7 +96,7 @@ describe("the application boots", () => {
       expect(app.get(MediaGateway)).toBeInstanceOf(MediaGateway);
       expect(app.get(EventDeliverySweeper)).toBeInstanceOf(EventDeliverySweeper);
       expect(app.get(AudioRetentionSweeper)).toBeInstanceOf(AudioRetentionSweeper);
-      expect(app.get(TENANT_REGISTRY)).toBeDefined();
+      expect(app.get(ORGANIZATION_REGISTRY)).toBeDefined();
       expect(app.get(LOGGER)).toBeDefined();
       expect(app.get(APP_CONFIG)).toBeDefined();
       // The supported degradation, asserted rather than assumed: no database is not an

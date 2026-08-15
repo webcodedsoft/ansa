@@ -1,5 +1,5 @@
 import type { MemberRole } from "@ansa/db";
-import type { TenantId } from "@ansa/shared";
+import type { OrganizationId } from "@ansa/shared";
 import { createParamDecorator, type ExecutionContext } from "@nestjs/common";
 
 import { stateOf, type ApiRequest } from "../http/request";
@@ -12,7 +12,7 @@ import { stateOf, type ApiRequest } from "../http/request";
  * makes "holding a Principal" mean "authenticated" rather than "asserted".
  */
 export interface Principal {
-  readonly tenantId: TenantId;
+  readonly organizationId: OrganizationId;
   readonly sessionId: string;
   readonly userId: string;
   readonly email: string;
@@ -21,7 +21,7 @@ export interface Principal {
 }
 
 const isPrincipal = (value: unknown): value is Principal =>
-  typeof value === "object" && value !== null && "sessionId" in value && "tenantId" in value;
+  typeof value === "object" && value !== null && "sessionId" in value && "organizationId" in value;
 
 export const rememberPrincipal = (request: ApiRequest, principal: Principal): void => {
   stateOf(request).principal = principal;

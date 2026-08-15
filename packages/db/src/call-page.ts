@@ -1,20 +1,21 @@
 import {
-  keysetOrder,
-  keysetParams,
-  keysetWhere,
+  TOTAL_COLUMN,
+  pageOrder,
+  pageParams,
   toSlice,
+  type WithTotal,
   type PageRequest,
   type PageSlice,
 } from "./paging";
-import type { TenantScope } from "./tenant-scope";
+import type { OrganizationScope } from "./organization-scope";
 
 /**
  * Call history for the dashboard.
  *
- * Deliberately not `listCalls` from `call-log.ts`. That one takes `(Db, tenantId, limit)`
- * and opens its own transaction, which is right for the internal viewer, where the tenant
+ * Deliberately not `listCalls` from `call-log.ts`. That one takes `(Db, organizationId, limit)`
+ * and opens its own transaction, which is right for the internal viewer, where the organization
  * arrives as a query parameter and there is no session to infer it from. The dashboard's
- * tenant comes from the credential and its request already holds a scope, so this takes
+ * organization comes from the credential and its request already holds a scope, so this takes
  * the scope and paginates. Same table, two callers with genuinely different inputs.
  */
 
@@ -28,6 +29,13 @@ export interface CallPageItem {
   readonly endReason: string | null;
   readonly durationSeconds: number | null;
   readonly createdAt: string;
+  /**
+   * Median time from the caller finishing a turn to the first byte of the
+   * agent's reply, over this one call. Null when the call produced no such
+   * event — an unanswered outbound, or a call that ended before a turn
+   * completed. Null is "not measured", never "fast".
+   */
+  readonly responseP50Ms: number | null;
 }
 
 interface CallPageRow {
@@ -40,7 +48,10 @@ interface CallPageRow {
   readonly end_reason: string | null;
   readonly duration_seconds: number | string | null;
   readonly created_at: Date;
+  readonly response_p50_ms: number | string | null;
 }
+
+type CallPageRowWithTotal = CallPageRow & WithTotal;
 
 /**
  * What a reviewer narrows a call list by.
@@ -48,7 +59,7 @@ interface CallPageRow {
  * Every field is nullable rather than optional, so "no filter" is a value and not an
  * absent key — `NO_CALL_FILTERS` below is the whole default and a caller cannot half-fill
  * it by mistake. All of them AND together; none of them can widen the result, because the
- * tenant boundary is the scope and not a clause anything here writes.
+ * organization boundary is the scope and not a clause anything here writes.
  */
 export interface CallFilters {
   /** Inclusive. ISO 8601, compared against `created_at`. */
@@ -56,6 +67,14 @@ export interface CallFilters {
   /** Exclusive, so consecutive days do not both contain a call on the boundary. */
   readonly to: string | null;
   readonly endReason: string | null;
+  /**
+   * Which agent handled the call (migration 0018).
+   *
+   * Distinct from `dialled`, and both are needed: a number can be moved from one agent to
+   * another, so filtering by number answers "calls to this line" while this answers "calls
+   * this agent handled" — which is the one that stays true after a reassignment.
+   */
+  readonly agentId: string | null;
   readonly caller: string | null;
   readonly dialled: string | null;
   readonly minDurationSeconds: number | null;
@@ -74,6 +93,7 @@ const NO_CALL_FILTERS: CallFilters = {
   from: null,
   to: null,
   endReason: null,
+  agentId: null,
   caller: null,
   dialled: null,
   minDurationSeconds: null,
@@ -81,7 +101,7 @@ const NO_CALL_FILTERS: CallFilters = {
 };
 
 /**
- * The filter clauses, bound positionally after the three the keyset already uses.
+ * The filter clauses, bound positionally after the two the page request uses.
  *
  * The binder appends and returns its own placeholder rather than counting by hand, because
  * a filter added in the middle would otherwise renumber every one after it — and an
@@ -101,6 +121,9 @@ const filterClauses = (
   if (filters.from !== null) clauses.push(`c.created_at >= ${bind(filters.from)}::timestamptz`);
   if (filters.to !== null) clauses.push(`c.created_at < ${bind(filters.to)}::timestamptz`);
   if (filters.endReason !== null) clauses.push(`c.end_reason = ${bind(filters.endReason)}`);
+  // Which agent took the call (migration 0018). Null on calls answered before that
+  // migration, so this filter genuinely excludes them rather than guessing.
+  if (filters.agentId !== null) clauses.push(`c.agent_id = ${bind(filters.agentId)}::uuid`);
   if (filters.caller !== null) clauses.push(`c.caller = ${bind(filters.caller)}`);
   if (filters.dialled !== null) clauses.push(`c.dialled = ${bind(filters.dialled)}`);
   if (filters.minDurationSeconds !== null) {
@@ -115,24 +138,65 @@ const filterClauses = (
   return clauses;
 };
 
+/**
+ * The median of a set of measurements, or null when there are none.
+ *
+ * Lifted out so the detail view computes response latency the same way the list
+ * query does. The list does it in SQL because it would otherwise be a query per
+ * row; the detail view does it here because it has already loaded the events.
+ * Two implementations of one statistic is how a number comes to disagree with
+ * itself across two screens.
+ */
+const median = (values: readonly number[]): number | null => {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  const lower = sorted[middle - 1];
+  const upper = sorted[middle];
+  if (upper === undefined) return null;
+  // `percentile_cont` interpolates, and an even count must match it.
+  return Math.round(sorted.length % 2 === 1 || lower === undefined ? upper : (lower + upper) / 2);
+};
+
 export const listCallPage = async (
-  scope: TenantScope,
+  scope: OrganizationScope,
   page: PageRequest,
   filters: CallFilters = NO_CALL_FILTERS,
 ): Promise<PageSlice<CallPageItem>> => {
-  const params = [...keysetParams(page)];
-  const clauses = [keysetWhere("c.created_at", "c.id"), ...filterClauses(filters, params)];
+  const params = [...pageParams(page)];
+  const clauses = filterClauses(filters, params);
+  const where = clauses.length === 0 ? "true" : clauses.join(" and ");
 
-  const rows = await scope.query<CallPageRow>(
+  const rows = await scope.query<CallPageRowWithTotal>(
+    /*
+     * The latency column is a lateral rather than a join-and-group, so adding
+     * it cannot change how many rows come back — a call with no latency events
+     * still appears, with null. `latencies` is not the source: nothing writes
+     * to that table, and the number the viewer reports comes from the event
+     * log, so this reads the same rows by the same rule.
+     *
+     * No `organization_id` predicate inside the lateral. `call_events` is behind the
+     * same row-level policy as `calls`, so the scope already applies; adding
+     * one would suggest the safety came from the predicate.
+     */
     `select c.id, c.direction, c.dialled, c.caller, c.answered_at, c.ended_at, c.end_reason,
-            c.duration_seconds, c.created_at
+            c.duration_seconds, c.created_at, lat.p50 as response_p50_ms, ${TOTAL_COLUMN}
        from calls c
-      where ${clauses.join(" and ")}
-      ${keysetOrder("c.created_at", "c.id")}`,
+       left join lateral (
+         select percentile_cont(0.5) within group (order by (e.detail->>'ms')::numeric) as p50
+           from call_events e
+          where e.call_id = c.id
+            and e.kind = 'latency'
+            and e.detail->>'stage' = 'turn_to_audio'
+            and e.detail ? 'ms'
+       ) lat on true
+      where ${where}
+      ${pageOrder("c.created_at", "c.id")}`,
     params,
   );
 
-  const calls = rows.map(
+  return toSlice(
+    rows,
     (row): CallPageItem => ({
       id: row.id,
       direction: row.direction,
@@ -143,9 +207,10 @@ export const listCallPage = async (
       endReason: row.end_reason,
       durationSeconds: row.duration_seconds === null ? null : Number(row.duration_seconds),
       createdAt: row.created_at.toISOString(),
+      responseP50Ms:
+        row.response_p50_ms === null ? null : Math.round(Number(row.response_p50_ms)),
     }),
   );
-  return toSlice(calls, page, (call) => ({ createdAt: call.createdAt, id: call.id }));
 };
 
 // ---------------------------------------------------------------------------
@@ -157,7 +222,7 @@ export const listCallPage = async (
  *
  * `call_events.detail` is jsonb the orchestrator writes freely, and some of it is the
  * caller's own words — `caller said` carries their sentence, `entity_candidate` carries
- * the policy number they just read out, `tool_call` carries the tenant id. Handing the
+ * the policy number they just read out, `tool_call` carries the organization id. Handing the
  * column over whole would put the response outside the allowlist the rest of this API is
  * built on: a new event kind that logged a token would leak it through an endpoint nobody
  * had touched.
@@ -215,7 +280,7 @@ export interface CallTurnItem {
 
 export interface CallDetailView extends CallPageItem {
   readonly carrierCallId: string;
-  /** Which version of the tenant's configuration served this call (R7.5). */
+  /** Which version of the organization's configuration served this call (R7.5). */
   readonly configVersion: number | null;
   readonly turns: readonly CallTurnItem[];
   readonly transcripts: readonly CallTranscriptItem[];
@@ -252,18 +317,18 @@ interface CallDetailRow extends CallPageRow {
 }
 
 /**
- * One call and everything about it, in one tenant-scoped transaction.
+ * One call and everything about it, in one organization-scoped transaction.
  *
  * Four statements rather than one join, for the reason `call-records.ts` gives: a call has
  * hundreds of events and a join would repeat every one of them once per transcript.
  *
- * Deliberately not `loadCall` from `call-log.ts`. That one takes `(Db, tenantId, callId)`
- * because the internal viewer is told which tenant to act for; here the tenant is the
+ * Deliberately not `loadCall` from `call-log.ts`. That one takes `(Db, organizationId, callId)`
+ * because the internal viewer is told which organization to act for; here the organization is the
  * scope and there is nowhere to name one. Same tables, two callers with different inputs —
  * exactly the split between `listCalls` and `listCallPage` above.
  */
 export const loadCallDetail = async (
-  scope: TenantScope,
+  scope: OrganizationScope,
   callId: string,
 ): Promise<CallDetailView | null> => {
   const calls = await scope.query<CallDetailRow>(
@@ -320,8 +385,24 @@ export const loadCallDetail = async (
     [callId],
   );
 
+  const responseP50Ms = median(
+    events
+      .filter((event) => {
+        if (event.kind !== "latency") return false;
+        const detail: unknown = event.detail;
+        return (
+          typeof detail === "object" &&
+          detail !== null &&
+          (detail as Record<string, unknown>)["stage"] === "turn_to_audio"
+        );
+      })
+      .map((event) => Number((event.detail as Record<string, unknown>)["ms"]))
+      .filter((ms) => Number.isFinite(ms)),
+  );
+
   return {
     id: call.id,
+    responseP50Ms,
     carrierCallId: call.carrier_call_id,
     direction: call.direction,
     dialled: call.dialled,

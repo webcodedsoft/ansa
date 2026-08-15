@@ -197,9 +197,9 @@ Unit test asserts: N terms produce N `keyterm=` pairs; a phrase encodes with `+`
 
 ### Mid-stream `Configure` — document it, do not build it yet
 
-Flux uniquely supports updating keyterms mid-stream without reconnecting; Nova-3 keyterms are fixed for the session [V] https://developers.deepgram.com/docs/flux/configure, corroborated at https://developers.deepgram.com/docs/voice-agent-update-listen. Per-tenant vocabulary is not this slice's problem, and CLAUDE.md forbids pre-generalising. Record three constraints for when it lands:
+Flux uniquely supports updating keyterms mid-stream without reconnecting; Nova-3 keyterms are fixed for the session [V] https://developers.deepgram.com/docs/flux/configure, corroborated at https://developers.deepgram.com/docs/voice-agent-update-listen. Per-organization vocabulary is not this slice's problem, and CLAUDE.md forbids pre-generalising. Record three constraints for when it lands:
 
-1. **`Configure` keyterms REPLACE, they do not merge.** A per-tenant swap must resend the base insurance vocabulary or "policy" is silently dropped. The adapter owns the full list, always.
+1. **`Configure` keyterms REPLACE, they do not merge.** A per-organization swap must resend the base insurance vocabulary or "policy" is silently dropped. The adapter owns the full list, always.
 2. `Configure`'s field is `keyterms` (plural, **array of strings only**); the query param is `keyterm` (singular, string or array). Same trap as `language_hint`/`language_hints`.
 3. "Already-transcribed audio is NOT reprocessed" — a swap must land **before** the prompt that elicits the vocabulary, not after the mishearing.
 
@@ -329,7 +329,7 @@ Each step leaves `pnpm build && pnpm typecheck && pnpm lint && pnpm test` green 
 - **Turn detection could regress from a measured-good state.** 6 of 6 turns played and 0 spurious barge-ins is not a baseline to give up casually. Mitigated by keeping `TURN_PROVIDER` switchable — but only if we actually measure it instead of assuming model-native beats semantic_vad.
 - **No keyterm intensity knob.** If boosting is too weak at 8kHz there is no dial to turn. Term selection and casing are the only levers, and casing behaviour is [U].
 - **Silent failure is the documented behaviour for malformed keyterms.** Our validation catches syntax. It cannot catch a term that is simply the *wrong* term — that failure is invisible in every log.
-- **The 500-token cap** will bind once per-tenant product names plus Nigerian place and person names arrive. Whether a mid-stream `Configure` resets or accumulates against that budget is [U].
+- **The 500-token cap** will bind once per-organization product names plus Nigerian place and person names arrive. Whether a mid-stream `Configure` resets or accumulates against that budget is [U].
 - **`/v2` has no `KeepAlive` message and no documented idle timeout, in either direction.** If one exists, a future hold path that pauses media drops the socket with no documented remedy. `/v2` also publishes no close-code table (`/v1` does).
 - **`mulaw` + `8000` on Flux is documented-legal and demonstrated nowhere.** Deepgram's one working mulaw/8000 Twilio example is on the **Voice Agent API** (`/v1/agent/converse`) with `nova-3` — a different endpoint and a different model. It is not corroboration. Probe A2 exists precisely because this is the Intron shape.
 

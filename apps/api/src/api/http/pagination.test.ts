@@ -1,50 +1,44 @@
 import type { PageSlice } from "@ansa/db";
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_PAGE_LIMIT, toPageBody, toPageRequest } from "./pagination";
-import { ValidationFailed } from "./problem";
+import { DEFAULT_PAGE_SIZE, toPageBody, toPageRequest } from "./pagination";
 
 interface Row {
   readonly id: string;
-  readonly createdAt: string;
 }
 
-const slice = (next: { createdAt: string; id: string } | null): PageSlice<Row> => ({
-  items: [{ id: "a", createdAt: "2026-08-09T10:00:00.000Z" }],
-  next,
-});
+const slice = (total: number): PageSlice<Row> => ({ items: [{ id: "a" }], total });
 
-describe("cursors", () => {
-  it("round-trip through the response and back into a request", () => {
-    const body = toPageBody(slice({ createdAt: "2026-08-09T10:00:00.000Z", id: "a" }));
-    expect(body.nextCursor).toBeTypeOf("string");
-
-    const request = toPageRequest({ cursor: body.nextCursor ?? undefined });
-    expect(request.after).toEqual({ createdAt: "2026-08-09T10:00:00.000Z", id: "a" });
+/**
+ * Page numbers are 1-based because people read them, and offsets are 0-based because
+ * Postgres does. Every off-by-one this contract can have lives in that conversion, so it
+ * is the thing worth pinning down.
+ */
+describe("page numbers", () => {
+  it("turn into offsets, with page one starting at nothing skipped", () => {
+    expect(toPageRequest({ page: 1, perPage: 25 })).toEqual({ limit: 25, offset: 0 });
+    expect(toPageRequest({ page: 2, perPage: 25 })).toEqual({ limit: 25, offset: 25 });
+    expect(toPageRequest({ page: 4, perPage: 10 })).toEqual({ limit: 10, offset: 30 });
   });
 
-  it("are absent on the last page", () => {
-    expect(toPageBody(slice(null)).nextCursor).toBeNull();
+  it("default rather than fetching everything", () => {
+    expect(toPageRequest({})).toEqual({ limit: DEFAULT_PAGE_SIZE, offset: 0 });
   });
 
-  it("default the limit rather than fetching everything", () => {
-    expect(toPageRequest({}).limit).toBe(DEFAULT_PAGE_LIMIT);
-    expect(toPageRequest({}).after).toBeNull();
+  it("echo what was asked for, so a client never has to remember", () => {
+    const body = toPageBody(slice(120), { page: 3, perPage: 20 });
+    expect(body.page).toBe(3);
+    expect(body.perPage).toBe(20);
+    expect(body.total).toBe(120);
   });
 
-  /**
-   * The cursor is interpolated into a timestamp comparison, so a value we did not mint
-   * must not reach the query. Both of these are a 422 naming the field, not a 500.
-   */
-  it("reject anything this API did not issue", () => {
-    expect(() => toPageRequest({ cursor: "not-base64-json" })).toThrow(ValidationFailed);
-    expect(() =>
-      toPageRequest({ cursor: Buffer.from(JSON.stringify(["not a date", "a"])).toString("base64url") }),
-    ).toThrow(ValidationFailed);
+  it("round the page count up, because a partial page is still a page", () => {
+    expect(toPageBody(slice(101), { perPage: 25 }).totalPages).toBe(5);
+    expect(toPageBody(slice(100), { perPage: 25 }).totalPages).toBe(4);
   });
 
-  it("reject a cursor of the wrong shape", () => {
-    const cursor = Buffer.from(JSON.stringify({ createdAt: 1, id: 2 })).toString("base64url");
-    expect(() => toPageRequest({ cursor })).toThrow(ValidationFailed);
+  /** Nothing at all is zero pages, not one empty one — there is nothing to page through. */
+  it("report no pages when there is nothing", () => {
+    expect(toPageBody({ items: [], total: 0 }, {}).totalPages).toBe(0);
   });
 });

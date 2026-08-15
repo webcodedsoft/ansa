@@ -1,4 +1,4 @@
-import type { TenantId } from "@ansa/shared";
+import type { OrganizationId } from "@ansa/shared";
 import {
   createInMemoryVault,
   type ConnectorConfig,
@@ -21,18 +21,18 @@ import {
  * masked form: a mask that preserves length distinguishes a 32-character API key from a
  * passphrase, which is information an attacker can use and a legitimate reader cannot.
  *
- * The tenant id is called `owner` here for the reason `refusals.ts` explains: it goes into
+ * The organization id is called `owner` here for the reason `refusals.ts` explains: it goes into
  * an AES-GCM authentication tag, not into a query, and `routes.test.ts` is right to be
- * blunt about a tenant id in an argument list.
+ * blunt about a organization id in an argument list.
  */
 
-/** 32 bytes, base64, from the process environment. Never from the database, never a tenant's. */
+/** 32 bytes, base64, from the process environment. Never from the database, never a organization's. */
 const KEY_BYTES = 32;
 
 /**
  * The vault key, or null when this deployment has none.
  *
- * Null is a working configuration: a tenant can register tools that need no credential, and
+ * Null is a working configuration: a organization can register tools that need no credential, and
  * `prepareConnectors` already drops the ones that do rather than making an anonymous
  * request to somebody's customer API. What null cannot do is seal, so the write endpoint
  * answers 503 rather than pretending.
@@ -55,7 +55,7 @@ export const vaultKey = (env: NodeJS.ProcessEnv = process.env): Buffer | null =>
  * What a stored credential is for, without saying what it is.
  *
  * `unreadable` is its own answer rather than an error: it means the ciphertext will not
- * open under the key this process holds — a rotated key, a hand-edited row — and the tenant
+ * open under the key this process holds — a rotated key, a hand-edited row — and the organization
  * needs to see that on a screen, because otherwise it surfaces as a tool that fails on
  * every call for no visible reason.
  */
@@ -66,12 +66,12 @@ export type CredentialKind = "auth" | "signing" | "unreadable";
  *
  * `resolve` refuses a signing secret and `resolveSigner` refuses an auth credential — the
  * vault keeps them apart on purpose, because a receiver holds the signing secret and it
- * must never turn out to be the token that opens the tenant's own API. That refusal is what
+ * must never turn out to be the token that opens the organization's own API. That refusal is what
  * this reads as a type tag.
  */
 export const classifyCredentials = async (
   key: Buffer,
-  owner: TenantId,
+  owner: OrganizationId,
   sealed: ReadonlyMap<string, string>,
 ): Promise<ReadonlyMap<string, CredentialKind>> => {
   const vault = createInMemoryVault(key, new Map([[owner, sealed]]));

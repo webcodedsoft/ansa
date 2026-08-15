@@ -1,4 +1,4 @@
-import type { TenantConfigFields } from "@ansa/db";
+import type { AgentConfigFields } from "@ansa/db";
 import { describe, expect, it } from "vitest";
 
 import { diffConfigurations } from "./diff";
@@ -12,7 +12,7 @@ import { diffConfigurations } from "./diff";
  * diff whose real changes stop being read.
  */
 
-const base: TenantConfigFields = {
+const base: AgentConfigFields = {
   name: "First Organisation",
   voiceId: null,
   greeting: null,
@@ -23,7 +23,7 @@ const base: TenantConfigFields = {
   escalation: null,
 };
 
-const changed = (fields: Partial<TenantConfigFields>): TenantConfigFields => ({ ...base, ...fields });
+const changed = (fields: Partial<AgentConfigFields>): AgentConfigFields => ({ ...base, ...fields });
 
 describe("two versions of a configuration", () => {
   it("reports nothing when they are the same", () => {

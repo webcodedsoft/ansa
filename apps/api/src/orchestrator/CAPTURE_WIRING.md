@@ -137,6 +137,31 @@ perfectly clearly.
 
 ## 7. `expecting(kind)` — the agent asking first
 
+**Wired, 2026-08-15, by `orchestrator/form.ts`.** The decision this section said belonged
+to a conversation director now comes from the agent's own configuration: the operator's
+list of fields, in their order, armed at the greeting and again after each answer.
+
+Two things about that wiring are not obvious from the code:
+
+- **The engine does not speak the question.** `expecting()` returns an `ask` string and the
+  orchestrator throws it away. The task layer already tells the model what to collect, so
+  speaking both would ask the caller the same thing twice — once conversationally and once
+  as a form. What is taken from `expecting` is the `awaiting` state, and therefore
+  `parseDirected`. Directed parsing was always the point of this section; the sentence is
+  the model's to phrase.
+- **It arms only from idle**, so it can never discard a readback in progress.
+
+A field may also carry the operator's own `pattern` and `attempts`. Those run *after* the
+readback, deliberately: the engine's job is to establish what was said, and asking "did I
+hear PM eight five nine two" about a value that is about to be rejected is the only way the
+caller learns the agent heard them correctly and their number is still wrong. Checking
+first would say "sorry, say that again" to someone who said it perfectly.
+
+The rest of this section is the original argument, kept because it is why the seam is
+shaped this way.
+
+---
+
 Unwired, and it is the answer to the state-machine agent's observation that there is no
 "gathering" state on the primary path. That observation is **correct** about the code as
 it was: `start()` went from idle straight to a readback, so the agent only ever confirmed

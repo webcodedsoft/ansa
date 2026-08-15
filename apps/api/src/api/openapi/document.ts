@@ -193,7 +193,7 @@ export const specInfo = (): DocumentInfo => ({
   title: "Ansa dashboard API",
   version: API_PREFIX.split("/").filter((part) => part !== "").pop() ?? "v1",
   description:
-    "Self-service for a tenant organisation: its people, its agent's configuration, and its call history. Every request is scoped to one organisation by the session token that made it.",
+    "Self-service for a organization organisation: its people, its agent's configuration, and its call history. Every request is scoped to one organisation by the session token that made it.",
 });
 
 export const buildDocument = (

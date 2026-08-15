@@ -1,16 +1,16 @@
 /**
- * R5.2.3. One tenant's broken endpoint must not degrade anyone else's calls.
+ * R5.2.3. One organization's broken endpoint must not degrade anyone else's calls.
  *
- * The failure this exists for is specific and it is not about the failing tenant. Their
+ * The failure this exists for is specific and it is not about the failing organization. Their
  * endpoint is down; their agent will say so either way. What matters is that every call
  * that touches it spends the full hard ceiling waiting — three seconds of a caller's time,
  * three seconds of a socket, and on a busy line enough concurrent waits to slow down the
  * event loop everybody else's audio is scheduled on. After a few of those, stopping fast
- * is both kinder to that tenant's callers and the only thing that keeps it local to them.
+ * is both kinder to that organization's callers and the only thing that keeps it local to them.
  *
- * Keyed per tenant *and* per tool. Per tenant alone would let one broken connector
- * silence a working one beside it; per tool alone would let one tenant's outage open the
- * circuit on another tenant's tool of the same name, which is the exact cross-tenant
+ * Keyed per organization *and* per tool. Per organization alone would let one broken connector
+ * silence a working one beside it; per tool alone would let one organization's outage open the
+ * circuit on another organization's tool of the same name, which is the exact cross-organization
  * coupling this requirement forbids.
  */
 
@@ -36,14 +36,14 @@ interface State {
 }
 
 /**
- * The key every caller must use, so tenant and subject are never accidentally conflated.
+ * The key every caller must use, so organization and subject are never accidentally conflated.
  *
  * `subject` is a tool name today. Nothing in this file knows that, deliberately: the other
  * thing that will call an organisation's endpoint is event delivery (see TASKS.md, Slice
  * 6a), which is not a tool call and has no risk tier, but which fails in exactly the same
  * way and should be given up on for exactly the same reasons.
  */
-export const breakerKey = (tenantId: string, subject: string): string => `${tenantId}::${subject}`;
+export const breakerKey = (organizationId: string, subject: string): string => `${organizationId}::${subject}`;
 
 export const createCircuitBreaker = (options: BreakerOptions = {}): CircuitBreaker => {
   const threshold = options.failureThreshold ?? 4;

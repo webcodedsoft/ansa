@@ -63,7 +63,7 @@ describe("what a corrected transcript is worth", () => {
   });
 
   it("says nothing rather than zero when nothing has been reviewed", () => {
-    // A tenant nobody has reviewed is not a tenant with perfect transcription, and a
+    // A organization nobody has reviewed is not a organization with perfect transcription, and a
     // dashboard that renders it as 0% would be read as exactly that.
     const metrics = scoreCalls([call()]);
     expect(metrics.sttExactMatch).toBeNull();
@@ -96,7 +96,7 @@ describe("what the event log says about a call", () => {
         events: [
           { kind: "latency", detail: { stage: "turn_to_audio", ms: 700 } },
           { kind: "latency", detail: { stage: "turn_to_audio", ms: 1500 } },
-          // Diagnostic stages must not dilute the number a tenant is promised.
+          // Diagnostic stages must not dilute the number a organization is promised.
           { kind: "latency", detail: { stage: "tts_first_byte", ms: 50 } },
         ],
       }),

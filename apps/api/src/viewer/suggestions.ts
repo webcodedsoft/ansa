@@ -16,10 +16,10 @@ import type { CorpusEntry } from "@ansa/db";
  * against everything unlisted, including words nobody listed.** A pipeline that promoted
  * corrections into keyterms automatically would therefore take the exact evidence that the
  * transcriber mishears a word and use it to damage the words next to it — and it would do
- * that fastest for the tenants correcting the most, which is backwards.
+ * that fastest for the organizations correcting the most, which is backwards.
  *
  * So this file computes candidates with their evidence attached and stops. A human reads
- * the list, decides, and edits the tenant's configuration through the API that already
+ * the list, decides, and edits the organization's configuration through the API that already
  * exists. The cost of that is a human in the loop. The cost of the alternative was measured
  * and it was a caller's name.
  *
@@ -77,7 +77,7 @@ export interface KeytermCandidate {
 }
 
 export interface KeytermOptions {
-  /** Terms already in the tenant's list or the platform base. Compared case-insensitively. */
+  /** Terms already in the organization's list or the platform base. Compared case-insensitively. */
   readonly known?: readonly string[];
   /** Distinct calls a term must appear on. Default 2 — a single mishearing is noise. */
   readonly minCalls?: number;

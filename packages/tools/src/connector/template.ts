@@ -1,15 +1,15 @@
 /**
- * How a tenant's JSON becomes a sentence.
+ * How a organization's JSON becomes a sentence.
  *
  * R5.4.3 says raw JSON is never spoken, and every platform tool satisfies it with a
- * `summarise` function written in TypeScript. A tenant-supplied tool cannot do that: it
+ * `summarise` function written in TypeScript. A organization-supplied tool cannot do that: it
  * arrives as configuration, and configuration that contains executable code is a remote
  * code execution feature with extra steps.
  *
- * So the tenant writes a sentence with holes in it — "Policy {policyNumber} is {status}
+ * So the organization writes a sentence with holes in it — "Policy {policyNumber} is {status}
  * and renews on {renewsOn}." — and this fills them from the response. A hole that cannot
  * be filled makes the whole render fail rather than emitting "undefined": half a sentence
- * about somebody's policy is worse than the fallback line the tenant also had to write.
+ * about somebody's policy is worse than the fallback line the organization also had to write.
  */
 
 const PLACEHOLDER = /\{([A-Za-z0-9_.[\]-]+)\}/g;
@@ -59,7 +59,7 @@ export const renderTemplate = (template: string, data: unknown): string | null =
 };
 
 /**
- * The placeholders a template asks for, so a tenant's typo is caught at registration
+ * The placeholders a template asks for, so a organization's typo is caught at registration
  * rather than discovered on a call as a fallback line nobody understands.
  */
 export const templateFields = (template: string): readonly string[] => [

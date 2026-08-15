@@ -16,7 +16,7 @@ const recording = (callId: string, age: number): RecordingOnDisk => ({
  * production, which is why the policy is a pure function and these run without a disk.
  */
 describe("what the retention sweep deletes", () => {
-  it("deletes audio whose call is past its tenant's window", () => {
+  it("deletes audio whose call is past its organization's window", () => {
     const doomed = recordingsToDelete(
       [recording("CA-old", 40)],
       { expired: new Set(["CA-old"]), known: new Set(["CA-old"]) },
@@ -25,9 +25,9 @@ describe("what the retention sweep deletes", () => {
     expect(doomed.map((r) => r.callId)).toEqual(["CA-old"]);
   });
 
-  it("keeps audio belonging to a tenant who chose to keep it longer", () => {
+  it("keeps audio belonging to a organization who chose to keep it longer", () => {
     // The case a naive "older than the default" sweep gets wrong: 40 days old, but its
-    // tenant configured 90, so the database did not report it as expired and it stays.
+    // organization configured 90, so the database did not report it as expired and it stays.
     const doomed = recordingsToDelete(
       [recording("CA-long", 40)],
       { expired: new Set(), known: new Set(["CA-long"]) },
@@ -37,7 +37,7 @@ describe("what the retention sweep deletes", () => {
   });
 
   it("deletes audio that belongs to no call, on the strictest clock anyone set", () => {
-    // Written before the tenant resolved, or the `calls` row never landed. Nobody's
+    // Written before the organization resolved, or the `calls` row never landed. Nobody's
     // policy covers it and it is still somebody's voice, so it does not live forever for
     // want of an owner.
     const doomed = recordingsToDelete(

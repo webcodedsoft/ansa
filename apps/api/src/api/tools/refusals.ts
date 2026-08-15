@@ -1,6 +1,6 @@
 import { isIP } from "node:net";
 
-import type { Logger, TenantId } from "@ansa/shared";
+import type { Logger, OrganizationId } from "@ansa/shared";
 import {
   CALL_CONTROL_DEFINITIONS,
   createToolRegistry,
@@ -34,10 +34,10 @@ import { ConflictException, UnprocessableEntityException } from "@nestjs/common"
  * The consequence to hold on to: there is no rule here that the dispatch path does not
  * already have. If a check ever seems to be needed *only* here, it belongs in `@ansa/tools`
  * instead, because configuration reaches the call path by three other doors —
- * `tools/tenant/config.mjs`, a psql session, and whatever writes the column next.
+ * `tools/organization/config.mjs`, a psql session, and whatever writes the column next.
  *
  * A note on the name `owner` below, because it looks like a synonym and is not one.
- * `routes.test.ts` greps this layer for a tenant id passed positionally — the shape of the
+ * `routes.test.ts` greps this layer for a organization id passed positionally — the shape of the
  * database mistake this whole surface is built to make unrepresentable — and it is
  * deliberately blunt about it. Nothing in this file touches the database; the value goes
  * into a registry key and, in `vault.ts`, into an AES-GCM authentication tag. `registry.ts`
@@ -86,25 +86,25 @@ const SILENT: Logger = {
 /**
  * An MCP tool as the registry will see it, minus what discovery supplies.
  *
- * `packages/tools/src/connector/mcp.ts` builds the real definition from the tenant's policy
+ * `packages/tools/src/connector/mcp.ts` builds the real definition from the organization's policy
  * plus the name, description and schema the server advertised. Only the first half is in
  * this request — the server is not contacted at publication time, deliberately, because a
- * tenant must be able to configure a receiver before it is running. So the policy half is
+ * organization must be able to configure a receiver before it is running. So the policy half is
  * pushed through `registry.register` exactly as it will be, and the discovered half is
  * stood in for.
  *
  * That gap is narrow and it is on the safe side: name, tier, timeout ceiling, readback,
- * transfer reason and identifiers are all the tenant's input and all checked here.
- * Description and parameters come from the server and are not the tenant's to get wrong.
+ * transfer reason and identifiers are all the organization's input and all checked here.
+ * Description and parameters come from the server and are not the organization's to get wrong.
  */
-const mcpProbe = (policy: McpToolPolicy, owner: TenantId): ToolDefinition => {
+const mcpProbe = (policy: McpToolPolicy, owner: OrganizationId): ToolDefinition => {
   const base = {
     name: policy.name,
     // Discovery replaces this. The registry insists on a non-empty description and the
     // policy has no field for one, so the name stands in rather than an invented sentence.
     description: policy.name,
     parameters: { type: "object" },
-    tenantId: owner,
+    organizationId: owner,
     timeoutMs: policy.timeoutMs,
     identifiers: policy.identifiers,
   };
@@ -131,7 +131,7 @@ const bareHost = (host: string): string =>
  * An allowlist entry that names an address the egress guard will always refuse.
  *
  * `169.254.169.254` in `allowedHosts` passes `isHostAllowed` — the allowlist is the
- * tenant's own declaration and matching it is all that function claims to do — and is then
+ * organization's own declaration and matching it is all that function claims to do — and is then
  * refused by the address filter on every request. Both are correct and the combination is
  * useless, so it is worth saying at publication time. `isBlockedAddress` is imported rather
  * than reimplemented: this is the same function the guard calls, not a second opinion.
@@ -157,7 +157,7 @@ const refuseUnroutableHosts = (egress: EgressPolicy, where: string): void => {
  *
  * The allowlist check `parseConnectorConfig` already runs covers "is this host declared".
  * These two are the other halves of the same verdict: the scheme, and a literal address
- * inside a private range. A tenant who genuinely serves plaintext HTTP says so in
+ * inside a private range. A organization who genuinely serves plaintext HTTP says so in
  * `allowPlaintextHttp` and this passes — the flag is their written decision, not ours.
  */
 const refuseUnreachableUrl = (raw: string, egress: EgressPolicy, where: string): void => {
@@ -194,16 +194,16 @@ const refuseUnreachableUrl = (raw: string, egress: EgressPolicy, where: string):
  *   allowlist declared beside it.
  *
  *   `registry.register` — a tool name that is lower snake case, a timeout at or under the
- *   3s hard ceiling, a tenant tool that does not shadow `end_call`, `transfer_to_human` or
- *   `business_hours`, and no two tools of this tenant's sharing a name. The platform
+ *   3s hard ceiling, a organization tool that does not shadow `end_call`, `transfer_to_human` or
+ *   `business_hours`, and no two tools of this organization's sharing a name. The platform
  *   definitions are registered first for exactly that shadowing check; a registry without
- *   them would accept a tenant tool called `transfer_to_human` and the tenant would
+ *   them would accept a organization tool called `transfer_to_human` and the organization would
  *   discover the collision on a call.
  *
  * Returns the parsed configuration, because the caller wants the normalised form it will
  * store and read back.
  */
-export const checkToolConfig = (config: unknown, owner: TenantId): ConnectorConfig => {
+export const checkToolConfig = (config: unknown, owner: OrganizationId): ConnectorConfig => {
   const parsed = parseConnectorConfig(config);
 
   refuseUnroutableHosts(parsed.egress, "tool config");
@@ -218,7 +218,7 @@ export const checkToolConfig = (config: unknown, owner: TenantId): ConnectorConf
   for (const definition of CALL_CONTROL_DEFINITIONS) registry.register(definition, NEVER_RUNS);
 
   registerHttpTools(registry, parsed.http, {
-    tenantId: owner,
+    organizationId: owner,
     transport: NEVER_SENDS,
     vault: NEVER_OPENS,
     log: SILENT,
@@ -237,7 +237,7 @@ export const checkToolConfig = (config: unknown, owner: TenantId): ConnectorConf
  * `parseEventConfig` covers the event names, the signing secret being mandatory, the
  * timeout and attempt ceilings, the redaction categories, and the receiver URL sitting
  * inside the allowlist. One rule is added here and it is not a duplicate of anything:
- * `event_deliveries.subscription` records the tenant's own name for a receiver, so two
+ * `event_deliveries.subscription` records the organization's own name for a receiver, so two
  * receivers sharing a name make the delivery log unreadable — which is the one artefact
  * that answers "you never sent it".
  */
@@ -309,7 +309,7 @@ export const orRefuse = <T>(work: () => T): T => {
  * The same refusal, for configuration that is already in the column.
  *
  * A `GET` cannot answer 422 — the request was fine. What is wrong is the stored document,
- * which `tools/tenant/config.mjs` or a psql session may have written, and which the call
+ * which `tools/organization/config.mjs` or a psql session may have written, and which the call
  * path is already refusing to load. 409 says so and the reply carries the same message, so
  * a `PUT` can put it right.
  */

@@ -1,4 +1,4 @@
-import { asCallId, asTenantId } from "@ansa/shared";
+import { asCallId, asOrganizationId } from "@ansa/shared";
 import {
   NO_EVENTS,
   type EventSubscription,
@@ -12,7 +12,7 @@ import type { CallRecorder } from "../telephony/event-log";
 
 import { withEventPublisher } from "./publisher";
 
-const TENANT = asTenantId("11111111-1111-4111-8111-111111111111");
+const ORGANIZATION = asOrganizationId("11111111-1111-4111-8111-111111111111");
 const CALL = "CA-test-1";
 
 const silentLog = () => {
@@ -20,7 +20,7 @@ const silentLog = () => {
   return log;
 };
 
-/** withTenant drives a transaction, so the fake has to honour that shape. */
+/** withOrganization drives a transaction, so the fake has to honour that shape. */
 const fakeDb = () => {
   const inserted: { sql: string; params: readonly unknown[] }[] = [];
   const run = async (sql: string, params: readonly unknown[] = []) => {
@@ -95,13 +95,13 @@ const publisherOver = (
   inner: CallRecorder,
   events: PreparedEvents,
   db: ReturnType<typeof fakeDb>,
-  facts = createCallFacts({ tenantId: TENANT, callId: asCallId(CALL), callDirection: "inbound" }),
+  facts = createCallFacts({ organizationId: ORGANIZATION, callId: asCallId(CALL), callDirection: "inbound" }),
 ) => ({
   facts,
   recorder: withEventPublisher(inner, {
     dataSource: db.ds as never,
     log: silentLog() as never,
-    tenantId: TENANT,
+    organizationId: ORGANIZATION,
     events,
     call: identity,
     facts: () => facts.facts,
@@ -115,14 +115,14 @@ const settle = () => new Promise((r) => setTimeout(r, 20));
 const bodyOf = (db: ReturnType<typeof fakeDb>, index = 0): Record<string, unknown> =>
   JSON.parse(String(db.inserted[index]?.params[5])) as Record<string, unknown>;
 
-describe("nothing happens unless a tenant configured a receiver", () => {
+describe("nothing happens unless a organization configured a receiver", () => {
   it("returns the recorder untouched when no receiver is configured", () => {
     const { recorder } = countingRecorder();
     const db = fakeDb();
     const wrapped = withEventPublisher(recorder, {
       dataSource: db.ds as never,
       log: silentLog() as never,
-      tenantId: TENANT,
+      organizationId: ORGANIZATION,
       events: NO_EVENTS,
       call: identity,
       facts: () => null,
@@ -137,7 +137,7 @@ describe("nothing happens unless a tenant configured a receiver", () => {
     const wrapped = withEventPublisher(recorder, {
       dataSource: null,
       log: silentLog() as never,
-      tenantId: TENANT,
+      organizationId: ORGANIZATION,
       events: preparedWith(subscription("crm")),
       call: identity,
       facts: () => null,
@@ -155,7 +155,7 @@ describe("the call path only ever writes a row", () => {
     const { recorder } = publisherOver(inner.recorder, preparedWith(subscription("crm")), db);
 
     recorder.started({
-      tenantId: TENANT,
+      organizationId: ORGANIZATION,
       carrierCallId: CALL,
       direction: "inbound",
       dialled: "+234",
@@ -201,7 +201,7 @@ describe("the call path only ever writes a row", () => {
     const recorder = withEventPublisher(inner.recorder, {
       dataSource: exploding as never,
       log: silentLog() as never,
-      tenantId: TENANT,
+      organizationId: ORGANIZATION,
       events: preparedWith(subscription("crm")),
       call: identity,
       facts: () => null,
@@ -251,7 +251,7 @@ describe("the payload", () => {
   it("marks an identifier the caller never confirmed", async () => {
     const db = fakeDb();
     const facts = createCallFacts({
-      tenantId: TENANT,
+      organizationId: ORGANIZATION,
       callId: asCallId(CALL),
       callDirection: "inbound",
     });
@@ -307,7 +307,7 @@ describe("redaction is per receiver and off unless asked for", () => {
   it("gives two receivers of the same organisation different bytes", async () => {
     const db = fakeDb();
     const facts = createCallFacts({
-      tenantId: TENANT,
+      organizationId: ORGANIZATION,
       callId: asCallId(CALL),
       callDirection: "inbound",
     });
@@ -337,7 +337,7 @@ describe("redaction is per receiver and off unless asked for", () => {
   it("masks a form of the identifier that is only in the transcript", async () => {
     const db = fakeDb();
     const facts = createCallFacts({
-      tenantId: TENANT,
+      organizationId: ORGANIZATION,
       callId: asCallId(CALL),
       callDirection: "inbound",
     });

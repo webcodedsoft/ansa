@@ -1,70 +1,68 @@
 /**
- * Keyset pagination, shared by every list the dashboard serves.
+ * Page-numbered pagination, shared by every list the dashboard serves.
  *
- * Keyset rather than offset because these lists are ordered newest-first and are written
- * to constantly. With `limit/offset`, a call arriving between page one and page two
- * shifts every row down and the reader sees a duplicate; with a keyset the second page
- * starts exactly where the first ended regardless of what happened in between.
+ * `limit/offset` with a total, so a reader can see how many pages there are and jump to
+ * one. That is a deliberate trade against the keyset this replaced, and the trade is worth
+ * stating because it shows up in real use: these lists are newest-first and written to
+ * constantly, so a call arriving between page one and page two shifts every row down by
+ * one and the reader sees a row twice. A keyset never did that, but it also cannot answer
+ * "how many" or "take me to page four", which is what a person reading a call log wants.
  *
- * The cursor is `(created_at, id)` — the timestamp for the order and the id to break ties
- * between rows created in the same microsecond, which is not hypothetical when a call
- * writes several rows at once.
+ * The count comes from `count(*) over()` on the same query rather than a second round
+ * trip, so the total is consistent with the rows beside it and costs one scan instead of
+ * two. On a table large enough for that scan to hurt, the fix is a cheaper estimate, not
+ * a second query — but nothing here is near that yet.
  */
-
-export interface PageCursor {
-  /** ISO 8601, as it came out of Postgres. */
-  readonly createdAt: string;
-  /** Whatever uniquely identifies the row within one timestamp. */
-  readonly id: string;
-}
 
 export interface PageRequest {
   readonly limit: number;
-  /** Null on the first page. */
-  readonly after: PageCursor | null;
+  /** Rows to skip. Zero on the first page. */
+  readonly offset: number;
 }
 
 export interface PageSlice<T> {
   readonly items: readonly T[];
-  /** Null when this was the last page. */
-  readonly next: PageCursor | null;
+  /** Rows matching the query across every page, not just this one. */
+  readonly total: number;
 }
 
 /**
- * SQL fragment shared by every keyset query, so the comparison is written once.
+ * The `order by … limit … offset` tail every list query ends with.
  *
- * `($2::timestamptz is null or (created_at, id) < ($2, $3))` is a row comparison, not
- * two column comparisons joined by AND — those are not the same thing and the second is
- * subtly wrong at a tie. Callers bind $1 = limit + 1, $2 = cursor timestamp, $3 = cursor
- * id, and pass their own column names because the id column differs per table.
+ * `id` is not decoration: ordering by a timestamp alone leaves rows created in the same
+ * microsecond in an arbitrary order, and an arbitrary order under `offset` means a row can
+ * appear on two pages or on none. Callers pass their own column names because the
+ * tiebreaker is not called `id` on every table.
  */
-export const keysetWhere = (createdAt: string, id: string): string =>
-  `($2::timestamptz is null or (${createdAt}, ${id}::text) < ($2::timestamptz, $3::text))`;
+export const pageOrder = (createdAt: string, id: string): string =>
+  `order by ${createdAt} desc, ${id} desc limit $1 offset $2`;
 
-/** The `order by … limit` half, matching `keysetWhere`. */
-export const keysetOrder = (createdAt: string, id: string): string =>
-  `order by ${createdAt} desc, ${id} desc limit $1`;
+/** Selected alongside the row columns so the total travels with the page. */
+export const TOTAL_COLUMN = "count(*) over() as total_rows";
 
-/** Parameters for the two fragments above. One extra row is fetched to detect a next page. */
-export const keysetParams = (page: PageRequest): readonly unknown[] => [
-  page.limit + 1,
-  page.after?.createdAt ?? null,
-  page.after?.id ?? null,
-];
+/** Parameters for `pageOrder`, bound as $1 and $2. */
+export const pageParams = (page: PageRequest): readonly unknown[] => [page.limit, page.offset];
+
+/** A row as returned by a query that selected `TOTAL_COLUMN`. */
+export interface WithTotal {
+  readonly total_rows: number | string;
+}
 
 /**
- * Trims the sentinel row off and turns it into a cursor.
+ * Turns raw rows into a mapped slice.
  *
- * The accessor exists because the tiebreaker column is not called `id` on every table —
- * `memberships` is keyed by `(tenant_id, user_id)` and has no id at all.
+ * Mapping happens here rather than at the call site because the total rides on every row
+ * and would be thrown away by a mapper that ran first. The total is read off the first
+ * row; an empty page has none to read, and is a total of zero by definition — there is
+ * nothing to be on page two of.
  */
-export const toSlice = <T>(
-  rows: readonly T[],
-  page: PageRequest,
-  cursorOf: (row: T) => PageCursor,
+export const toSlice = <R extends WithTotal, T>(
+  rows: readonly R[],
+  map: (row: R) => T,
 ): PageSlice<T> => {
-  if (rows.length <= page.limit) return { items: rows, next: null };
-  const items = rows.slice(0, page.limit);
-  const last = items[items.length - 1];
-  return { items, next: last === undefined ? null : cursorOf(last) };
+  const first = rows[0];
+  return {
+    items: rows.map(map),
+    total: first === undefined ? 0 : Number(first.total_rows),
+  };
 };

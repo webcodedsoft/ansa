@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { asCallId, asTenantId, type LogFields, type Logger } from "@ansa/shared";
+import { asCallId, asOrganizationId, type LogFields, type Logger } from "@ansa/shared";
 
 import { createToolDispatcher, modelMessage } from "../dispatch";
 import { createToolRegistry } from "../registry";
 import { registerInternalTools } from "./adapter";
 import { createInMemoryPolicyBook, policyTools, type PolicyRecord } from "./policy";
 
-const TENANT_A = asTenantId("11111111-1111-4111-8111-111111111111");
-const TENANT_B = asTenantId("22222222-2222-4222-8222-222222222222");
+const ORGANIZATION_A = asOrganizationId("11111111-1111-4111-8111-111111111111");
+const ORGANIZATION_B = asOrganizationId("22222222-2222-4222-8222-222222222222");
 const CALL = asCallId("call-1");
 
 const silent = (): Logger => {
@@ -19,7 +19,7 @@ const silent = (): Logger => {
 
 const RECORDS: readonly PolicyRecord[] = [
   {
-    tenantId: TENANT_A,
+    organizationId: ORGANIZATION_A,
     policyNumber: "AXA4421",
     holder: "Chidinma Okeke",
     status: "active",
@@ -28,7 +28,7 @@ const RECORDS: readonly PolicyRecord[] = [
     contactNumber: "08031112222",
   },
   {
-    tenantId: TENANT_B,
+    organizationId: ORGANIZATION_B,
     policyNumber: "LEAD9001",
     holder: "Musa Bello",
     status: "lapsed",
@@ -50,7 +50,7 @@ describe("the worked internal tool set", () => {
     const { dispatcher } = harness();
 
     const outcome = await dispatcher.dispatch({
-      tenantId: TENANT_A,
+      organizationId: ORGANIZATION_A,
       callId: CALL,
       name: "policy_lookup",
       args: { policyNumber: "axa 4421" },
@@ -64,11 +64,11 @@ describe("the worked internal tool set", () => {
     );
   });
 
-  it("cannot be asked for another tenant's policy by guessing the number", async () => {
+  it("cannot be asked for another organization's policy by guessing the number", async () => {
     const { dispatcher } = harness();
 
     const outcome = await dispatcher.dispatch({
-      tenantId: TENANT_A,
+      organizationId: ORGANIZATION_A,
       callId: CALL,
       name: "policy_lookup",
       args: { policyNumber: "LEAD9001" },
@@ -83,7 +83,7 @@ describe("the worked internal tool set", () => {
     const { dispatcher } = harness();
 
     const outcome = await dispatcher.dispatch({
-      tenantId: TENANT_A,
+      organizationId: ORGANIZATION_A,
       callId: CALL,
       name: "policy_lookup",
       args: {},
@@ -96,7 +96,7 @@ describe("the worked internal tool set", () => {
   it("reads the change back before it writes, then writes once agreed", async () => {
     const { book, dispatcher } = harness();
     const call = {
-      tenantId: TENANT_A,
+      organizationId: ORGANIZATION_A,
       callId: CALL,
       name: "update_contact_number",
       args: { policyNumber: "AXA4421", contactNumber: "07061234567" },
@@ -105,20 +105,20 @@ describe("the worked internal tool set", () => {
     const asked = await dispatcher.dispatch(call);
     expect(asked.kind).toBe("confirm");
     expect(asked.speech).toContain("07061234567");
-    expect((await book.find(TENANT_A, "AXA4421"))?.contactNumber).toBe("08031112222");
+    expect((await book.find(ORGANIZATION_A, "AXA4421"))?.contactNumber).toBe("08031112222");
 
     if (asked.kind !== "confirm") throw new Error("expected a confirmation");
     const done = await dispatcher.dispatch({ ...call, confirmationId: asked.confirmationId });
 
     expect(done.kind).toBe("ok");
-    expect((await book.find(TENANT_A, "AXA4421"))?.contactNumber).toBe("07061234567");
+    expect((await book.find(ORGANIZATION_A, "AXA4421"))?.contactNumber).toBe("07061234567");
   });
 
   it("hands a cancellation to a human and never runs it", async () => {
     const { dispatcher } = harness();
 
     const outcome = await dispatcher.dispatch({
-      tenantId: TENANT_A,
+      organizationId: ORGANIZATION_A,
       callId: CALL,
       name: "cancel_policy",
       args: { policyNumber: "AXA4421" },

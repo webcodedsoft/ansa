@@ -3,10 +3,10 @@
  *
  * This text is not new. It is the prompt that has been tuned on live calls since Slice 3,
  * lifted out of `orchestrator/system-prompt.ts` and split along the seams
- * `docs/MULTI_TENANT_ARCHITECTURE.md` §3 describes, so that a tenant becomes a layer
+ * `docs/MULTI_TENANT_ARCHITECTURE.md` §3 describes, so that a organization becomes a layer
  * rather than a rewrite. Two paragraphs moved rather than changed: the Nigerian-English
  * material is now the locale layer, and the two non-negotiables at the end are now the
- * guarantee block, which is composed *after* the tenant's text on purpose.
+ * guarantee block, which is composed *after* the organization's text on purpose.
  *
  * Written in the register it will be spoken in. A prompt in careful written English
  * ("if you did not understand", "say you do not know") gets mirrored back as careful
@@ -16,7 +16,7 @@
 /**
  * Who the agent is answering for.
  *
- * Derived, not configured: a tenant supplies their `name` and this sentence is built
+ * Derived, not configured: a organization supplies their `name` and this sentence is built
  * around it. They cannot supply the sentence.
  *
  * **The name is quoted, and that is not typography.** The comment that used to sit here
@@ -30,20 +30,20 @@
  * Quoting is the structural fix rather than another pattern, because a pattern for "is this
  * a name or a sentence" does not exist: a rule that rejected a full stop would reject
  * "St. Nicholas Hospital", and a keyword list would only ever catch the phrasings someone
- * thought of. Quoted, anything the tenant writes is unambiguously the *value* of a name
- * rather than a continuation of our own sentence. `compileTenantLayer` drops quote
+ * thought of. Quoted, anything the organization writes is unambiguously the *value* of a name
+ * rather than a continuation of our own sentence. `compileOrganizationLayer` drops quote
  * characters from the name so the quoting cannot be closed from inside, which is the half
  * that makes it hold.
  */
 const OPENING = "You're Ansa, answering the phone for a company in Nigeria.";
 
-export const identityLine = (tenantName: string | null): string =>
-  tenantName === null || tenantName.trim() === ""
+export const identityLine = (organizationName: string | null): string =>
+  organizationName === null || organizationName.trim() === ""
     ? OPENING
     // The same opening either way, with the name added as a labelled value rather than
-    // spliced into the middle of our own sentence. A registered tenant and an unregistered
+    // spliced into the middle of our own sentence. A registered organization and an unregistered
     // number now differ by one clause instead of by a different first sentence.
-    : `${OPENING} Its name is "${tenantName.trim()}".`;
+    : `${OPENING} Its name is "${organizationName.trim()}".`;
 
 /** How to behave on a phone call. Nothing here is domain-specific or locale-specific. */
 export const BASE_CONDUCT = [

@@ -26,8 +26,8 @@ beforeAll(async () => {
       return;
     }
     if (path === "/elsewhere") {
-      // A redirect off the allowlist: the tenant's own server sending us somewhere the
-      // tenant's operator never declared. This is the hop the guard has to see.
+      // A redirect off the allowlist: the organization's own server sending us somewhere the
+      // organization's operator never declared. This is the hop the guard has to see.
       response.writeHead(302, { location: "http://169.254.169.254/latest/meta-data" }).end();
       return;
     }
@@ -136,9 +136,9 @@ describe("the guarded transport", () => {
     ).rejects.toBeInstanceOf(EgressRefusedError);
   });
 
-  it("refuses loopback under the real guard, even when the tenant allowlisted it", async () => {
+  it("refuses loopback under the real guard, even when the organization allowlisted it", async () => {
     // The guard used everywhere else in this file is a test double. This is the real one,
-    // and it is what runs in production: a tenant pointing a connector at our own machine
+    // and it is what runs in production: a organization pointing a connector at our own machine
     // is refused however the hostname is spelled.
     const real = createEgressGuard({ policy: { allowedHosts: ["127.0.0.1"], allowPlaintextHttp: true } });
     const transport = createTransport({ guard: real });

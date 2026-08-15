@@ -1,7 +1,7 @@
 import type { MemberRole, UserOrganisation } from "@ansa/db";
 import { Inject, Injectable } from "@nestjs/common";
 
-import { TenantGateway } from "../tenancy/tenant-gateway";
+import { OrganizationGateway } from "../tenancy/organization-gateway";
 import { hashPassword, verifyPassword } from "./password";
 import { mintSessionToken, readInvitationToken } from "./tokens";
 
@@ -23,6 +23,11 @@ export interface SignedIn {
   readonly organisation: UserOrganisation;
 }
 
+export interface SignedUp extends SignedIn {
+  /** False when the address already had an account and simply gained an organisation. */
+  readonly createdUser: boolean;
+}
+
 export interface AcceptedInvite {
   readonly organisationId: string;
   readonly role: MemberRole;
@@ -31,7 +36,7 @@ export interface AcceptedInvite {
 
 @Injectable()
 export class AuthService {
-  constructor(@Inject(TenantGateway) private readonly gateway: TenantGateway) {}
+  constructor(@Inject(OrganizationGateway) private readonly gateway: OrganizationGateway) {}
 
   /**
    * The organisations an address may sign in to, or an empty list.
@@ -46,6 +51,70 @@ export class AuthService {
     const verified = await verifyPassword(credentials?.passwordHash ?? null, password);
     if (!verified || credentials === null) return [];
     return this.gateway.organisationsFor(credentials.userId);
+  }
+
+  /**
+   * Creates an organisation with this person as its owner, and signs them into it.
+   *
+   * An address that already has an account may create another organisation, and does it
+   * with the password it already has — which is why the password is verified first and a
+   * wrong one is refused. Without that check, anyone could type a stranger's address into
+   * the sign-up form; they would gain nothing of the stranger's, but the stranger would find
+   * an organisation they never joined in their sign-in list, owned by somebody else.
+   *
+   * Null means the address exists and the password was wrong. That is the same answer, and
+   * the same shape, as a failed sign-in, and deliberately does not distinguish itself from
+   * one — a sign-up form that said "that password is wrong" would confirm the address has an
+   * account, which is precisely what `organisationsFor` spends a full scrypt to avoid
+   * revealing.
+   *
+   * It signs them in rather than making them sign in again. The alternative asks somebody
+   * who just typed their password to type it a second time, on a screen that already knows
+   * who they are.
+   */
+  async signUp(
+    organisationName: string,
+    email: string,
+    password: string,
+    displayName: string,
+    userAgent: string | null,
+    now: Date,
+  ): Promise<SignedUp | null> {
+    const credentials = await this.gateway.credentialsFor(email);
+
+    // Spent whether or not there is an account, as everywhere else here: skipping it for an
+    // unknown address makes response time the answer to "is this person registered".
+    const verified = await verifyPassword(credentials?.passwordHash ?? null, password);
+    if (credentials !== null && !verified) return null;
+
+    // Hashed even when the address already exists, where the value is ignored by the
+    // function. It keeps the two paths the same length, and the cost is one scrypt on a
+    // request that is creating an organisation anyway.
+    const passwordHash = await hashPassword(password);
+
+    const created = await this.gateway.createOrganisation(
+      { name: organisationName, email, passwordHash, displayName },
+      now,
+    );
+
+    const minted = mintSessionToken(created.organizationId);
+    const expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
+    await this.gateway.openSession(created.organizationId, {
+      userId: created.userId,
+      tokenHash: minted.hash,
+      userAgent,
+      expiresAt,
+    });
+
+    return {
+      token: minted.token,
+      expiresAt,
+      // The name is the one just supplied rather than a re-read: the row was written in this
+      // request and reading it back through a scope that did not exist a moment ago buys a
+      // round trip and no extra truth.
+      organisation: { organizationId: created.organizationId, name: organisationName, role: "owner" },
+      createdUser: created.createdUser,
+    };
   }
 
   /**
@@ -65,12 +134,12 @@ export class AuthService {
     if (!verified || credentials === null) return null;
 
     const organisations = await this.gateway.organisationsFor(credentials.userId);
-    const organisation = organisations.find((candidate) => candidate.tenantId === organisationId);
+    const organisation = organisations.find((candidate) => candidate.organizationId === organisationId);
     if (organisation === undefined) return null;
 
-    const minted = mintSessionToken(organisation.tenantId);
+    const minted = mintSessionToken(organisation.organizationId);
     const expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
-    await this.gateway.openSession(organisation.tenantId, {
+    await this.gateway.openSession(organisation.organizationId, {
       userId: credentials.userId,
       tokenHash: minted.hash,
       userAgent,
@@ -103,7 +172,7 @@ export class AuthService {
     );
     if (accepted === null) return null;
     return {
-      organisationId: accepted.tenantId,
+      organisationId: accepted.organizationId,
       role: accepted.role,
       createdUser: accepted.createdUser,
     };

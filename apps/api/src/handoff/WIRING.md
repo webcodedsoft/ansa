@@ -62,10 +62,10 @@ the config module. It reads:
 When `config/env.ts` next changes hands, these belong in `AppConfig` like everything else,
 and `resolveHandoffDestination` should take the config object instead of the environment.
 
-R6.5 puts the destination in **per-tenant** configuration alongside business hours and
-out-of-hours behaviour. `HandoffDestination` is deliberately the shape a `tenants` row will
-fill: when those columns exist, `resolveHandoffDestination` gains a tenant argument and
-nothing above it changes. One destination for every tenant is a single-tenant assumption
+R6.5 puts the destination in **per-organization** configuration alongside business hours and
+out-of-hours behaviour. `HandoffDestination` is deliberately the shape a `organizations` row will
+fill: when those columns exist, `resolveHandoffDestination` gains a organization argument and
+nothing above it changes. One destination for every organization is a single-organization assumption
 with a deadline on it.
 
 `TWILIO_ACCOUNT_SID` is now load-bearing for inbound as well as outbound: without it the
@@ -89,13 +89,13 @@ const journal = withHandoffJournal(recorder);
 Then pass `journal.recorder` to `runConversation` **in place of** `recorder`, keeping
 `recorder.started(...)` and `recorder.ended(...)` where they are.
 
-Build the handoff after the tenant is known:
+Build the handoff after the organization is known:
 
 ```ts
 const handoff = createHandoff({
   telephony: this.telephony,
   callId: stream.callId,
-  tenantId: tenant?.tenantId ?? null,
+  organizationId: organization?.organizationId ?? null,
   callerNumber: stream.parameters[CALLER_PARAM] ?? null,
   destination: this.destination,          // injected HANDOFF_DESTINATION
   events: journal.events,

@@ -3,9 +3,12 @@
   "info": {
     "title": "Ansa dashboard API",
     "version": "v1",
-    "description": "Self-service for a tenant organisation: its people, its agent's configuration, and its call history. Every request is scoped to one organisation by the session token that made it."
+    "description": "Self-service for a organization organisation: its people, its agent's configuration, and its call history. Every request is scoped to one organisation by the session token that made it."
   },
   "tags": [
+    {
+      "name": "agents"
+    },
     {
       "name": "auth"
     },
@@ -31,6 +34,9 @@
       "name": "numbers"
     },
     {
+      "name": "organization"
+    },
+    {
       "name": "readiness"
     },
     {
@@ -41,6 +47,1940 @@
     }
   ],
   "paths": {
+    "/api/v1/agents": {
+      "get": {
+        "operationId": "agents.list",
+        "tags": [
+          "agents"
+        ],
+        "summary": "List this organisation's agents, oldest first",
+        "description": "Includes retired agents, because a call log that references one still needs its name. Filter on `archivedAt` when offering a choice.",
+        "x-ansa-capability": "config:read",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "agentId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                          },
+                          "name": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "persona": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 2000
+                          },
+                          "greeting": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 500
+                          },
+                          "instructions": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 2000
+                          },
+                          "voiceId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 120
+                          },
+                          "dialledNumber": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 16,
+                            "pattern": "^\\+[1-9][0-9]{6,14}$"
+                          },
+                          "configVersion": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "enabledTools": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "maxLength": 120
+                            }
+                          },
+                          "bargeIn": {
+                            "type": "boolean"
+                          },
+                          "answeringMachineDetection": {
+                            "type": "boolean"
+                          },
+                          "capturedFields": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "key": {
+                                  "type": "string",
+                                  "maxLength": 64,
+                                  "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "enum": [
+                                    "name",
+                                    "reference",
+                                    "phone",
+                                    "email",
+                                    "address",
+                                    "date",
+                                    "time",
+                                    "amount",
+                                    "nin",
+                                    "bvn",
+                                    "otp",
+                                    "quantity",
+                                    "choice",
+                                    "text"
+                                  ]
+                                },
+                                "prompt": {
+                                  "type": "string",
+                                  "maxLength": 300
+                                },
+                                "capture": {
+                                  "type": "string",
+                                  "enum": [
+                                    "speech",
+                                    "keypad",
+                                    "either"
+                                  ]
+                                },
+                                "confirm": {
+                                  "type": "string",
+                                  "enum": [
+                                    "none",
+                                    "readback",
+                                    "spellback"
+                                  ]
+                                },
+                                "pattern": {
+                                  "type": "string",
+                                  "maxLength": 200
+                                },
+                                "attempts": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 10
+                                },
+                                "required": {
+                                  "type": "boolean"
+                                },
+                                "redact": {
+                                  "type": "boolean"
+                                },
+                                "options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "maxLength": 120
+                                  },
+                                  "maxItems": 24
+                                }
+                              },
+                              "required": [
+                                "key",
+                                "type",
+                                "prompt",
+                                "capture",
+                                "confirm",
+                                "pattern",
+                                "attempts",
+                                "required",
+                                "redact",
+                                "options"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "archivedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time"
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "agentId",
+                          "name",
+                          "persona",
+                          "greeting",
+                          "instructions",
+                          "voiceId",
+                          "dialledNumber",
+                          "configVersion",
+                          "enabledTools",
+                          "bargeIn",
+                          "answeringMachineDetection",
+                          "capturedFields",
+                          "archivedAt",
+                          "createdAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "agents.create",
+        "tags": [
+          "agents"
+        ],
+        "summary": "Add an agent to this organisation",
+        "description": "Starts at version 1 with no tools selected — a new agent does not inherit permission to call the organisation's endpoints. `dialledNumber` is optional; an agent can be written and reviewed before it is given a line. Refuses with 409 if the number is not available to route.",
+        "x-ansa-capability": "config:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "persona": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2000
+                  },
+                  "greeting": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 500
+                  },
+                  "instructions": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2000
+                  },
+                  "voiceId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 120
+                  },
+                  "dialledNumber": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 16,
+                    "pattern": "^\\+[1-9][0-9]{6,14}$"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "agentId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "persona": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 2000
+                    },
+                    "greeting": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 500
+                    },
+                    "instructions": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 2000
+                    },
+                    "voiceId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 120
+                    },
+                    "dialledNumber": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 16,
+                      "pattern": "^\\+[1-9][0-9]{6,14}$"
+                    },
+                    "configVersion": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "enabledTools": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 120
+                      }
+                    },
+                    "bargeIn": {
+                      "type": "boolean"
+                    },
+                    "answeringMachineDetection": {
+                      "type": "boolean"
+                    },
+                    "capturedFields": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "name",
+                              "reference",
+                              "phone",
+                              "email",
+                              "address",
+                              "date",
+                              "time",
+                              "amount",
+                              "nin",
+                              "bvn",
+                              "otp",
+                              "quantity",
+                              "choice",
+                              "text"
+                            ]
+                          },
+                          "prompt": {
+                            "type": "string",
+                            "maxLength": 300
+                          },
+                          "capture": {
+                            "type": "string",
+                            "enum": [
+                              "speech",
+                              "keypad",
+                              "either"
+                            ]
+                          },
+                          "confirm": {
+                            "type": "string",
+                            "enum": [
+                              "none",
+                              "readback",
+                              "spellback"
+                            ]
+                          },
+                          "pattern": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "attempts": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 10
+                          },
+                          "required": {
+                            "type": "boolean"
+                          },
+                          "redact": {
+                            "type": "boolean"
+                          },
+                          "options": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "maxLength": 120
+                            },
+                            "maxItems": 24
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "type",
+                          "prompt",
+                          "capture",
+                          "confirm",
+                          "pattern",
+                          "attempts",
+                          "required",
+                          "redact",
+                          "options"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "archivedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "agentId",
+                    "name",
+                    "persona",
+                    "greeting",
+                    "instructions",
+                    "voiceId",
+                    "dialledNumber",
+                    "configVersion",
+                    "enabledTools",
+                    "bargeIn",
+                    "answeringMachineDetection",
+                    "capturedFields",
+                    "archivedAt",
+                    "createdAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}": {
+      "get": {
+        "operationId": "agents.read",
+        "tags": [
+          "agents"
+        ],
+        "summary": "One agent",
+        "x-ansa-capability": "config:read",
+        "parameters": [
+          {
+            "name": "agentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "agentId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "persona": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 2000
+                    },
+                    "greeting": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 500
+                    },
+                    "instructions": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 2000
+                    },
+                    "voiceId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 120
+                    },
+                    "dialledNumber": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 16,
+                      "pattern": "^\\+[1-9][0-9]{6,14}$"
+                    },
+                    "configVersion": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "enabledTools": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 120
+                      }
+                    },
+                    "bargeIn": {
+                      "type": "boolean"
+                    },
+                    "answeringMachineDetection": {
+                      "type": "boolean"
+                    },
+                    "capturedFields": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "name",
+                              "reference",
+                              "phone",
+                              "email",
+                              "address",
+                              "date",
+                              "time",
+                              "amount",
+                              "nin",
+                              "bvn",
+                              "otp",
+                              "quantity",
+                              "choice",
+                              "text"
+                            ]
+                          },
+                          "prompt": {
+                            "type": "string",
+                            "maxLength": 300
+                          },
+                          "capture": {
+                            "type": "string",
+                            "enum": [
+                              "speech",
+                              "keypad",
+                              "either"
+                            ]
+                          },
+                          "confirm": {
+                            "type": "string",
+                            "enum": [
+                              "none",
+                              "readback",
+                              "spellback"
+                            ]
+                          },
+                          "pattern": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "attempts": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 10
+                          },
+                          "required": {
+                            "type": "boolean"
+                          },
+                          "redact": {
+                            "type": "boolean"
+                          },
+                          "options": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "maxLength": 120
+                            },
+                            "maxItems": 24
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "type",
+                          "prompt",
+                          "capture",
+                          "confirm",
+                          "pattern",
+                          "attempts",
+                          "required",
+                          "redact",
+                          "options"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "archivedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "agentId",
+                    "name",
+                    "persona",
+                    "greeting",
+                    "instructions",
+                    "voiceId",
+                    "dialledNumber",
+                    "configVersion",
+                    "enabledTools",
+                    "bargeIn",
+                    "answeringMachineDetection",
+                    "capturedFields",
+                    "archivedAt",
+                    "createdAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "agents.update",
+        "tags": [
+          "agents"
+        ],
+        "summary": "Rename an agent, or move which number reaches it",
+        "description": "Only the fields present are written. Send `dialledNumber: null` to unroute the agent, or a number to move it. Refuses with 409 if that number is not available to route.",
+        "x-ansa-capability": "config:write",
+        "parameters": [
+          {
+            "name": "agentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "persona": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2000
+                  },
+                  "greeting": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 500
+                  },
+                  "instructions": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2000
+                  },
+                  "voiceId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 120
+                  },
+                  "dialledNumber": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 16,
+                    "pattern": "^\\+[1-9][0-9]{6,14}$"
+                  },
+                  "bargeIn": {
+                    "type": "boolean"
+                  },
+                  "answeringMachineDetection": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "agentId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "persona": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 2000
+                    },
+                    "greeting": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 500
+                    },
+                    "instructions": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 2000
+                    },
+                    "voiceId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 120
+                    },
+                    "dialledNumber": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 16,
+                      "pattern": "^\\+[1-9][0-9]{6,14}$"
+                    },
+                    "configVersion": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "enabledTools": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 120
+                      }
+                    },
+                    "bargeIn": {
+                      "type": "boolean"
+                    },
+                    "answeringMachineDetection": {
+                      "type": "boolean"
+                    },
+                    "capturedFields": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "name",
+                              "reference",
+                              "phone",
+                              "email",
+                              "address",
+                              "date",
+                              "time",
+                              "amount",
+                              "nin",
+                              "bvn",
+                              "otp",
+                              "quantity",
+                              "choice",
+                              "text"
+                            ]
+                          },
+                          "prompt": {
+                            "type": "string",
+                            "maxLength": 300
+                          },
+                          "capture": {
+                            "type": "string",
+                            "enum": [
+                              "speech",
+                              "keypad",
+                              "either"
+                            ]
+                          },
+                          "confirm": {
+                            "type": "string",
+                            "enum": [
+                              "none",
+                              "readback",
+                              "spellback"
+                            ]
+                          },
+                          "pattern": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "attempts": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 10
+                          },
+                          "required": {
+                            "type": "boolean"
+                          },
+                          "redact": {
+                            "type": "boolean"
+                          },
+                          "options": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "maxLength": 120
+                            },
+                            "maxItems": 24
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "type",
+                          "prompt",
+                          "capture",
+                          "confirm",
+                          "pattern",
+                          "attempts",
+                          "required",
+                          "redact",
+                          "options"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "archivedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "agentId",
+                    "name",
+                    "persona",
+                    "greeting",
+                    "instructions",
+                    "voiceId",
+                    "dialledNumber",
+                    "configVersion",
+                    "enabledTools",
+                    "bargeIn",
+                    "answeringMachineDetection",
+                    "capturedFields",
+                    "archivedAt",
+                    "createdAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "agents.archive",
+        "tags": [
+          "agents"
+        ],
+        "summary": "Retire an agent and release its number",
+        "description": "Archived, not deleted: calls point at the agent that handled them for the life of the call log. The number is released in the same statement, because an archived agent does not answer and a number left attached would ring nobody and could not be reassigned.",
+        "x-ansa-capability": "config:write",
+        "parameters": [
+          {
+            "name": "agentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/fields": {
+      "put": {
+        "operationId": "agents.setFields",
+        "tags": [
+          "agents"
+        ],
+        "summary": "Replace the form this agent conducts",
+        "description": "Sent whole rather than patched: the order of the fields is the order the caller is asked, so a partial update would be a reorder protocol nobody asked for. The agent conducts this form on the next call it takes — the order here is the order it asks, and a field with a pattern is re-asked until the value matches or the attempts run out.",
+        "x-ansa-capability": "config:write",
+        "parameters": [
+          {
+            "name": "agentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fields": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string",
+                          "maxLength": 64,
+                          "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "name",
+                            "reference",
+                            "phone",
+                            "email",
+                            "address",
+                            "date",
+                            "time",
+                            "amount",
+                            "nin",
+                            "bvn",
+                            "otp",
+                            "quantity",
+                            "choice",
+                            "text"
+                          ]
+                        },
+                        "prompt": {
+                          "type": "string",
+                          "maxLength": 300
+                        },
+                        "capture": {
+                          "type": "string",
+                          "enum": [
+                            "speech",
+                            "keypad",
+                            "either"
+                          ]
+                        },
+                        "confirm": {
+                          "type": "string",
+                          "enum": [
+                            "none",
+                            "readback",
+                            "spellback"
+                          ]
+                        },
+                        "pattern": {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        "attempts": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 10
+                        },
+                        "required": {
+                          "type": "boolean"
+                        },
+                        "redact": {
+                          "type": "boolean"
+                        },
+                        "options": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 120
+                          },
+                          "maxItems": 24
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "type",
+                        "prompt",
+                        "capture",
+                        "confirm",
+                        "pattern",
+                        "attempts",
+                        "required",
+                        "redact",
+                        "options"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 40
+                  }
+                },
+                "required": [
+                  "fields"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "agentId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "persona": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 2000
+                    },
+                    "greeting": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 500
+                    },
+                    "instructions": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 2000
+                    },
+                    "voiceId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 120
+                    },
+                    "dialledNumber": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 16,
+                      "pattern": "^\\+[1-9][0-9]{6,14}$"
+                    },
+                    "configVersion": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "enabledTools": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 120
+                      }
+                    },
+                    "bargeIn": {
+                      "type": "boolean"
+                    },
+                    "answeringMachineDetection": {
+                      "type": "boolean"
+                    },
+                    "capturedFields": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "name",
+                              "reference",
+                              "phone",
+                              "email",
+                              "address",
+                              "date",
+                              "time",
+                              "amount",
+                              "nin",
+                              "bvn",
+                              "otp",
+                              "quantity",
+                              "choice",
+                              "text"
+                            ]
+                          },
+                          "prompt": {
+                            "type": "string",
+                            "maxLength": 300
+                          },
+                          "capture": {
+                            "type": "string",
+                            "enum": [
+                              "speech",
+                              "keypad",
+                              "either"
+                            ]
+                          },
+                          "confirm": {
+                            "type": "string",
+                            "enum": [
+                              "none",
+                              "readback",
+                              "spellback"
+                            ]
+                          },
+                          "pattern": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "attempts": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 10
+                          },
+                          "required": {
+                            "type": "boolean"
+                          },
+                          "redact": {
+                            "type": "boolean"
+                          },
+                          "options": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "maxLength": 120
+                            },
+                            "maxItems": 24
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "type",
+                          "prompt",
+                          "capture",
+                          "confirm",
+                          "pattern",
+                          "attempts",
+                          "required",
+                          "redact",
+                          "options"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "archivedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "agentId",
+                    "name",
+                    "persona",
+                    "greeting",
+                    "instructions",
+                    "voiceId",
+                    "dialledNumber",
+                    "configVersion",
+                    "enabledTools",
+                    "bargeIn",
+                    "answeringMachineDetection",
+                    "capturedFields",
+                    "archivedAt",
+                    "createdAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/tools": {
+      "put": {
+        "operationId": "agents.setTools",
+        "tags": [
+          "agents"
+        ],
+        "summary": "Replace which shared tools this agent may call",
+        "description": "The registry belongs to the organisation; this is one agent's slice of it. Sent whole rather than patched, so the selection on screen is the selection saved. An empty list means the agent reaches none of the organisation's tools — it keeps the platform's own, so it can still end a call and transfer to a human.",
+        "x-ansa-capability": "config:write",
+        "parameters": [
+          {
+            "name": "agentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tools": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 120
+                    },
+                    "maxItems": 200
+                  }
+                },
+                "required": [
+                  "tools"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "agentId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "persona": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 2000
+                    },
+                    "greeting": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 500
+                    },
+                    "instructions": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 2000
+                    },
+                    "voiceId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 120
+                    },
+                    "dialledNumber": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 16,
+                      "pattern": "^\\+[1-9][0-9]{6,14}$"
+                    },
+                    "configVersion": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "enabledTools": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 120
+                      }
+                    },
+                    "bargeIn": {
+                      "type": "boolean"
+                    },
+                    "answeringMachineDetection": {
+                      "type": "boolean"
+                    },
+                    "capturedFields": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "name",
+                              "reference",
+                              "phone",
+                              "email",
+                              "address",
+                              "date",
+                              "time",
+                              "amount",
+                              "nin",
+                              "bvn",
+                              "otp",
+                              "quantity",
+                              "choice",
+                              "text"
+                            ]
+                          },
+                          "prompt": {
+                            "type": "string",
+                            "maxLength": 300
+                          },
+                          "capture": {
+                            "type": "string",
+                            "enum": [
+                              "speech",
+                              "keypad",
+                              "either"
+                            ]
+                          },
+                          "confirm": {
+                            "type": "string",
+                            "enum": [
+                              "none",
+                              "readback",
+                              "spellback"
+                            ]
+                          },
+                          "pattern": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "attempts": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 10
+                          },
+                          "required": {
+                            "type": "boolean"
+                          },
+                          "redact": {
+                            "type": "boolean"
+                          },
+                          "options": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "maxLength": 120
+                            },
+                            "maxItems": 24
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "type",
+                          "prompt",
+                          "capture",
+                          "confirm",
+                          "pattern",
+                          "attempts",
+                          "required",
+                          "redact",
+                          "options"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "archivedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "agentId",
+                    "name",
+                    "persona",
+                    "greeting",
+                    "instructions",
+                    "voiceId",
+                    "dialledNumber",
+                    "configVersion",
+                    "enabledTools",
+                    "bargeIn",
+                    "answeringMachineDetection",
+                    "capturedFields",
+                    "archivedAt",
+                    "createdAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/me": {
       "get": {
         "operationId": "auth.me",
@@ -488,6 +2428,158 @@
         }
       }
     },
+    "/api/v1/auth/sign-ups": {
+      "post": {
+        "operationId": "auth.signUp",
+        "tags": [
+          "auth"
+        ],
+        "summary": "Create an organisation and an account to own it",
+        "description": "The self-serve half of onboarding, for somebody arriving without an invitation. An address that already has an account may create a further organisation using the password it already has, and a wrong one is refused with the same 401 as a failed sign-in. Answers with a session, so there is no second step.",
+        "x-ansa-capability": "public",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "organisationName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "displayName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "maxLength": 320,
+                    "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password",
+                    "minLength": 12,
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "organisationName",
+                  "displayName",
+                  "email",
+                  "password"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "organisation": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                        },
+                        "name": {
+                          "type": "string",
+                          "maxLength": 200
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "owner",
+                        "admin",
+                        "member"
+                      ]
+                    },
+                    "createdUser": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "token",
+                    "expiresAt",
+                    "organisation",
+                    "role",
+                    "createdUser"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts; see the Retry-After header",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/calls": {
       "get": {
         "operationId": "calls.list",
@@ -499,22 +2591,22 @@
         "x-ansa-capability": "calls:read",
         "parameters": [
           {
-            "name": "limit",
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "perPage",
             "in": "query",
             "required": false,
             "schema": {
               "type": "integer",
               "minimum": 1,
               "maximum": 100
-            }
-          },
-          {
-            "name": "cursor",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "maxLength": 512
             }
           },
           {
@@ -542,6 +2634,16 @@
             "schema": {
               "type": "string",
               "maxLength": 64
+            }
+          },
+          {
+            "name": "agentId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
             }
           },
           {
@@ -644,6 +2746,13 @@
                           "createdAt": {
                             "type": "string",
                             "format": "date-time"
+                          },
+                          "responseP50Ms": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ],
+                            "minimum": 0
                           }
                         },
                         "required": [
@@ -655,21 +2764,35 @@
                           "endedAt",
                           "endReason",
                           "durationSeconds",
-                          "createdAt"
+                          "createdAt",
+                          "responseP50Ms"
                         ],
                         "additionalProperties": false
                       }
                     },
-                    "nextCursor": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                    "page": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "perPage": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "totalPages": {
+                      "type": "integer",
+                      "minimum": 0
                     }
                   },
                   "required": [
                     "items",
-                    "nextCursor"
+                    "page",
+                    "perPage",
+                    "total",
+                    "totalPages"
                   ],
                   "additionalProperties": false
                 }
@@ -819,6 +2942,13 @@
                     "createdAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "responseP50Ms": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
                     },
                     "turns": {
                       "type": "array",
@@ -1027,6 +3157,7 @@
                     "durationSeconds",
                     "configVersion",
                     "createdAt",
+                    "responseP50Ms",
                     "turns",
                     "transcripts",
                     "events"
@@ -2768,22 +4899,22 @@
         "x-ansa-capability": "config:read",
         "parameters": [
           {
-            "name": "limit",
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "perPage",
             "in": "query",
             "required": false,
             "schema": {
               "type": "integer",
               "minimum": 1,
               "maximum": 100
-            }
-          },
-          {
-            "name": "cursor",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "maxLength": 512
             }
           }
         ],
@@ -2829,16 +4960,29 @@
                         "additionalProperties": false
                       }
                     },
-                    "nextCursor": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                    "page": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "perPage": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "totalPages": {
+                      "type": "integer",
+                      "minimum": 0
                     }
                   },
                   "required": [
                     "items",
-                    "nextCursor"
+                    "page",
+                    "perPage",
+                    "total",
+                    "totalPages"
                   ],
                   "additionalProperties": false
                 }
@@ -4849,22 +6993,22 @@
         "x-ansa-capability": "invitations:read",
         "parameters": [
           {
-            "name": "limit",
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "perPage",
             "in": "query",
             "required": false,
             "schema": {
               "type": "integer",
               "minimum": 1,
               "maximum": 100
-            }
-          },
-          {
-            "name": "cursor",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "maxLength": 512
             }
           }
         ],
@@ -4935,16 +7079,29 @@
                         "additionalProperties": false
                       }
                     },
-                    "nextCursor": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                    "page": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "perPage": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "totalPages": {
+                      "type": "integer",
+                      "minimum": 0
                     }
                   },
                   "required": [
                     "items",
-                    "nextCursor"
+                    "page",
+                    "perPage",
+                    "total",
+                    "totalPages"
                   ],
                   "additionalProperties": false
                 }
@@ -5222,22 +7379,22 @@
         "x-ansa-capability": "members:read",
         "parameters": [
           {
-            "name": "limit",
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "perPage",
             "in": "query",
             "required": false,
             "schema": {
               "type": "integer",
               "minimum": 1,
               "maximum": 100
-            }
-          },
-          {
-            "name": "cursor",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "maxLength": 512
             }
           }
         ],
@@ -5292,16 +7449,29 @@
                         "additionalProperties": false
                       }
                     },
-                    "nextCursor": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                    "page": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "perPage": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "totalPages": {
+                      "type": "integer",
+                      "minimum": 0
                     }
                   },
                   "required": [
                     "items",
-                    "nextCursor"
+                    "page",
+                    "perPage",
+                    "total",
+                    "totalPages"
                   ],
                   "additionalProperties": false
                 }
@@ -5853,6 +8023,292 @@
           },
           "403": {
             "description": "The caller's role does not hold config:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/organization": {
+      "get": {
+        "operationId": "organization.read",
+        "tags": [
+          "organization"
+        ],
+        "summary": "This organisation",
+        "description": "The company, not its agents. `/config` is the agent's script and is versioned; this is not. `audioRetentionDays` and `consent` are set by the platform operator and are shown here so a screen can explain them, not so it can change them.",
+        "x-ansa-capability": "config:read",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "organizationId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "audioRetentionDays": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "consent": {
+                      "type": "object",
+                      "properties": {
+                        "policy": {
+                          "type": "string",
+                          "maxLength": 64
+                        },
+                        "basis": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 500
+                        },
+                        "callingEarliestHour": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 23
+                        },
+                        "callingLatestHour": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 24
+                        }
+                      },
+                      "required": [
+                        "policy",
+                        "basis",
+                        "callingEarliestHour",
+                        "callingLatestHour"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "organizationId",
+                    "name",
+                    "createdAt",
+                    "audioRetentionDays",
+                    "consent"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "organization.rename",
+        "tags": [
+          "organization"
+        ],
+        "summary": "Rename this organisation",
+        "description": "Cosmetic, and only here: an agent's name is what it says on a call, and this is not that. Renaming the organisation leaves every agent saying exactly what it said before.",
+        "x-ansa-capability": "config:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "organizationId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "audioRetentionDays": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "consent": {
+                      "type": "object",
+                      "properties": {
+                        "policy": {
+                          "type": "string",
+                          "maxLength": 64
+                        },
+                        "basis": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 500
+                        },
+                        "callingEarliestHour": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 23
+                        },
+                        "callingLatestHour": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 24
+                        }
+                      },
+                      "required": [
+                        "policy",
+                        "basis",
+                        "callingEarliestHour",
+                        "callingLatestHour"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "organizationId",
+                    "name",
+                    "createdAt",
+                    "audioRetentionDays",
+                    "consent"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
             "content": {
               "application/problem+json": {
                 "schema": {

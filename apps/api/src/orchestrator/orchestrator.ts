@@ -1,7 +1,7 @@
 import type { LlmProvider } from "@ansa/llm";
 import type { TranscriberSession } from "@ansa/transcriber";
 import type { TurnSession } from "@ansa/turn-detector";
-import type { AudioChunk, Logger, TenantId } from "@ansa/shared";
+import type { AudioChunk, Logger, OrganizationId } from "@ansa/shared";
 import type { CallMediaStream } from "@ansa/telephony";
 import { durationMs, type SynthesisStream, type TtsProvider } from "@ansa/tts";
 import {
@@ -16,6 +16,7 @@ import { createFillerPicker } from "../telephony/filler";
 import { classify } from "./action";
 import {
   advance,
+  expecting,
   confirmedUtterance,
   idle,
   isAffirmative,
@@ -24,6 +25,8 @@ import {
   type EntityKind,
 } from "./capture";
 import type { CallFactsStore, IdentifierField } from "../conversation/call-facts";
+import type { CollectedField } from "../tenancy/captured-fields";
+import { createForm } from "./form";
 import { renderFacts } from "../conversation/facts-prompt";
 import type { Handoff } from "../handoff/handoff";
 import { createEscalationWatch, type EscalationTrigger } from "../handoff/triggers";
@@ -90,10 +93,10 @@ export interface OrchestratorDeps {
   readonly log: Logger;
   readonly greeting: string;
   /**
-   * The composed system prompt for this call — base, locale, tenant, task. The turn layer
+   * The composed system prompt for this call — base, locale, organization, task. The turn layer
    * is appended per turn below, which is how it already worked.
    *
-   * Required, not defaulted. A tenant's persona has been loaded, validated and composed on
+   * Required, not defaulted. A organization's persona has been loaded, validated and composed on
    * every config load since the prompt layers landed, and the orchestrator used the
    * default anyway; a field with a fallback is how that happens again quietly.
    */
@@ -111,6 +114,26 @@ export interface OrchestratorDeps {
    * This is a floor, not echo cancellation. Too high and real interruptions are ignored.
    */
   readonly bargeInGuardMs?: number;
+  /**
+   * Whether the caller may cut the agent off mid-sentence (migration 0020).
+   *
+   * Defaults to true, which is how every call behaved before this was settable and how a
+   * person expects a telephone to work. False is for the line that must finish saying
+   * something before it stops — a disclosure, a confirmation being read back.
+   *
+   * Turning it off does not stop us LISTENING while the agent speaks; the transcript still
+   * arrives and the turn still commits at the end of it. It only stops the audio being
+   * torn down mid-sentence, which is the part a caller experiences as being interrupted.
+   */
+  readonly bargeIn?: boolean;
+  /**
+   * The agent's configured form (migration 0021), in the order it asks.
+   *
+   * Absent or empty leaves capture exactly as it was — reactive, driven by `classify`, and
+   * routed through the two built-in identifiers. That is what every agent without a form
+   * gets, and it must stay identical or this change breaks calls that worked.
+   */
+  readonly fields?: readonly CollectedField[];
   /**
    * The greeting, already rendered. Fixed text in a fixed voice is deterministic, so
    * synthesising it over the network on every call spends ~500-950ms of silence at the
@@ -138,7 +161,7 @@ export interface OrchestratorDeps {
   /**
    * Audio the carrier delivered before this conversation was constructed.
    *
-   * Outbound meets its tenant on the media socket and has to load configuration before a
+   * Outbound meets its organization on the media socket and has to load configuration before a
    * listen session can be opened with the right vocabulary. Frames arriving in that
    * window used to be dropped: a fast lookup makes the window small, but "small" is not
    * "cannot lose a word", and only replaying them makes that true.
@@ -159,9 +182,9 @@ export interface OrchestratorDeps {
   /**
    * What the agent knows about this call, and how well it knows it.
    *
-   * Constructed by the gateway rather than here, because the tenant is resolved on the
+   * Constructed by the gateway rather than here, because the organization is resolved on the
    * media socket and the orchestrator has never needed to know it. Absent on a call whose
-   * number has no tenant configuration — the same calls for which the recorder is already
+   * number has no organization configuration — the same calls for which the recorder is already
    * skipped.
    */
   readonly facts?: CallFactsStore;
@@ -179,13 +202,13 @@ export interface OrchestratorDeps {
   /**
    * Who this call belongs to.
    *
-   * Required and nullable, not optional. A tool dispatch without a tenant is a query that
-   * could return another tenant's row (CLAUDE.md rule 3), so null does not mean "look it
+   * Required and nullable, not optional. A tool dispatch without a organization is a query that
+   * could return another organization's row (CLAUDE.md rule 3), so null does not mean "look it
    * up later" — it means an unregistered number, and **tool calling is disabled outright**
    * for the whole call. Such a caller may hold a conversation and must not touch anybody's
    * systems.
    */
-  readonly tenantId: TenantId | null;
+  readonly organizationId: OrganizationId | null;
   /**
    * Builds this call's tools. Absent leaves the agent exactly as it was before tools
    * existed, which is what every test that does not care about them gets.
@@ -210,6 +233,29 @@ export interface OrchestratorDeps {
  * — writing an email address or an amount into `policyNumber` would put a confidently
  * wrong label in front of the model, which is worse than the model not being told.
  */
+/**
+ * What the agent says when a value was heard correctly and is not the right shape.
+ *
+ * The operator's own wording is reused, because they wrote it to describe the format and
+ * repeating it is the most useful thing that can be said. The pattern itself is never read
+ * out — a caller cannot act on a regular expression, and it would take longer to say than
+ * the number it describes.
+ */
+const retryLine = (field: { readonly prompt: string }): string =>
+  field.prompt === ""
+    ? "That does not look like the right format. Could you give it to me again?"
+    : `That does not look like the right format. ${field.prompt}`;
+
+/**
+ * The line when the attempts are used up and there is nobody to transfer to.
+ *
+ * Says what is true and does not promise a callback the agent has no way to make. The call
+ * continues, because hanging up on someone who has answered three times is worse than
+ * carrying on without the value.
+ */
+const GAVE_UP =
+  "I am still not getting that in a form I can use, and I do not want to keep you repeating it. Let us carry on without it for now.";
+
 const FACT_FIELD_FOR: Readonly<Partial<Record<EntityKind, IdentifierField>>> = {
   name: "callerName",
   reference: "policyNumber",
@@ -463,6 +509,36 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   const log = deps.log.child({ callId: stream.callId });
   const conversation = createConversation();
   const guardMs = deps.bargeInGuardMs ?? DEFAULT_BARGE_IN_GUARD_MS;
+  const bargeInEnabled = deps.bargeIn ?? true;
+  /* `CAPTURE_WIRING.md` §7: who decides when to ask. It is the agent's configuration now,
+     and an agent with no form gets a director that is inert in every direction. */
+  const form = createForm(deps.fields ?? []);
+
+  /**
+   * Point the engine at the next field the form wants, without speaking.
+   *
+   * `expecting()` returns the question too, and it is deliberately not used: the prompt
+   * already tells the model what to collect and in what order, and having the engine say
+   * it as well would give the caller the same question twice — once conversationally and
+   * once as a form. What is taken is the `awaiting` state, and that is the whole point of
+   * §7 in CAPTURE_WIRING: directed parsing. "The fourteenth", "Sikiru" and a letter-only
+   * reference are unrecognisable in free speech and unambiguous as the answer to a
+   * question, and `parseDirected` only runs from `awaiting`.
+   *
+   * Only from idle. Arming mid-readback would throw away a value the caller is part-way
+   * through confirming, which is worse than parsing the next turn less well.
+   *
+   * An agent with no form never arms anything: `outstanding()` is null, capture stays
+   * reactive, and the call behaves exactly as it did before any of this existed.
+   */
+  const armNextField = (): void => {
+    if (capture.kind !== "idle") return;
+    const next = form.outstanding();
+    if (next === null) return;
+    capture = expecting(next.entity).state;
+    form.beginAsking(next);
+    log.debug("expecting a configured field", { key: next.key, entity: next.entity });
+  };
 
   let turnSeq = 0;
   let turn: AgentTurn | null = null;
@@ -628,14 +704,14 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   };
 
   /**
-   * This call's tenant, captured once.
+   * This call's organization, captured once.
    *
    * Null disables tool calling for the whole call rather than per dispatch: nothing is
    * built, so there is no dispatcher to reach and no list to offer the model.
    */
-  const toolTenantId = deps.tenantId;
+  const toolOrganizationId = deps.organizationId;
   const toolset: CallTools | null =
-    toolTenantId === null
+    toolOrganizationId === null
       ? null
       : (deps.makeTools?.({ holding: toolHolding, endCall: endCallWhenHeard }) ?? null);
 
@@ -1063,7 +1139,12 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     // when nothing is playing: with a turn open, stopSpeaking cancels it on the next line
     // and the turn watchdog it may be holding has to survive until then.
     if (current === null) cancelWatchdog();
-    if (current !== null) stopSpeaking("caller interrupted");
+    // The agent finishes its sentence when barge-in is off. Everything above still ran —
+    // the turn start is stamped and the state machine has been told the caller took the
+    // floor — so the transcript that follows is handled normally. Only the teardown of
+    // audio already playing is withheld, which is the whole of what "interrupt" means to
+    // somebody on the phone.
+    if (current !== null && bargeInEnabled) stopSpeaking("caller interrupted");
   });
 
   deps.listen.turns.onEndOfTurn(() => {
@@ -1370,9 +1451,9 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       // path (R5.3), so a tool listed here can still be refused, confirmed or transferred.
       // Absent — an unregistered number — and the model may only speak.
       tools:
-        toolset === null || toolTenantId === null
+        toolset === null || toolOrganizationId === null
           ? undefined
-          : toolset.registry.listFor(toolTenantId),
+          : toolset.registry.listFor(toolOrganizationId),
     });
     current.cancelLlm = () => {
       completion.cancel();
@@ -1486,26 +1567,26 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       if (turn?.seq !== seq) return;
       if (calls.length === 0) return;
 
-      if (toolset === null || toolTenantId === null) {
+      if (toolset === null || toolOrganizationId === null) {
         // Unreachable while `tools` is only sent when a dispatcher exists, and handled
         // rather than ignored: a silently dropped tool call leaves the turn open with
         // nothing coming, and the caller hears four seconds of nothing before the
         // watchdog rescues it.
-        log.error("the model asked for a tool on a call with no tenant", {
+        log.error("the model asked for a tool on a call with no organization", {
           seq,
           tools: calls.map((c) => c.name),
         });
         current.llmDone = true;
-        stopSpeaking("tool call with no tenant");
-        sayRecovery("tool call with no tenant");
+        stopSpeaking("tool call with no organization");
+        sayRecovery("tool call with no organization");
         return;
       }
 
-      const tenantId = toolTenantId;
+      const organizationId = toolOrganizationId;
       const dispatcher = toolset.dispatcher;
       // The model asked instead of answering, so this turn produces no text of its own.
       current.llmDone = true;
-      record.event("tool_batch", { tenantId, seq, tools: calls.map((c) => c.name) });
+      record.event("tool_batch", { organizationId, seq, tools: calls.map((c) => c.name) });
       log.info("the model asked for tools", { seq, tools: calls.map((c) => c.name) });
 
       void Promise.all(
@@ -1514,7 +1595,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         // Holding speech starts inside dispatch, before any adapter runs.
         calls.map((call) =>
           dispatcher.dispatch({
-            tenantId,
+            organizationId,
             callId: stream.callId,
             name: call.name,
             args: call.args,
@@ -1525,7 +1606,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
 
         for (const outcome of outcomes) {
           record.event("tool_call", {
-            tenantId,
+            organizationId,
             tool: outcome.name,
             tier: outcome.tier,
             outcome: outcome.kind,
@@ -1652,17 +1733,79 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       log.info("value confirmed by the caller", { kind: capturedKind, chars: captured.length });
       record.event("value confirmed", { kind: capturedKind, chars: captured.length });
 
-      // Confirmed by the caller against a readback, so it may now be used. Source matters
-      // more than the value: this is one of the five provenances allowed to write an
-      // identifier, and the model is not among them.
-      const field = FACT_FIELD_FOR[capturedKind];
-      if (field !== undefined) {
-        const change = deps.facts?.observe({
-          field,
-          value: captured,
-          source: "caller-confirmation",
-          atMs: Date.now(),
+      /* Where the value belongs. The field the agent actually asked for wins over the
+         first outstanding one of that kind: two `reference` fields are indistinguishable
+         from a value, and only the question tells them apart.
+
+         Falling back to `FACT_FIELD_FOR` is not legacy cruft — an agent with no form still
+         captures reactively, and a caller who volunteers their name on a formless call
+         should still have it recorded. */
+      const target = form.asking() ?? form.forVolunteered(capturedKind);
+
+      /* The organisation's own format check, run on a value the caller has already agreed
+         to. Deliberately after the readback rather than before it: the engine's job is to
+         establish what was said, and asking "did I hear PM eight five nine two" about a
+         value that is about to be thrown away is the only way the caller learns the agent
+         heard them correctly and their number is still wrong. Checking first would produce
+         "sorry, say that again" to someone who said it perfectly. */
+      if (target !== null && target !== undefined && !target.matches(captured)) {
+        const { again } = form.reject(target.key);
+        log.warn("a confirmed value did not match the configured pattern", {
+          key: target.key,
+          again,
         });
+        // The value never appears: the pattern exists because this field carries something
+        // like a policy number, and a rejected one is still a caller's identifier.
+        record.event("value rejected by pattern", { key: target.key, again });
+
+        if (again) {
+          // Back to asking for the same field rather than moving on. Re-arming through
+          // `expecting` is what keeps the next turn parsed as an answer to this question.
+          capture = expecting(target.entity).state;
+          form.beginAsking(target);
+          sayNow(retryLine(target), "pattern rejected");
+          return true;
+        }
+
+        // Out of attempts. `captureFailed` rather than a trigger of its own, because that
+        // is what happened — the value cannot be captured, and the caller has now said it
+        // correctly as many times as the operator allowed.
+        if (escalate(watch.captureFailed())) return true;
+
+        /* Nothing to transfer to. Skipping is the only honest move left: asking again is
+           the loop the attempt limit exists to end, and holding the field open would stop
+           the call reaching anything downstream. What the caller gave is not stored, so a
+           tool needing it refuses rather than acting on a value the organisation's own
+           rules reject. */
+        form.skip(target.key);
+        sayNow(GAVE_UP, "pattern rejected, no handoff");
+        armNextField();
+        return true;
+      }
+
+      const field = target?.key ?? FACT_FIELD_FOR[capturedKind];
+      if (target !== null && target !== undefined) {
+        form.satisfy(target.key, captured, true);
+      }
+      if (field !== undefined) {
+        const change = deps.facts?.observe(
+          target !== null && target !== undefined
+            ? {
+                captured: field,
+                value: captured,
+                source: "caller-confirmation",
+                atMs: Date.now(),
+              }
+            : {
+                // Confirmed by the caller against a readback, so it may now be used. Source
+                // matters more than the value: this is one of the five provenances allowed
+                // to write an identifier, and the model is not among them.
+                field: FACT_FIELD_FOR[capturedKind] as IdentifierField,
+                value: captured,
+                source: "caller-confirmation",
+                atMs: Date.now(),
+              },
+        );
         // A confirmed value contradicting a confirmed value is not applied — the caller
         // may be correcting themselves and the way to tell is to ask. Counted rather than
         // assumed rare; re-opening the readback belongs to capture, which owns the loop.
@@ -1671,6 +1814,10 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
           record.event("fact contested", { field });
         }
       }
+      // Whatever the form wants next, so the caller's following turn is parsed as an
+      // answer to it rather than guessed at.
+      armNextField();
+
       // The model finally sees the value, and sees it as confirmed. Routed through
       // respondTo so it is recorded, budgeted and spoken like any other turn. The kind
       // comes from capture rather than from the shape of the value: shape-sniffing turned
@@ -1940,7 +2087,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         return;
       }
 
-      if (toolset === null || toolTenantId === null) {
+      if (toolset === null || toolOrganizationId === null) {
         // Unreachable: nothing can be pending without a dispatcher. Says so rather than
         // going quiet on a caller who just agreed to something.
         log.error("a write was agreed to on a call with no dispatcher", { tool: awaiting.name });
@@ -1948,12 +2095,12 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         return;
       }
 
-      const tenantId = toolTenantId;
+      const organizationId = toolOrganizationId;
       const seqAtYes = turnSeq;
-      record.event("tool_confirmed", { tenantId, tool: awaiting.name });
+      record.event("tool_confirmed", { organizationId, tool: awaiting.name });
       void toolset.dispatcher
         .dispatch({
-          tenantId,
+          organizationId,
           callId: stream.callId,
           name: awaiting.name,
           // The same arguments, deliberately. The dispatcher fingerprints them and refuses
@@ -1963,7 +2110,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         })
         .then((done) => {
           record.event("tool_call", {
-            tenantId,
+            organizationId,
             tool: done.name,
             tier: done.tier,
             outcome: done.kind,
@@ -2052,6 +2199,13 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   turn = greetingTurn;
   callState.apply({ kind: "agent.turn.started", seq: greetingTurn.seq, reason: "greeting" });
   lastUtterance = deps.greeting;
+
+  /* The form's first field, armed as the greeting goes out.
+     Here rather than after the caller's first turn, because a caller who opens with "hi,
+     it's about policy PM eight five nine two" has already answered the first question —
+     and directed parsing is exactly what turns that run of digits into a reference rather
+     than a number heard in passing. Costs nothing on an agent with no form. */
+  armNextField();
 
   const cached = deps.greetingAudio ?? null;
   if (cached !== null && cached.length > 0) {

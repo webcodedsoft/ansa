@@ -1,5 +1,5 @@
-import { loadConsentFacts, loadOutboundPolicy, type Db } from "@ansa/db";
-import type { Logger, TenantId } from "@ansa/shared";
+import { loadConsentFacts, loadOutboundPolicy, loadAgentForOrganization, type Db } from "@ansa/db";
+import type { Logger, OrganizationId } from "@ansa/shared";
 import type { PlacedCall, TelephonyProvider } from "@ansa/telephony";
 
 import { mayCall, type ConsentPolicy } from "./consent";
@@ -14,7 +14,7 @@ import { mayCall, type ConsentPolicy } from "./consent";
  * not the other.
  */
 export interface OutboundRequest {
-  readonly tenantId: TenantId;
+  readonly organizationId: OrganizationId;
   readonly to: string;
   readonly from: string;
   readonly mediaStreamUrl: string;
@@ -38,9 +38,13 @@ export const placeOutboundCall = async (deps: {
     throw new ConsentError("Cannot verify consent without a database");
   }
 
-  const [facts, settings] = await Promise.all([
-    loadConsentFacts(deps.dataSource, request.tenantId, request.to),
-    loadOutboundPolicy(deps.dataSource, request.tenantId),
+  const [facts, settings, config] = await Promise.all([
+    loadConsentFacts(deps.dataSource, request.organizationId, request.to),
+    loadOutboundPolicy(deps.dataSource, request.organizationId),
+    // Alongside the other two rather than after them: the agent's own switches are needed
+    // before origination, and placing a call is not the answer path, but a third round
+    // trip in series would still be a third round trip.
+    loadAgentForOrganization(deps.dataSource, request.organizationId),
   ]);
 
   // An unrecognised policy is treated as the strictest rather than trusted or thrown on.
@@ -49,13 +53,13 @@ export const placeOutboundCall = async (deps: {
   const stored = settings?.policy;
   const policy: ConsentPolicy = stored === "existing_relationship" ? stored : "per_number";
   if (stored !== undefined && stored !== policy) {
-    deps.log.error("tenant has an unrecognised consent policy, treating as strictest", {
-      tenantId: request.tenantId,
+    deps.log.error("organization has an unrecognised consent policy, treating as strictest", {
+      organizationId: request.organizationId,
       stored,
     });
   }
 
-  // The request may narrow the tenant's window further; neither can widen the outer
+  // The request may narrow the organization's window further; neither can widen the outer
   // bound, which mayCall clamps.
   const earliest = request.earliestHour ?? settings?.earliestHour ?? undefined;
   const latest = request.latestHour ?? settings?.latestHour ?? undefined;
@@ -69,10 +73,10 @@ export const placeOutboundCall = async (deps: {
   });
 
   if (!verdict.allowed) {
-    // Logged at warn with the tenant attached: a tenant repeatedly attempting calls it is
+    // Logged at warn with the organization attached: a organization repeatedly attempting calls it is
     // not allowed to make is a thing worth noticing, not just refusing.
     deps.log.warn("refused an outbound call", {
-      tenantId: request.tenantId,
+      organizationId: request.organizationId,
       policy,
       reason: verdict.reason,
     });
@@ -84,7 +88,7 @@ export const placeOutboundCall = async (deps: {
     from: request.from,
     mediaStreamUrl: request.mediaStreamUrl,
     parameters: {
-      tenantId: request.tenantId,
+      organizationId: request.organizationId,
       direction: "outbound",
       // The number we dialled and the number we dialled from, so the call record does
       // not have to reconstruct either from a socket that knows neither.
@@ -92,6 +96,13 @@ export const placeOutboundCall = async (deps: {
       caller: request.from,
     },
     ...(request.statusCallbackUrl === undefined ? {} : { statusCallbackUrl: request.statusCallbackUrl }),
-    ...(request.amdCallbackUrl === undefined ? {} : { amdCallbackUrl: request.amdCallbackUrl }),
+    /* Answering-machine detection is the agent's choice (migration 0020), and it is
+       expressed by withholding the callback rather than by a flag the carrier ignores:
+       Twilio only runs detection when it has somewhere to report it. Off means the call
+       connects the moment it is answered, voicemail included — which is what an agent
+       that never dials a mobile wants, and a second of answer latency saved. */
+    ...(request.amdCallbackUrl === undefined || config?.answeringMachineDetection !== true
+      ? {}
+      : { amdCallbackUrl: request.amdCallbackUrl }),
   });
 };

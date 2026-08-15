@@ -1,4 +1,4 @@
-import type { CallId, TenantId } from "@ansa/shared";
+import type { CallId, OrganizationId } from "@ansa/shared";
 
 /**
  * R5.3. The tier is a required field on every registered tool and the only thing the
@@ -11,11 +11,11 @@ export type RiskTier = "read" | "write" | "irreversible";
 export type ToolArgs = Readonly<Record<string, unknown>>;
 
 /**
- * What an adapter is handed. Note `tenantId` — every adapter receives it and is expected
+ * What an adapter is handed. Note `organizationId` — every adapter receives it and is expected
  * to scope its lookup by it (CLAUDE.md rule 3). It is not decoration.
  */
 export interface AdapterCall {
-  readonly tenantId: TenantId;
+  readonly organizationId: OrganizationId;
   readonly callId: CallId;
   readonly name: string;
   readonly args: ToolArgs;
@@ -49,10 +49,10 @@ interface DefinitionBase {
    */
   readonly parameters: Readonly<Record<string, unknown>>;
   /**
-   * Null or absent means a platform tool, available to every tenant. Set means the tool
-   * belongs to that tenant and is invisible — not merely forbidden — to every other one.
+   * Null or absent means a platform tool, available to every organization. Set means the tool
+   * belongs to that organization and is invisible — not merely forbidden — to every other one.
    */
-  readonly tenantId?: TenantId | null;
+  readonly organizationId?: OrganizationId | null;
   /** Capped at HARD_TIMEOUT_MS at registration time. */
   readonly timeoutMs?: number;
   /**
@@ -76,7 +76,7 @@ interface DefinitionBase {
 /**
  * R5.4.3: raw JSON is never spoken, so a tool that can return data must say how its
  * result becomes a sentence. Required by the type, and again at runtime because a
- * tenant-configured tool arrives as data rather than as a literal.
+ * organization-configured tool arrives as data rather than as a literal.
  */
 export type Summarise = (result: unknown) => string;
 
@@ -102,9 +102,9 @@ export type ToolDefinition =
       readonly transferReason: string;
     });
 
-/** One request to run one tool, always on behalf of one tenant on one call. */
+/** One request to run one tool, always on behalf of one organization on one call. */
 export interface ToolCall {
-  readonly tenantId: TenantId;
+  readonly organizationId: OrganizationId;
   readonly callId: CallId;
   readonly name: string;
   readonly args: ToolArgs;
@@ -116,11 +116,11 @@ export interface ToolCall {
 }
 
 export type FailureReason =
-  /** No such tool for this tenant. Another tenant's tool reports as this, on purpose. */
+  /** No such tool for this organization. Another organization's tool reports as this, on purpose. */
   | "unknown-tool"
   | "timeout"
   | "adapter-error"
-  /** R5.2.3. This tool has failed repeatedly for this tenant and is being left alone. */
+  /** R5.2.3. This tool has failed repeatedly for this organization and is being left alone. */
   | "circuit-open"
   /** The confirmation id is unknown, expired, or already spent. */
   | "stale-confirmation"

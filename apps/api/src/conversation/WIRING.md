@@ -26,9 +26,9 @@ own, and steps 1–4 are the minimum that makes the module do anything.
   /**
    * What the agent knows about this call, and how well it knows it.
    *
-   * Constructed by the gateway rather than here, because the tenant is resolved on the
+   * Constructed by the gateway rather than here, because the organization is resolved on the
    * media socket and the orchestrator has never needed to know it. Absent on a call whose
-   * number has no tenant configuration — the same calls for which the recorder is already
+   * number has no organization configuration — the same calls for which the recorder is already
    * skipped.
    */
   readonly facts?: CallFactsStore;
@@ -36,8 +36,8 @@ own, and steps 1–4 are the minimum that makes the module do anything.
 
 **Import** `import type { CallFactsStore } from "../conversation/call-facts";`
 
-**Why a store rather than a tenant id.** The alternative — passing `tenantId` and building
-the store inside `runConversation` — makes the orchestrator learn the tenant in order to
+**Why a store rather than a organization id.** The alternative — passing `organizationId` and building
+the store inside `runConversation` — makes the orchestrator learn the organization in order to
 construct one object, and the gateway already holds it three lines above the
 `runConversation` call. This way `deps.facts` is one optional dependency with a natural
 absent case, like `recorder`.
@@ -50,14 +50,14 @@ absent case, like `recorder`.
 `stream.onClosed((reason) => { ... });` (`:365`), and before `const listen = ...`.
 
 ```ts
-    // Only when the tenant resolved. A call on an unconfigured number is already running
+    // Only when the organization resolved. A call on an unconfigured number is already running
     // with base vocabulary and recording nothing; there is nothing to scope state to and
-    // CLAUDE.md rule 3 does not admit a placeholder tenant.
+    // CLAUDE.md rule 3 does not admit a placeholder organization.
     const facts =
-      tenant?.tenantId == null
+      organization?.organizationId == null
         ? undefined
         : createCallFacts({
-            tenantId: tenant.tenantId,
+            organizationId: organization.organizationId,
             callId: stream.callId,
             callDirection:
               stream.parameters[DIRECTION_PARAM] === "outbound" ? "outbound" : "inbound",

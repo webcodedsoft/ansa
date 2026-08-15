@@ -46,10 +46,10 @@ export const hourInWat = (now: Date): number => watMoment(now).hour;
  * When an organisation's own line is staffed, in WAT.
  *
  * Here rather than in `@ansa/tools` because three packages need the shape and only one of
- * them may know what a tool is: the row is read in `@ansa/db`, carried through the tenant
+ * them may know what a tool is: the row is read in `@ansa/db`, carried through the organization
  * registry, and reasoned about in the business-hours tool.
  *
- * Not to be confused with `tenants.calling_earliest_hour`, which bounds when *we* may dial
+ * Not to be confused with `organizations.calling_earliest_hour`, which bounds when *we* may dial
  * someone. That is a constraint about other people's evenings and is clamped; this is a
  * claim an organisation makes about itself. See migration 0012.
  */

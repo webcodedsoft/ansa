@@ -6,9 +6,9 @@ import { describe, expect, it } from "vitest";
 import { renderConfigurationSurface } from "./config-surface";
 
 /**
- * The anti-drift mechanism for `docs/TENANT_CONFIGURATION.md`.
+ * The anti-drift mechanism for `docs/ORGANIZATION_CONFIGURATION.md`.
  *
- * A document describing what a tenant can and cannot configure is only worth having if it
+ * A document describing what a organization can and cannot configure is only worth having if it
  * cannot survive the commit that changes the answer. So it is generated from the modules
  * that enforce the answer, checked in so a reader does not have to run anything, and this
  * test fails the moment the two disagree.
@@ -30,9 +30,9 @@ const workspaceRoot = (): string => {
   }
 };
 
-const DOC = join(workspaceRoot(), "docs", "TENANT_CONFIGURATION.md");
+const DOC = join(workspaceRoot(), "docs", "ORGANIZATION_CONFIGURATION.md");
 
-describe("the tenant configuration surface", () => {
+describe("the organization configuration surface", () => {
   it("matches the document checked in beside it", () => {
     const rendered = renderConfigurationSurface();
 
@@ -44,7 +44,7 @@ describe("the tenant configuration surface", () => {
     expect(onDisk).toBe(rendered);
   });
 
-  it("names every guarantee a tenant is not allowed to switch off", () => {
+  it("names every guarantee a organization is not allowed to switch off", () => {
     const rendered = renderConfigurationSurface();
 
     // Spot-checked rather than trusted: the table is generated from ENFORCED_IN_CODE, and

@@ -1,14 +1,14 @@
 import { inspect } from "node:util";
 
-import { asTenantId } from "@ansa/shared";
+import { asOrganizationId } from "@ansa/shared";
 import { describe, expect, it } from "vitest";
 
 import { redactArgs } from "../redact";
 
 import { createCredentialVault, createInMemoryVault, sealCredential, type CredentialMaterial } from "./vault";
 
-const TENANT_A = asTenantId("11111111-1111-4111-8111-111111111111");
-const TENANT_B = asTenantId("22222222-2222-4222-8222-222222222222");
+const ORGANIZATION_A = asOrganizationId("11111111-1111-4111-8111-111111111111");
+const ORGANIZATION_B = asOrganizationId("22222222-2222-4222-8222-222222222222");
 
 /** Synthetic throughout. Nothing here is a real credential and nothing keys on the value. */
 const KEY = Buffer.alloc(32, 7);
@@ -38,10 +38,10 @@ const MATERIALS: readonly [string, CredentialMaterial, string, string][] = [
 describe("sealing", () => {
   for (const [label, material, header, expected] of MATERIALS) {
     it(`round-trips ${label} and applies it to the right header`, async () => {
-      const sealed = sealCredential(KEY, TENANT_A, "partner_api", material);
+      const sealed = sealCredential(KEY, ORGANIZATION_A, "partner_api", material);
       const vault = createCredentialVault({ key: KEY, load: async () => sealed });
 
-      const credential = await vault.resolve(TENANT_A, "partner_api");
+      const credential = await vault.resolve(ORGANIZATION_A, "partner_api");
       expect(credential).not.toBeNull();
 
       const headers: Record<string, string> = {};
@@ -51,74 +51,74 @@ describe("sealing", () => {
   }
 
   it("produces a different ciphertext every time, so two rows never compare equal", () => {
-    const one = sealCredential(KEY, TENANT_A, "partner_api", { kind: "bearer", token: "same" });
-    const two = sealCredential(KEY, TENANT_A, "partner_api", { kind: "bearer", token: "same" });
+    const one = sealCredential(KEY, ORGANIZATION_A, "partner_api", { kind: "bearer", token: "same" });
+    const two = sealCredential(KEY, ORGANIZATION_A, "partner_api", { kind: "bearer", token: "same" });
     expect(one).not.toBe(two);
   });
 
   it("refuses a key that is not 32 bytes rather than deriving one", () => {
-    expect(() => sealCredential(Buffer.alloc(16, 1), TENANT_A, "x", { kind: "bearer", token: "t" })).toThrow(
+    expect(() => sealCredential(Buffer.alloc(16, 1), ORGANIZATION_A, "x", { kind: "bearer", token: "t" })).toThrow(
       /32 bytes/,
     );
   });
 });
 
-describe("tenant binding", () => {
+describe("organization binding", () => {
   /**
    * The interesting failure is not "an attacker guessed the key". It is a row copied, by
-   * a bug or by hand, from one tenant's credentials into another's — at which point the
-   * platform would authenticate to a partner API as the wrong customer. The tenant id is
+   * a bug or by hand, from one organization's credentials into another's — at which point the
+   * platform would authenticate to a partner API as the wrong customer. The organization id is
    * in the AEAD tag, so the ciphertext simply does not open anywhere else.
    */
-  it("will not open a ciphertext sealed for another tenant", async () => {
-    const sealed = sealCredential(KEY, TENANT_A, "partner_api", { kind: "bearer", token: "a-only" });
+  it("will not open a ciphertext sealed for another organization", async () => {
+    const sealed = sealCredential(KEY, ORGANIZATION_A, "partner_api", { kind: "bearer", token: "a-only" });
     const vault = createCredentialVault({ key: KEY, load: async () => sealed });
 
-    await expect(vault.resolve(TENANT_B, "partner_api")).rejects.toThrow();
+    await expect(vault.resolve(ORGANIZATION_B, "partner_api")).rejects.toThrow();
   });
 
   it("will not open a ciphertext filed under another name", async () => {
-    const sealed = sealCredential(KEY, TENANT_A, "partner_api", { kind: "bearer", token: "a-only" });
+    const sealed = sealCredential(KEY, ORGANIZATION_A, "partner_api", { kind: "bearer", token: "a-only" });
     const vault = createCredentialVault({ key: KEY, load: async () => sealed });
 
-    await expect(vault.resolve(TENANT_A, "billing_api")).rejects.toThrow();
+    await expect(vault.resolve(ORGANIZATION_A, "billing_api")).rejects.toThrow();
   });
 
   it("will not open under a different key, and will not open a tampered value", async () => {
-    const sealed = sealCredential(KEY, TENANT_A, "partner_api", { kind: "bearer", token: "a-only" });
+    const sealed = sealCredential(KEY, ORGANIZATION_A, "partner_api", { kind: "bearer", token: "a-only" });
 
     await expect(
-      createCredentialVault({ key: OTHER_KEY, load: async () => sealed }).resolve(TENANT_A, "partner_api"),
+      createCredentialVault({ key: OTHER_KEY, load: async () => sealed }).resolve(ORGANIZATION_A, "partner_api"),
     ).rejects.toThrow();
 
     const parts = sealed.split(".");
     const flipped = [parts[0], parts[1], parts[2], Buffer.from("nonsense").toString("base64")].join(".");
     await expect(
-      createCredentialVault({ key: KEY, load: async () => flipped }).resolve(TENANT_A, "partner_api"),
+      createCredentialVault({ key: KEY, load: async () => flipped }).resolve(ORGANIZATION_A, "partner_api"),
     ).rejects.toThrow();
   });
 
-  it("keeps two tenants' credentials of the same name apart", async () => {
+  it("keeps two organizations' credentials of the same name apart", async () => {
     const vault = createInMemoryVault(
       KEY,
       new Map([
-        [TENANT_A, new Map([["api_key", sealCredential(KEY, TENANT_A, "api_key", { kind: "bearer", token: "for-a" })]])],
-        [TENANT_B, new Map([["api_key", sealCredential(KEY, TENANT_B, "api_key", { kind: "bearer", token: "for-b" })]])],
+        [ORGANIZATION_A, new Map([["api_key", sealCredential(KEY, ORGANIZATION_A, "api_key", { kind: "bearer", token: "for-a" })]])],
+        [ORGANIZATION_B, new Map([["api_key", sealCredential(KEY, ORGANIZATION_B, "api_key", { kind: "bearer", token: "for-b" })]])],
       ]),
     );
 
     const headersA: Record<string, string> = {};
-    (await vault.resolve(TENANT_A, "api_key"))?.applyTo(headersA);
+    (await vault.resolve(ORGANIZATION_A, "api_key"))?.applyTo(headersA);
     const headersB: Record<string, string> = {};
-    (await vault.resolve(TENANT_B, "api_key"))?.applyTo(headersB);
+    (await vault.resolve(ORGANIZATION_B, "api_key"))?.applyTo(headersB);
 
     expect(headersA.authorization).toBe("Bearer for-a");
     expect(headersB.authorization).toBe("Bearer for-b");
   });
 
-  it("returns null, not an error, when the tenant has no credential of that name", async () => {
+  it("returns null, not an error, when the organization has no credential of that name", async () => {
     const vault = createInMemoryVault(KEY, new Map());
-    expect(await vault.resolve(TENANT_A, "nothing_here")).toBeNull();
+    expect(await vault.resolve(ORGANIZATION_A, "nothing_here")).toBeNull();
   });
 });
 
@@ -126,9 +126,9 @@ describe("R5.2.1 — the plaintext has nowhere to go", () => {
   const secret = "tok-do-not-log-me";
 
   it("stringifies, serialises and inspects as redacted", async () => {
-    const sealed = sealCredential(KEY, TENANT_A, "partner_api", { kind: "bearer", token: secret });
+    const sealed = sealCredential(KEY, ORGANIZATION_A, "partner_api", { kind: "bearer", token: secret });
     const credential = await createCredentialVault({ key: KEY, load: async () => sealed }).resolve(
-      TENANT_A,
+      ORGANIZATION_A,
       "partner_api",
     );
     if (credential === null) throw new Error("expected a credential");

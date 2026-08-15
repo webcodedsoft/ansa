@@ -141,7 +141,7 @@ export class ProblemFilter extends BaseExceptionFilter {
     const problem = toProblem(exception, state.requestId);
 
     // A 5xx is the only case where the client is told less than we know, so it is the one
-    // case that has to reach the log — with the tenant on the line (CLAUDE.md rule 3), so
+    // case that has to reach the log — with the organization on the line (CLAUDE.md rule 3), so
     // "is this one organisation or all of them" is answerable without a repro.
     if (problem.status >= 500) {
       const principal = state.principal;
@@ -149,9 +149,9 @@ export class ProblemFilter extends BaseExceptionFilter {
         requestId: state.requestId,
         method: request.method,
         path: request.originalUrl.split("?")[0],
-        tenantId:
-          typeof principal === "object" && principal !== null && "tenantId" in principal
-            ? String((principal as { tenantId: unknown }).tenantId)
+        organizationId:
+          typeof principal === "object" && principal !== null && "organizationId" in principal
+            ? String((principal as { organizationId: unknown }).organizationId)
             : null,
         error: exception instanceof Error ? exception.message : String(exception),
         stack: exception instanceof Error ? exception.stack : undefined,

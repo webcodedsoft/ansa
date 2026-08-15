@@ -1,5 +1,5 @@
 import { enqueueEventDelivery, type Db } from "@ansa/db";
-import type { Logger, TenantId } from "@ansa/shared";
+import type { Logger, OrganizationId } from "@ansa/shared";
 import type { EventType, PreparedEvents } from "@ansa/tools";
 
 import type { CallFacts } from "../conversation/call-facts";
@@ -50,7 +50,7 @@ const TOOL_KINDS = new Set(["tool_call", "tool_result", "tool_invoked", "tool_fa
 export interface EventPublisherDeps {
   readonly dataSource: Db | null;
   readonly log: Logger;
-  readonly tenantId: TenantId;
+  readonly organizationId: OrganizationId;
   readonly events: PreparedEvents;
   readonly call: CallIdentity;
   /** Read at the moment an event fires, not snapshotted: a value confirmed on the last
@@ -65,8 +65,8 @@ export interface EventPublisherDeps {
 /**
  * Wrap the real recorder. Every call passes straight through; some also queue a delivery.
  *
- * Returns the recorder unchanged when the tenant has configured no receivers, which is
- * every tenant until one does. Nothing reaches a real call unless a real tenant asked for
+ * Returns the recorder unchanged when the organization has configured no receivers, which is
+ * every organization until one does. Nothing reaches a real call unless a real organization asked for
  * it, and this is where that is true rather than in a comment.
  */
 export const withEventPublisher = (
@@ -103,7 +103,7 @@ export const withEventPublisher = (
       captured = capturedIdentifierValues(deps.facts());
     } catch (error) {
       deps.log.error("could not build an event payload; nothing was queued", {
-        tenantId: deps.tenantId,
+        organizationId: deps.organizationId,
         event: type,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -117,7 +117,7 @@ export const withEventPublisher = (
       } catch (error) {
         // Redaction or serialisation failing must never send the unredacted thing instead.
         deps.log.error("could not prepare an event payload for a receiver", {
-          tenantId: deps.tenantId,
+          organizationId: deps.organizationId,
           event: type,
           subscription: receiver.subscription.name,
           error: error instanceof Error ? error.message : String(error),
@@ -126,7 +126,7 @@ export const withEventPublisher = (
       }
 
       void enqueueEventDelivery(dataSource, {
-        tenantId: deps.tenantId,
+        organizationId: deps.organizationId,
         eventType: type,
         subscription: receiver.subscription.name,
         carrierCallId: deps.call.callId,
@@ -136,7 +136,7 @@ export const withEventPublisher = (
         // Swallowed for the same reason every write in the recorder is: the caller is on
         // the line, or has just left it, and a database hiccup is not their problem.
         deps.log.error("could not queue an event delivery", {
-          tenantId: deps.tenantId,
+          organizationId: deps.organizationId,
           event: type,
           subscription: receiver.subscription.name,
           error: error instanceof Error ? error.message : String(error),
@@ -177,7 +177,7 @@ export const withEventPublisher = (
             call: deps.call,
             at: now(),
             summary: summarise({
-              tenantId: deps.tenantId,
+              organizationId: deps.organizationId,
               carrierCallId: deps.call.callId,
               callerNumber: deps.callerNumber,
               events: deps.journal(),

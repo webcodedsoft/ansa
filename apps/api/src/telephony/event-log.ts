@@ -35,7 +35,7 @@ export interface CallRecorder {
    *
    * Its own table rather than an event, because this is where the R9.2 loop lives:
    * `corrected_text` alongside it is a human's correction, and the pair is what turns one
-   * caller's mishearing into a keyterm and a test case for every tenant.
+   * caller's mishearing into a keyterm and a test case for every organization.
    */
   transcript(transcript: RecordedTranscript): void;
   /**
@@ -69,7 +69,7 @@ export const createCallRecorder = (deps: {
   if (deps.dataSource === null) return nullRecorder;
   const { dataSource, log } = deps;
 
-  let tenantId: StartedCall["tenantId"] | null = null;
+  let organizationId: StartedCall["organizationId"] | null = null;
   let callRowId: string | null = null;
   // Buffered before the insert returns an id as well as after: the first seconds of a
   // call are the ones worth having, and dropping them because the row did not exist yet
@@ -94,9 +94,9 @@ export const createCallRecorder = (deps: {
   let pendingEnd: Parameters<CallRecorder["ended"]> | null = null;
 
   const closeRow = (reason: string, carrierStatus?: string | null, durationSeconds?: number | null): void => {
-    if (callRowId === null || tenantId === null) return;
+    if (callRowId === null || organizationId === null) return;
     void recordCallEnded(dataSource, {
-      tenantId,
+      organizationId,
       callRowId,
       endReason: reason,
       carrierStatus: carrierStatus ?? null,
@@ -109,12 +109,12 @@ export const createCallRecorder = (deps: {
   };
 
   const flush = (): void => {
-    if (callRowId === null || tenantId === null) return;
+    if (callRowId === null || organizationId === null) return;
 
     if (transcripts.length > 0) {
       const words = transcripts;
       transcripts = [];
-      void recordTranscripts(dataSource, tenantId, callRowId, words).catch((error: unknown) => {
+      void recordTranscripts(dataSource, organizationId, callRowId, words).catch((error: unknown) => {
         log.error("could not write transcripts", {
           dropped: words.length,
           error: error instanceof Error ? error.message : String(error),
@@ -125,7 +125,7 @@ export const createCallRecorder = (deps: {
     if (turns.length > 0) {
       const batch = turns;
       turns = [];
-      void recordTurns(dataSource, tenantId, callRowId, batch).catch((error: unknown) => {
+      void recordTurns(dataSource, organizationId, callRowId, batch).catch((error: unknown) => {
         log.error("could not write turns", {
           dropped: batch.length,
           error: error instanceof Error ? error.message : String(error),
@@ -136,7 +136,7 @@ export const createCallRecorder = (deps: {
     if (buffer.length === 0) return;
     const batch = buffer;
     buffer = [];
-    void recordCallEvents(dataSource, tenantId, callRowId, batch).catch((error: unknown) => {
+    void recordCallEvents(dataSource, organizationId, callRowId, batch).catch((error: unknown) => {
       log.error("could not write call events", {
         dropped: batch.length,
         error: error instanceof Error ? error.message : String(error),
@@ -155,7 +155,7 @@ export const createCallRecorder = (deps: {
 
   return {
     started: (call) => {
-      tenantId = call.tenantId;
+      organizationId = call.organizationId;
       void recordCallStarted(dataSource, call)
         .then((id) => {
           callRowId = id;

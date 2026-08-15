@@ -1,4 +1,4 @@
-import type { Logger, TenantId } from "@ansa/shared";
+import type { Logger, OrganizationId } from "@ansa/shared";
 
 import type { ToolRegistry } from "../registry";
 import type { AdapterCall, ToolAdapter, ToolArgs, ToolDefinition } from "../types";
@@ -21,7 +21,7 @@ import type { CredentialVault } from "./vault";
  */
 
 export interface HttpConnectorOptions {
-  readonly tenantId: TenantId;
+  readonly organizationId: OrganizationId;
   readonly transport: Transport;
   readonly vault: CredentialVault;
   readonly log: Logger;
@@ -48,7 +48,7 @@ const withQuery = (url: string, args: ToolArgs): string => {
  * What the response means.
  *
  * 404 is null rather than an error on purpose: "we looked and there is no such record" is
- * an answer, and the tenant already wrote the sentence for it as `speech.fallback`. An
+ * an answer, and the organization already wrote the sentence for it as `speech.fallback`. An
  * error would instead produce "sorry, I couldn't get that just now", which tells the
  * caller the system is broken when in fact it worked.
  */
@@ -81,11 +81,11 @@ const execute = async (
   }
 
   if (config.credentialRef !== undefined) {
-    const credential = await options.vault.resolve(call.tenantId, config.credentialRef);
+    const credential = await options.vault.resolve(call.organizationId, config.credentialRef);
     if (credential === null) {
       // Refused rather than sent unauthenticated. An anonymous request to somebody's
       // customer API is either rejected — a confusing failure — or, far worse, accepted.
-      throw new Error(`no credential named ${config.credentialRef} for this tenant`);
+      throw new Error(`no credential named ${config.credentialRef} for this organization`);
     }
     credential.applyTo(headers);
   }
@@ -102,7 +102,7 @@ const execute = async (
   // caller's own details, and this line is written on every successful call.
   const target = new URL(url);
   options.log.debug("connector responded", {
-    tenantId: call.tenantId,
+    organizationId: call.organizationId,
     callId: call.callId,
     tool: call.name,
     endpoint: `${target.host}${target.pathname}`,
@@ -110,7 +110,7 @@ const execute = async (
   });
 
   if (response.status >= 400 && response.status !== 404) {
-    // The status and nothing else. A tenant's error body routinely quotes the request
+    // The status and nothing else. A organization's error body routinely quotes the request
     // back, credential header included, and this string ends up in a log line.
     throw new Error(`endpoint returned ${response.status}`);
   }
@@ -126,12 +126,12 @@ const speak = (config: HttpToolConfig, result: unknown): string => {
   return renderTemplate(speech.template, result) ?? speech.fallback;
 };
 
-const definitionFor = (config: HttpToolConfig, tenantId: TenantId): ToolDefinition => {
+const definitionFor = (config: HttpToolConfig, organizationId: OrganizationId): ToolDefinition => {
   const base = {
     name: config.name,
     description: config.description,
     parameters: config.parameters,
-    tenantId,
+    organizationId,
     timeoutMs: config.timeoutMs,
     identifiers: config.identifiers,
   };
@@ -159,12 +159,12 @@ const definitionFor = (config: HttpToolConfig, tenantId: TenantId): ToolDefiniti
 };
 
 /**
- * One adapter for all of a tenant's HTTP tools, into the same registry the platform tools
+ * One adapter for all of a organization's HTTP tools, into the same registry the platform tools
  * use (R5.2.0).
  *
- * The tenant check inside `execute` is not decoration. The registry already scopes
- * resolution by tenant, so a mismatch here should be impossible; CLAUDE.md rule 3 is about
- * the query that *could* return another tenant's row, and this is the last place before
+ * The organization check inside `execute` is not decoration. The registry already scopes
+ * resolution by organization, so a mismatch here should be impossible; CLAUDE.md rule 3 is about
+ * the query that *could* return another organization's row, and this is the last place before
  * the request leaves the building.
  */
 export const registerHttpTools = (
@@ -178,8 +178,8 @@ export const registerHttpTools = (
   const adapter: ToolAdapter = {
     route: "http",
     execute: async (call) => {
-      if (call.tenantId !== options.tenantId) {
-        throw new Error("tool dispatched for the wrong tenant");
+      if (call.organizationId !== options.organizationId) {
+        throw new Error("tool dispatched for the wrong organization");
       }
       const config = byName.get(call.name);
       if (config === undefined) throw new Error(`no http connector named ${call.name}`);
@@ -187,5 +187,5 @@ export const registerHttpTools = (
     },
   };
 
-  for (const config of tools) registry.register(definitionFor(config, options.tenantId), adapter);
+  for (const config of tools) registry.register(definitionFor(config, options.organizationId), adapter);
 };

@@ -9,12 +9,12 @@ import { scoreCallForReview, type ReviewWeights } from "./review";
  * The requirement is that a provider or prompt change can be credited with a measurable
  * change rather than a feeling. That needs two things the codebase already has and had
  * never joined: `scoreCalls`, which turns an event log into numbers, and
- * `calls.config_version`, which records which version of the tenant's configuration served
+ * `calls.config_version`, which records which version of the organization's configuration served
  * each call. Grouping the first by the second is the whole mechanism.
  *
  * **What this cannot tell you.** A configuration version covers persona, greeting,
  * keyterms, tools and hours. It does not cover the provider — `LISTEN_PROVIDER`, the model
- * and the endpointing thresholds are deployment environment, not tenant config, and two
+ * and the endpointing thresholds are deployment environment, not organization config, and two
  * versions either side of a provider switch will differ for a reason this table cannot
  * name. The `call configuration` event records those settings per call and the claim
  * exporter reads them; a provider comparison belongs in `eval/`, against ground truth,

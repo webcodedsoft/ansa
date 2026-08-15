@@ -1,5 +1,5 @@
 import { ENFORCED_IN_CODE } from "../../prompts/guarantees";
-import { compileTenantLayer } from "../../prompts/tenant-layer";
+import { compileOrganizationLayer } from "../../prompts/organization-layer";
 import { BASE_KEYTERMS, MAX_KEYTERMS } from "../../tenancy/defaults";
 import type { FieldError } from "../http/schema";
 
@@ -13,20 +13,20 @@ import type { FieldError } from "../http/schema";
  * §1: **an organisation chooses its content, never whether a guarantee applies.** Two
  * distinct jobs follow from that, and it is worth being precise about which is which.
  *
- *   1. *Refusing what will be dropped.* `compileTenantLayer` already filters persona and
- *      instructions on the way into the prompt, on every config load, so a tenant who
+ *   1. *Refusing what will be dropped.* `compileOrganizationLayer` already filters persona and
+ *      instructions on the way into the prompt, on every config load, so a organization who
  *      writes "skip the readback" gets a prompt without that sentence whether or not this
  *      file exists. What this adds is that they find out now, at the screen, instead of
  *      finding out never — the call path logs it and carries on, because a configuration
  *      problem must not become silence on the line (R6.2).
  *   2. *Refusing what will be silently changed.* The keyterm merge drops blank and
  *      comma-bearing terms and truncates past the cap, quietly, at call time. Publishing
- *      exactly what will be used is the difference between a vocabulary a tenant can reason
+ *      exactly what will be used is the difference between a vocabulary a organization can reason
  *      about and one they have to infer from calls going wrong.
  *
  * **Neither is the boundary.** The guarantees hold in dispatch paths and in Postgres; this
  * is the courtesy that tells somebody their sentence had no effect. If this file were
- * deleted the platform would be exactly as safe and the tenant would be considerably more
+ * deleted the platform would be exactly as safe and the organization would be considerably more
  * confused.
  */
 
@@ -36,7 +36,7 @@ const at = (field: string, message: string): FieldError => ({ path: `body.${fiel
 /**
  * Persona, instructions and name, run through the same compiler the call path uses.
  *
- * `compileTenantLayer` is imported rather than re-implemented deliberately: a second copy of
+ * `compileOrganizationLayer` is imported rather than re-implemented deliberately: a second copy of
  * the tripwires would drift, and the interesting property is not that these two agree today
  * but that there is only one of them. Adding a guarantee to `prompts/guarantees.ts` starts
  * being refused here in the same edit.
@@ -46,7 +46,7 @@ export const guaranteeProblems = (input: {
   readonly persona: string | null;
   readonly instructions: string | null;
 }): readonly FieldError[] =>
-  compileTenantLayer(input).violations.map((violation) =>
+  compileOrganizationLayer(input).violations.map((violation) =>
     at(
       violation.field,
       `"${violation.matched}" would weaken ${violation.guarantee}, which this platform ` +
@@ -61,10 +61,10 @@ const substance = (text: string): string => text.replace(/\s+/g, "");
 /**
  * Text that will reach the prompt as something other than what was written.
  *
- * `compileTenantLayer` does three things quietly on its way in: it drops lines that would
- * close the fence around tenant text (a rule, a heading, a code fence), it caps each field at
+ * `compileOrganizationLayer` does three things quietly on its way in: it drops lines that would
+ * close the fence around organization text (a rule, a heading, a code fence), it caps each field at
  * a number of lines, and it removes double quotes from the name because the name is the one
- * tenant string that sits outside that fence. All three are right, and all three are
+ * organization string that sits outside that fence. All three are right, and all three are
  * invisible — a persona pasted in as a markdown list loses every bullet and reads back from
  * the database exactly as it was typed.
  *
@@ -84,7 +84,7 @@ const alteredFields = (input: {
   for (const field of ["persona", "instructions"] as const) {
     const written = input[field];
     if (written === null) continue;
-    const compiled = compileTenantLayer({ ...blank, [field]: written });
+    const compiled = compileOrganizationLayer({ ...blank, [field]: written });
     // A field that tripped a guarantee is dropped whole and already reported above; saying
     // it was also shortened would be two complaints about one sentence.
     if (compiled.violations.length > 0) continue;
@@ -101,7 +101,7 @@ const alteredFields = (input: {
     }
   }
 
-  const compiledName = compileTenantLayer({ ...blank, name: input.name });
+  const compiledName = compileOrganizationLayer({ ...blank, name: input.name });
   if (
     compiledName.violations.length === 0 &&
     substance(compiledName.layer.name) !== substance(input.name)
@@ -123,7 +123,7 @@ const alteredFields = (input: {
  * The vocabulary that will actually reach the transcriber: the base list with the
  * organisation's own merged on top, de-duplicated without regard to case.
  *
- * This is not a second implementation of `mergeKeyterms` in the tenant registry, and the
+ * This is not a second implementation of `mergeKeyterms` in the organization registry, and the
  * distinction matters. That function additionally drops blank terms, drops terms containing
  * a comma and truncates past the cap; `keytermProblems` below refuses every input on which
  * it would do any of those, so on anything that publishes, the merge and this agree by
@@ -152,7 +152,7 @@ export const effectiveKeyterms = (configured: readonly string[]): readonly strin
  * damaged an adjacent proper noun.
  *
  * So a term that the merge would have thrown away is not a small waste; it is a cost paid
- * with nothing bought, and the tenant has no way to see it happen. `tenancy/defaults.ts` has
+ * with nothing bought, and the organization has no way to see it happen. `tenancy/defaults.ts` has
  * the full note, including the part nobody has measured yet.
  */
 export const keytermProblems = (configured: readonly string[]): readonly FieldError[] => {

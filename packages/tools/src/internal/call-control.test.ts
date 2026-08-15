@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { asCallId, asTenantId, type BusinessHours, type LogFields, type Logger } from "@ansa/shared";
+import { asCallId, asOrganizationId, type BusinessHours, type LogFields, type Logger } from "@ansa/shared";
 
 import { createToolDispatcher, modelMessage } from "../dispatch";
 import { createToolRegistry } from "../registry";
@@ -12,7 +12,7 @@ import {
   type CallControlOptions,
 } from "./call-control";
 
-const TENANT = asTenantId("11111111-1111-4111-8111-111111111111");
+const ORGANIZATION = asOrganizationId("11111111-1111-4111-8111-111111111111");
 const CALL = asCallId("call-1");
 
 const silent = (): Logger => {
@@ -53,7 +53,7 @@ const setup = (options: Partial<CallControlOptions> = {}) => {
   );
   const dispatcher = createToolDispatcher({ registry, log: silent() });
   const call = (name: string, args: Record<string, unknown> = {}) =>
-    dispatcher.dispatch({ tenantId: TENANT, callId: CALL, name, args });
+    dispatcher.dispatch({ organizationId: ORGANIZATION, callId: CALL, name, args });
 
   return { ended, registry, call };
 };
@@ -62,7 +62,7 @@ describe("the platform tool set", () => {
   it("registers exactly the three tools the prompt is told about", () => {
     const { registry } = setup();
 
-    expect(registry.listFor(TENANT).map((d) => d.name)).toEqual(
+    expect(registry.listFor(ORGANIZATION).map((d) => d.name)).toEqual(
       CALL_CONTROL_DEFINITIONS.map((d) => d.name),
     );
   });
@@ -72,7 +72,7 @@ describe("the platform tool set", () => {
 
     // The decision this test exists to hold: only non-data tools ship. A lookup tool
     // appearing here means something is answering a caller from a fixture.
-    expect(registry.listFor(TENANT).map((d) => d.name).sort()).toEqual([
+    expect(registry.listFor(ORGANIZATION).map((d) => d.name).sort()).toEqual([
       "business_hours",
       "end_call",
       "transfer_to_human",
@@ -211,7 +211,7 @@ describe("business_hours", () => {
 
   /**
    * Parameterised, because a rota that only works for one shape is a rota that will be
-   * wrong for the second tenant. None of these values appears in a branch.
+   * wrong for the second organization. None of these values appears in a branch.
    */
   const ROTAS: readonly {
     readonly label: string;

@@ -1,4 +1,4 @@
-import type { CallId, Logger, TenantId } from "@ansa/shared";
+import type { CallId, Logger, OrganizationId } from "@ansa/shared";
 
 import { breakerKey, type CircuitBreaker } from "./breaker";
 import { createConfirmationStore, fingerprintArgs } from "./confirmation";
@@ -9,7 +9,7 @@ import type { DispatchOutcome, FailureReason, RiskTier, ToolCall } from "./types
 
 /** Where the tool is in its life, for whoever is covering the gap with sound. */
 export interface HoldContext {
-  readonly tenantId: TenantId;
+  readonly organizationId: OrganizationId;
   readonly callId: CallId;
   readonly name: string;
   readonly tier: RiskTier;
@@ -86,10 +86,10 @@ export interface DispatcherOptions {
   /**
    * The result a tool returned, before `summarise` turned it into a sentence.
    *
-   * Absent on a call, and it must stay that way — this is the tenant's customer data in the
+   * Absent on a call, and it must stay that way — this is the organization's customer data in the
    * shape their endpoint produced it, and the reason R5.4.3 exists is that it has no
    * business anywhere near speech. What it is for is the dashboard's tool sandbox, where
-   * showing the JSON beside the sentence is the entire point: a tenant whose template
+   * showing the JSON beside the sentence is the entire point: a organization whose template
    * silently renders its fallback because the field is called `status` and not `state`
    * finds that out on a screen instead of from a caller.
    *
@@ -135,7 +135,7 @@ const describe = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
 /**
- * The last gate before TTS. `summarise` is a tenant-supplied function and the failure
+ * The last gate before TTS. `summarise` is a organization-supplied function and the failure
  * this catches — returning the raw object, which stringifies to JSON — is the exact thing
  * R5.4.3 forbids, so it is checked rather than trusted.
  */
@@ -184,7 +184,7 @@ export const createToolDispatcher = (options: DispatcherOptions): ToolDispatcher
    * Runs the adapter under both ceilings, retrying a read inside the same deadline.
    *
    * The only place in the codebase that calls `adapter.execute` — a second call site here
-   * would be the second dispatch path R5.2.0 exists to prevent. Everything a tenant's own
+   * would be the second dispatch path R5.2.0 exists to prevent. Everything a organization's own
    * endpoint needs (ceilings, retry, holding speech, cancellation) is therefore true of
    * the platform tools too, and neither route can drift from the other.
    */
@@ -212,7 +212,7 @@ export const createToolDispatcher = (options: DispatcherOptions): ToolDispatcher
       for (let attempt = 1; attempt <= attempts; attempt += 1) {
         try {
           const value = await registration.adapter.execute({
-            tenantId: call.tenantId,
+            organizationId: call.organizationId,
             callId: call.callId,
             name: call.name,
             args: call.args,
@@ -248,7 +248,7 @@ export const createToolDispatcher = (options: DispatcherOptions): ToolDispatcher
   return {
     async dispatch(call) {
       const started = now();
-      const scoped = log.child({ tenantId: call.tenantId, callId: call.callId, tool: call.name });
+      const scoped = log.child({ organizationId: call.organizationId, callId: call.callId, tool: call.name });
       const args = redactArgs(call.args);
 
       const fail = (reason: FailureReason, tier: RiskTier | null, detail?: string): DispatchOutcome => {
@@ -264,15 +264,15 @@ export const createToolDispatcher = (options: DispatcherOptions): ToolDispatcher
         return outcome;
       };
 
-      const registration = registry.resolve(call.tenantId, call.name);
-      // A tool belonging to another tenant is reported exactly as one that does not
-      // exist. Anything else tells a caller what another tenant has configured.
+      const registration = registry.resolve(call.organizationId, call.name);
+      // A tool belonging to another organization is reported exactly as one that does not
+      // exist. Anything else tells a caller what another organization has configured.
       if (registration === null) return fail("unknown-tool", null);
 
       const { definition } = registration;
       const tier = definition.riskTier;
       const context: HoldContext = {
-        tenantId: call.tenantId,
+        organizationId: call.organizationId,
         callId: call.callId,
         name: call.name,
         tier,
@@ -328,7 +328,7 @@ export const createToolDispatcher = (options: DispatcherOptions): ToolDispatcher
 
       if (tier === "write") {
         const subject = {
-          tenantId: call.tenantId,
+          organizationId: call.organizationId,
           callId: call.callId,
           name: call.name,
           fingerprint: fingerprintArgs(checked.args),
@@ -371,10 +371,10 @@ export const createToolDispatcher = (options: DispatcherOptions): ToolDispatcher
        * Also deliberately before `run`, which is what starts holding speech — "let me pull
        * that up for you" followed immediately by an apology is worse than the apology.
        */
-      const key = breakerKey(call.tenantId, call.name);
+      const key = breakerKey(call.organizationId, call.name);
       if (breaker !== undefined && !breaker.allows(key)) return fail("circuit-open", tier);
 
-      // A tenant may ask for less than the platform ceiling but never more; registration
+      // A organization may ask for less than the platform ceiling but never more; registration
       // has already refused anything above it (R5.4.1).
       const ceilingMs = Math.min(hardMs, definition.timeoutMs ?? hardMs);
       const settled = await run(registration, checked, context, ceilingMs, tier === "read" ? 1 + readRetries : 1);

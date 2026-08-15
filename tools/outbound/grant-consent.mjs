@@ -1,10 +1,10 @@
-// Records that a number consented to be called by a tenant, or suppresses it.
+// Records that a number consented to be called by a organization, or suppresses it.
 //
 // Deliberately separate from placing calls. Consent is evidence, and evidence that can be
 // created in the same breath as the call it authorises is not evidence.
 //
-//   TENANT_ID=... node tools/outbound/grant-consent.mjs +234... "verbal, recorded 2026-08-08"
-//   TENANT_ID=... node tools/outbound/grant-consent.mjs --suppress +234... "asked not to be called"
+//   ORGANIZATION_ID=... node tools/outbound/grant-consent.mjs +234... "verbal, recorded 2026-08-08"
+//   ORGANIZATION_ID=... node tools/outbound/grant-consent.mjs --suppress +234... "asked not to be called"
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 
@@ -22,29 +22,29 @@ const env = Object.fromEntries(
 const args = process.argv.slice(2);
 const suppress = args[0] === "--suppress";
 const [number, basis] = suppress ? args.slice(1) : args;
-const tenantId = process.env.TENANT_ID;
+const organizationId = process.env.ORGANIZATION_ID;
 
-if (!tenantId) throw new Error("TENANT_ID is required");
+if (!organizationId) throw new Error("ORGANIZATION_ID is required");
 if (!number?.startsWith("+")) throw new Error("Pass the number in E.164");
 if (!basis) throw new Error("Pass the basis — an unexplained consent record is not evidence");
 
 const client = new Client({ connectionString: env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
 await client.connect();
-// Written inside the tenant's own scope, so RLS applies to the write as it does to reads.
+// Written inside the organization's own scope, so RLS applies to the write as it does to reads.
 await client.query("begin");
-await client.query("select set_config('app.tenant_id', $1, true)", [tenantId]);
+await client.query("select set_config('app.organization_id', $1, true)", [organizationId]);
 
 if (suppress) {
   await client.query(
-    `insert into do_not_call (tenant_id, phone_number, reason) values ($1, $2, $3)
+    `insert into do_not_call (organization_id, phone_number, reason) values ($1, $2, $3)
      on conflict do nothing`,
-    [tenantId, number, basis],
+    [organizationId, number, basis],
   );
-  console.log(`suppressed ${number} for tenant ${tenantId}`);
+  console.log(`suppressed ${number} for organization ${organizationId}`);
 } else {
   await client.query(
-    `insert into outbound_consent (tenant_id, phone_number, basis) values ($1, $2, $3)`,
-    [tenantId, number, basis],
+    `insert into outbound_consent (organization_id, phone_number, basis) values ($1, $2, $3)`,
+    [organizationId, number, basis],
   );
   console.log(`consent recorded for ${number}`);
 }

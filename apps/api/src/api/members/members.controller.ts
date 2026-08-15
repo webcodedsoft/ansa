@@ -14,14 +14,14 @@ import { pageQuery, pageResponse, toPageBody, toPageRequest } from "../http/pagi
 import { apiRoute, FromBody, FromPath, FromQuery } from "../http/request";
 import { object, text, type Infer } from "../http/schema";
 import { email, role, timestamp, uuid } from "../schemas";
-import { TenantContext } from "../tenancy/tenant-context";
+import { OrganizationContext } from "../tenancy/organization-context";
 
 /**
  * Who is in the organisation, and what they may do.
  *
  * The three handlers here are the shortest complete example of the pipeline: a paginated
  * read, a write with both a path parameter and a body, and a delete. None of them mentions
- * a tenant, because there is nowhere in the pipeline for one to be mentioned.
+ * a organization, because there is nowhere in the pipeline for one to be mentioned.
  */
 
 const member = object({
@@ -60,7 +60,7 @@ const asConflict = (error: unknown): never => {
 
 @Controller(apiRoute("members"))
 export class MembersController {
-  constructor(@Inject(TenantContext) private readonly db: TenantContext) {}
+  constructor(@Inject(OrganizationContext) private readonly db: OrganizationContext) {}
 
   @Get()
   @Endpoint({
@@ -71,7 +71,7 @@ export class MembersController {
   })
   async list(@FromQuery() query: Infer<typeof pageQuery>): Promise<Infer<typeof memberPage>> {
     const page = toPageRequest(query);
-    return toPageBody(await this.db.tx((scope) => listMembers(scope, page)));
+    return toPageBody(await this.db.tx((scope) => listMembers(scope, page)), query);
   }
 
   @Patch(":userId")

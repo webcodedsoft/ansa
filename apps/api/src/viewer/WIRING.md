@@ -69,10 +69,10 @@ name goes to the spelling state, and "S I O B H A N" is not accepted as a spelli
 agent asks for a word per letter and then escalates. Owner: `entity-capture`.
 
 **TypeORM's Postgres driver returns `[rows, affectedCount]` from UPDATE and DELETE**, not
-rows. `rows.length > 0` on that is always true. It made a cross-tenant correction that RLS
+rows. `rows.length > 0` on that is always true. It made a cross-organization correction that RLS
 had correctly refused report success, and it will do the same to any other `update …
 returning` in this repo. `recordTranscriptCorrection` now selects first and updates second,
-inside one tenant-scoped transaction. Anything else writing an UPDATE here should do the
+inside one organization-scoped transaction. Anything else writing an UPDATE here should do the
 same or ask for the structured result.
 
 ---
@@ -83,18 +83,18 @@ same or ask for the structured result.
 database with `MIGRATION_DIRECT_URL`. It adds four `security definer` functions in the
 `app` schema — `expired_call_audio`, `known_call_ids`, `min_audio_retention_days`,
 `purge_expired_audio_segments` — for the same reason `0009` needed one: a retention sweep
-has no tenant, and RLS shows an unscoped connection nothing. They return identifiers and a
+has no organization, and RLS shows an unscoped connection nothing. They return identifiers and a
 count of days; none of them can return a word anyone said.
 
 ## Retention, precisely
 
 The sweep deletes a recording when **either**:
 
-- its call is past that call's own tenant's `audio_retention_days`, or
+- its call is past that call's own organization's `audio_retention_days`, or
 - no `calls` row names it **and** the file is older than the strictest
-  `audio_retention_days` any tenant has configured.
+  `audio_retention_days` any organization has configured.
 
-A recording belonging to a tenant who chose ninety days survives at forty, which is the
+A recording belonging to a organization who chose ninety days survives at forty, which is the
 case a naive "older than the default" sweep gets wrong. `audio_segments` rows past their
 own `expires_at` go on the same pass, so the column is honoured from the first row that
 table ever holds.

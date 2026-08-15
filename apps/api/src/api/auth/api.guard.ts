@@ -10,7 +10,7 @@ import {
 
 import { specOf } from "../http/endpoint";
 import { isApiPath, type ApiRequest } from "../http/request";
-import { TenantGateway } from "../tenancy/tenant-gateway";
+import { OrganizationGateway } from "../tenancy/organization-gateway";
 import { can } from "./capability";
 import { rememberPrincipal } from "./principal";
 import { bearerToken } from "./tokens";
@@ -39,7 +39,7 @@ import { bearerToken } from "./tokens";
  */
 @Injectable()
 export class ApiGuard implements CanActivate {
-  constructor(@Inject(TenantGateway) private readonly gateway: TenantGateway) {}
+  constructor(@Inject(OrganizationGateway) private readonly gateway: OrganizationGateway) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     if (context.getType() !== "http") return true;

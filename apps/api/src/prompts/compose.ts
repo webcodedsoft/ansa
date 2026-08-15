@@ -1,15 +1,16 @@
 import { BASE_CONDUCT, identityLine } from "./base";
 import { GUARANTEES_LAYER } from "./guarantees";
 import { LOCALE_LAYER } from "./locale";
-import { fenceTenantText, type TenantLayer } from "./tenant-layer";
+import { fenceOrganizationText, type OrganizationLayer } from "./organization-layer";
 import { taskLayer, type AvailableTool } from "./task-layer";
+import type { CollectedField } from "../tenancy/captured-fields";
 
 /**
  * The composition. Five layers, per `docs/MULTI_TENANT_ARCHITECTURE.md` §3:
  *
  *   base       us       rarely           short turns, never invent a number
  *   locale     us       rarely           Nigerian English, naira, WAT, Pidgin
- *   tenant     tenant   per config ver.  persona and rules, bounded and fenced
+ *   organization     organization   per config ver.  persona and rules, bounded and fenced
  *   task       derived  per call         which tools are registered
  *   turn       derived  per turn         the budget instruction
  *
@@ -21,38 +22,46 @@ import { taskLayer, type AvailableTool } from "./task-layer";
  * ---
  *
  * **Read the signature.** There is no parameter for the base and no parameter for the
- * locale. A tenant supplies a `TenantLayer`, which is a branded value only
- * `compileTenantLayer` can mint, and it lands in one position: after ours, before the
+ * locale. A organization supplies a `OrganizationLayer`, which is a branded value only
+ * `compileOrganizationLayer` can mint, and it lands in one position: after ours, before the
  * guarantees. There is no argument that could replace the base, no "custom prompt" branch
  * to fall into, and no code path that reaches TTS-bound reasoning without the guarantee
- * block after it. That is what "the tenant layer never replaces the base" means when it
+ * block after it. That is what "the organization layer never replaces the base" means when it
  * is structural rather than a rule in a document.
  */
 export interface CallPrompt {
   /** Null for an unregistered number, or when config could not be read. */
-  readonly tenant: TenantLayer | null;
+  readonly organization: OrganizationLayer | null;
   /** Registered for this call. Empty today; the registry is R5.2.0. */
   readonly tools: readonly AvailableTool[];
+  /**
+   * The voice form this agent conducts, in the order it asks (migration 0021).
+   *
+   * In the task layer beside the tools rather than in the organization's, because it is the same
+   * kind of thing: derived per call from what the operator configured, not free text they
+   * typed at the model.
+   */
+  readonly fields?: readonly CollectedField[];
 }
 
 export const composeSystemPrompt = (input: CallPrompt): string =>
   [
-    identityLine(input.tenant?.name ?? null),
+    identityLine(input.organization?.name ?? null),
     BASE_CONDUCT,
     LOCALE_LAYER,
     // Only when they actually wrote something. An empty fence would tell the model an
     // organisation had rules and then show it none, which reads as an instruction to
     // invent them.
-    ...(input.tenant !== null && input.tenant.text !== ""
-      ? [fenceTenantText(input.tenant)]
+    ...(input.organization !== null && input.organization.text !== ""
+      ? [fenceOrganizationText(input.organization)]
       : []),
-    taskLayer(input.tools),
+    taskLayer(input.tools, input.fields ?? []),
     GUARANTEES_LAYER,
   ].join("\n\n");
 
 /**
- * What an unregistered number gets. A call that resolves a tenant uses
- * `CallTenant.systemPrompt` instead, which is these layers with theirs in the middle.
+ * What an unregistered number gets. A call that resolves a organization uses
+ * `CallAgent.systemPrompt` instead, which is these layers with theirs in the middle.
  *
  * Computed once at module load rather than per call: it has no inputs, and the composed
  * string is a couple of hundred tokens the LLM adapter sends on every turn.
@@ -60,8 +69,8 @@ export const composeSystemPrompt = (input: CallPrompt): string =>
  * To change the wording:
  *   phone-call conduct        -> prompts/base.ts
  *   Nigerian English, numbers -> prompts/locale.ts
- *   what a tenant may say     -> prompts/tenant-layer.ts
+ *   what a organization may say     -> prompts/organization-layer.ts
  *   tools and capabilities    -> prompts/task-layer.ts
  *   the non-negotiables       -> prompts/guarantees.ts  (and read the comment first)
  */
-export const DEFAULT_SYSTEM_PROMPT = composeSystemPrompt({ tenant: null, tools: [] });
+export const DEFAULT_SYSTEM_PROMPT = composeSystemPrompt({ organization: null, tools: [] });

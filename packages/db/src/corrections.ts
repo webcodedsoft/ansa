@@ -1,7 +1,7 @@
-import type { TenantId } from "@ansa/shared";
+import type { OrganizationId } from "@ansa/shared";
 
 import type { Db } from "./data-source";
-import { withTenant, type TenantScope } from "./tenant-scope";
+import { withOrganization, type OrganizationScope } from "./organization-scope";
 
 /**
  * The R9.2 review loop, as two queries.
@@ -10,7 +10,7 @@ import { withTenant, type TenantScope } from "./tenant-scope";
  * nothing has ever written them. They are the mechanism the whole quality story rests on:
  * production audio has no ground truth until a human supplies it (R9.2.3), and a
  * correction is what turns one caller's mishearing into a keyterm, a normalizer test case
- * and a regression test for every tenant (R9.2.4, R9.2.5).
+ * and a regression test for every organization (R9.2.4, R9.2.5).
  *
  * **A review verdict is recorded even when nothing was wrong.** Submitting the text
  * unchanged stamps `corrected_at` with `corrected_text` equal to `text`. Without that,
@@ -52,17 +52,17 @@ export interface ReviewVerdict {
  * Two statements rather than one `update … returning`, and not for taste: TypeORM's
  * Postgres driver special-cases UPDATE and DELETE and hands back `[rows, affectedCount]`
  * instead of the rows, so `(await scope.query("update … returning id")).length > 0` is
- * always true — and a cross-tenant correction RLS had correctly refused reported success.
+ * always true — and a cross-organization correction RLS had correctly refused reported success.
  * `scope.mutate` unwraps that shape, but the select still leads, because it is also what
  * decides whether the transcript is on the call the caller named and what the transcriber
- * originally heard. Both statements run in the same tenant-scoped transaction, so the
+ * originally heard. Both statements run in the same organization-scoped transaction, so the
  * check and the write cannot disagree.
  *
  * Null when the row is not theirs, not there, or not on that call. The three are one
  * answer on purpose.
  */
 export const applyTranscriptCorrection = async (
-  scope: TenantScope,
+  scope: OrganizationScope,
   correction: TranscriptCorrection,
 ): Promise<ReviewVerdict | null> => {
   const existing = await scope.query<{ id: string; call_id: string; text: string }>(
@@ -95,7 +95,7 @@ export const applyTranscriptCorrection = async (
 };
 
 /**
- * The same verdict, for a caller that has a tenant id rather than a scope.
+ * The same verdict, for a caller that has a organization id rather than a scope.
  *
  * The internal viewer, which is told which organisation to act for because there is no
  * session there to infer one from. One implementation underneath, so the dashboard and the
@@ -103,12 +103,12 @@ export const applyTranscriptCorrection = async (
  */
 export const recordTranscriptCorrection = async (
   dataSource: Db,
-  tenantId: TenantId,
+  organizationId: OrganizationId,
   correction: TranscriptCorrection,
 ): Promise<boolean> =>
-  withTenant(
+  withOrganization(
     dataSource,
-    tenantId,
+    organizationId,
     async (scope) => (await applyTranscriptCorrection(scope, correction)) !== null,
   );
 
@@ -132,7 +132,7 @@ export interface CorpusEntry {
 }
 
 /**
- * Every corrected transcript for one tenant, newest first — the eval corpus, exported.
+ * Every corrected transcript for one organization, newest first — the eval corpus, exported.
  *
  * Deliberately not filtered to the mistakes. R9.1.9 blocks a provider change on
  * number-accuracy regression, and a regression is only measurable against turns the
@@ -152,10 +152,10 @@ const toCorpusEntry = (r: Record<string, unknown>): CorpusEntry => ({
 
 export const exportCorpus = async (
   dataSource: Db,
-  tenantId: TenantId,
+  organizationId: OrganizationId,
   limit = 500,
 ): Promise<readonly CorpusEntry[]> =>
-  withTenant(dataSource, tenantId, async (scope) => {
+  withOrganization(dataSource, organizationId, async (scope) => {
     const rows = await scope.query<Record<string, unknown>>(
       `select t.id, t.call_id, c.carrier_call_id, t.offset_ms, t.provider, t.confidence,
               t.text, t.corrected_text, t.corrected_at
@@ -199,10 +199,10 @@ export interface ClaimSource {
 /** Null when the call is not theirs or not there — the same answer, as everywhere else. */
 export const readClaimSource = async (
   dataSource: Db,
-  tenantId: TenantId,
+  organizationId: OrganizationId,
   callId: string,
 ): Promise<ClaimSource | null> =>
-  withTenant(dataSource, tenantId, async (scope) => {
+  withOrganization(dataSource, organizationId, async (scope) => {
     const calls = await scope.query<Record<string, unknown>>(
       "select id, carrier_call_id, config_version from calls where id = $1",
       [callId],

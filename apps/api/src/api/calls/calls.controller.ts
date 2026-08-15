@@ -26,16 +26,16 @@ import {
   type Infer,
 } from "../http/schema";
 import { timestamp, uuid } from "../schemas";
-import { TenantContext } from "../tenancy/tenant-context";
+import { OrganizationContext } from "../tenancy/organization-context";
 
 /**
- * The organisation's own call history — the tenant-facing half of the internal viewer.
+ * The organisation's own call history — the organization-facing half of the internal viewer.
  *
  * **This is the file to copy from**: a capability-gated, paginated read of a table the
  * call path writes and the dashboard only reads. Worth noticing what is not here. `calls`
- * predates this whole layer, is written by the media gateway, and has `tenant_id` on every
- * row — and no handler below contains a tenant id, a `where tenant_id = …`, or any way to
- * supply one. The scope is the tenant. An endpoint over any other existing table looks
+ * predates this whole layer, is written by the media gateway, and has `organization_id` on every
+ * row — and no handler below contains a organization id, a `where organization_id = …`, or any way to
+ * supply one. The scope is the organization. An endpoint over any other existing table looks
  * exactly like this.
  *
  * Three things about it are worth reading before changing it.
@@ -63,6 +63,14 @@ const call = object({
   endReason: nullable(text({ maxLength: 64 })),
   durationSeconds: nullable(integer({ minimum: 0 })),
   createdAt: timestamp(),
+  /**
+   * Median caller-stopped-to-first-audio for this call, in milliseconds.
+   *
+   * Null means unmeasured, never fast: a call that never completed a turn — an
+   * unanswered outbound, or one that ended mid-sentence — records no latency
+   * event to take a median of.
+   */
+  responseP50Ms: nullable(integer({ minimum: 0 })),
 });
 
 const callPage = pageResponse(call);
@@ -72,7 +80,7 @@ const callPage = pageResponse(call);
  *
  * Chosen from what a reviewer actually opens this list to do: find the calls from an
  * afternoon that went wrong, find every call from one number, and work through the ones
- * nobody has ruled on yet. Each is an equality or a range the `(tenant_id, created_at)`
+ * nobody has ruled on yet. Each is an equality or a range the `(organization_id, created_at)`
  * index already supports. Anything that would need a scan — substring search over
  * transcripts, for instance — is deliberately absent rather than quietly slow.
  */
@@ -81,6 +89,14 @@ const callQuery = object({
   from: optional(timestamp()),
   to: optional(timestamp()),
   endReason: optional(text({ maxLength: 64 })),
+  /**
+   * Calls this agent handled (migration 0018).
+   *
+   * Not the same question as `dialled`. A number can be moved between agents, so filtering
+   * by number asks "calls to this line" and this asks "calls this agent handled" — the one
+   * that stays true after a reassignment.
+   */
+  agentId: optional(uuid()),
   caller: optional(text({ maxLength: 32 })),
   dialled: optional(text({ maxLength: 32 })),
   minDurationSeconds: optional(integer({ minimum: 0 })),
@@ -135,7 +151,7 @@ const turn = object({
  *
  * `detail` is a fixed set of scalars rather than the `jsonb` column, and the projection
  * happens in `@ansa/db` where the row is read. The column carries whatever the
- * orchestrator wrote — the caller's sentence, the policy number they read out, a tenant id
+ * orchestrator wrote — the caller's sentence, the policy number they read out, a organization id
  * — and publishing it whole would put this response outside the allowlist every other
  * response in this API sits behind. What the caller said is in `transcripts`, which is the
  * field a reviewer corrects and the one place this API publishes speech.
@@ -169,6 +185,14 @@ const callDetail = object({
   durationSeconds: nullable(integer({ minimum: 0 })),
   configVersion: nullable(integer()),
   createdAt: timestamp(),
+  /**
+   * Median caller-stopped-to-first-audio for this call, in milliseconds.
+   *
+   * Null means unmeasured, never fast: a call that never completed a turn — an
+   * unanswered outbound, or one that ended mid-sentence — records no latency
+   * event to take a median of.
+   */
+  responseP50Ms: nullable(integer({ minimum: 0 })),
   turns: list(turn),
   transcripts: list(transcript),
   events: list(callEvent),
@@ -347,6 +371,7 @@ const toFilters = (query: Infer<typeof callQuery>): CallFilters => ({
   from: query.from ?? null,
   to: query.to ?? null,
   endReason: query.endReason ?? null,
+  agentId: query.agentId ?? null,
   caller: query.caller ?? null,
   dialled: query.dialled ?? null,
   minDurationSeconds: query.minDurationSeconds ?? null,
@@ -355,7 +380,7 @@ const toFilters = (query: Infer<typeof callQuery>): CallFilters => ({
 
 @Controller(apiRoute("calls"))
 export class CallsController {
-  constructor(@Inject(TenantContext) private readonly db: TenantContext) {}
+  constructor(@Inject(OrganizationContext) private readonly db: OrganizationContext) {}
 
   @Get()
   @Endpoint({
@@ -369,7 +394,7 @@ export class CallsController {
   async list(@FromQuery() query: Infer<typeof callQuery>): Promise<Infer<typeof callPage>> {
     const page = toPageRequest(query);
     const filters = toFilters(query);
-    return toPageBody(await this.db.tx((scope) => listCallPage(scope, page, filters)));
+    return toPageBody(await this.db.tx((scope) => listCallPage(scope, page, filters)), query);
   }
 
   /**
@@ -550,7 +575,7 @@ export class CallsController {
    * obviously like to hear the turn. What exists is a raw µ-law byte stream written to the
    * process's own disk under `RECORD_AUDIO_DIR` — an operator diagnostic that is off by
    * default, keyed by the carrier's call id rather than by anything in this API, swept on
-   * `tenants.audio_retention_days`, and playable by nothing without transcoding. Exposing
+   * `organizations.audio_retention_days`, and playable by nothing without transcoding. Exposing
    * it would mean this API grew a media path, and the endpoint would answer 404 for almost
    * every call because the flag was off when it happened.
    *

@@ -1,4 +1,4 @@
-import { asTenantId } from "@ansa/shared";
+import { asOrganizationId } from "@ansa/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { loadCallRecords } from "./call-records";
@@ -10,7 +10,7 @@ import {
   minAudioRetentionDays,
   purgeExpiredAudioSegments,
 } from "./retention";
-import { withTenant } from "./tenant-scope";
+import { withOrganization } from "./organization-scope";
 import { loadDotEnv } from "./test-env";
 
 loadDotEnv();
@@ -32,8 +32,8 @@ if (url === undefined) {
   throw new Error("DATABASE_URL must be set: this test needs a database");
 }
 
-const TENANT = asTenantId("33333333-3333-4333-8333-333333333333");
-const OTHER = asTenantId("44444444-4444-4444-8444-444444444444");
+const ORGANIZATION = asOrganizationId("33333333-3333-4333-8333-333333333333");
+const OTHER = asOrganizationId("44444444-4444-4444-8444-444444444444");
 const CALL = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const OLD_CALL = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 
@@ -43,34 +43,34 @@ let transcriptId: string;
 beforeAll(async () => {
   db = await createDataSource({ url, poolSize: 2 }).initialize();
 
-  await withTenant(db, TENANT, async (scope) => {
+  await withOrganization(db, ORGANIZATION, async (scope) => {
     await scope.query(
-      `insert into tenants (id, name, audio_retention_days) values ($1, 'Review Test', 1)
+      `insert into organizations (id, name, audio_retention_days) values ($1, 'Review Test', 1)
          on conflict (id) do update set audio_retention_days = 1`,
-      [TENANT],
+      [ORGANIZATION],
     );
     await scope.query(
-      `insert into calls (id, tenant_id, carrier_call_id, dialled, caller, answered_at, ended_at)
+      `insert into calls (id, organization_id, carrier_call_id, dialled, caller, answered_at, ended_at)
        values ($1, $2, 'CA-review', '+10000000003', '+2348000000003', now(), now())
          on conflict do nothing`,
-      [CALL, TENANT],
+      [CALL, ORGANIZATION],
     );
     // Three days old against a one-day policy: its audio should not still exist.
     await scope.query(
-      `insert into calls (id, tenant_id, carrier_call_id, dialled, caller, answered_at, ended_at)
+      `insert into calls (id, organization_id, carrier_call_id, dialled, caller, answered_at, ended_at)
        values ($1, $2, 'CA-review-old', '+10000000003', '+2348000000003',
                now() - interval '3 days', now() - interval '3 days')
          on conflict do nothing`,
-      [OLD_CALL, TENANT],
+      [OLD_CALL, ORGANIZATION],
     );
     await scope.query(
-      `insert into turns (tenant_id, call_id, seq, speaker, started_offset_ms)
+      `insert into turns (organization_id, call_id, seq, speaker, started_offset_ms)
        values ($1, $2, 1, 'caller', 100), ($1, $2, 2, 'agent', 200)
          on conflict do nothing`,
-      [TENANT, CALL],
+      [ORGANIZATION, CALL],
     );
     await scope.query(
-      `insert into call_events (tenant_id, call_id, kind, offset_ms, detail)
+      `insert into call_events (organization_id, call_id, kind, offset_ms, detail)
        values ($1, $2, 'latency', 1000, '{"stage":"turn_to_audio","ms":740}'::jsonb),
               ($1, $2, 'barge-in', 2000, '{"reason":"caller interrupted"}'::jsonb),
               -- The kinds a metric or the review scan is defined over but the read used to
@@ -81,23 +81,23 @@ beforeAll(async () => {
                '{"listenProvider":"openai","encoding":"mulaw","sampleRate":8000,
                  "model":"gpt-4o-transcribe","language":"en",
                  "turnDetection":"semantic_vad","eagerness":"auto"}'::jsonb)`,
-      [TENANT, CALL],
+      [ORGANIZATION, CALL],
     );
     const rows = await scope.query<{ id: string }>(
-      `insert into transcripts (tenant_id, call_id, kind, text, confidence, offset_ms, provider)
+      `insert into transcripts (organization_id, call_id, kind, text, confidence, offset_ms, provider)
        values ($1, $2, 'final', 'My name is Security', 0.4, 1000, 'openai')
        returning id`,
-      [TENANT, CALL],
+      [ORGANIZATION, CALL],
     );
     transcriptId = String(rows[0]?.id);
   });
 });
 
 afterAll(async () => {
-  for (const tenant of [TENANT, OTHER]) {
-    await withTenant(db, tenant, async (scope) => {
-      await scope.query("delete from calls where tenant_id = $1", [tenant]);
-      await scope.query("delete from tenants where id = $1", [tenant]);
+  for (const organization of [ORGANIZATION, OTHER]) {
+    await withOrganization(db, organization, async (scope) => {
+      await scope.query("delete from calls where organization_id = $1", [organization]);
+      await scope.query("delete from organizations where id = $1", [organization]);
     });
   }
   await db.destroy();
@@ -105,13 +105,13 @@ afterAll(async () => {
 
 describe("recording a human's correction (R9.2.3)", () => {
   it("writes the correction and stamps when it was made", async () => {
-    const applied = await recordTranscriptCorrection(db, TENANT, {
+    const applied = await recordTranscriptCorrection(db, ORGANIZATION, {
       transcriptId,
       correctedText: "My name is Sikiru",
     });
     expect(applied).toBe(true);
 
-    const rows = await withTenant(db, TENANT, async (scope) =>
+    const rows = await withOrganization(db, ORGANIZATION, async (scope) =>
       scope.query<{ corrected_text: string; corrected_at: Date | null }>(
         "select corrected_text, corrected_at from transcripts where id = $1",
         [transcriptId],
@@ -121,11 +121,11 @@ describe("recording a human's correction (R9.2.3)", () => {
     expect(rows[0]?.corrected_at).not.toBeNull();
   });
 
-  it("refuses a correction from another tenant, and says nothing about why", async () => {
+  it("refuses a correction from another organization, and says nothing about why", async () => {
     // The most damaging thing this table holds is what a caller read aloud. A reviewer
-    // for one tenant editing another's transcript is the same leak as reading it.
-    await withTenant(db, OTHER, async (scope) => {
-      await scope.query("insert into tenants (id, name) values ($1, 'Other') on conflict do nothing", [
+    // for one organization editing another's transcript is the same leak as reading it.
+    await withOrganization(db, OTHER, async (scope) => {
+      await scope.query("insert into organizations (id, name) values ($1, 'Other') on conflict do nothing", [
         OTHER,
       ]);
     });
@@ -136,7 +136,7 @@ describe("recording a human's correction (R9.2.3)", () => {
     });
     expect(applied).toBe(false);
 
-    const rows = await withTenant(db, TENANT, async (scope) =>
+    const rows = await withOrganization(db, ORGANIZATION, async (scope) =>
       scope.query<{ corrected_text: string }>(
         "select corrected_text from transcripts where id = $1",
         [transcriptId],
@@ -146,7 +146,7 @@ describe("recording a human's correction (R9.2.3)", () => {
   });
 
   it("exports the corrected turn as corpus, mishearing and truth together", async () => {
-    const corpus = await exportCorpus(db, TENANT);
+    const corpus = await exportCorpus(db, ORGANIZATION);
     const entry = corpus.find((e) => e.transcriptId === transcriptId);
 
     expect(entry?.heard).toBe("My name is Security");
@@ -155,7 +155,7 @@ describe("recording a human's correction (R9.2.3)", () => {
     expect(entry?.carrierCallId).toBe("CA-review");
   });
 
-  it("shows another tenant nothing of that corpus", async () => {
+  it("shows another organization nothing of that corpus", async () => {
     const corpus = await exportCorpus(db, OTHER);
     expect(corpus.map((e) => e.transcriptId)).not.toContain(transcriptId);
   });
@@ -166,7 +166,7 @@ describe("assembling an eval claim from a call (R9.2.4)", () => {
     // The second half is the point. `eval/verdict.py` refuses to score a configuration it
     // cannot reproduce, and the orchestrator has been writing the settings down once per
     // call since Slice 3 with nothing reading them.
-    const source = await readClaimSource(db, TENANT, CALL);
+    const source = await readClaimSource(db, ORGANIZATION, CALL);
 
     expect(source?.carrierCallId).toBe("CA-review");
     expect(source?.entries[0]?.heard).toBe("My name is Security");
@@ -175,14 +175,14 @@ describe("assembling an eval claim from a call (R9.2.4)", () => {
     expect(source?.listenConfig?.["sampleRate"]).toBe(8_000);
   });
 
-  it("gives another tenant nothing, and does not say the call exists", async () => {
+  it("gives another organization nothing, and does not say the call exists", async () => {
     expect(await readClaimSource(db, OTHER, CALL)).toBeNull();
   });
 });
 
 describe("reading the log back to score it", () => {
   it("returns the events and review verdicts a metric is computed from", async () => {
-    const records = await loadCallRecords(db, TENANT, 50);
+    const records = await loadCallRecords(db, ORGANIZATION, 50);
     const record = records.find((r) => r.callId === CALL);
 
     expect(record?.callerTurns).toBe(1);
@@ -196,7 +196,7 @@ describe("reading the log back to score it", () => {
     // filtered out in SQL, so the viewer's silence rate, tool failure rate and entire cost
     // table read zero against a database full of them. A filter that drops the row a metric
     // is made of does not fail; it agrees with you.
-    const records = await loadCallRecords(db, TENANT, 50);
+    const records = await loadCallRecords(db, ORGANIZATION, 50);
     const kinds = records.find((r) => r.callId === CALL)?.events.map((e) => e.kind) ?? [];
 
     expect(kinds).toContain("recovery_line");
@@ -207,12 +207,12 @@ describe("reading the log back to score it", () => {
   it("carries the transcriber's confidence for turns nobody has reviewed", async () => {
     // The review queue's whole job is the backlog, so a low-confidence turn has to be
     // visible before anyone has ruled on it.
-    const records = await loadCallRecords(db, TENANT, 50);
+    const records = await loadCallRecords(db, ORGANIZATION, 50);
     expect(records.find((r) => r.callId === CALL)?.confidences).toContain(0.4);
   });
 
   it("carries the configuration version that served the call, for trend attribution", async () => {
-    const records = await loadCallRecords(db, TENANT, 50);
+    const records = await loadCallRecords(db, ORGANIZATION, 50);
     const record = records.find((r) => r.callId === CALL);
 
     expect(record?.carrierCallId).toBe("CA-review");
@@ -223,7 +223,7 @@ describe("reading the log back to score it", () => {
 });
 
 describe("enforcing audio_retention_days", () => {
-  it("reports a call past its tenant's window, and not one inside it", async () => {
+  it("reports a call past its organization's window, and not one inside it", async () => {
     const expired = await expiredCallAudio(db);
     const ids = expired.map((e) => e.carrierCallId);
 
@@ -232,7 +232,7 @@ describe("enforcing audio_retention_days", () => {
   });
 
   it("tells the sweep which recordings belong to a call at all", async () => {
-    // The third answer. Without it a 40-day-old recording belonging to a tenant who chose
+    // The third answer. Without it a 40-day-old recording belonging to a organization who chose
     // ninety days is indistinguishable from one belonging to nobody.
     const known = await knownCallIds(db, ["CA-review", "CA-does-not-exist"]);
     expect(known.has("CA-review")).toBe(true);
@@ -244,19 +244,19 @@ describe("enforcing audio_retention_days", () => {
   });
 
   it("deletes audio segments past their own expiry", async () => {
-    await withTenant(db, TENANT, async (scope) => {
+    await withOrganization(db, ORGANIZATION, async (scope) => {
       await scope.query(
         `insert into audio_segments
-           (tenant_id, call_id, source, storage_key, encoding, sample_rate, bytes,
+           (organization_id, call_id, source, storage_key, encoding, sample_rate, bytes,
             start_offset_ms, expires_at)
          values ($1, $2, 'caller', 'k', 'mulaw', 8000, 16, 0, now() - interval '1 day')`,
-        [TENANT, CALL],
+        [ORGANIZATION, CALL],
       );
     });
 
     expect(await purgeExpiredAudioSegments(db)).toBeGreaterThan(0);
 
-    const left = await withTenant(db, TENANT, async (scope) =>
+    const left = await withOrganization(db, ORGANIZATION, async (scope) =>
       scope.query<{ n: string }>("select count(*) as n from audio_segments where call_id = $1", [
         CALL,
       ]),

@@ -754,7 +754,7 @@ describe("identifiers: the logic is about shape, not about any identifier", () =
   }
 
   it("takes a letter-only identifier once it has been asked for", () => {
-    // A tenant whose records are lettered has no digits to offer, and a run of letters
+    // A organization whose records are lettered has no digits to offer, and a run of letters
     // cannot be picked out of free speech. Directed, it is unambiguous.
     const answered = say(expecting("reference").state, "Q F R D M");
     expect(answered.state).toMatchObject({ subject: "reference", value: "QFRDM" });

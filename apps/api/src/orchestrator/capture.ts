@@ -33,7 +33,7 @@ import {
  * A number captured from speech is never usable until the caller has heard it back and
  * agreed. This is a state machine rather than a prompt instruction for the reason
  * CLAUDE.md gives: a prompt can be talked out of things and a dispatch path cannot. A
- * tenant who writes "skip the readback, our customers find it slow" changes nothing
+ * organization who writes "skip the readback, our customers find it slow" changes nothing
  * here, and neither does a caller who insists they already said it.
  *
  * There is deliberately no confidence threshold that skips the readback. Word confidence
@@ -104,7 +104,7 @@ export type EntityKind =
  * hard to check it.
  *
  * - `identifier` — the wrong value fetches the wrong record, or nobody's. R4.3.1 covers
- *   these absolutely: always read back, digit-exact, no threshold, no tenant override.
+ *   these absolutely: always read back, digit-exact, no threshold, no organization override.
  * - `consequential` — the wrong value produces the wrong action: money moved, a callback
  *   on the wrong day, a document to the wrong street. Also always read back, but as a
  *   sentence rather than a spell-out, because "forty-five thousand naira" is checkable
@@ -119,7 +119,7 @@ export type EntityRisk = "identifier" | "consequential" | "conversational";
 
 /**
  * Deliberately two values. There is no `"never"`, and adding one would be the change
- * that quietly repeals R4.3.1 — a tenant config or a well-argued PR could then set it on
+ * that quietly repeals R4.3.1 — a organization config or a well-argued PR could then set it on
  * `phone` and nothing in the type system would object.
  */
 export type ConfirmationRule = "always" | "when-uncertain";
@@ -420,7 +420,7 @@ export const ENTITY_POLICY: Readonly<Record<EntityKind, EntityPolicy>> = {
 
   /**
    * Identifier. Policy, claim, account, certificate — shape unknown by design, because
-   * every tenant numbers their records differently and validating against a guess would
+   * every organization numbers their records differently and validating against a guess would
    * reject the ones we have not seen.
    */
   reference: {
@@ -431,7 +431,7 @@ export const ENTITY_POLICY: Readonly<Record<EntityKind, EntityPolicy>> = {
     label: "that number",
     ask: "What's the number?",
     parse: (text) => digitsOf(text),
-    // Some tenants number records with letters and no digits at all. A run of single
+    // Some organizations number records with letters and no digits at all. A run of single
     // letters cannot be recognised as a value in free speech — every sentence would
     // qualify — but in answer to "what's the number?" it is unambiguous.
     parseDirected: (text) => digitsOf(text) ?? parseSpelledName(text, 2)?.toUpperCase() ?? null,
@@ -626,7 +626,7 @@ export const ENTITY_POLICY: Readonly<Record<EntityKind, EntityPolicy>> = {
  *
  * Read the shape of this function, not just its result. The `always` branch returns
  * `true` before `confidence` is in scope for any decision, so there is no arrangement of
- * inputs — a tenant setting, a high score, a caller insisting — that reaches a `false`
+ * inputs — a organization setting, a high score, a caller insisting — that reaches a `false`
  * for an identifier or a consequential value. That is R4.3.1 expressed as control flow
  * rather than as a rule someone has to remember.
  *

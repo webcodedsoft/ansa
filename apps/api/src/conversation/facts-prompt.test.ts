@@ -1,11 +1,11 @@
-import { asCallId, asTenantId } from "@ansa/shared";
+import { asCallId, asOrganizationId } from "@ansa/shared";
 import { describe, expect, it } from "vitest";
 
 import { createCallFacts, type CallIdentity } from "./call-facts";
 import { renderFacts } from "./facts-prompt";
 
 const IDENTITY: CallIdentity = {
-  tenantId: asTenantId("11111111-2222-3333-4444-555555555555"),
+  organizationId: asOrganizationId("11111111-2222-3333-4444-555555555555"),
   callId: asCallId("CA-test"),
   callDirection: "inbound",
 };

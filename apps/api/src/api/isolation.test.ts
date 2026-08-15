@@ -13,7 +13,7 @@ import { hashPassword } from "./auth/password";
 /**
  * The adversarial test for the API layer.
  *
- * `packages/db/src/rls.test.ts` proves Postgres refuses to hand one tenant another's rows.
+ * `packages/db/src/rls.test.ts` proves Postgres refuses to hand one organization another's rows.
  * This proves the layer above it cannot get round that — that there is no header, no
  * parameter and no forged token that makes a handler act for an organisation the caller
  * does not belong to. Two organisations, two owners, real HTTP against a real database.
@@ -44,7 +44,7 @@ const ownerUrl = process.env["MIGRATION_DIRECT_URL"];
 const appUrl = process.env["DATABASE_URL"];
 
 interface Organisation {
-  readonly tenantId: string;
+  readonly organizationId: string;
   readonly email: string;
   readonly password: string;
   readonly userId: string;
@@ -63,31 +63,31 @@ const created: Organisation[] = [];
  * The owner role, not the app role, and that is not a shortcut: `users` has no INSERT
  * grant for `ansa_app` at all, because the only way a person is supposed to come into
  * existence is by redeeming an invitation. Bootstrapping the first owner is an operator
- * action — `tools/tenant/owner.mjs` — and this is that action.
+ * action — `tools/organization/owner.mjs` — and this is that action.
  */
 const seed = async (label: string): Promise<Organisation> => {
-  const tenantId = randomUUID();
+  const organizationId = randomUUID();
   const userId = randomUUID();
   const callId = randomUUID();
-  const email = `${label}-${tenantId}@invalid.test`;
+  const email = `${label}-${organizationId}@invalid.test`;
   const password = `${randomUUID()}-${randomUUID()}`;
 
-  await owner.query("insert into tenants (id, name) values ($1, $2)", [tenantId, `Org ${label}`]);
+  await owner.query("insert into organizations (id, name) values ($1, $2)", [organizationId, `Org ${label}`]);
   await owner.query(
     "insert into users (id, email, password_hash, display_name) values ($1, $2, $3, $4)",
     [userId, email, await hashPassword(password), `Owner ${label}`],
   );
-  await owner.query("insert into memberships (tenant_id, user_id, role) values ($1, $2, 'owner')", [
-    tenantId,
+  await owner.query("insert into memberships (organization_id, user_id, role) values ($1, $2, 'owner')", [
+    organizationId,
     userId,
   ]);
   await owner.query(
-    `insert into calls (id, tenant_id, carrier_call_id, direction, dialled, caller)
+    `insert into calls (id, organization_id, carrier_call_id, direction, dialled, caller)
      values ($1, $2, $3, 'inbound', $4, $5)`,
-    [callId, tenantId, `probe-${callId}`, `+100000${label.length}`, "+2348000000000"],
+    [callId, organizationId, `probe-${callId}`, `+100000${label.length}`, "+2348000000000"],
   );
 
-  const organisation: Organisation = { tenantId, userId, callId, email, password, token: "" };
+  const organisation: Organisation = { organizationId, userId, callId, email, password, token: "" };
   created.push(organisation);
   return organisation;
 };
@@ -119,7 +119,7 @@ const signIn = async (organisation: Organisation): Promise<string> => {
     body: {
       email: organisation.email,
       password: organisation.password,
-      organisationId: organisation.tenantId,
+      organisationId: organisation.organizationId,
     },
   });
   expect(reply.status, JSON.stringify(reply.body)).toBe(201);
@@ -129,7 +129,7 @@ const signIn = async (organisation: Organisation): Promise<string> => {
 let alpha: Organisation;
 let beta: Organisation;
 
-describe.skipIf(ownerUrl === undefined || appUrl === undefined)("tenant isolation across the API", () => {
+describe.skipIf(ownerUrl === undefined || appUrl === undefined)("organization isolation across the API", () => {
   beforeAll(async () => {
     owner = await createDataSource({ url: ownerUrl ?? "", poolSize: 2 }).initialize();
     alpha = await seed("alpha");
@@ -146,9 +146,9 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("tenant isolatio
   afterAll(async () => {
     await app?.close();
     for (const organisation of created) {
-      // memberships, sessions, invitations and calls all cascade from the tenant; the user
+      // memberships, sessions, invitations and calls all cascade from the organization; the user
       // is global and has to go separately.
-      await owner.query("delete from tenants where id = $1", [organisation.tenantId]);
+      await owner.query("delete from organizations where id = $1", [organisation.organizationId]);
       await owner.query("delete from users where id = $1", [organisation.userId]);
     }
     await owner?.destroy();
@@ -170,7 +170,7 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("tenant isolatio
    * than redirecting it. Nothing compares the claim to anything; RLS does the work.
    */
   it("rejects a session token rewritten to name another organisation", async () => {
-    const forged = alpha.token.replace(alpha.tenantId, beta.tenantId);
+    const forged = alpha.token.replace(alpha.organizationId, beta.organizationId);
     expect(forged).not.toBe(alpha.token);
 
     const reply = await call("GET", "/api/v1/calls", { token: forged });
@@ -231,10 +231,10 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("tenant isolatio
 
   it("answers a wrong password and an unknown address identically", async () => {
     const wrong = await call("POST", "/api/v1/auth/sessions", {
-      body: { email: alpha.email, password: `${alpha.password}x`, organisationId: alpha.tenantId },
+      body: { email: alpha.email, password: `${alpha.password}x`, organisationId: alpha.organizationId },
     });
     const absent = await call("POST", "/api/v1/auth/sessions", {
-      body: { email: `nobody-${randomUUID()}@invalid.test`, password: alpha.password, organisationId: alpha.tenantId },
+      body: { email: `nobody-${randomUUID()}@invalid.test`, password: alpha.password, organisationId: alpha.organizationId },
     });
     expect(wrong.status).toBe(401);
     expect(absent.status).toBe(401);
@@ -243,7 +243,7 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("tenant isolatio
 
   it("refuses to sign a real user into an organisation they do not belong to", async () => {
     const reply = await call("POST", "/api/v1/auth/sessions", {
-      body: { email: alpha.email, password: alpha.password, organisationId: beta.tenantId },
+      body: { email: alpha.email, password: alpha.password, organisationId: beta.organizationId },
     });
     expect(reply.status).toBe(401);
   });
@@ -288,7 +288,7 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("tenant isolatio
       body: { token, password, displayName: "Joiner" },
     });
     expect(accepted.status).toBe(201);
-    expect(accepted.body["organisationId"]).toBe(beta.tenantId);
+    expect(accepted.body["organisationId"]).toBe(beta.organizationId);
     expect(accepted.body["createdUser"]).toBe(true);
 
     // Single use: the same token a second time is refused.
@@ -301,14 +301,14 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("tenant isolatio
       body: { email: inviteeEmail, password },
     });
     expect((organisations.body["organisations"] as { id: string }[]).map((each) => each.id)).toEqual([
-      beta.tenantId,
+      beta.organizationId,
     ]);
 
     // A member may read, and may not invite.
     const joinerToken = String(
       (
         await call("POST", "/api/v1/auth/sessions", {
-          body: { email: inviteeEmail, password, organisationId: beta.tenantId },
+          body: { email: inviteeEmail, password, organisationId: beta.organizationId },
         })
       ).body["token"],
     );

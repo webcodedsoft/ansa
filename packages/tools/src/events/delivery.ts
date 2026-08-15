@@ -17,7 +17,7 @@ import { signedHeaders } from "./signature";
 export interface PendingDelivery {
   readonly id: string;
   readonly type: EventType;
-  readonly tenantId: string;
+  readonly organizationId: string;
   /** 1 for the first try. Reported to the receiver so they can spot a duplicate cheaply. */
   readonly attempt: number;
   /** Serialised once and stored, so every retry sends identical bytes and signature. */
@@ -27,7 +27,7 @@ export interface PendingDelivery {
 export interface DeliveryOutcome {
   readonly ok: boolean;
   readonly status: number | null;
-  /** Null on success. Short: this is shown to a tenant, not to a debugger. */
+  /** Null on success. Short: this is shown to a organization, not to a debugger. */
   readonly error: string | null;
   /** False when trying again could only produce the same answer. */
   readonly retryable: boolean;
@@ -70,7 +70,7 @@ export const deliverOnce = async (
   const headers = signedHeaders({
     eventId: delivery.id,
     eventType: delivery.type,
-    tenantId: delivery.tenantId,
+    organizationId: delivery.organizationId,
     attempt: delivery.attempt,
     timestampSeconds,
     body: delivery.body,
@@ -103,7 +103,7 @@ export const deliverOnce = async (
       latencyMs: now() - startedAt,
     };
   } catch (error) {
-    // A refusal is configuration, not weather: the host is not on the tenant's allowlist,
+    // A refusal is configuration, not weather: the host is not on the organization's allowlist,
     // or resolves somewhere it may not reach. Retrying cannot change either.
     const refused = error instanceof EgressRefusedError;
     return {

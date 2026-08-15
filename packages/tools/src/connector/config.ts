@@ -11,7 +11,7 @@ import { templateFields } from "./template";
  * equally true of MCP — the two are transports, not categories, and nothing downstream of
  * registration can tell them apart. The real axis in this codebase is platform-owned
  * (`internal/`, tools that act on the call itself and have no endpoint behind them) versus
- * tenant-supplied (here, tools that are somebody else's server).
+ * organization-supplied (here, tools that are somebody else's server).
  *
  * Everything on the way in is validated, because everything on the way in was typed by
  * somebody who does not work here.
@@ -41,7 +41,7 @@ interface ConnectorToolBase {
    * Arguments that identify a person, mapped to the call fact each must match — for
    * example `{ "policyNumber": "policyNumber" }`.
    *
-   * Optional, and a tenant who omits it gets a tool that will look anybody up by whatever
+   * Optional, and a organization who omits it gets a tool that will look anybody up by whatever
    * the transcriber heard. That is the right default for a tool keyed on something that
    * is not a person (an order reference the caller reads out, a branch, a product) and
    * the wrong one for anything keyed on who is calling.
@@ -55,12 +55,12 @@ export interface HttpToolConfig extends ConnectorToolBase {
   readonly method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   /** Where the model's arguments go. */
   readonly send: "query" | "body";
-  /** A name in the tenant's credential vault. Never the credential itself. */
+  /** A name in the organization's credential vault. Never the credential itself. */
   readonly credentialRef?: string;
 }
 
 /**
- * One tool on a tenant's MCP server.
+ * One tool on a organization's MCP server.
  *
  * The name, description and schema come from discovery; the risk tier does not, and
  * cannot. A server telling us which of its own tools are safe to run without confirmation
@@ -88,7 +88,7 @@ export interface McpServerConfig {
 }
 
 export interface ConnectorConfig {
-  /** R5.2.2. Hosts this tenant may be pointed at, and nothing else. */
+  /** R5.2.2. Hosts this organization may be pointed at, and nothing else. */
   readonly egress: EgressPolicy;
   readonly http: readonly HttpToolConfig[];
   readonly mcp: readonly McpServerConfig[];
@@ -278,7 +278,7 @@ export const requireAllowed = (url: string, egress: EgressPolicy, where: string)
  * Configuration as stored, turned into configuration this package will act on.
  *
  * Throws rather than dropping the bad entry. A tool that silently fails to register is a
- * tenant wondering why the agent says it cannot check something they configured last week,
+ * organization wondering why the agent says it cannot check something they configured last week,
  * and the error belongs at publication time where somebody is looking at a screen.
  */
 export const parseConnectorConfig = (value: unknown): ConnectorConfig => {
@@ -308,7 +308,7 @@ export const parseConnectorConfig = (value: unknown): ConnectorConfig => {
   };
 
   /**
-   * A URL the same tenant's allowlist does not cover.
+   * A URL the same organization's allowlist does not cover.
    *
    * The guard already refuses this at request time and always will — it is the boundary and
    * this is not. What it cannot do is tell anybody *before* a caller hits it: the tool

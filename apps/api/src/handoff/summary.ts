@@ -1,5 +1,5 @@
 import { forSpeech, sayReference } from "@ansa/normalizer";
-import type { TenantId } from "@ansa/shared";
+import type { OrganizationId } from "@ansa/shared";
 
 /**
  * The handoff summary, reduced from the call's own event log.
@@ -48,7 +48,7 @@ export interface PerformedAction {
 }
 
 export interface HandoffSummary {
-  readonly tenantId: TenantId | null;
+  readonly organizationId: OrganizationId | null;
   readonly carrierCallId: string;
   /** As the carrier reported it. Withheld numbers arrive as "anonymous", not as absent. */
   readonly callerNumber: string | null;
@@ -72,7 +72,7 @@ export interface HandoffSummary {
 }
 
 export interface SummaryInput {
-  readonly tenantId: TenantId | null;
+  readonly organizationId: OrganizationId | null;
   readonly carrierCallId: string;
   readonly callerNumber: string | null;
   readonly events: readonly LoggedEvent[];
@@ -208,7 +208,7 @@ export const summarise = (input: SummaryInput): HandoffSummary => {
   const name = [...confirmed].reverse().find((v) => v.subject === "name") ?? null;
 
   return {
-    tenantId: input.tenantId,
+    organizationId: input.organizationId,
     carrierCallId: input.carrierCallId,
     callerNumber: input.callerNumber,
     callerName: name === null ? null : name.value,

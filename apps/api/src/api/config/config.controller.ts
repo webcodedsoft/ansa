@@ -1,15 +1,15 @@
 import {
-  listTenantConfigVersions,
+  listAgentConfigVersions,
   loadConfigVersionForCall,
-  loadCurrentTenantConfig,
-  loadTenantConfigVersion,
-  publishTenantConfig,
+  loadCurrentAgentConfig,
+  loadAgentConfigVersion,
+  publishAgentConfig,
   type ConfigVersion,
-  type TenantConfigFields,
+  type AgentConfigFields,
 } from "@ansa/db";
 import { Controller, Get, Inject, NotFoundException, Post } from "@nestjs/common";
 
-import { LIMITS } from "../../prompts/tenant-layer";
+import { LIMITS } from "../../prompts/organization-layer";
 import { BASE_KEYTERMS, MAX_KEYTERMS } from "../../tenancy/defaults";
 import { Endpoint } from "../http/endpoint";
 import { pageQuery, pageResponse, toPageBody, toPageRequest } from "../http/pagination";
@@ -17,7 +17,7 @@ import { ValidationFailed } from "../http/problem";
 import { apiRoute, FromBody, FromPath, FromQuery } from "../http/request";
 import { flag, integer, list, nullable, object, optional, text, type Infer } from "../http/schema";
 import { phoneNumber, timestamp, uuid } from "../schemas";
-import { TenantContext } from "../tenancy/tenant-context";
+import { OrganizationContext } from "../tenancy/organization-context";
 
 import { diffConfigurations } from "./diff";
 import { effectiveKeyterms, publicationProblems, publishedGuarantees } from "./publication";
@@ -28,8 +28,8 @@ import { effectiveKeyterms, publicationProblems, publishedGuarantees } from "./p
  *
  * Three things shape this surface, and none of them is "expose the columns".
  *
- * **Versioning is the interface, not an implementation detail.** `tenant_prompt_versions` is
- * append-only, `app.publish_tenant_config` bumps and snapshots in one statement, and every
+ * **Versioning is the interface, not an implementation detail.** `agent_prompt_versions` is
+ * append-only, `app.publish_agent_config` bumps and snapshots in one statement, and every
  * call records the version that served it. Hiding that behind a `PATCH /config` would throw
  * away the only thing that makes R7.5 answerable, so a change is a POST that creates a
  * version, a version has a URL, and a call can be handed back the configuration it ran on.
@@ -39,7 +39,7 @@ import { effectiveKeyterms, publicationProblems, publishedGuarantees } from "./p
  * missing is a body that deletes the greeting. Making the field required turns "I forgot"
  * into a 422 rather than into a caller hearing a different first sentence tomorrow.
  *
- * **What a tenant cannot set has no slot to set it in.** The operator's columns come back on
+ * **What a organization cannot set has no slot to set it in.** The operator's columns come back on
  * `GET /config` and appear nowhere in the request body, so an attempt to send one is a 422
  * from the schema layer rather than a rule somebody has to enforce. `GET /config/guarantees`
  * serves the rest of the §1 table from the code that enforces it.
@@ -55,7 +55,7 @@ import { effectiveKeyterms, publicationProblems, publishedGuarantees } from "./p
  * is pure.
  *
  * **A rollback is a publish, not an undo.** It reads an old version and publishes its
- * content as a new one, through `publishTenantConfig` and after the same
+ * content as a new one, through `publishAgentConfig` and after the same
  * `publicationProblems` a hand-written publication faces. Nothing rewrites history, and
  * that is the whole reason a call from three weeks ago can still be explained (R7.5): the
  * version it recorded still says what the agent was actually working from. It also means a
@@ -102,7 +102,7 @@ const escalation = object({
 /**
  * The fields a publication is made of.
  *
- * The character limits on `name`, `persona` and `instructions` are `prompts/tenant-layer.ts`'s
+ * The character limits on `name`, `persona` and `instructions` are `prompts/organization-layer.ts`'s
  * own, imported rather than repeated. Text past them is silently clamped on the way into the
  * prompt, so accepting a longer value here would store something the agent never reads.
  */
@@ -122,7 +122,7 @@ const configFields = object(CONFIG_FIELDS);
 const publication = object({
   ...CONFIG_FIELDS,
   /**
-   * Required, as it is in `tools/tenant/config.mjs`. A version with no reason explains
+   * Required, as it is in `tools/organization/config.mjs`. A version with no reason explains
    * nothing three weeks later, which is the only moment anybody reads the history.
    */
   note: text({ minLength: 1, maxLength: MAX_NOTE_CHARS }),
@@ -146,7 +146,7 @@ const configVersion = object({ ...VERSION_SUMMARY, config: configFields });
  * What the transcriber is actually told to expect, which is never only what the organisation
  * asked for.
  *
- * `base` is here because it is inherited and cannot be removed, and because a tenant looking
+ * `base` is here because it is inherited and cannot be removed, and because a organization looking
  * at their own two keyterms should be able to see the ones they did not choose. Boosting is
  * a bias rather than a hint — a listed token wins ties against everything unlisted — and the
  * base list alone, containing no personal name, has been measured turning a caller's name
@@ -186,7 +186,7 @@ const currentConfig = object({
   version: integer({ minimum: 0 }),
   config: configFields,
   /**
-   * The history row for the current version, or null when there is not one — a tenant seeded
+   * The history row for the current version, or null when there is not one — a organization seeded
    * before migration 0011, or a row edited in place instead of published. Null is reported
    * rather than filled in: a version pointing at nothing is exactly the gap R7.5 closes.
    */
@@ -276,7 +276,7 @@ const guarantee = object({
 const guarantees = object({ guarantees: list(guarantee) });
 
 /** The response shape shared by everything that returns a stored configuration. */
-const toConfigBody = (config: TenantConfigFields): Infer<typeof configFields> => ({
+const toConfigBody = (config: AgentConfigFields): Infer<typeof configFields> => ({
   name: config.name,
   voiceId: config.voiceId,
   greeting: config.greeting,
@@ -319,7 +319,7 @@ const toVocabulary = (configured: readonly string[]): Infer<typeof vocabulary> =
 
 @Controller(apiRoute("config"))
 export class ConfigController {
-  constructor(@Inject(TenantContext) private readonly db: TenantContext) {}
+  constructor(@Inject(OrganizationContext) private readonly db: OrganizationContext) {}
 
   /**
    * Literal segments before parameterised ones, because Nest matches in declaration order
@@ -363,8 +363,8 @@ export class ConfigController {
     // from the same snapshot, and two queries raced onto one connection is a driver
     // problem rather than a speed-up.
     const pair = await this.db.tx(async (scope) => ({
-      from: await loadTenantConfigVersion(scope, query.from),
-      to: await loadTenantConfigVersion(scope, query.to),
+      from: await loadAgentConfigVersion(scope, query.from),
+      to: await loadAgentConfigVersion(scope, query.to),
     }));
 
     // 404 for either, and deliberately without saying which: under RLS another
@@ -389,7 +389,7 @@ export class ConfigController {
     @FromQuery() query: Infer<typeof pageQuery>,
   ): Promise<Infer<typeof versionPage>> {
     const page = toPageRequest(query);
-    return toPageBody(await this.db.tx((scope) => listTenantConfigVersions(scope, page)));
+    return toPageBody(await this.db.tx((scope) => listAgentConfigVersions(scope, page)), query);
   }
 
   @Post("versions")
@@ -412,11 +412,11 @@ export class ConfigController {
 
     const { note, ...fields } = body;
     const version = await this.db.tx(async (scope) => {
-      const number = await publishTenantConfig(scope, fields, note);
+      const number = await publishAgentConfig(scope, fields, note);
       // Read back inside the same transaction rather than echoing the request. What comes
       // out is what was stored, with the author and the timestamp the database assigned, so
       // the response is evidence rather than a restatement of the body.
-      return loadTenantConfigVersion(scope, number);
+      return loadAgentConfigVersion(scope, number);
     });
 
     if (version === null) {
@@ -472,7 +472,7 @@ export class ConfigController {
     @FromBody() body: Infer<typeof rollback>,
   ): Promise<Infer<typeof published>> {
     const restored = await this.db.tx(async (scope) => {
-      const source = await loadTenantConfigVersion(scope, path.version);
+      const source = await loadAgentConfigVersion(scope, path.version);
       if (source === null) throw new NotFoundException();
 
       const problems = publicationProblems(source.config);
@@ -489,14 +489,14 @@ export class ConfigController {
         );
       }
 
-      const number = await publishTenantConfig(
+      const number = await publishAgentConfig(
         scope,
         source.config,
         rollbackNote(path.version, body.note),
       );
       // Read back inside the same transaction, as the publish endpoint does: the response
       // is the row the database wrote rather than an echo of the row it was copied from.
-      return loadTenantConfigVersion(scope, number);
+      return loadAgentConfigVersion(scope, number);
     });
 
     if (restored === null) throw new Error("published a version that cannot be read back");
@@ -516,7 +516,7 @@ export class ConfigController {
     response: configVersion,
   })
   async version(@FromPath() path: Infer<typeof versionPath>): Promise<Infer<typeof configVersion>> {
-    const found = await this.db.tx((scope) => loadTenantConfigVersion(scope, path.version));
+    const found = await this.db.tx((scope) => loadAgentConfigVersion(scope, path.version));
     // Under RLS, another organisation's version and a version that never existed are the
     // same query result, and answering differently would confirm which.
     if (found === null) throw new NotFoundException();
@@ -557,9 +557,9 @@ export class ConfigController {
     response: currentConfig,
   })
   async current(): Promise<Infer<typeof currentConfig>> {
-    const found = await this.db.tx((scope) => loadCurrentTenantConfig(scope));
+    const found = await this.db.tx((scope) => loadCurrentAgentConfig(scope));
     // The organisation behind a live session always has a row; this is the session outliving
-    // a deleted tenant, which is a 404 rather than a 500.
+    // a deleted organization, which is a 404 rather than a 500.
     if (found === null) throw new NotFoundException();
 
     const { consentPolicy, consentBasis, callingEarliestHour, callingLatestHour, ...operator } =

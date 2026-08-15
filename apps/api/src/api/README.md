@@ -1,6 +1,6 @@
 # The dashboard API
 
-Self-service for a tenant organisation: its people, its agent's configuration, its call
+Self-service for a organization organisation: its people, its agent's configuration, its call
 history. Read `CLAUDE.md` first — everything here is downstream of rule 3.
 
 Two files are worth reading before you write anything:
@@ -13,7 +13,7 @@ Two files are worth reading before you write anything:
 
 ## The one thing that is not negotiable
 
-**A handler has no way to name a tenant.** Not a header, not a query parameter, not a path
+**A handler has no way to name a organization.** Not a header, not a query parameter, not a path
 segment, not an argument. This is not a rule anybody has to remember; it is what the types
 and the wiring allow.
 
@@ -24,22 +24,22 @@ const members = await this.db.tx((scope) => listMembers(scope, page));
 Five layers hold that up, and each one fails closed on its own.
 
 **1. The credential carries the organisation.** A session token is
-`ansa_s.<tenant uuid>.<secret>`. The tenant in it is an unverified claim, and acting on it
+`ansa_s.<organization uuid>.<secret>`. The organization in it is an unverified claim, and acting on it
 before verifying it is safe because of *how* it is acted on: the request opens a
-transaction scoped to the claimed tenant and looks the session up inside it, under RLS. A
+transaction scoped to the claimed organization and looks the session up inside it, under RLS. A
 token rewritten to name a different organisation finds no session row. The lie is what
 makes it fail — nothing compares the claim to anything, so there is no comparison to leave
-out. `auth/tokens.ts`, `tenancy/tenant-gateway.ts`.
+out. `auth/tokens.ts`, `tenancy/organization-gateway.ts`.
 
-**2. `TenantContext.tx()` is the only door.** It is request-scoped, reads the principal the
-guard put on the request, and has no tenant parameter. If the guard never ran, it throws
+**2. `OrganizationContext.tx()` is the only door.** It is request-scoped, reads the principal the
+guard put on the request, and has no organization parameter. If the guard never ran, it throws
 rather than falling back to an unscoped connection — which would present as "this
 organisation has no data" and be an isolation failure disguised as an empty page.
-`tenancy/tenant-context.ts`.
+`tenancy/organization-context.ts`.
 
-**3. Query functions take a `TenantScope`, never `(db, tenantId)`.** A `TenantScope` only
-comes out of `withTenant`, so holding one means the transaction has already set
-`app.tenant_id`. And because there is no tenant id in the signature, there is no tenant id
+**3. Query functions take a `OrganizationScope`, never `(db, organizationId)`.** A `OrganizationScope` only
+comes out of `withOrganization`, so holding one means the transaction has already set
+`app.organization_id`. And because there is no organization id in the signature, there is no organization id
 to pass the wrong value for. Both of the usual mistakes are unrepresentable.
 `packages/db/src/accounts.ts`, `packages/db/src/call-page.ts`.
 
@@ -55,7 +55,7 @@ bug in all four layers above sees zero rows rather than someone else's.
 `routes.test.ts` is the test that keeps this true after everyone who wrote it has moved on.
 It walks the controllers `ApiModule` registers and fails if a route is outside the prefix,
 missing an `@Endpoint`, publicly reachable without being on a written-down list, public
-without a rate limit — and it greps the source for `withTenant`, `createDataSource` and
+without a rate limit — and it greps the source for `withOrganization`, `createDataSource` and
 `API_DATA_SOURCE` outside `tenancy/`. `isolation.test.ts` then does it for real, over HTTP,
 with two organisations and a forged token.
 
@@ -70,7 +70,7 @@ with two organisations and a forged token.
 ```ts
 @Controller(apiRoute("agents"))            // never a raw path string
 export class AgentsController {
-  constructor(private readonly db: TenantContext) {}
+  constructor(private readonly db: OrganizationContext) {}
 
   @Get()
   @Endpoint({
@@ -136,7 +136,7 @@ row arriving between pages makes a reader see a duplicate.
 
 Throw Nest's exceptions. `ProblemFilter` turns everything under `/api/v1` into RFC 9457
 `application/problem+json` with a stable `type`, and logs 5xx with the request id and the
-tenant. Anything that is not an `HttpException` becomes a bare 500 — its message never
+organization. Anything that is not an `HttpException` becomes a bare 500 — its message never
 reaches the client, because it is as likely to be a connection string as a sentence.
 
 **404, not 403, for someone else's record.** Under RLS "not yours" and "not there" are the
@@ -172,10 +172,10 @@ consumes it.
 
 ## What is deliberately not here
 
-- **No `organisations` table.** An organisation *is* a row in `tenants` — the row the
+- **No `organisations` table.** An organisation *is* a row in `organizations` — the row the
   carrier resolves a dialled number to. A parallel table would be a second answer to "who
   is this customer".
-- **No self-serve sign-up.** Tenants are onboarded by hand (PRD §11): `provision.mjs`
+- **No self-serve sign-up.** Organizations are onboarded by hand (PRD §11): `provision.mjs`
   creates the organisation, `owner.mjs` invites its first owner. Everything after that is
   self-service.
 - **No email.** `POST /invitations` returns the token once and a human passes it on. When a
@@ -188,7 +188,7 @@ consumes it.
 - **No call audio.** `RECORD_AUDIO_DIR` writes the caller's raw µ-law stream to the
   process's own disk. It is an operator diagnostic that is off by default, keyed by the
   carrier's call id rather than by anything this API exposes, swept on
-  `tenants.audio_retention_days`, and playable by nothing without transcoding — so an
+  `organizations.audio_retention_days`, and playable by nothing without transcoding — so an
   endpoint over it would answer 404 for almost every call and would make this API a media
   path. The real objection is what the file is: a caller reading their policy number
   aloud. Serving that needs expiring, single-use, unguessable URLs and a record of who

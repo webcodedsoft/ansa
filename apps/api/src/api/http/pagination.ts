@@ -1,67 +1,75 @@
-import type { PageCursor, PageRequest, PageSlice } from "@ansa/db";
+import type { PageRequest, PageSlice } from "@ansa/db";
 
-import { ValidationFailed } from "./problem";
-import { integer, list, nullable, object, optional, text, type Infer, type Schema } from "./schema";
+import { integer, list, object, optional, type Infer, type Schema } from "./schema";
 
 /**
  * The one pagination contract every list endpoint uses.
  *
- * `?limit=&cursor=` in, `{ items, nextCursor }` out, and the cursor is opaque. Opaque
- * matters: it is a base64 of the keyset the query actually uses, and the day a list needs
- * a different sort key, every existing client keeps working because none of them ever
- * parsed it.
+ * `?page=&perPage=` in, `{ items, page, perPage, total, totalPages }` out. Page numbers
+ * rather than an opaque cursor, which is a deliberate trade and worth stating because it
+ * shows up in real use: these lists are newest-first and constantly written to, so a call
+ * arriving between one page view and the next shifts every row down and a reader can see
+ * the same row twice. A cursor never did that. What a cursor could never do is say how
+ * many there are or take you to page four, and for a person reading a call log that is
+ * worth more than the duplicate.
+ *
+ * Pages are 1-based because they are shown to people. Page zero is not a smaller page
+ * one, it is a mistake, and it is rejected rather than quietly clamped.
  */
 
-export const DEFAULT_PAGE_LIMIT = 25;
-const MAX_PAGE_LIMIT = 100;
+export const DEFAULT_PAGE_SIZE = 25;
+const MAX_PAGE_SIZE = 100;
 
 /**
- * The two properties every list takes, as properties rather than as a finished schema.
+ * The two properties every list takes, as properties rather than a finished schema.
  *
  * A list with filters spreads these into its own query object — `object({ ...PAGE_PROPS,
- * from: … })` — so `limit`'s ceiling and the cursor's length are written once. Declaring
- * them again beside the filters is how one endpoint quietly ends up accepting `limit=500`.
+ * from: … })` — so the ceiling on `perPage` is written once. Declaring them again beside
+ * the filters is how one endpoint quietly ends up accepting `perPage=5000`.
  */
 export const PAGE_PROPS = {
-  limit: optional(integer({ minimum: 1, maximum: MAX_PAGE_LIMIT })),
-  cursor: optional(text({ maxLength: 512 })),
+  page: optional(integer({ minimum: 1 })),
+  perPage: optional(integer({ minimum: 1, maximum: MAX_PAGE_SIZE })),
 };
 
 export const pageQuery = object(PAGE_PROPS);
 
 export type PageQuery = Infer<typeof pageQuery>;
 
-const encodeCursor = (cursor: PageCursor): string =>
-  Buffer.from(JSON.stringify([cursor.createdAt, cursor.id]), "utf8").toString("base64url");
-
-const decodeCursor = (raw: string): PageCursor => {
-  // A cursor is something we minted, so anything unreadable is either a typo or somebody
-  // poking at it. Both get the same answer, and neither reaches the query — an unchecked
-  // value here would be interpolated into a timestamp comparison.
-  try {
-    const parsed: unknown = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
-    if (!Array.isArray(parsed) || parsed.length !== 2) throw new Error("shape");
-    const [createdAt, id] = parsed as unknown[];
-    if (typeof createdAt !== "string" || typeof id !== "string") throw new Error("shape");
-    if (Number.isNaN(Date.parse(createdAt))) throw new Error("timestamp");
-    return { createdAt, id };
-  } catch {
-    throw new ValidationFailed([{ path: "cursor", message: "is not a cursor this API issued" }]);
-  }
+export const toPageRequest = (query: PageQuery): PageRequest => {
+  const perPage = query.perPage ?? DEFAULT_PAGE_SIZE;
+  const page = query.page ?? 1;
+  return { limit: perPage, offset: (page - 1) * perPage };
 };
-
-export const toPageRequest = (query: PageQuery): PageRequest => ({
-  limit: query.limit ?? DEFAULT_PAGE_LIMIT,
-  after: query.cursor === undefined ? null : decodeCursor(query.cursor),
-});
 
 /** The response schema for a list of `item`. Declared per endpoint so the item type shows up in the spec. */
 export const pageResponse = <T>(item: Schema<T>) =>
-  object({ items: list(item), nextCursor: nullable(text()) });
+  object({
+    items: list(item),
+    /** 1-based, echoed back so a client never has to remember what it asked for. */
+    page: integer({ minimum: 1 }),
+    perPage: integer({ minimum: 1 }),
+    /** Rows matching the query across every page. */
+    total: integer({ minimum: 0 }),
+    /** Zero when there is nothing at all — not one empty page. */
+    totalPages: integer({ minimum: 0 }),
+  });
 
-export const toPageBody = <T>(
-  slice: PageSlice<T>,
-): { items: readonly T[]; nextCursor: string | null } => ({
-  items: slice.items,
-  nextCursor: slice.next === null ? null : encodeCursor(slice.next),
-});
+export interface PageBody<T> {
+  readonly items: readonly T[];
+  readonly page: number;
+  readonly perPage: number;
+  readonly total: number;
+  readonly totalPages: number;
+}
+
+export const toPageBody = <T>(slice: PageSlice<T>, query: PageQuery): PageBody<T> => {
+  const perPage = query.perPage ?? DEFAULT_PAGE_SIZE;
+  return {
+    items: slice.items,
+    page: query.page ?? 1,
+    perPage,
+    total: slice.total,
+    totalPages: Math.ceil(slice.total / perPage),
+  };
+};

@@ -1,4 +1,4 @@
-import { asCallId, asTenantId } from "@ansa/shared";
+import { asCallId, asOrganizationId } from "@ansa/shared";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -9,7 +9,7 @@ import {
 } from "./call-facts";
 
 const IDENTITY: CallIdentity = {
-  tenantId: asTenantId("11111111-2222-3333-4444-555555555555"),
+  organizationId: asOrganizationId("11111111-2222-3333-4444-555555555555"),
   callId: asCallId("CA-test"),
   callDirection: "inbound",
 };
@@ -24,9 +24,9 @@ const heard = (value: string, atMs = 0): Observation => ({
 });
 
 describe("createCallFacts", () => {
-  it("carries the tenant and the call on every snapshot", () => {
+  it("carries the organization and the call on every snapshot", () => {
     const store = facts();
-    expect(store.facts.tenantId).toBe(IDENTITY.tenantId);
+    expect(store.facts.organizationId).toBe(IDENTITY.organizationId);
     expect(store.facts.callId).toBe(IDENTITY.callId);
     expect(store.facts.callDirection).toBe("inbound");
   });
@@ -283,5 +283,93 @@ describe("do not ask for what the caller already gave", () => {
 
     expect(confirmedFact(store.facts.callerName)).toBe("Ada Obi");
     expect(store.facts.callerNameConfirmed).toBe(true);
+  });
+});
+
+/**
+ * Values the agent's own form collected.
+ *
+ * The reason this arm exists: a tool naming `claimNumber` in its `identifiers` could never
+ * be satisfied while confirmed values lived in three fixed slots. It answered
+ * `unconfirmed-identity` on every call, silently, and the only way to discover it was to
+ * make one. What an agent collects is configuration, so what can open a tool has to be too.
+ */
+describe("a configured field", () => {
+  const store = () =>
+    createCallFacts({
+      organizationId: asOrganizationId("11111111-1111-4111-8111-111111111111"),
+      callId: asCallId("CA-captured"),
+      callDirection: "inbound",
+    });
+
+  it("is unconfirmed until the caller agrees to a readback, so a tool stays shut", () => {
+    const facts = store();
+    facts.observe({ captured: "claimNumber", value: "CL8891", source: "stt", atMs: 1 });
+
+    const held = facts.facts.captured.get("claimNumber");
+    expect(held?.value).toBe("CL8891");
+    // `confirmedFact` is the only door a tool goes through, and heard-once is not through it.
+    expect(confirmedFact(held ?? { status: "UNKNOWN", value: null } as never)).toBeNull();
+  });
+
+  it("opens the tool once the caller has confirmed it", () => {
+    const facts = store();
+    facts.observe({ captured: "claimNumber", value: "CL8891", source: "stt", atMs: 1 });
+    facts.observe({
+      captured: "claimNumber",
+      value: "CL8891",
+      source: "caller-confirmation",
+      atMs: 2,
+    });
+
+    const held = facts.facts.captured.get("claimNumber");
+    expect(confirmedFact(held ?? ({} as never))).toBe("CL8891");
+  });
+
+  it("refuses to let the transcriber overwrite what the caller confirmed", () => {
+    const facts = store();
+    facts.observe({ captured: "claimNumber", value: "CL8891", source: "caller-confirmation", atMs: 1 });
+
+    // A later transcript says something else. It is not applied: the caller agreed to the
+    // first value out loud, and a transcriber that disagrees is the thing being guarded
+    // against rather than evidence. Re-opening the readback belongs to capture.
+    const change = facts.observe({
+      captured: "claimNumber",
+      value: "CL9999",
+      source: "stt",
+      atMs: 2,
+    });
+
+    expect(change.reason).toBe("contested");
+    expect(confirmedFact(facts.facts.captured.get("claimNumber") ?? ({} as never))).toBe("CL8891");
+  });
+
+  it("lets the caller correct themselves, because they are the authority", () => {
+    const facts = store();
+    facts.observe({ captured: "claimNumber", value: "CL8891", source: "caller-confirmation", atMs: 1 });
+    const change = facts.observe({
+      captured: "claimNumber",
+      value: "CL9999",
+      source: "caller-confirmation",
+      atMs: 2,
+    });
+
+    // A second readback the caller agreed to outranks the first. Contesting it would leave
+    // the agent holding a number the caller has just told it is wrong.
+    expect(change.reason).toBe("confirmed");
+    expect(confirmedFact(facts.facts.captured.get("claimNumber") ?? ({} as never))).toBe("CL9999");
+  });
+
+  it("keeps each field separate", () => {
+    const facts = store();
+    facts.observe({ captured: "policyNumber", value: "PM1", source: "caller-confirmation", atMs: 1 });
+    facts.observe({ captured: "claimNumber", value: "CL2", source: "caller-confirmation", atMs: 2 });
+
+    expect(facts.facts.captured.get("policyNumber")?.value).toBe("PM1");
+    expect(facts.facts.captured.get("claimNumber")?.value).toBe("CL2");
+  });
+
+  it("is empty for an agent with no form, which is every agent that had none before", () => {
+    expect(store().facts.captured.size).toBe(0);
   });
 });

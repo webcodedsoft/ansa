@@ -9,7 +9,7 @@ so each can go deep instead of one generalist skimming twelve areas. Written 202
 
 **The product is NestJS, not Next.js.** `apps/api` is a NestJS service and CLAUDE.md rule 0
 is explicit about it. Nothing in the brief actually requires Next.js — it describes a
-real-time call pipeline, which is what exists. If a tenant dashboard is wanted later that
+real-time call pipeline, which is what exists. If a organization dashboard is wanted later that
 is a separate app, not a rewrite of this one. No agent should act on the Next.js line.
 
 **Most of the brief is already built.** An agent told to "implement barge-in" will
@@ -28,7 +28,7 @@ starts by reading it rather than replacing it.
 | §16 hallucination | LLM never sees an unconfirmed value; audio gate discards invented transcripts |
 | §17 tools | **Nothing.** No registry, no dispatch |
 | §18 handoff | Speaks a line, transfers nowhere |
-| §20 tenancy | RLS, per-tenant config and keyterms, versioned |
+| §20 tenancy | RLS, per-organization config and keyterms, versioned |
 | §21 prompts | One prompt plus a per-turn budget; layers designed, not built |
 | §22 latency | 15 event kinds and a config snapshot |
 | §24 observability | Event log, viewer, no metrics |
@@ -40,8 +40,8 @@ starts by reading it rather than replacing it.
 Non-negotiable, and they are what keep ten agents from pulling the codebase apart.
 
 1. **Read `CLAUDE.md` first.** Function expressions, no vendor types outside adapters,
-   `tenant_id` everywhere, one tool dispatch path.
-2. **Guarantees live in code, not prompts.** A tenant must never be able to configure away
+   `organization_id` everywhere, one tool dispatch path.
+2. **Guarantees live in code, not prompts.** A organization must never be able to configure away
    readback, a risk tier, or AI disclosure.
 3. **Wire it or do not claim it.** An export nothing calls fails `pnpm lint`. Finish at the
    call site, not the module boundary.
@@ -126,10 +126,10 @@ gap in the product.
 **Done when** A provider or prompt change can be scored instead of argued about.
 
 ### P3 · `tenancy-and-prompts`
-**Owns** §20 tenant configuration, §21 prompt layering.
-**Exists** RLS, per-tenant config, versioning; prompt layers designed in
+**Owns** §20 organization configuration, §21 prompt layering.
+**Exists** RLS, per-organization config, versioning; prompt layers designed in
 `docs/MULTI_TENANT_ARCHITECTURE.md`, not built.
-**Why last** Deliberately. There is one tenant, and the base being strong matters more
+**Why last** Deliberately. There is one organization, and the base being strong matters more
 than the configuration surface until there are several.
 
 ---

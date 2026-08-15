@@ -3,6 +3,12 @@ dist/
 .turbo/
 *.tsbuildinfo
 
+# Next's build output. `apps/web/src/lib/api/generated.ts` is deliberately NOT listed here:
+# it is generated from openapi.json, but the frontend's typecheck and build both need it, so
+# committing it keeps a clean checkout buildable and puts an API contract change in a diff —
+# the same reason openapi.json itself is committed.
+.next/
+
 # Secrets. Twilio and provider credentials never enter the repo (PRD R5.2.1).
 .env
 .env.*
@@ -17,4 +23,4 @@ recordings/
 
 # Hand-onboarding working files: one organisation's real configuration, plus the
 # secrets that go with it. The tool reads a path, so these never need to be in the repo.
-tools/tenant/local/
+tools/organization/local/

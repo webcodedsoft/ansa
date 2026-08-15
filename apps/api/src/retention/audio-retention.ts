@@ -15,7 +15,7 @@ import type { AppConfig } from "../config/env";
 import { APP_CONFIG, DATA_SOURCE, LOGGER } from "../telephony/tokens";
 
 /**
- * Enforcing `tenants.audio_retention_days`.
+ * Enforcing `organizations.audio_retention_days`.
  *
  * The column has existed since schema v1 and nothing has ever honoured it, while
  * RECORD_AUDIO_DIR writes the caller's raw voice to disk — a person reading their policy
@@ -24,9 +24,9 @@ import { APP_CONFIG, DATA_SOURCE, LOGGER } from "../telephony/tokens";
  *
  * Three rules, and the third is the one that is easy to get wrong:
  *
- *   expired      the call is older than its own tenant's window. Delete it.
- *   within       the call is younger. Keep it, however long that tenant chose.
- *   unattributed no call row names this recording — written before the tenant resolved,
+ *   expired      the call is older than its own organization's window. Delete it.
+ *   within       the call is younger. Keep it, however long that organization chose.
+ *   unattributed no call row names this recording — written before the organization resolved,
  *                or the row never landed. Nobody's policy covers it, so the strictest
  *                one does. It is still somebody's voice.
  */
@@ -160,7 +160,7 @@ export class AudioRetentionSweeper implements OnApplicationBootstrap, OnApplicat
       if (removed > 0) {
         // Counts and call ids only. What was said in them is exactly what retention
         // exists to stop being kept.
-        this.log.info("deleted recordings past their tenant's retention", {
+        this.log.info("deleted recordings past their organization's retention", {
           removed,
           kept: recordings.length - removed,
           minRetentionDays: minDays,

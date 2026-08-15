@@ -1,7 +1,7 @@
-import type { TenantId } from "@ansa/shared";
+import type { OrganizationId } from "@ansa/shared";
 
 import type { Db } from "./data-source";
-import { withTenant } from "./tenant-scope";
+import { withOrganization } from "./organization-scope";
 
 /**
  * The outbox behind event webhooks (Slice 6a).
@@ -23,14 +23,14 @@ import { withTenant } from "./tenant-scope";
  */
 
 export interface QueuedEvent {
-  readonly tenantId: TenantId;
+  readonly organizationId: OrganizationId;
   readonly eventType: string;
-  /** The tenant's own name for the receiver. */
+  /** The organization's own name for the receiver. */
   readonly subscription: string;
   readonly carrierCallId?: string | null;
   readonly configVersion?: number | null;
   /**
-   * The payload, already redacted under the tenant's rules and already serialised.
+   * The payload, already redacted under the organization's rules and already serialised.
    *
    * Built here rather than at delivery time on purpose. The lifecycle point is the only
    * moment the whole truth is in one place — the handoff summary is reduced from an
@@ -44,14 +44,14 @@ export const enqueueEventDelivery = async (
   dataSource: Db,
   event: QueuedEvent,
 ): Promise<string | null> =>
-  withTenant(dataSource, event.tenantId, async (scope) => {
+  withOrganization(dataSource, event.organizationId, async (scope) => {
     const rows = await scope.query<{ id: string }>(
       `insert into event_deliveries
-         (tenant_id, event_type, subscription, carrier_call_id, config_version, body)
+         (organization_id, event_type, subscription, carrier_call_id, config_version, body)
        values ($1, $2, $3, $4, $5, $6)
        returning id`,
       [
-        event.tenantId,
+        event.organizationId,
         event.eventType,
         event.subscription,
         event.carrierCallId ?? null,
@@ -64,7 +64,7 @@ export const enqueueEventDelivery = async (
 
 export interface ClaimedDelivery {
   readonly id: string;
-  readonly tenantId: TenantId;
+  readonly organizationId: OrganizationId;
   readonly eventType: string;
   readonly subscription: string;
   readonly carrierCallId: string | null;
@@ -76,11 +76,11 @@ export interface ClaimedDelivery {
 }
 
 /**
- * Take the next due deliveries, across every tenant.
+ * Take the next due deliveries, across every organization.
  *
- * Runs outside any tenant scope, through the SECURITY DEFINER function in migration 0014 —
+ * Runs outside any organization scope, through the SECURITY DEFINER function in migration 0014 —
  * see the comment there for why that is narrow rather than a hole. Everything downstream of
- * this is scoped again by the tenant id the row carries.
+ * this is scoped again by the organization id the row carries.
  */
 export const claimDueEventDeliveries = async (
   dataSource: Db,
@@ -92,7 +92,7 @@ export const claimDueEventDeliveries = async (
 
   return rows.map((r) => ({
     id: String(r["id"]),
-    tenantId: String(r["tenant_id"]) as TenantId,
+    organizationId: String(r["organization_id"]) as OrganizationId,
     eventType: String(r["event_type"]),
     subscription: String(r["subscription"]),
     carrierCallId: r["carrier_call_id"] === null ? null : String(r["carrier_call_id"]),
@@ -142,7 +142,7 @@ export interface DeliveryRecord {
 }
 
 /**
- * A tenant's delivery history, newest first, inside their own scope.
+ * A organization's delivery history, newest first, inside their own scope.
  *
  * `body` is included on purpose. The question this table exists to answer is not "did a
  * request happen" but "what did you send me", and a row that records only a status code
@@ -150,10 +150,10 @@ export interface DeliveryRecord {
  */
 export const listEventDeliveries = async (
   dataSource: Db,
-  tenantId: TenantId,
+  organizationId: OrganizationId,
   limit = 50,
 ): Promise<readonly DeliveryRecord[]> =>
-  withTenant(dataSource, tenantId, async (scope) => {
+  withOrganization(dataSource, organizationId, async (scope) => {
     const rows = await scope.query<Record<string, unknown>>(
       `select id, event_type, subscription, carrier_call_id, config_version, status,
               attempts, last_status, last_error, created_at, delivered_at, next_attempt_at, body
@@ -191,7 +191,7 @@ export const purgeSettledEventDeliveries = async (
   dataSource: Db,
   olderThanDays: number,
 ): Promise<number> => {
-  // Through the definer function in 0014: the sweep runs with no tenant scope, and RLS
+  // Through the definer function in 0014: the sweep runs with no organization scope, and RLS
   // would correctly show a connection without one nothing to delete.
   const rows = (await dataSource.query("select app.purge_settled_event_deliveries($1) as removed", [
     Math.max(1, Math.floor(olderThanDays)),

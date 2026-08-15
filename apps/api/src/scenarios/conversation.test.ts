@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import { asCallId, asOrganizationId } from "@ansa/shared";
+
+import { createCallFacts } from "../conversation/call-facts";
+import type { CollectedField } from "../tenancy/captured-fields";
 import { scoreCalls } from "../viewer/metrics";
 import { fillerSetup, scenario } from "./harness";
 
@@ -549,5 +553,133 @@ describe("§24 · a scenario scores itself", () => {
 
     expect(s.allSpoken()).toContain("colleague");
     expect(scoreCalls([s.asRecord()]).transferRate).toBe(1);
+  });
+});
+
+/**
+ * 20 · conducts the form the operator configured, through the whole orchestrator.
+ *
+ * The director has its own tests and the fact store has its own tests. What neither can
+ * show is the three of them plus the capture engine agreeing on one call: a field armed at
+ * the greeting, a value read back, a pattern the value has to satisfy, and an attempt limit
+ * that ends in a person rather than in a loop. Every failure this feature can have lives at
+ * one of those seams.
+ *
+ * Fakes still cannot mishear an accent on an 8 kHz line. These prove the form is conducted;
+ * whether a Nigerian caller's email survives the transcriber is a question only a call
+ * answers, and this file's own header is right to keep saying so.
+ */
+describe("20 · conducts the configured form", () => {
+  /** Any call. Nothing in this section turns on whose it is. */
+  const facts = () =>
+    createCallFacts({
+      organizationId: asOrganizationId("5c3d0a5e-1f6d-4f6f-9b3a-0f2d7c8a4e11"),
+      callId: asCallId("CA-form"),
+      callDirection: "inbound",
+    });
+
+  const collected = (over: Partial<CollectedField> = {}): CollectedField => ({
+    key: "policyNumber",
+    type: "reference",
+    prompt: "What is your policy number?",
+    capture: "speech",
+    confirm: "readback",
+    required: true,
+    pattern: "",
+    attempts: 3,
+    ...over,
+  });
+
+  it("captures a value against the configured field rather than a built-in name", () => {
+    const store = facts();
+    // Keyed `claimNumber`, which nothing in the code knows about. Before the form existed
+    // this value had nowhere to go: `FACT_FIELD_FOR` maps two names and this is neither.
+    const s = scenario({ fields: [collected({ key: "claimNumber" })], facts: store });
+
+    s.greetingPlays();
+    s.says("It is four one seven two nine.");
+    expect(s.kinds()).toContain("confirmation_requested");
+
+    s.playsOut();
+    s.says("Yes, that is correct.");
+
+    expect(s.kinds()).toContain("value confirmed");
+    // The whole point of the wiring: a tool naming `claimNumber` in its identifiers now
+    // resolves one, where it used to answer unconfirmed-identity on every call.
+    expect(store.facts.captured.get("claimNumber")?.value).toBe("41729");
+  });
+
+  it("re-asks a value that was heard correctly and does not match the pattern", () => {
+    const store = facts();
+    const s = scenario({
+      fields: [collected({ pattern: "PM\\d{7}", prompt: "What is your policy number?" })],
+      facts: store,
+    });
+
+    s.greetingPlays();
+    s.says("It is four one seven two nine.");
+    s.playsOut();
+    // Confirmed by the caller, so the engine is satisfied. The organisation is not: five
+    // digits is not the format, and this is the only check that knows that.
+    s.says("Yes, that is correct.");
+    s.playsOut();
+
+    expect(s.kinds()).toContain("value rejected by pattern");
+    // Asked again, in the operator's own words rather than a generic apology.
+    expect(s.allSpoken()).toContain("What is your policy number?");
+    // And nothing was stored. A value the organisation's own rules reject must not reach a
+    // tool, which is the difference between re-asking and merely complaining.
+    expect(store.facts.captured.has("policyNumber")).toBe(false);
+  });
+
+  it("keeps the rejected value out of the model's hands", () => {
+    const s = scenario({ fields: [collected({ pattern: "PM\\d{7}" })] });
+    s.greetingPlays();
+    s.says("It is four one seven two nine.");
+    s.playsOut();
+    s.says("Yes, that is correct.");
+
+    /* The gate R4.3.1 exists for, one step further out. The caller confirmed it, so capture
+       released it — and it is still not a value this agent may act on. If the model saw it,
+       it would answer around a policy number the organisation does not recognise. */
+    expect(s.llm.completions).toHaveLength(0);
+  });
+
+  it("goes to a person once the configured attempts are used up", () => {
+    const s = scenario({ fields: [collected({ pattern: "PM\\d{7}", attempts: 2 })] });
+    s.greetingPlays();
+
+    for (const said of ["four one seven two nine", "nine zero three eight one"]) {
+      s.says(`It is ${said}.`);
+      s.playsOut();
+      s.says("Yes, that is correct.");
+      s.playsOut();
+    }
+
+    // Two rejections against a limit of two. A third would be the loop the limit exists to
+    // end — the caller has now said it correctly twice and it is still the wrong shape.
+    expect(s.eventsOf("value rejected by pattern")).toHaveLength(2);
+    expect(s.eventsOf("value rejected by pattern").at(-1)?.detail["again"]).toBe(false);
+
+    /* No handoff is configured in these scenarios, so the transfer cannot happen and what
+       plays instead is the fallback — which is the rule that matters more. A configuration
+       dead end degrades into speech, never into silence: the caller is told plainly that
+       the agent is giving up on the value and that the call continues. */
+    expect(s.allSpoken()).toContain("carry on without it");
+    expect(s.allSpoken()).not.toContain("PM");
+  });
+
+  it("never puts the rejected value in the event log", () => {
+    const s = scenario({ fields: [collected({ pattern: "PM\\d{7}" })] });
+    s.greetingPlays();
+    s.says("It is four one seven two nine.");
+    s.playsOut();
+    s.says("Yes, that is correct.");
+
+    /* A rejected policy number is still a caller's policy number. The rejection is logged
+       by key and by whether there is another go, and the value is not in it — otherwise the
+       transcript viewer becomes a list of the identifiers people got wrong. */
+    const rejection = s.eventsOf("value rejected by pattern").at(-1);
+    expect(JSON.stringify(rejection?.detail)).not.toContain("41729");
   });
 });

@@ -1,6 +1,6 @@
 import { createServer, type Server } from "node:http";
 
-import { asTenantId, createLogger } from "@ansa/shared";
+import { asOrganizationId, createLogger } from "@ansa/shared";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { createEgressGuard } from "../connector/egress";
@@ -15,13 +15,13 @@ import {
   EVENT_ID_HEADER,
   EVENT_TYPE_HEADER,
   SIGNATURE_HEADER,
-  TENANT_HEADER,
+  ORGANIZATION_HEADER,
   TIMESTAMP_HEADER,
   verifySignature,
 } from "./signature";
 
 const KEY = Buffer.alloc(32, 7);
-const TENANT = asTenantId("11111111-1111-4111-8111-111111111111");
+const ORGANIZATION = asOrganizationId("11111111-1111-4111-8111-111111111111");
 const SECRET = "a-signing-secret-long-enough";
 const log = createLogger({ component: "events-test" });
 
@@ -123,9 +123,9 @@ const signer = () => ({
 const realSigner = async () => {
   const vault = createInMemoryVault(
     KEY,
-    new Map([[TENANT, new Map([["hook_secret", sealCredential(KEY, TENANT, "hook_secret", { kind: "signing", secret: SECRET })]])]]),
+    new Map([[ORGANIZATION, new Map([["hook_secret", sealCredential(KEY, ORGANIZATION, "hook_secret", { kind: "signing", secret: SECRET })]])]]),
   );
-  const found = await vault.resolveSigner(TENANT, "hook_secret");
+  const found = await vault.resolveSigner(ORGANIZATION, "hook_secret");
   if (found === null) throw new Error("no signer");
   return found;
 };
@@ -133,7 +133,7 @@ const realSigner = async () => {
 // ---------------------------------------------------------------------------
 
 describe("configuration", () => {
-  it("is nothing until a tenant writes one", () => {
+  it("is nothing until a organization writes one", () => {
     expect(parseEventConfig(null).subscriptions).toEqual([]);
     expect(parseEventConfig(undefined).subscriptions).toEqual([]);
   });
@@ -161,7 +161,7 @@ describe("configuration", () => {
     ).toThrow(/unknown type/);
   });
 
-  it("defaults to no redaction, and a subscription may narrow the tenant's rule", () => {
+  it("defaults to no redaction, and a subscription may narrow the organization's rule", () => {
     const parsed = parseEventConfig({
       egress: { allowedHosts: ["a.example.test", "b.example.test"] },
       redaction: { categories: ["digit-sequence"] },
@@ -207,7 +207,7 @@ describe("signing", () => {
     const body = JSON.stringify({ type: "call.ended", callerSaid: "hello" });
     await deliverOnce(
       { transport: transport(), subscription: subscription(), signer: await realSigner() },
-      { id: "e-1", type: "call.ended", tenantId: TENANT, attempt: 1, body },
+      { id: "e-1", type: "call.ended", organizationId: ORGANIZATION, attempt: 1, body },
     );
 
     const hit = received[0];
@@ -216,7 +216,7 @@ describe("signing", () => {
     expect(hit.body).toBe(body);
     // The receiver routes on these before it verifies anything, so they have to be there.
     expect(hit.headers[EVENT_TYPE_HEADER]).toBe("call.ended");
-    expect(hit.headers[TENANT_HEADER]).toBe(TENANT);
+    expect(hit.headers[ORGANIZATION_HEADER]).toBe(ORGANIZATION);
     expect(hit.headers["content-type"]).toContain("application/json");
     expect(
       verifySignature({
@@ -233,7 +233,7 @@ describe("signing", () => {
     const body = JSON.stringify({ amount: 1 });
     await deliverOnce(
       { transport: transport(), subscription: subscription(), signer: await realSigner() },
-      { id: "e-2", type: "call.ended", tenantId: TENANT, attempt: 1, body },
+      { id: "e-2", type: "call.ended", organizationId: ORGANIZATION, attempt: 1, body },
     );
     const hit = received[0];
     if (hit === undefined) throw new Error("nothing received");
@@ -253,7 +253,7 @@ describe("signing", () => {
     const body = "{}";
     await deliverOnce(
       { transport: transport(), subscription: subscription(), signer: await realSigner() },
-      { id: "e-3", type: "call.ended", tenantId: TENANT, attempt: 1, body },
+      { id: "e-3", type: "call.ended", organizationId: ORGANIZATION, attempt: 1, body },
     );
     const hit = received[0];
     if (hit === undefined) throw new Error("nothing received");
@@ -286,8 +286,8 @@ describe("signing", () => {
   it("sends the same bytes and the same event id on a retry", async () => {
     const body = JSON.stringify({ n: 1 });
     const deps = { transport: transport(), subscription: subscription(), signer: signer() };
-    await deliverOnce(deps, { id: "e-4", type: "call.ended", tenantId: TENANT, attempt: 1, body });
-    await deliverOnce(deps, { id: "e-4", type: "call.ended", tenantId: TENANT, attempt: 2, body });
+    await deliverOnce(deps, { id: "e-4", type: "call.ended", organizationId: ORGANIZATION, attempt: 1, body });
+    await deliverOnce(deps, { id: "e-4", type: "call.ended", organizationId: ORGANIZATION, attempt: 2, body });
 
     expect(received).toHaveLength(2);
     expect(received[0]?.body).toBe(received[1]?.body);
@@ -304,7 +304,7 @@ describe("what is worth trying again", () => {
     failuresLeft = 1;
     const outcome = await deliverOnce(
       { transport: transport(), subscription: subscription(), signer: signer() },
-      { id: "e-5", type: "call.ended", tenantId: TENANT, attempt: 1, body: "{}" },
+      { id: "e-5", type: "call.ended", organizationId: ORGANIZATION, attempt: 1, body: "{}" },
     );
     expect(outcome.ok).toBe(false);
     expect(outcome.retryable).toBe(true);
@@ -315,7 +315,7 @@ describe("what is worth trying again", () => {
     failureStatus = 422;
     const outcome = await deliverOnce(
       { transport: transport(), subscription: subscription(), signer: signer() },
-      { id: "e-6", type: "call.ended", tenantId: TENANT, attempt: 1, body: "{}" },
+      { id: "e-6", type: "call.ended", organizationId: ORGANIZATION, attempt: 1, body: "{}" },
     );
     expect(outcome.retryable).toBe(false);
   });
@@ -325,7 +325,7 @@ describe("what is worth trying again", () => {
     failureStatus = 429;
     const outcome = await deliverOnce(
       { transport: transport(), subscription: subscription(), signer: signer() },
-      { id: "e-7", type: "call.ended", tenantId: TENANT, attempt: 1, body: "{}" },
+      { id: "e-7", type: "call.ended", organizationId: ORGANIZATION, attempt: 1, body: "{}" },
     );
     expect(outcome.retryable).toBe(true);
   });
@@ -337,21 +337,21 @@ describe("what is worth trying again", () => {
         subscription: subscription({ url: `http://${host}/slow`, timeoutMs: 300 }),
         signer: signer(),
       },
-      { id: "e-8", type: "call.ended", tenantId: TENANT, attempt: 1, body: "{}" },
+      { id: "e-8", type: "call.ended", organizationId: ORGANIZATION, attempt: 1, body: "{}" },
     );
     expect(outcome.ok).toBe(false);
     expect(outcome.retryable).toBe(true);
     expect(outcome.latencyMs).toBeLessThan(2_000);
   });
 
-  it("does not retry a host the tenant never allowed", async () => {
+  it("does not retry a host the organization never allowed", async () => {
     const outcome = await deliverOnce(
       {
         transport: createTransport({ guard: createEgressGuard({ policy: { allowedHosts: [] } }) }),
         subscription: subscription({ url: "https://somewhere.example.test/hook" }),
         signer: signer(),
       },
-      { id: "e-9", type: "call.ended", tenantId: TENANT, attempt: 1, body: "{}" },
+      { id: "e-9", type: "call.ended", organizationId: ORGANIZATION, attempt: 1, body: "{}" },
     );
     expect(outcome.retryable).toBe(false);
     expect(outcome.error).toContain("host-not-allowed");
@@ -372,7 +372,7 @@ describe("what is worth trying again", () => {
 describe("preparation refuses to half-work", () => {
   it("delivers nothing when there is no vault key to sign with", async () => {
     const prepared = await prepareEvents({
-      tenantId: TENANT,
+      organizationId: ORGANIZATION,
       config: {
         subscriptions: [
           { name: "crm", url: "https://a.example.test/x", events: ["call.ended"], signingSecretRef: "s" },
@@ -387,7 +387,7 @@ describe("preparation refuses to half-work", () => {
 
   it("delivers nothing when the config is malformed, and does not throw", async () => {
     const prepared = await prepareEvents({
-      tenantId: TENANT,
+      organizationId: ORGANIZATION,
       config: { subscriptions: [{ name: "crm" }] },
       credentialKey: KEY,
       sealedCredentials: new Map(),
@@ -398,10 +398,10 @@ describe("preparation refuses to half-work", () => {
 
   it("skips a receiver whose signing secret is missing and keeps the others", async () => {
     const sealed = new Map([
-      ["good_secret", sealCredential(KEY, TENANT, "good_secret", { kind: "signing", secret: SECRET })],
+      ["good_secret", sealCredential(KEY, ORGANIZATION, "good_secret", { kind: "signing", secret: SECRET })],
     ]);
     const prepared = await prepareEvents({
-      tenantId: TENANT,
+      organizationId: ORGANIZATION,
       config: {
         egress: { allowedHosts: ["a.example.test", "b.example.test"] },
         subscriptions: [
@@ -421,10 +421,10 @@ describe("preparation refuses to half-work", () => {
 
   it("refuses to sign with a secret that was sealed as an auth credential", async () => {
     const sealed = new Map([
-      ["mixed_up", sealCredential(KEY, TENANT, "mixed_up", { kind: "bearer", token: "not-for-signing" })],
+      ["mixed_up", sealCredential(KEY, ORGANIZATION, "mixed_up", { kind: "bearer", token: "not-for-signing" })],
     ]);
     const prepared = await prepareEvents({
-      tenantId: TENANT,
+      organizationId: ORGANIZATION,
       config: {
         egress: { allowedHosts: ["a.example.test"] },
         subscriptions: [

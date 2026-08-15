@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { asTenantId } from "@ansa/shared";
+import { asOrganizationId } from "@ansa/shared";
 import { HARD_TIMEOUT_MS } from "@ansa/tools";
 import { describe, expect, it } from "vitest";
 
@@ -13,13 +13,13 @@ import { checkEventConfig, checkToolConfig, eventsOrNothing, toolsOrNothing } fr
  * point of the file under test, which owns no rules of its own. What these assertions pin
  * down is that the dashboard actually *reaches* those refusals: a `PUT` that quietly
  * bypassed `registry.register` would still store a document, the call path would still
- * reject it, and the tenant would find out from a caller.
+ * reject it, and the organization would find out from a caller.
  *
  * No database and no network. A configuration is judged from the document alone, which is
- * also why a tenant can register a receiver before it is running.
+ * also why a organization can register a receiver before it is running.
  */
 
-const tenant = asTenantId(randomUUID());
+const organization = asOrganizationId(randomUUID());
 
 const HOST = "api.example.invalid";
 
@@ -46,7 +46,7 @@ const withTools = (
 
 const refusal = (document: unknown): string => {
   try {
-    checkToolConfig(document, tenant);
+    checkToolConfig(document, organization);
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }
@@ -55,7 +55,7 @@ const refusal = (document: unknown): string => {
 
 describe("a tool configuration the dashboard would publish", () => {
   it("is accepted when every tool would register", () => {
-    const parsed = checkToolConfig(withTools([validTool()]), tenant);
+    const parsed = checkToolConfig(withTools([validTool()]), organization);
     expect(parsed.http.map((tool) => tool.name)).toEqual(["order_status"]);
   });
 
@@ -101,10 +101,10 @@ describe("a tool configuration the dashboard would publish", () => {
   });
 
   /**
-   * The one that would let a tenant configure its way out of a platform guarantee: a
+   * The one that would let a organization configure its way out of a platform guarantee: a
    * `transfer_to_human` of their own, at read tier, that quietly does nothing.
    */
-  it("is refused when a tenant tool shadows a platform tool", () => {
+  it("is refused when a organization tool shadows a platform tool", () => {
     expect(refusal(withTools([validTool({ name: "transfer_to_human" })]))).toContain(
       "already a platform tool",
     );
@@ -112,18 +112,18 @@ describe("a tool configuration the dashboard would publish", () => {
 
   it("is refused when two of the organisation's own tools share a name", () => {
     const message = refusal(withTools([validTool(), validTool({ url: `https://${HOST}/x` })]));
-    expect(message).toContain("already registered for this tenant");
+    expect(message).toContain("already registered for this organization");
   });
 
-  /** R5.4.1. A tenant asking for thirty seconds is asking for thirty seconds of dead air. */
+  /** R5.4.1. A organization asking for thirty seconds is asking for thirty seconds of dead air. */
   it("is refused when a timeout exceeds the hard ceiling", () => {
     const message = refusal(withTools([validTool({ timeoutMs: HARD_TIMEOUT_MS + 1 })]));
     expect(message).toContain("timeoutMs");
-    expect(checkToolConfig(withTools([validTool({ timeoutMs: HARD_TIMEOUT_MS })]), tenant).http[0]
+    expect(checkToolConfig(withTools([validTool({ timeoutMs: HARD_TIMEOUT_MS })]), organization).http[0]
       ?.timeoutMs).toBe(HARD_TIMEOUT_MS);
   });
 
-  /** R5.2.2. The URL is hostile input, and the allowlist is the tenant's own declaration. */
+  /** R5.2.2. The URL is hostile input, and the allowlist is the organization's own declaration. */
   it("is refused when a tool points outside the organisation's own allowlist", () => {
     const message = refusal(withTools([validTool()], ["somewhere.else.invalid"]));
     expect(message).toContain("allowedHosts");
@@ -146,7 +146,7 @@ describe("a tool configuration the dashboard would publish", () => {
       withTools([validTool({ url: `http://${HOST}/orders` })], [HOST], {
         allowPlaintextHttp: true,
       }),
-      tenant,
+      organization,
     );
     expect(allowed.http).toHaveLength(1);
   });
@@ -173,7 +173,7 @@ describe("an MCP server, which is a transport and not a category", () => {
   });
 
   it("is accepted when every configured tool carries a tier", () => {
-    const parsed = checkToolConfig(server([{ name: "lookup", riskTier: "read" }]), tenant);
+    const parsed = checkToolConfig(server([{ name: "lookup", riskTier: "read" }]), organization);
     expect(parsed.mcp[0]?.tools).toHaveLength(1);
   });
 

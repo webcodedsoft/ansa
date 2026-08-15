@@ -12,7 +12,7 @@ export * from "./events/config";
 export * from "./events/signature";
 export * from "./events/delivery";
 export * from "./events/prepare";
-// Tenant-supplied tools: the organisation hosts the endpoint, we are the client. Two
+// Organization-supplied tools: the organisation hosts the endpoint, we are the client. Two
 // transports, one registry, one dispatch path (R5.2.0).
 export * from "./connector/config";
 export * from "./connector/egress";

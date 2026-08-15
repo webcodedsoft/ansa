@@ -3,9 +3,9 @@ import { Controller, Delete, Get, Headers, Inject, Post, UnauthorizedException }
 
 import { Endpoint } from "../http/endpoint";
 import { apiRoute, FromBody } from "../http/request";
-import { choice, list, object, text, type Infer } from "../http/schema";
+import { choice, flag, list, object, text, type Infer } from "../http/schema";
 import { email, organisation, role, timestamp, uuid } from "../schemas";
-import { TenantContext } from "../tenancy/tenant-context";
+import { OrganizationContext } from "../tenancy/organization-context";
 import { AuthService } from "./auth.service";
 import { ALL_CAPABILITIES, capabilitiesOf } from "./capability";
 import { Caller, type Principal } from "./principal";
@@ -55,6 +55,32 @@ const session = object({
   role: role(),
 });
 
+const signUp = object({
+  organisationName: text({ minLength: 1, maxLength: 120 }),
+  displayName: text({ minLength: 1, maxLength: 200 }),
+  email: email(),
+  password: password(),
+});
+
+const signedUp = object({
+  token: text(),
+  expiresAt: timestamp(),
+  organisation,
+  role: role(),
+  /** False when the address already had an account and simply gained an organisation. */
+  createdUser: flag(),
+});
+
+/**
+ * Three organisations per address per hour.
+ *
+ * Creating one is cheap here and expensive downstream — every organisation is a organization a
+ * human operator eventually points a phone number at. This is not the limit that matters in
+ * the long run, and the one that does is a decision about who may create organizations at all,
+ * which is a product question rather than a rate.
+ */
+const SIGN_UP_LIMIT = { limit: 3, windowMs: 60 * 60_000, by: "ip+email" } as const;
+
 const me = object({
   user: object({ id: uuid(), email: email(), displayName: text({ maxLength: 200 }) }),
   organisation,
@@ -70,7 +96,7 @@ const me = object({
 export class AuthController {
   constructor(
     @Inject(AuthService) private readonly auth: AuthService,
-    @Inject(TenantContext) private readonly db: TenantContext,
+    @Inject(OrganizationContext) private readonly db: OrganizationContext,
   ) {}
 
   @Post("organisations")
@@ -88,7 +114,44 @@ export class AuthController {
   ): Promise<Infer<typeof organisationList>> {
     const found = await this.auth.organisationsFor(body.email, body.password);
     return {
-      organisations: found.map((each) => ({ id: each.tenantId, name: each.name, role: each.role })),
+      organisations: found.map((each) => ({ id: each.organizationId, name: each.name, role: each.role })),
+    };
+  }
+
+  @Post("sign-ups")
+  @Endpoint({
+    summary: "Create an organisation and an account to own it",
+    description:
+      "The self-serve half of onboarding, for somebody arriving without an invitation. An address that already has an account may create a further organisation using the password it already has, and a wrong one is refused with the same 401 as a failed sign-in. Answers with a session, so there is no second step.",
+    capability: "public",
+    body: signUp,
+    response: signedUp,
+    status: 201,
+    rateLimit: SIGN_UP_LIMIT,
+  })
+  async signUp(
+    @FromBody() body: Infer<typeof signUp>,
+    @Headers("user-agent") userAgent?: string,
+  ): Promise<Infer<typeof signedUp>> {
+    const created = await this.auth.signUp(
+      body.organisationName,
+      body.email,
+      body.password,
+      body.displayName,
+      userAgent?.slice(0, 200) ?? null,
+      new Date(),
+    );
+    // Identical to the sign-in failure, deliberately. Saying "that address exists but the
+    // password is wrong" would confirm the address is registered, which is the thing
+    // `POST /auth/organisations` spends a full scrypt on a missing account to avoid.
+    if (created === null) throw new UnauthorizedException("those credentials did not sign in");
+
+    return {
+      token: created.token,
+      expiresAt: created.expiresAt.toISOString(),
+      organisation: { id: created.organisation.organizationId, name: created.organisation.name },
+      role: created.organisation.role,
+      createdUser: created.createdUser,
     };
   }
 
@@ -119,7 +182,7 @@ export class AuthController {
     return {
       token: signedIn.token,
       expiresAt: signedIn.expiresAt.toISOString(),
-      organisation: { id: signedIn.organisation.tenantId, name: signedIn.organisation.name },
+      organisation: { id: signedIn.organisation.organizationId, name: signedIn.organisation.name },
       role: signedIn.organisation.role,
     };
   }
@@ -141,15 +204,15 @@ export class AuthController {
     response: me,
   })
   async me(@Caller() caller: Principal): Promise<Infer<typeof me>> {
-    // RLS restricts `tenants` to the row whose id is the current tenant, so this reads the
+    // RLS restricts `organizations` to the row whose id is the current organization, so this reads the
     // caller's own organisation and could not read another even without the where clause.
     const rows = await this.db.tx((scope) =>
-      scope.query<{ name: string }>("select name from tenants limit 1"),
+      scope.query<{ name: string }>("select name from organizations limit 1"),
     );
 
     return {
       user: { id: caller.userId, email: caller.email, displayName: caller.displayName },
-      organisation: { id: caller.tenantId, name: rows[0]?.name ?? "" },
+      organisation: { id: caller.organizationId, name: rows[0]?.name ?? "" },
       role: caller.role,
       capabilities: capabilitiesOf(caller.role),
     };

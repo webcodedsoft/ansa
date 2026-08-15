@@ -1,4 +1,4 @@
-import type { Logger, TenantId } from "@ansa/shared";
+import type { Logger, OrganizationId } from "@ansa/shared";
 
 import type { ToolRegistry } from "../registry";
 import type { RiskTier } from "../types";
@@ -13,7 +13,7 @@ import { createInMemoryVault } from "./vault";
 /**
  * Stored configuration in, registrations out.
  *
- * The split this file exists for is timing. A tenant's configuration is loaded once and
+ * The split this file exists for is timing. A organization's configuration is loaded once and
  * cached; a registry is built per call because two platform tools close over that call's
  * own effects. Everything expensive — parsing, the egress guard, the vault, an MCP
  * handshake and its tool discovery — happens on the first side. What happens per call is
@@ -29,14 +29,14 @@ export interface ToolBrief {
 
 export interface PreparedConnectors {
   readonly tools: readonly ToolBrief[];
-  /** Adds this tenant's own tools to a per-call registry beside the platform ones. */
+  /** Adds this organization's own tools to a per-call registry beside the platform ones. */
   register(registry: ToolRegistry): void;
 }
 
 export const NO_CONNECTORS: PreparedConnectors = { tools: [], register: () => undefined };
 
 export interface PrepareOptions {
-  readonly tenantId: TenantId;
+  readonly organizationId: OrganizationId;
   /** The `tool_config` column, exactly as stored. Validated here, not by the database. */
   readonly config: unknown;
   /**
@@ -45,6 +45,24 @@ export interface PrepareOptions {
    */
   readonly credentialKey: Buffer | null;
   readonly sealedCredentials: ReadonlyMap<string, string>;
+  /**
+   * Which of the registry's tools the answering agent may call (migration 0018).
+   *
+   * The registry belongs to the organisation and the selection belongs to the agent, so
+   * two agents can share an endpoint's URL, risk tier and credential without sharing
+   * permission to call it. An after-hours agent that only takes messages has no business
+   * reaching the endpoint that cancels a policy, and that is a property of the agent
+   * rather than of the endpoint.
+   *
+   * `undefined` means do not filter, and exists for the caller with no agent in hand: the
+   * operator's tool-test sandbox, which is exercising a registry entry directly. It is not
+   * the call path's default. The call path always passes a list, so an agent with an empty
+   * selection gets no tools rather than all of them.
+   *
+   * Names match HTTP tool names and MCP tool-policy names. An MCP server with no
+   * selected policies is skipped entirely, handshake and credential included.
+   */
+  readonly enabledTools?: readonly string[];
   readonly log: Logger;
 }
 
@@ -52,29 +70,57 @@ const brief = (tools: readonly { name: string; description: string; riskTier: Ri
   tools.map(({ name, description, riskTier }) => ({ name, description, riskTier }));
 
 /**
- * Prepare a tenant's connectors, or none, and never throw.
+ * Prepare a organization's connectors, or none, and never throw.
  *
- * Every failure here degrades to fewer tools rather than to a failed call. A tenant whose
- * MCP server is down still gets their HTTP connectors; a tenant with a malformed config
+ * Every failure here degrades to fewer tools rather than to a failed call. A organization whose
+ * MCP server is down still gets their HTTP connectors; a organization with a malformed config
  * gets the three platform tools and an agent that says it cannot check. The alternative —
  * a configuration problem becoming silence on the line — is the one outcome this product
  * is not allowed to have (R6.2).
  */
 export const prepareConnectors = async (options: PrepareOptions): Promise<PreparedConnectors> => {
-  const { tenantId, log } = options;
+  const { organizationId, log } = options;
   if (options.config == null) return NO_CONNECTORS;
 
   let parsed;
   try {
     parsed = parseConnectorConfig(options.config);
   } catch (error) {
-    // Loud, and with the tenant, because the fix is a new configuration rather than a
+    // Loud, and with the organization, because the fix is a new configuration rather than a
     // code change and whoever published it is the only one who can make it.
-    log.error("tenant tool configuration is not usable; no tenant tools on this call", {
-      tenantId,
+    log.error("organization tool configuration is not usable; no organization tools on this call", {
+      organizationId,
       error: error instanceof Error ? error.message : String(error),
     });
     return NO_CONNECTORS;
+  }
+
+  /*
+   * The agent's selection, applied before anything is prepared.
+   *
+   * Here rather than at dispatch, and that ordering is the point. Filtering later would
+   * still refuse the call, but the tool would already have been briefed to the model, and
+   * an agent that offers to cancel a policy and then cannot is worse on the phone than one
+   * that never offers. It also means no MCP handshake and no credential is opened for a
+   * server this agent may not reach.
+   */
+  const selection = options.enabledTools;
+  if (selection !== undefined) {
+    const allowed = new Set(selection);
+    parsed = {
+      ...parsed,
+      http: parsed.http.filter((tool) => allowed.has(tool.name)),
+      // An MCP server has no name of its own — it is a URL and a list of tool policies —
+      // so the selection is applied per policy. A server left with nothing this agent may
+      // call is dropped whole, which skips its handshake and its credential rather than
+      // connecting to discover there was nothing to offer.
+      mcp: parsed.mcp
+        .map((server) => ({
+          ...server,
+          tools: server.tools.filter((tool) => allowed.has(tool.name)),
+        }))
+        .filter((server) => server.tools.length > 0),
+    };
   }
 
   if (parsed.http.length === 0 && parsed.mcp.length === 0) return NO_CONNECTORS;
@@ -92,7 +138,7 @@ export const prepareConnectors = async (options: PrepareOptions): Promise<Prepar
   for (const tool of parsed.http) {
     if (key === null && needsCredential(tool.credentialRef)) {
       log.error("tool needs a credential and no vault key is configured; not registered", {
-        tenantId,
+        organizationId,
         tool: tool.name,
       });
       continue;
@@ -103,7 +149,7 @@ export const prepareConnectors = async (options: PrepareOptions): Promise<Prepar
   const transport = createTransport({ guard: createEgressGuard({ policy: parsed.egress }) });
   const vault = createInMemoryVault(
     key ?? Buffer.alloc(32),
-    new Map([[tenantId, options.sealedCredentials]]),
+    new Map([[organizationId, options.sealedCredentials]]),
   );
 
   const registrars: ((registry: ToolRegistry) => void)[] = [];
@@ -111,24 +157,24 @@ export const prepareConnectors = async (options: PrepareOptions): Promise<Prepar
 
   if (usableHttp.length > 0) {
     registrars.push((registry) =>
-      registerHttpTools(registry, usableHttp, { tenantId, transport, vault, log }),
+      registerHttpTools(registry, usableHttp, { organizationId, transport, vault, log }),
     );
     tools.push(...brief(usableHttp));
   }
 
   for (const server of parsed.mcp) {
     if (key === null && needsCredential(server.credentialRef)) {
-      log.error("mcp server needs a credential and no vault key is configured; skipped", { tenantId });
+      log.error("mcp server needs a credential and no vault key is configured; skipped", { organizationId });
       continue;
     }
     try {
-      const prepared = await prepareMcpServer(server, { tenantId, transport, vault, log });
+      const prepared = await prepareMcpServer(server, { organizationId, transport, vault, log });
       registrars.push(prepared.register);
       tools.push(...brief(prepared.definitions));
     } catch (error) {
-      // One unreachable MCP server must not cost the tenant their HTTP connectors.
-      log.error("could not discover tools from the tenant's mcp server", {
-        tenantId,
+      // One unreachable MCP server must not cost the organization their HTTP connectors.
+      log.error("could not discover tools from the organization's mcp server", {
+        organizationId,
         error: error instanceof Error ? error.message : String(error),
       });
     }
@@ -145,8 +191,8 @@ export const prepareConnectors = async (options: PrepareOptions): Promise<Prepar
         } catch (error) {
           // Registration validates, and a definition that fails validation must cost that
           // tool rather than the call.
-          log.error("a tenant tool could not be registered", {
-            tenantId,
+          log.error("a organization tool could not be registered", {
+            organizationId,
             error: error instanceof Error ? error.message : String(error),
           });
         }

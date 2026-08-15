@@ -6,8 +6,8 @@
  * not given.
  *
  * In the dispatch path rather than in configuration, for the reason CLAUDE.md gives about
- * risk tiers: a tenant configuring "call these numbers" must not be able to configure the
- * check away. Consent is evidence a tenant records; whether it is sufficient is ours.
+ * risk tiers: a organization configuring "call these numbers" must not be able to configure the
+ * check away. Consent is evidence a organization records; whether it is sufficient is ours.
  */
 
 import { hourInWat } from "@ansa/shared";
@@ -15,7 +15,7 @@ import { hourInWat } from "@ansa/shared";
 /**
  * How an organisation establishes it may call someone.
  *
- * Tenants choose their lawful basis. They do not choose whether one is required, and
+ * Organizations choose their lawful basis. They do not choose whether one is required, and
  * they cannot switch the check off — that is the line CLAUDE.md draws, and it is what
  * stops a configuration mistake becoming an unlawful call.
  *
@@ -28,14 +28,14 @@ export type ConsentPolicy =
   /** A recorded, per-number grant. The default, and the only basis for unsolicited calls. */
   | "per_number"
   /**
-   * A standing relationship — the tenant calling its own customers about their own
-   * business with it. The declaration lives on the tenant and is versioned, so a call can
+   * A standing relationship — the organization calling its own customers about their own
+   * business with it. The declaration lives on the organization and is versioned, so a call can
    * always be traced to the basis in force when it was placed (R7.5).
    */
   | "existing_relationship";
 
 /**
- * The outer bound on calling hours, which no tenant may widen.
+ * The outer bound on calling hours, which no organization may widen.
  *
  * Narrowing it is a choice an organisation makes about its own customers. Widening it is
  * a choice about someone else's evening, which is not theirs to make.
@@ -46,9 +46,9 @@ const OUTER_LATEST_HOUR = 20;
 export interface ConsentFacts {
   /** The organisation's declared basis. Absent behaves as the strictest. */
   readonly policy?: ConsentPolicy;
-  /** Most recent consent record for this tenant and number, if any. */
+  /** Most recent consent record for this organization and number, if any. */
   readonly consent: { readonly grantedAt: Date; readonly revokedAt: Date | null } | null;
-  /** Any suppression, this tenant's or global. */
+  /** Any suppression, this organization's or global. */
   readonly suppressed: boolean;
   readonly now: Date;
   /** Local hour, inclusive, that calling may begin. */
@@ -96,7 +96,7 @@ export const mayCall = (facts: ConsentFacts): ConsentVerdict => {
   }
 
   const hour = hourInWat(facts.now);
-  // Clamped, not trusted. A tenant may narrow the window; the outer bound is ours.
+  // Clamped, not trusted. A organization may narrow the window; the outer bound is ours.
   const earliest = Math.max(OUTER_EARLIEST_HOUR, facts.earliestHour ?? DEFAULT_EARLIEST);
   const latest = Math.min(OUTER_LATEST_HOUR, facts.latestHour ?? DEFAULT_LATEST);
   if (hour < earliest || hour >= latest) {

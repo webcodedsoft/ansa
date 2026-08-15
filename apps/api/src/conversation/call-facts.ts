@@ -1,4 +1,4 @@
-import type { CallId, TenantId } from "@ansa/shared";
+import type { CallId, OrganizationId } from "@ansa/shared";
 import type { CallDirection } from "@ansa/telephony";
 
 /**
@@ -105,7 +105,14 @@ export interface Fact {
  * for the whole call rather than one readback.
  */
 export interface Correction {
-  readonly field: IdentifierField;
+  /**
+   * The built-in field, or an operator-configured key.
+   *
+   * A string rather than the union because the agent's form decides what is collected —
+   * `policyNumber` and `claimNumber` are the same kind of thing to this module, and only
+   * one of them is a name this file has ever heard of.
+   */
+  readonly field: string;
   readonly from: string;
   readonly to: string;
   readonly source: EvidenceSource;
@@ -115,7 +122,7 @@ export interface Correction {
 /**
  * The §10 structured call state.
  *
- * `tenantId` and `callId` are on the object rather than passed alongside it, because
+ * `organizationId` and `callId` are on the object rather than passed alongside it, because
  * CLAUDE.md rule 3 means every log line, event and metric this state produces has to
  * carry them and a separate parameter is a thing to forget.
  *
@@ -124,7 +131,7 @@ export interface Correction {
  * does, not as an invitation to grow one.
  */
 export interface CallFacts {
-  readonly tenantId: TenantId;
+  readonly organizationId: OrganizationId;
   readonly callId: CallId;
   readonly callDirection: CallDirection;
 
@@ -139,7 +146,7 @@ export interface CallFacts {
   /**
    * What the caller is calling about, as a label. Deliberately a free string and not an
    * enum: a bank's intents and a logistics firm's intents are different sets, and the
-   * vocabulary belongs to tenant configuration rather than to this file.
+   * vocabulary belongs to organization configuration rather than to this file.
    */
   readonly intent: Fact;
   readonly reasonForCall: Fact;
@@ -147,11 +154,21 @@ export interface CallFacts {
   /** A question the agent has asked and is still waiting on. Cleared when answered. */
   readonly pendingQuestion: Fact;
 
+  /**
+   * What the agent's own form collected, by the operator's key.
+   *
+   * Beside the built-in three rather than replacing them: `callerName` and `policyNumber`
+   * are read by name in the prompt and by the handoff summary, and a map would have made
+   * every one of those a lookup that can miss. An agent whose form has no fields has an
+   * empty map and behaves exactly as it did.
+   */
+  readonly captured: ReadonlyMap<string, Fact>;
+
   readonly previousCorrections: readonly Correction[];
 }
 
 export interface CallIdentity {
-  readonly tenantId: TenantId;
+  readonly organizationId: OrganizationId;
   readonly callId: CallId;
   readonly callDirection: CallDirection;
 }
@@ -175,6 +192,22 @@ export type Observation =
       readonly value: string;
       readonly source: FactSource;
       readonly atMs: number;
+    }
+  /**
+   * A value the agent's configured form collected, under the operator's own key.
+   *
+   * Its own arm rather than a widened `field`, and that is the whole safety argument: this
+   * arm takes `EvidenceSource`, which has no `"model"` member, so an observation sourced
+   * from the model does not compile. The three built-in identifiers get that guarantee
+   * from their arm and a configured one has to get it the same way — otherwise the first
+   * agent to collect `accountNumber` would be the first whose identifier the model can
+   * write.
+   */
+  | {
+      readonly captured: string;
+      readonly value: string;
+      readonly source: EvidenceSource;
+      readonly atMs: number;
     };
 
 export type ChangeReason =
@@ -197,7 +230,8 @@ export type ChangeReason =
   | "unchanged";
 
 export interface FactChange {
-  readonly field: FactField;
+  /** Built-in field or configured key. See `Correction.field`. */
+  readonly field: string;
   readonly applied: boolean;
   readonly reason: ChangeReason;
   readonly status: FactStatus;
@@ -259,14 +293,18 @@ const refuse = (fact: Fact): Applied => ({ fact, reason: "refused", correction: 
  * that pairing has no arm in the union, so it can only exist in an object that was parsed
  * rather than constructed, and it is turned away first.
  */
+const isCaptured = (
+  o: Observation,
+): o is Extract<Observation, { readonly captured: string }> => "captured" in o;
+
 const isIdentifierObservation = (
   o: Observation,
 ): o is Extract<Observation, { readonly field: IdentifierField }> =>
-  IDENTIFIER_FIELDS.has(o.field);
+  !isCaptured(o) && IDENTIFIER_FIELDS.has(o.field);
 
 const identifierFrom = (
   fact: Fact,
-  field: IdentifierField,
+  field: string,
   value: string,
   source: EvidenceSource,
   atMs: number,
@@ -346,12 +384,13 @@ export const createCallFacts = (identity: CallIdentity): CallFactsStore => {
     currentTask: UNKNOWN_FACT,
     pendingQuestion: UNKNOWN_FACT,
   };
+  const captured = new Map<string, Fact>();
   const corrections: Correction[] = [];
 
   return {
     get facts(): CallFacts {
       return {
-        tenantId: identity.tenantId,
+        organizationId: identity.organizationId,
         callId: identity.callId,
         callDirection: identity.callDirection,
         callerName: held.callerName,
@@ -363,6 +402,9 @@ export const createCallFacts = (identity: CallIdentity): CallFactsStore => {
         reasonForCall: held.reasonForCall,
         currentTask: held.currentTask,
         pendingQuestion: held.pendingQuestion,
+        // Copied for the same reason the corrections are: a caller holding the live map
+        // could write a fact nothing observed.
+        captured: new Map(captured),
         // Copied. A caller holding the live array could append a correction that never
         // happened, which is the one list in here nobody should be able to write to.
         previousCorrections: [...corrections],
@@ -370,8 +412,39 @@ export const createCallFacts = (identity: CallIdentity): CallFactsStore => {
     },
 
     observe(observation: Observation): FactChange {
-      const fact = held[observation.field];
       const value = clean(observation.value);
+
+      /* A configured field follows the identifier rules exactly — confirmed beats
+         unconfirmed, a contradiction of a confirmed value is contested rather than
+         applied. It is collected because a tool will act on it, which is the same reason
+         `policyNumber` has those rules and the reason it would be wrong to give an
+         operator-named value weaker ones. */
+      if (isCaptured(observation)) {
+        const existing = captured.get(observation.captured) ?? UNKNOWN_FACT;
+        const applied =
+          value === ""
+            ? refuse(existing)
+            : identifierFrom(
+                existing,
+                observation.captured,
+                value,
+                observation.source,
+                observation.atMs,
+              );
+        captured.set(observation.captured, applied.fact);
+        if (applied.correction !== null) corrections.push(applied.correction);
+        return {
+          field: observation.captured,
+          applied:
+            applied.reason !== "refused" &&
+            applied.reason !== "contested" &&
+            applied.reason !== "unchanged",
+          reason: applied.reason,
+          status: applied.fact.status,
+        };
+      }
+
+      const fact = held[observation.field];
 
       // The type system already refuses a model-sourced identifier. The check is repeated
       // here because an observation built from a model tool call is parsed JSON, where no

@@ -106,6 +106,10 @@ describe("every dashboard route", () => {
     expect(publicRoutes.sort()).toEqual([
       "POST /api/v1/auth/organisations",
       "POST /api/v1/auth/sessions",
+      // Creates an organisation and the account that owns it, so by definition there is no
+      // session yet. It is the only public route that writes a organization, which is why it
+      // carries the tightest rate limit of the four.
+      "POST /api/v1/auth/sign-ups",
       "POST /api/v1/invitations/accept",
     ]);
   });
@@ -121,17 +125,17 @@ describe("every dashboard route", () => {
 
 describe("the API's access to the database", () => {
   /**
-   * The structural half of tenant isolation, checked as text because the eslint config is
+   * The structural half of organization isolation, checked as text because the eslint config is
    * protected from edits in this repository.
    *
-   * `withTenant`, `createDataSource`, `Db` and `API_DATA_SOURCE` are the four ways to
-   * reach Postgres without a tenant already bound. `src/api/tenancy` is the one place that
-   * may hold them; everywhere else takes a `TenantScope` from `TenantContext.tx()`, which
-   * has no tenant parameter to get wrong.
+   * `withOrganization`, `createDataSource`, `Db` and `API_DATA_SOURCE` are the four ways to
+   * reach Postgres without a organization already bound. `src/api/tenancy` is the one place that
+   * may hold them; everywhere else takes a `OrganizationScope` from `OrganizationContext.tx()`, which
+   * has no organization parameter to get wrong.
    *
    * A new endpoint that reaches for a raw handle fails here, with the reason.
    */
-  const FORBIDDEN = ["withTenant", "createDataSource", "API_DATA_SOURCE"];
+  const FORBIDDEN = ["withOrganization", "createDataSource", "API_DATA_SOURCE"];
 
   it("is confined to src/api/tenancy", () => {
     const offenders: string[] = [];
@@ -154,17 +158,17 @@ describe("the API's access to the database", () => {
 
   /**
    * Every query function this layer calls takes a scope as its first argument. A function
-   * taking `(dataSource, tenantId, …)` — the shape the call path uses — would let a
-   * handler name a tenant, and naming one is the mistake this design removes.
+   * taking `(dataSource, organizationId, …)` — the shape the call path uses — would let a
+   * handler name a organization, and naming one is the mistake this design removes.
    */
-  it("never passes a tenant id to a query", () => {
+  it("never passes a organization id to a query", () => {
     const offenders: string[] = [];
     for (const file of sourceFiles(API_SOURCE)) {
       if (file.includes(`${join("api", "tenancy")}`)) continue;
       const source = readFileSync(file, "utf8");
-      // `caller.tenantId` is fine — it is read for a response body and for logging.
-      // Passing one as an argument is not, and that reads as `, tenantId` or `(tenantId`.
-      if (/[(,]\s*tenantId\s*[,)]/.test(source)) offenders.push(file);
+      // `caller.organizationId` is fine — it is read for a response body and for logging.
+      // Passing one as an argument is not, and that reads as `, organizationId` or `(organizationId`.
+      if (/[(,]\s*organizationId\s*[,)]/.test(source)) offenders.push(file);
     }
     expect(offenders).toEqual([]);
   });

@@ -49,7 +49,7 @@ we cannot win?*
 ### 1.2 Explicit non-goals for v1
 
 - Outbound calling and dialer campaigns
-- Self-serve agent-builder UI (first 10 tenants are onboarded by hand)
+- Self-serve agent-builder UI (first 10 organizations are onboarded by hand)
 - Billing and subscription management
 - Connector marketplace
 - Analytics dashboards beyond raw call inspection
@@ -66,7 +66,7 @@ put it in Phase 2.
 | User | What they need |
 |---|---|
 | **Caller** | To be understood the first time, get a real answer, and reach a human when the AI can't help. Does not know or care that it's AI. |
-| **Tenant admin** | To configure the agent's persona, knowledge, tools, escalation rules and business hours; to review calls that went badly. |
+| **Organization admin** | To configure the agent's persona, knowledge, tools, escalation rules and business hours; to review calls that went badly. |
 | **Human agent** | To receive a warm transfer with full context — who's calling, what they wanted, what the AI already tried. |
 | **Us (platform)** | To debug any call turn-by-turn, six months later, without guessing. |
 
@@ -79,7 +79,7 @@ Caller → Telephony (Twilio) → Media stream (WS)
       → VAD / endpointing
       → STT (provider-abstracted)
       → Orchestrator ── tool calls ──→ internal registry
-      │                            └──→ tenant external tools (HTTP / MCP)
+      │                            └──→ organization external tools (HTTP / MCP)
       → LLM (Claude)
       → Response normalizer (numbers, currency, dates)
       → TTS (provider-abstracted)
@@ -108,7 +108,7 @@ two interfaces so they can be sourced independently.
 - **R4.1.2** Provider selection MUST be decided by measured accuracy on our own real-
   conversation Nigerian phone corpus (§9), not by vendor marketing. Candidates: Intron
   Sahara v2, Spitch, Deepgram (Nova-3 / Flux).
-- **R4.1.3** Domain vocabulary boosting (keyterms) MUST be supported per tenant —
+- **R4.1.3** Domain vocabulary boosting (keyterms) MUST be supported per organization —
   Nigerian names, place names, product names, insurer/bank names.
 - **R4.1.4** Streaming with interim results is required. Batch STT is disqualifying.
 - **R4.1.5** Word-level confidence MUST be carried through to the orchestrator so
@@ -131,8 +131,8 @@ two interfaces so they can be sourced independently.
 - **R4.2.1** Default voice MUST be Nigerian-accented. Options: ElevenLabs professional
   voice clone from a paid Nigerian voice actor (30+ min clean studio audio), or a
   provider with native Nigerian voices.
-- **R4.2.2** Voice is a per-tenant setting. Multiple Nigerian voices (male/female,
-  warmer/more formal) available from day one of tenant onboarding.
+- **R4.2.2** Voice is a per-organization setting. Multiple Nigerian voices (male/female,
+  warmer/more formal) available from day one of organization onboarding.
 - **R4.2.3** Streaming TTS with time-to-first-byte under 300ms.
 - **R4.2.4** TTS output format MUST match telephony natively (μ-law 8kHz) to avoid a
   transcoding hop.
@@ -162,10 +162,10 @@ unit-tested independently.
 
 ## 5. Tool calling
 
-The heart of the product. A voice agent that can't touch the tenant's systems is a
+The heart of the product. A voice agent that can't touch the organization's systems is a
 glorified IVR.
 
-### 5.1 Internal tools (platform-owned, identical for every tenant)
+### 5.1 Internal tools (platform-owned, identical for every organization)
 
 Deterministic, implemented by us, always available:
 
@@ -176,21 +176,21 @@ Deterministic, implemented by us, always available:
 | `schedule_callback` | Caller picks a window |
 | `send_sms` | Confirmations, links, reference numbers |
 | `send_whatsapp` | Nigeria-specific; often better than SMS here |
-| `verify_caller` | Identity check against tenant-configured fields |
-| `search_knowledge_base` | Tenant's uploaded docs, retrieved |
+| `verify_caller` | Identity check against organization-configured fields |
+| `search_knowledge_base` | Organization's uploaded docs, retrieved |
 | `end_call` | Graceful close with summary |
 
-### 5.2 External tools (tenant-configured)
+### 5.2 External tools (organization-configured)
 
-Tenants point the agent at their own systems by **two routes into one registry**. This is
+Organizations point the agent at their own systems by **two routes into one registry**. This is
 the central architectural decision of the tool layer.
 
-- **Route A — HTTP connector.** Tenant declares an endpoint, a JSON schema for arguments,
+- **Route A — HTTP connector.** Organization declares an endpoint, a JSON schema for arguments,
   an auth reference into the credential vault, a risk tier and a timeout. For the
   majority of Nigerian SMBs and mid-market companies, who have a REST API and no idea
-  what MCP is. This is the default path and the one that will onboard most tenants.
-- **Route B — MCP server.** Tenant brings their own MCP server; we discover its tool
-  list and register it. For technically sophisticated tenants, and the reason we never
+  what MCP is. This is the default path and the one that will onboard most organizations.
+- **Route B — MCP server.** Organization brings their own MCP server; we discover its tool
+  list and register it. For technically sophisticated organizations, and the reason we never
   build N bespoke connectors.
 
 **R5.2.0 — Both routes are adapters that populate the same tool registry and execute
@@ -203,14 +203,14 @@ Adding a third route later (GraphQL, database-direct, webhook-push) must mean wr
 adapter, not a second dispatch path. If it doesn't, the abstraction is wrong.
 
 **Security requirements (non-negotiable):**
-- **R5.2.1** Per-tenant encrypted credential vault. Credentials never in the agent
+- **R5.2.1** Per-organization encrypted credential vault. Credentials never in the agent
   config, never in logs, never in the LLM context.
-- **R5.2.2** Egress allowlist per tenant. SSRF protection: no private IP ranges, no
+- **R5.2.2** Egress allowlist per organization. SSRF protection: no private IP ranges, no
   link-local, no redirects to unlisted hosts.
-- **R5.2.3** Hard timeout, retry policy and circuit breaker per tool. A failing tenant
-  endpoint must not degrade other tenants.
+- **R5.2.3** Hard timeout, retry policy and circuit breaker per tool. A failing organization
+  endpoint must not degrade other organizations.
 - **R5.2.4** Every tool invocation logged with args, result, latency, outcome —
-  redacted per tenant's PII rules.
+  redacted per organization's PII rules.
 
 ### 5.3 Risk tiers — a required field on every registered tool
 
@@ -256,7 +256,7 @@ Chat tool calls can take five seconds. Voice tool calls cannot.
   a list. Enforced in the system prompt and monitored in eval.
 - **R6.4 Graceful failure.** Three failed comprehension attempts on the same intent →
   offer human transfer. Never loop.
-- **R6.5 Escalation rules** are per-tenant config: business hours (WAT), transfer
+- **R6.5 Escalation rules** are per-organization config: business hours (WAT), transfer
   destinations, out-of-hours behaviour (ticket vs callback), and named intents that
   always transfer regardless.
 - **R6.6 Emotional handling.** Distress, anger, or a bereavement/claim context triggers a
@@ -271,12 +271,12 @@ Chat tool calls can take five seconds. Voice tool calls cannot.
 Retrofitting isolation is the single most expensive mistake available to us. It is
 designed in from schema v1.
 
-- **R7.1** `tenant_id` on every table, every log line, every event, every metric label.
+- **R7.1** `organization_id` on every table, every log line, every event, every metric label.
 - **R7.2** Isolation enforced at the data layer (Postgres RLS), not in application code.
   Application-layer-only isolation is treated as a security bug.
-- **R7.3** Phone number → tenant resolution at call ingress, before any other work.
-- **R7.4** Per-tenant rate limits and quotas so one tenant cannot starve another.
-- **R7.5** Tenant config is versioned. A call records which config version served it, so
+- **R7.3** Phone number → organization resolution at call ingress, before any other work.
+- **R7.4** Per-organization rate limits and quotas so one organization cannot starve another.
+- **R7.5** Organization config is versioned. A call records which config version served it, so
   a call from three weeks ago can be explained.
 
 ---
@@ -284,12 +284,12 @@ designed in from schema v1.
 ## 8. Observability — the call event log
 
 This is not a "nice to have later." It is the debugger, the eval corpus, the analytics
-source, and the evidence when a tenant says the agent said something it didn't.
+source, and the evidence when a organization says the agent said something it didn't.
 
 Every call produces an ordered, immutable event stream:
 
 - Call lifecycle: ringing, answered, transferred, ended (with reason)
-- Every audio segment (stored, retention per tenant policy)
+- Every audio segment (stored, retention per organization policy)
 - Every interim and final transcript with confidence
 - Every LLM request/response including the resolved system prompt and config version
 - Every tool call: name, tier, args, result, latency, outcome
@@ -386,7 +386,7 @@ improving" actually means in practice.
 - **R9.2.4** Every corrected turn is promoted into the eval corpus with its category
   label. The corpus grows from real traffic and the regression suite grows with it.
 - **R9.2.5** Corrections also feed:
-  - per-tenant keyterm vocabulary (names and terms the STT keeps missing)
+  - per-organization keyterm vocabulary (names and terms the STT keeps missing)
   - normalizer test cases (anything spoken wrong)
   - prompt adjustments (recurring conversational failure patterns)
   - candidate FAQ entries the knowledge base is missing
@@ -399,7 +399,7 @@ WER is the wrong metric for a conversation. A call can score 8% WER and still fa
 the agent interrupted at the wrong moment, went silent for four seconds, or confirmed the
 wrong policy number confidently.
 
-- **R9.3.1** Before a tenant goes live, ≥20 unscripted calls from **people who are not on
+- **R9.3.1** Before a organization goes live, ≥20 unscripted calls from **people who are not on
   the build**, on their own phones, on real networks — including at least one on a poor
   connection and one from a noisy environment.
 - **R9.3.2** Scored on task success, not transcription: did the caller get what they
@@ -421,19 +421,19 @@ wrong policy number confidently.
 | Calls resolved without human transfer | ≥ 50% |
 | p50 response latency | < 800ms |
 | Calls where agent went silent > 3s | < 1% |
-| Tenant onboarding time (manual, by us) | < 1 day |
+| Organization onboarding time (manual, by us) | < 1 day |
 
 ---
 
 ## 11. Phasing
 
 **Phase 1 — Foundation (this document's scope).** Seed corpus and provider bake-off, one
-tenant, one phone number, inbound only, English, internal tools plus both external
+organization, one phone number, inbound only, English, internal tools plus both external
 connector routes (HTTP and MCP), post-call review loop, manual onboarding, internal call
 viewer.
 
-**Phase 2 — Product.** Tenant admin UI, self-serve config and connector setup, billing,
-analytics, WhatsApp channel, inbound webhooks from tenant systems.
+**Phase 2 — Product.** Organization admin UI, self-serve config and connector setup, billing,
+analytics, WhatsApp channel, inbound webhooks from organization systems.
 
 **Outbound calling is gated, not scheduled.** It begins only after Slice 7a passes — 20
 unscripted inbound calls, task success measured, zero wrong-number confirmations. Outbound

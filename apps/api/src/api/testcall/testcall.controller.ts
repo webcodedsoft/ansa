@@ -1,4 +1,4 @@
-import { loadCurrentTenantConfig } from "@ansa/db";
+import { loadCurrentAgentConfig } from "@ansa/db";
 import {
   ConflictException,
   Controller,
@@ -13,7 +13,7 @@ import { Endpoint } from "../http/endpoint";
 import { apiRoute, FromBody } from "../http/request";
 import { integer, object, text, type Infer } from "../http/schema";
 import { phoneNumber } from "../schemas";
-import { TenantContext } from "../tenancy/tenant-context";
+import { OrganizationContext } from "../tenancy/organization-context";
 
 import { ORIGINATION, type Origination } from "./origination";
 
@@ -104,7 +104,7 @@ const placed = object({
 @Controller(apiRoute("test-calls"))
 export class TestCallController {
   constructor(
-    @Inject(TenantContext) private readonly db: TenantContext,
+    @Inject(OrganizationContext) private readonly db: OrganizationContext,
     @Inject(ORIGINATION) private readonly origination: Origination,
   ) {}
 
@@ -126,7 +126,7 @@ export class TestCallController {
     rateLimit: { limit: 10, windowMs: 10 * 60_000, by: "ip" },
   })
   async place(@FromBody() body: Infer<typeof testCall>): Promise<Infer<typeof placed>> {
-    const current = await this.db.tx((scope) => loadCurrentTenantConfig(scope));
+    const current = await this.db.tx((scope) => loadCurrentAgentConfig(scope));
     // The session outliving a deleted organisation, as everywhere else on this surface.
     if (current === null) throw new NotFoundException();
 
@@ -141,7 +141,7 @@ export class TestCallController {
 
     try {
       const call = await this.origination.place({
-        owner: this.db.caller.tenantId,
+        owner: this.db.caller.organizationId,
         to: body.to,
         from,
       });

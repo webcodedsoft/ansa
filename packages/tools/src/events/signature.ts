@@ -38,7 +38,7 @@ export const SIGNATURE_HEADER = "ansa-signature";
 export const TIMESTAMP_HEADER = "ansa-timestamp";
 export const EVENT_ID_HEADER = "ansa-event-id";
 export const EVENT_TYPE_HEADER = "ansa-event-type";
-export const TENANT_HEADER = "ansa-tenant-id";
+export const ORGANIZATION_HEADER = "ansa-organization-id";
 export const ATTEMPT_HEADER = "ansa-delivery-attempt";
 
 const signingString = (timestampSeconds: number, eventId: string, body: string): string =>
@@ -47,7 +47,7 @@ const signingString = (timestampSeconds: number, eventId: string, body: string):
 export interface SignedRequest {
   readonly eventId: string;
   readonly eventType: EventType;
-  readonly tenantId: string;
+  readonly organizationId: string;
   readonly attempt: number;
   readonly timestampSeconds: number;
   readonly body: string;
@@ -65,7 +65,7 @@ export const signedHeaders = (request: SignedRequest): Record<string, string> =>
   "user-agent": "ansa-events/1",
   [EVENT_ID_HEADER]: request.eventId,
   [EVENT_TYPE_HEADER]: request.eventType,
-  [TENANT_HEADER]: request.tenantId,
+  [ORGANIZATION_HEADER]: request.organizationId,
   [TIMESTAMP_HEADER]: String(request.timestampSeconds),
   [ATTEMPT_HEADER]: String(request.attempt),
   [SIGNATURE_HEADER]: `${SIGNATURE_VERSION}=${request.signer.sign(

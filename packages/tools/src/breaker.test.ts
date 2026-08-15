@@ -1,4 +1,4 @@
-import { asCallId, asTenantId, type LogFields, type Logger } from "@ansa/shared";
+import { asCallId, asOrganizationId, type LogFields, type Logger } from "@ansa/shared";
 import { describe, expect, it } from "vitest";
 
 import { breakerKey, createCircuitBreaker } from "./breaker";
@@ -6,8 +6,8 @@ import { createToolDispatcher, type HoldContext, type HoldingSpeech } from "./di
 import { createToolRegistry } from "./registry";
 import type { ToolAdapter, ToolDefinition } from "./types";
 
-const TENANT_A = asTenantId("11111111-1111-4111-8111-111111111111");
-const TENANT_B = asTenantId("22222222-2222-4222-8222-222222222222");
+const ORGANIZATION_A = asOrganizationId("11111111-1111-4111-8111-111111111111");
+const ORGANIZATION_B = asOrganizationId("22222222-2222-4222-8222-222222222222");
 const CALL = asCallId("call-1");
 
 const silentLogger = (): Logger => {
@@ -21,11 +21,11 @@ const silentLogger = (): Logger => {
   return make();
 };
 
-const LOOKUP = (tenantId: ReturnType<typeof asTenantId>): ToolDefinition => ({
+const LOOKUP = (organizationId: ReturnType<typeof asOrganizationId>): ToolDefinition => ({
   name: "order_status",
   description: "Look up an order.",
   parameters: { type: "object" },
-  tenantId,
+  organizationId,
   riskTier: "read",
   summarise: () => "That order is on its way.",
 });
@@ -34,7 +34,7 @@ describe("the breaker itself", () => {
   it("opens after the threshold and closes again after the window", () => {
     let clock = 1_000;
     const breaker = createCircuitBreaker({ failureThreshold: 3, openMs: 5_000, now: () => clock });
-    const key = breakerKey(TENANT_A, "order_status");
+    const key = breakerKey(ORGANIZATION_A, "order_status");
 
     expect(breaker.allows(key)).toBe(true);
     breaker.failed(key);
@@ -54,7 +54,7 @@ describe("the breaker itself", () => {
   it("a failed probe keeps it open; a successful one closes it", () => {
     let clock = 0;
     const breaker = createCircuitBreaker({ failureThreshold: 1, openMs: 100, now: () => clock });
-    const key = breakerKey(TENANT_A, "order_status");
+    const key = breakerKey(ORGANIZATION_A, "order_status");
 
     breaker.failed(key);
     expect(breaker.allows(key)).toBe(false);
@@ -73,7 +73,7 @@ describe("the breaker itself", () => {
 
   it("a run of successes does not accumulate towards opening", () => {
     const breaker = createCircuitBreaker({ failureThreshold: 2, openMs: 100 });
-    const key = breakerKey(TENANT_A, "order_status");
+    const key = breakerKey(ORGANIZATION_A, "order_status");
     for (let index = 0; index < 20; index += 1) {
       breaker.failed(key);
       breaker.succeeded(key);
@@ -82,16 +82,16 @@ describe("the breaker itself", () => {
   });
 
   /** R5.2.3, stated as plainly as it can be tested. */
-  it("keeps one tenant's outage away from another tenant, and one tool away from another", () => {
+  it("keeps one organization's outage away from another organization, and one tool away from another", () => {
     const breaker = createCircuitBreaker({ failureThreshold: 2, openMs: 10_000 });
-    const broken = breakerKey(TENANT_A, "order_status");
+    const broken = breakerKey(ORGANIZATION_A, "order_status");
 
     breaker.failed(broken);
     breaker.failed(broken);
 
     expect(breaker.allows(broken)).toBe(false);
-    expect(breaker.allows(breakerKey(TENANT_B, "order_status"))).toBe(true);
-    expect(breaker.allows(breakerKey(TENANT_A, "business_hours"))).toBe(true);
+    expect(breaker.allows(breakerKey(ORGANIZATION_B, "order_status"))).toBe(true);
+    expect(breaker.allows(breakerKey(ORGANIZATION_A, "business_hours"))).toBe(true);
   });
 });
 
@@ -114,8 +114,8 @@ describe("the breaker in the dispatch path", () => {
     };
 
     const registry = createToolRegistry();
-    registry.register(LOOKUP(TENANT_A), adapter);
-    registry.register(LOOKUP(TENANT_B), adapter);
+    registry.register(LOOKUP(ORGANIZATION_A), adapter);
+    registry.register(LOOKUP(ORGANIZATION_B), adapter);
 
     return {
       attempts,
@@ -133,7 +133,7 @@ describe("the breaker in the dispatch path", () => {
   it("stops calling a tool that keeps failing, and says so instead of going quiet", async () => {
     const breaker = createCircuitBreaker({ failureThreshold: 2, openMs: 60_000 });
     const { attempts, heard, dispatcher } = setup({ fails: true, breaker });
-    const call = { tenantId: TENANT_A, callId: CALL, name: "order_status", args: {} };
+    const call = { organizationId: ORGANIZATION_A, callId: CALL, name: "order_status", args: {} };
 
     expect(await dispatcher.dispatch(call)).toMatchObject({ kind: "failed", reason: "adapter-error" });
     expect(await dispatcher.dispatch(call)).toMatchObject({ kind: "failed", reason: "adapter-error" });
@@ -148,18 +148,18 @@ describe("the breaker in the dispatch path", () => {
     expect(heard).toEqual(["start:order_status", "start:order_status"]);
   });
 
-  it("a second tenant's identical tool is unaffected", async () => {
+  it("a second organization's identical tool is unaffected", async () => {
     const breaker = createCircuitBreaker({ failureThreshold: 1, openMs: 60_000 });
     const failing = setup({ fails: true, breaker });
     const working = setup({ fails: false, breaker });
 
-    await failing.dispatcher.dispatch({ tenantId: TENANT_A, callId: CALL, name: "order_status", args: {} });
+    await failing.dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "order_status", args: {} });
     expect(
-      await failing.dispatcher.dispatch({ tenantId: TENANT_A, callId: CALL, name: "order_status", args: {} }),
+      await failing.dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "order_status", args: {} }),
     ).toMatchObject({ reason: "circuit-open" });
 
     expect(
-      await working.dispatcher.dispatch({ tenantId: TENANT_B, callId: CALL, name: "order_status", args: {} }),
+      await working.dispatcher.dispatch({ organizationId: ORGANIZATION_B, callId: CALL, name: "order_status", args: {} }),
     ).toMatchObject({ kind: "ok" });
   });
 });
@@ -167,13 +167,13 @@ describe("the breaker in the dispatch path", () => {
 describe("retry", () => {
   const registryWith = (adapter: ToolAdapter) => {
     const registry = createToolRegistry();
-    registry.register(LOOKUP(TENANT_A), adapter);
+    registry.register(LOOKUP(ORGANIZATION_A), adapter);
     registry.register(
       {
         name: "update_contact",
         description: "Change the number.",
         parameters: { type: "object" },
-        tenantId: TENANT_A,
+        organizationId: ORGANIZATION_A,
         riskTier: "write",
         readback: (args) => `Changing it to ${String(args.contactNumber)}. Should I go ahead?`,
         summarise: () => "Done.",
@@ -196,7 +196,7 @@ describe("retry", () => {
 
     const dispatcher = createToolDispatcher({ registry, log: silentLogger() });
     const outcome = await dispatcher.dispatch({
-      tenantId: TENANT_A,
+      organizationId: ORGANIZATION_A,
       callId: CALL,
       name: "order_status",
       args: {},
@@ -222,7 +222,7 @@ describe("retry", () => {
 
     const dispatcher = createToolDispatcher({ registry, log: silentLogger() });
     const asked = await dispatcher.dispatch({
-      tenantId: TENANT_A,
+      organizationId: ORGANIZATION_A,
       callId: CALL,
       name: "update_contact",
       args: { contactNumber: "0803 000 0000" },
@@ -230,7 +230,7 @@ describe("retry", () => {
     if (asked.kind !== "confirm") throw new Error("expected a readback");
 
     const done = await dispatcher.dispatch({
-      tenantId: TENANT_A,
+      organizationId: ORGANIZATION_A,
       callId: CALL,
       name: "update_contact",
       args: { contactNumber: "0803 000 0000" },
@@ -261,7 +261,7 @@ describe("retry", () => {
       readRetries: 3,
     });
     const outcome = await dispatcher.dispatch({
-      tenantId: TENANT_A,
+      organizationId: ORGANIZATION_A,
       callId: CALL,
       name: "order_status",
       args: {},
@@ -272,10 +272,10 @@ describe("retry", () => {
     expect(attempts).toBe(1);
   });
 
-  it("honours a tenant's own tighter timeout", async () => {
+  it("honours a organization's own tighter timeout", async () => {
     const registry = createToolRegistry();
     registry.register(
-      { ...LOOKUP(TENANT_A), timeoutMs: 30 },
+      { ...LOOKUP(ORGANIZATION_A), timeoutMs: 30 },
       { route: "http", execute: async () => new Promise(() => undefined) },
     );
 
@@ -285,7 +285,7 @@ describe("retry", () => {
       log: silentLogger(),
       softTimeoutMs: 20,
       hardTimeoutMs: 3_000,
-    }).dispatch({ tenantId: TENANT_A, callId: CALL, name: "order_status", args: {} });
+    }).dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "order_status", args: {} });
 
     expect(outcome).toMatchObject({ kind: "failed", reason: "timeout" });
     expect(Date.now() - started).toBeLessThan(1_000);

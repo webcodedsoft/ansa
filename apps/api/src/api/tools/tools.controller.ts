@@ -23,7 +23,7 @@ import {
   text,
   type Infer,
 } from "../http/schema";
-import { TenantContext } from "../tenancy/tenant-context";
+import { OrganizationContext } from "../tenancy/organization-context";
 
 import { checkToolConfig, eventsOrNothing, orConflict, orRefuse } from "./refusals";
 import { runToolInSandbox } from "./sandbox";
@@ -41,7 +41,7 @@ import { classifyCredentials, credentialUses, refuseUnusableReferences, vaultKey
  * — see `refusals.ts` for why that is the whole design rather than a shortcut.
  *
  * **Whole document, never a patch.** `PUT` replaces the tool configuration entirely, which
- * is what `tools/tenant/config.mjs publish` already does and for the same reason: a publish
+ * is what `tools/organization/config.mjs publish` already does and for the same reason: a publish
  * that silently inherited half its values from the last one would make the version history
  * unreadable, and `config_version` is recorded on every call precisely so a call from three
  * weeks ago can be explained (R7.5). `expectedVersion` is how two people editing at once
@@ -63,7 +63,7 @@ const CREDENTIAL_REF = /^[a-z][a-z0-9_]{1,63}$/;
  * The response is projected through this schema too, so a value already in the column that
  * exceeds one of these makes `GET` fail loudly rather than silently truncate. Nothing
  * written through this endpoint can get there; a document written by
- * `tools/tenant/config.mjs` could, which is why the ceilings are far above anything a
+ * `tools/organization/config.mjs` could, which is why the ceilings are far above anything a
  * sentence, a URL or a tool schema needs.
  */
 const MAX_DESCRIPTION = 2000;
@@ -108,7 +108,7 @@ const tierFields = {
  *
  * The bound is documentation. The enforcement is `registry.register`, which refuses
  * anything over `HARD_TIMEOUT_MS` whoever wrote it and whichever door it came through —
- * a tenant asking for thirty seconds is asking for thirty seconds of dead air on a phone
+ * a organization asking for thirty seconds is asking for thirty seconds of dead air on a phone
  * line, and the place to refuse that is registration, not a JSON schema.
  */
 const timeoutMs = optional(integer({ minimum: 1, maximum: HARD_TIMEOUT_MS }));
@@ -122,9 +122,9 @@ const httpTool = object({
    *
    * A string rather than a nested object, and the reason is worth stating: this value is
    * handed to the model untouched and nothing in this product interprets it, so any shape
-   * a tenant can write today has to survive a read and a write here unchanged. Describing
+   * a organization can write today has to survive a read and a write here unchanged. Describing
    * it as a fixed set of fields would make `GET` then `PUT` quietly destroy a schema that
-   * `tools/tenant/config.mjs` wrote. All this layer checks is that it parses to a JSON
+   * `tools/organization/config.mjs` wrote. All this layer checks is that it parses to a JSON
    * object, which is the same thing `parseConnectorConfig` checks.
    */
   parametersJson: text({ minLength: 2, maxLength: MAX_SCHEMA_JSON, format: "json" }),
@@ -140,7 +140,7 @@ const httpTool = object({
 });
 
 /**
- * One tool on a tenant's MCP server.
+ * One tool on a organization's MCP server.
  *
  * The name, description and schema come from discovery; the risk tier does not, and cannot
  * — a server telling us which of its own tools are safe to run without confirmation is the
@@ -204,7 +204,7 @@ const published = object({ configVersion: integer({ minimum: 1 }) });
 
 /**
  * Generous, and the same reasoning as the schema bound above: this is a JSON document a
- * tenant hand-writes to stand in for what the model would pass, and the ceiling exists so
+ * organization hand-writes to stand in for what the model would pass, and the ceiling exists so
  * an unbounded string cannot arrive at an endpoint rather than as a claim about arguments.
  */
 const MAX_ARGS_JSON = 20_000;
@@ -416,7 +416,7 @@ export const toToolResponseBody = (
 
 @Controller(apiRoute("tools"))
 export class ToolsController {
-  constructor(@Inject(TenantContext) private readonly db: TenantContext) {}
+  constructor(@Inject(OrganizationContext) private readonly db: OrganizationContext) {}
 
   @Get()
   @Endpoint({
@@ -436,7 +436,7 @@ export class ToolsController {
        *
        * A document that parses but whose tools fail registration is *partly* live —
        * `prepareConnectors` registers what it can and logs the rest — so returning it is
-       * the truth. A document that does not parse costs the tenant every tool, which the
+       * the truth. A document that does not parse costs the organization every tool, which the
        * call path logs as an error and this reports as a 409.
        */
       const parsed = orConflict(() => parseConnectorConfig(current.toolConfig));
@@ -457,7 +457,7 @@ export class ToolsController {
     const document = toToolDocument(body);
     // Everything `@ansa/tools` will judge on the call path, judged now. Outside the
     // transaction because it touches nothing: a refusal should not have opened one.
-    const tools = orRefuse(() => checkToolConfig(document, this.db.caller.tenantId));
+    const tools = orRefuse(() => checkToolConfig(document, this.db.caller.organizationId));
 
     return this.db.tx(async (scope) => {
       const current = await readConfiguration(scope);
@@ -470,7 +470,7 @@ export class ToolsController {
 
       const sealed = await sealedCredentials(scope);
       const key = vaultKey();
-      const kinds = key === null ? null : await classifyCredentials(key, scope.tenantId, sealed);
+      const kinds = key === null ? null : await classifyCredentials(key, scope.organizationId, sealed);
       const uses = credentialUses(tools, eventsOrNothing(current.eventConfig));
       orRefuse(() => refuseUnusableReferences(uses, new Set(sealed.keys()), kinds));
 
@@ -486,7 +486,7 @@ export class ToolsController {
   }
 
   /**
-   * R5.4.3, from the tenant's side: what the endpoint returned, what it was summarised to,
+   * R5.4.3, from the organization's side: what the endpoint returned, what it was summarised to,
    * and what a caller would hear.
    *
    * `sandbox.ts` has the reasoning. The two properties worth having in front of you while
@@ -533,7 +533,7 @@ export class ToolsController {
     });
 
     const result = await runToolInSandbox({
-      owner: this.db.caller.tenantId,
+      owner: this.db.caller.organizationId,
       toolConfig: stored.toolConfig,
       sealedCredentials: stored.sealed,
       credentialKey: vaultKey(),
