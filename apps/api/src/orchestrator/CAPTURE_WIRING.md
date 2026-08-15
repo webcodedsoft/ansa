@@ -101,17 +101,15 @@ if (capture.kind === "confirming") {
   record.event("entity_candidate", { subject: capture.subject, value: capture.value });
 ```
 
-A NIN, a BVN and a one-time code all reach this line in the clear, so the transcript
-viewer becomes a list of national identity numbers. Use the exported helper:
+A NIN, a BVN and a one-time code all reach this line in the clear, and **that is now the
+intended behaviour.** `logSafe` masked them until 2026-08-15; it was removed along with
+R5.2.4 on the rule that no caller value is redacted anywhere. The organisation is the data
+controller and the event log is their record of their own call.
 
-```ts
-  record.event("entity_candidate", {
-    subject: capture.subject,
-    value: logSafe(capture.subject, capture.value),
-  });
-```
-
-`logSafe` keys on the entity's `sensitive` flag in `ENTITY_POLICY`, not on the value.
+What follows is worth stating rather than discovering: the event log and the transcript
+viewer hold national identity numbers and one-time codes in full, and are identifying data
+at rest. `recordings/`, `eval/runs/` and `eval/results/` are gitignored for the same reason,
+and the log deserves the same treatment.
 
 ## 5. Tell the model what kind of thing was confirmed
 

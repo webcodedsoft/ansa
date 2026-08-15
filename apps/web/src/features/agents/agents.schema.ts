@@ -243,7 +243,6 @@ export const capturedFieldSchema = z.object({
   pattern: z.string().max(200),
   attempts: z.number().int().min(1).max(10),
   required: z.boolean(),
-  redact: z.boolean(),
   options: z.array(z.string().max(120)).max(24),
 });
 

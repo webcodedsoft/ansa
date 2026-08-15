@@ -175,77 +175,34 @@ Add `"credentialRef": "…"` to a subscription if your endpoint also wants an
 
 ## Redaction
 
-**Nothing is redacted unless you ask for it.** The payload is a record of a conversation
-your own agent had with your own customer. You are the data controller; withholding your
-own data from you on a judgement we made about your compliance posture is not our call,
-and it would break the obvious uses — the CRM that needs the policy number, the ticketing
-system that needs the callback number.
+**No value is redacted, and there is no setting for it.** The payload is a record of a
+conversation your own agent had with your own customer. You are the data controller, and
+withholding your own data from you on a judgement we made about your compliance posture was
+never our call. It also broke the obvious uses — the CRM that needs the policy number, the
+ticketing system that needs the callback number.
 
-If you want masking, ask for it. Per organization:
+Between Slice 6a and 2026-08-15 this section described a per-organisation and per-receiver
+masking capability with five categories. That capability was withdrawn and the code deleted.
+Two things follow that you should act on:
 
-```json
-{ "events": { "redaction": { "categories": ["captured-identifier", "card-number"] } } }
-```
+- **A `redaction` block in your stored configuration is now ignored.** It is not an error and
+  it will not stop your events being delivered — it simply does nothing. Reading your
+  configuration back and saving it removes the block.
+- **Payloads that were partly masked are now complete.** If a receiver was relying on masking
+  to stay within its own obligations, that receiver is now getting identifiers it did not get
+  before. Check it before your next call, not after.
 
-…or per receiver, which overrides the organization rule for that receiver alone — the shape most
-organisations actually want, where the CRM gets everything and the analytics vendor does
-not:
+The honest framing, which the old section buried under a table of categories: masking never
+worked well enough to rely on. Names in prose have no shape; dates of birth are
+indistinguishable from any other date; addresses are not catchable; "I have been off work
+since the surgery" is special-category data under NDPR with no shape at all; and a misheard
+identifier is a string nothing recognises. A capability that catches some of your obligations
+and silently misses the rest is worse than none, because it invites you to believe the
+problem is handled.
 
-```json
-{ "name": "analytics", "…": "…",
-  "redaction": { "categories": ["captured-identifier", "digit-sequence", "email"] } }
-```
-
-Anything masked is replaced with `[redacted:<category>]`, so you can tell that something
-was removed and what kind of thing it was, rather than finding a sentence with a hole in
-it and assuming the transcriber failed.
-
-### The categories
-
-| Category | What it catches |
-|---|---|
-| `captured-identifier` | Every value this call recorded as an identifier — the caller's name, policy number, customer id — in each of the forms the transcriber wrote it down, including spaced and hyphenated spellings of the same reference. |
-| `email` | Email addresses. |
-| `card-number` | 13–19 digit runs that pass a Luhn check. |
-| `digit-sequence` | Any run of `minDigits` digits or more (default 4). Spaces and hyphens between digits do not break the run. |
-| `spoken-digit-sequence` | A run of `minSpokenDigits` digit *words* or more (default 4) — "four eight two nine one" — which is how a reference arrives when somebody reads it out. |
-
-`minDigits` and `minSpokenDigits` are settable alongside `categories`.
-
-### What redaction will not do, and you should assume it does not
-
-This is the part worth reading twice. Redaction here works on two things: values this call
-*knew* were identifiers, and *shapes*. Anything that is neither will go through.
-
-- **Names in prose are not caught by shape, and never will be.** A name has no structure
-  that distinguishes it from any other word. `captured-identifier` catches a name that the
-  agent captured and confirmed; it does not catch one the caller mentioned in passing —
-  a spouse, a broker, the colleague they spoke to last week.
-- **Dates of birth are not caught.** A date has a shape; a date of *birth* does not have a
-  shape that distinguishes it from the date of an accident, a renewal or last Tuesday.
-  Masking every date would gut the payload; masking none is what we do. If dates of birth
-  matter to your obligations, treat the whole transcript as containing one.
-- **Addresses are not caught.** Same reason. `digit-sequence` will take the number off the
-  front of a street address and leave the rest.
-- **Health, financial and other sensitive disclosures are not caught.** "I have been off
-  work since the surgery" is special-category data under NDPR and has no shape at all.
-- **`digit-sequence` will over-mask.** With the default of four it takes amounts, years and
-  quantities as well as references. That is the trade for a rule that cannot know what a
-  number means, and it is why `captured-identifier` is the one to reach for first.
-- **`spoken-digit-sequence` covers single digits only** — the words for 0–9 plus "oh",
-  "nought", "double" and "triple". Tens and teens are excluded deliberately: "twenty",
-  "hundred" and "thousand" appear in ordinary talk about money and dates far more often
-  than in a spoken reference, and including them would mask sentences containing no
-  identifier at all.
-- **A transcript may be wrong.** The transcriber mishears, and a misheard identifier is a
-  string nothing will recognise as one. Redaction operates on what was written down, not
-  on what was said.
-
-If your obligation is "this system must never hold a customer's identifiers", redaction is
-the wrong tool for it and you should not subscribe to `call.ended` at that receiver at all.
-Subscribe to `call.transferred`, which carries a summary rather than a conversation, or
-give that receiver its own subscription with `captured-identifier` on and accept that the
-transcript is still prose somebody spoke.
+If your obligation is "this system must never hold a customer's identifiers", the answer is
+not to mask the payload. Do not subscribe that receiver to `call.ended` at all — subscribe
+it to `call.transferred`, which carries a summary rather than a conversation.
 
 ### What is never sent, whatever you configure
 

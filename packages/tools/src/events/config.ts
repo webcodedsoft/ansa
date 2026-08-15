@@ -1,5 +1,4 @@
 import { requireAllowed } from "../connector/config";
-import { parseRedactionPolicy, type RedactionPolicy } from "../redaction";
 
 import type { EgressPolicy } from "../connector/egress";
 
@@ -53,13 +52,6 @@ export interface EventSubscription {
   readonly timeoutMs: number;
   /** Attempts before the delivery is given up on and recorded as failed. */
   readonly maxAttempts: number;
-  /**
-   * This receiver's masking rules, or the organization's, or none.
-   *
-   * Per subscription as well as per organization because the same organisation reasonably wants
-   * its own CRM to get the policy number and an analytics vendor not to.
-   */
-  readonly redaction: RedactionPolicy;
 }
 
 export interface EventConfig {
@@ -115,11 +107,7 @@ const asEvents = (value: unknown, where: string): readonly EventType[] => {
   return chosen;
 };
 
-const parseSubscription = (
-  value: unknown,
-  index: number,
-  organizationRedaction: RedactionPolicy,
-): EventSubscription => {
+const parseSubscription = (value: unknown, index: number): EventSubscription => {
   const where = `subscriptions[${index}]`;
   const raw = asRecord(value, where);
 
@@ -141,12 +129,6 @@ const parseSubscription = (
       DEFAULT_MAX_ATTEMPTS,
       MAX_ATTEMPTS_CEILING,
     ),
-    // The organization's rules unless this receiver names its own. Absent everywhere means the
-    // organisation gets its own data complete, which is the default this slice defends.
-    redaction:
-      raw.redaction === undefined || raw.redaction === null
-        ? organizationRedaction
-        : parseRedactionPolicy(raw.redaction, `${where}.redaction`),
   };
 };
 
@@ -173,7 +155,10 @@ export const parseEventConfig = (value: unknown): EventConfig => {
     throw new Error("event config: subscriptions must be an array");
   }
 
-  const organizationRedaction = parseRedactionPolicy(raw.redaction, "event config.redaction");
+  /* A stored `redaction` block is ignored rather than rejected. R5.2.4 was withdrawn on
+     2026-08-15 and organisations already have one saved; refusing to parse their config
+     would stop their events being delivered at all, which is a far worse outcome than
+     silently doing what the withdrawal says — sending the data complete. */
 
   const parsed: EventConfig = {
     egress: {
@@ -183,7 +168,7 @@ export const parseEventConfig = (value: unknown): EventConfig => {
       allowPlaintextHttp: egressRaw.allowPlaintextHttp === true,
     },
     subscriptions: (subscriptions as unknown[]).map((entry, index) =>
-      parseSubscription(entry, index, organizationRedaction),
+      parseSubscription(entry, index),
     ),
   };
 

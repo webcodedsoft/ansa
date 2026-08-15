@@ -369,8 +369,6 @@ interface EntityPolicy {
   readonly risk: EntityRisk;
   readonly confirm: ConfirmationRule;
   readonly fallback: CaptureFallback;
-  /** Never written to a log, an event, or the model's context in the clear. */
-  readonly sensitive: boolean;
   /** How the agent refers to it: "your policy number". */
   readonly label: string;
   /** How the agent asks for it. */
@@ -409,7 +407,6 @@ export const ENTITY_POLICY: Readonly<Record<EntityKind, EntityPolicy>> = {
     risk: "identifier",
     confirm: "always",
     fallback: "spelling",
-    sensitive: false,
     label: "your name",
     ask: "And your name?",
     parse: (text) => nameFrom(text),
@@ -427,7 +424,6 @@ export const ENTITY_POLICY: Readonly<Record<EntityKind, EntityPolicy>> = {
     risk: "identifier",
     confirm: "always",
     fallback: "keypad",
-    sensitive: false,
     label: "that number",
     ask: "What's the number?",
     parse: (text) => digitsOf(text),
@@ -448,7 +444,6 @@ export const ENTITY_POLICY: Readonly<Record<EntityKind, EntityPolicy>> = {
     risk: "identifier",
     confirm: "always",
     fallback: "keypad",
-    sensitive: false,
     label: "your number",
     ask: "What's the best number to reach you on?",
     parse: (text) => phoneFrom(text),
@@ -465,7 +460,6 @@ export const ENTITY_POLICY: Readonly<Record<EntityKind, EntityPolicy>> = {
     risk: "identifier",
     confirm: "always",
     fallback: "spelling",
-    sensitive: false,
     label: "your email",
     ask: "What's your email address?",
     parse: (text) => parseSpokenEmail(text),
@@ -482,7 +476,6 @@ export const ENTITY_POLICY: Readonly<Record<EntityKind, EntityPolicy>> = {
     risk: "consequential",
     confirm: "always",
     fallback: "retry",
-    sensitive: false,
     label: "the address",
     ask: "What's the address?",
     parse: (text) => parseSpokenAddress(text),
@@ -501,7 +494,6 @@ export const ENTITY_POLICY: Readonly<Record<EntityKind, EntityPolicy>> = {
     risk: "consequential",
     confirm: "always",
     fallback: "retry",
-    sensitive: false,
     label: "the date",
     ask: "What day suits you?",
     parse: (text, atMs) => parseSpokenDate(text, atMs),
@@ -519,7 +511,6 @@ export const ENTITY_POLICY: Readonly<Record<EntityKind, EntityPolicy>> = {
     risk: "consequential",
     confirm: "always",
     fallback: "retry",
-    sensitive: false,
     label: "the time",
     ask: "What time works for you?",
     parse: (text) => parseSpokenTime(text),
@@ -537,7 +528,6 @@ export const ENTITY_POLICY: Readonly<Record<EntityKind, EntityPolicy>> = {
     risk: "consequential",
     confirm: "always",
     fallback: "keypad",
-    sensitive: false,
     label: "the amount",
     ask: "How much is it?",
     parse: (text) => amountString(parseSpokenAmount(text)),
@@ -551,7 +541,6 @@ export const ENTITY_POLICY: Readonly<Record<EntityKind, EntityPolicy>> = {
     risk: "identifier",
     confirm: "always",
     fallback: "keypad",
-    sensitive: true,
     label: "your N I N",
     ask: "What's your N I N?",
     parse: (text) => elevenDigits(text),
@@ -564,7 +553,6 @@ export const ENTITY_POLICY: Readonly<Record<EntityKind, EntityPolicy>> = {
     risk: "identifier",
     confirm: "always",
     fallback: "keypad",
-    sensitive: true,
     label: "your B V N",
     ask: "What's your B V N?",
     parse: (text) => elevenDigits(text),
@@ -574,14 +562,13 @@ export const ENTITY_POLICY: Readonly<Record<EntityKind, EntityPolicy>> = {
 
   /**
    * Identifier, and the most sensitive value on the call. Never logged, never put in the
-   * model's context — see `logSafe`. Confirmed like everything else: a caller reading a
+   * model's context. Confirmed like everything else: a caller reading a
    * code off a screen is exactly the situation where one digit goes missing.
    */
   otp: {
     risk: "identifier",
     confirm: "always",
     fallback: "keypad",
-    sensitive: true,
     label: "the code",
     ask: "What's the code?",
     parse: (text) => elevenDigits(text),
@@ -607,7 +594,6 @@ export const ENTITY_POLICY: Readonly<Record<EntityKind, EntityPolicy>> = {
     risk: "conversational",
     confirm: "when-uncertain",
     fallback: "retry",
-    sensitive: false,
     label: "that",
     ask: "Sorry, how many was that?",
     parse: (text) => {
@@ -665,17 +651,6 @@ export const spokenAttemptsFor = (kind: EntityKind, confidence?: number | null):
   // put to the caller at least once, or the readback has not happened.
   return uncertain && hasFallback ? 1 : MAX_SPOKEN_ATTEMPTS;
 };
-
-/**
- * A value as it may appear in a log, an event or the model's context.
- *
- * A NIN, a BVN and a one-time code are all things a caller reads aloud that must not
- * survive the call in the clear. The orchestrator logs the candidate value on every
- * `entity_candidate` event, so without this the transcript viewer becomes a list of
- * national identity numbers.
- */
-export const logSafe = (kind: EntityKind, value: string): string =>
-  ENTITY_POLICY[kind].sensitive ? `«${kind}:${value.length} chars»` : value;
 
 /**
  * What the model is told once a value is confirmed. Never called before that.

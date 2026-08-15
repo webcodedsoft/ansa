@@ -120,8 +120,6 @@ const capturedField = object({
   /** Then it transfers to a person, rather than asking a fourth time. */
   attempts: integer({ minimum: 1, maximum: 10 }),
   required: flag(),
-  /** Stored and sent to the organisation's systems, hidden in the console. */
-  redact: flag(),
   /** Only meaningful for `choice`. Empty otherwise. */
   options: list(text({ maxLength: 120 }), { maxItems: 24 }),
 });

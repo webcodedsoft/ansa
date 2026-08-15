@@ -141,25 +141,35 @@ describe("an event configuration, read back and published again", () => {
     ],
   };
 
-  it("survives the round trip unchanged", () => {
-    const parsed = parseEventConfig(document);
-    const response = toEventResponseBody(parsed, document);
-    expect(toEventDocument({ expectedVersion: 0, ...response })).toEqual(document);
+  it("survives the round trip unchanged, once the withdrawn block is gone", () => {
+    /* A document still carrying R5.2.4 rules cannot round-trip, and should not: reading it
+       back and saving it is exactly how an organisation clears a block that no longer does
+       anything. What must round-trip is everything else, so this asserts against the
+       document as it comes back rather than as it was stored. */
+    const stored = parseEventConfig(document);
+    const response = toEventResponseBody(stored);
+    const saved = toEventDocument({ expectedVersion: 0, ...response });
+
+    expect(saved).not.toHaveProperty("redaction");
+    // Second pass is the real assertion: once saved, it is stable.
+    expect(toEventDocument({ expectedVersion: 0, ...toEventResponseBody(parseEventConfig(saved)) })).toEqual(
+      saved,
+    );
+    expect(saved.subscriptions).toHaveLength(2);
   });
 
   /**
-   * The one that would be easy to get wrong and hard to notice: `parseEventConfig` resolves
-   * every receiver's rules from the organisation's default, and reporting that resolved
-   * value as the receiver's own would freeze the inheritance on the next save.
+   * A document saved while R5.2.4 existed still parses, and its `redaction` block is
+   * dropped rather than refused. An organisation that configured masking before it was
+   * withdrawn keeps receiving events; what changes is that the events are complete.
    */
-  it("keeps inheritance as inheritance rather than copying it into each receiver", () => {
-    const response = toEventResponseBody(parseEventConfig(document), document);
-    expect(response.redaction?.categories).toEqual(["card-number"]);
+  it("ignores a stored redaction block instead of refusing the document", () => {
+    const response = toEventResponseBody(parseEventConfig(document));
+    expect(response).not.toHaveProperty("redaction");
     expect(response.subscriptions[0]).not.toHaveProperty("redaction");
-    expect(response.subscriptions[1]?.redaction?.categories).toEqual([
-      "captured-identifier",
-      "digit-sequence",
-    ]);
+    expect(response.subscriptions[1]).not.toHaveProperty("redaction");
+    // The rest of the receiver is untouched: dropping the block must not drop the hook.
+    expect(response.subscriptions.map((s) => s.name)).toEqual(["crm", "analytics"]);
   });
 
   it("reports no redaction at all when none was asked for", () => {
@@ -174,7 +184,7 @@ describe("an event configuration, read back and published again", () => {
         },
       ],
     };
-    const response = toEventResponseBody(parseEventConfig(plain), plain);
+    const response = toEventResponseBody(parseEventConfig(plain));
     expect(response).not.toHaveProperty("redaction");
     expect(response.subscriptions[0]).not.toHaveProperty("redaction");
   });

@@ -29,7 +29,7 @@ it, so a call from three weeks ago can still be explained (R7.5).
 | `businessHours` | When the organisation's own line is staffed, in WAT. | All three of open hour, close hour and days, or none. No overnight window. Unset means the agent says it does not know, which is the honest answer. |
 | `escalation` | Where a transfer goes, and how long it rings. | Both numbers E.164 or neither. Ring 5-120 seconds. Unset falls back to the platform's number, which is wrong once there is more than one organization. |
 | `tools` | The organisation's own lookups, over HTTP or MCP. | Risk tier required. Hosts declared in `egress.allowedHosts` and checked against every URL at publish. Credentials by reference; the value is sealed and never in the config. |
-| `events` | Where a record of each call is pushed, and what is masked on the way. | Types: `call.ended`, `call.transferred`. Signing secret required. Nothing is redacted unless asked for. |
+| `events` | Where a record of each call is pushed. | Types: `call.ended`, `call.transferred`. Signing secret required. No caller value is redacted. |
 
 Base vocabulary every organisation inherits, on top of which their own is merged: `Ansa`, `naira`.
 A term earns a place there by being true of every organisation on the platform, not by
@@ -91,23 +91,21 @@ exactly as one that does not exist, down to the words the caller hears.
 
 ## 4. Redaction
 
-**Nothing is redacted unless an organisation asks for it.** They are the data controller,
-the caller is their customer, and the payload is a record of a conversation their own
-agent had. Categories available:
+**No caller value is ever redacted, and there is no setting for it.** The organisation
+is the data controller, the caller is their customer, and the payload is a record of a
+conversation their own agent had. R5.2.4 offered per-receiver masking of names,
+identifiers and digit runs; it was withdrawn on 2026-08-15 because deciding on an
+organisation's behalf which of their own data they may receive was never ours to make,
+and because it broke the obvious uses — a CRM cannot look up a masked policy number.
 
-- `captured-identifier`
-- `email`
-- `card-number`
-- `digit-sequence`
-- `spoken-digit-sequence`
-
-What none of them can catch is in `docs/EVENT_WEBHOOKS.md`, and it is the part worth
-reading: a name, an address and a date of birth have no shape that distinguishes them
-from prose.
+What follows from that, stated plainly rather than left to be discovered: transcripts,
+event payloads and the internal event log carry whatever the caller said, including a
+NIN, a BVN and a one-time code. They are identifying data at rest and should be treated
+as such — `recordings/` is gitignored for the same reason.
 
 Separately and unconditionally, credential-shaped keys never leave the process. That one
 is not configurable in either direction — it is secret material held in trust, not the
-organisation's data.
+organisation's data, and withdrawing R5.2.4 did not touch it.
 
 ---
 

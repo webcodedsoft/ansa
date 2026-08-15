@@ -20,7 +20,6 @@ import {
   confirmedUtterance,
   idle,
   isAffirmative,
-  logSafe,
   type CaptureState,
   type EntityKind,
 } from "./capture";
@@ -1850,12 +1849,14 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     }
 
     if (capture.kind === "confirming") {
-      // Redacted on the way out. A NIN, a BVN and a one-time code all reach this line in
-      // the clear otherwise, and the transcript viewer becomes a list of national identity
-      // numbers. `logSafe` keys on the entity's `sensitive` flag, never on the value.
+      /* In the clear, including a NIN, a BVN and a one-time code. `logSafe` masked these
+         until 2026-08-15; it was removed with R5.2.4 on the rule that no caller value is
+         redacted anywhere. The organisation is the data controller and the event log is
+         their record of their own call. What follows from it: the log is now identifying
+         data, and `recordings/` was already gitignored for exactly that reason. */
       record.event("entity_candidate", {
         subject: capture.subject,
-        value: logSafe(capture.subject, capture.value),
+        value: capture.value,
       });
       record.event("confirmation_requested", { subject: capture.subject, attempt: capture.attempt });
       // Recorded while it is still a candidate, so the agent does not ask for a name it is
@@ -1920,7 +1921,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       // call is heading for a person.
       record.event("entity_candidate", {
         subject: capturedKind,
-        value: logSafe(capturedKind, captured),
+        value: captured,
       });
       record.event("value confirmed", { kind: capturedKind, chars: captured.length });
       respondTo(captured, confirmedUtterance(capturedKind, captured));

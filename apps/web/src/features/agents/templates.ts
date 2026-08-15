@@ -36,10 +36,10 @@ export interface AgentTemplate {
 /**
  * A field with the safe defaults filled in.
  *
- * The defaults are the cautious reading — captured by speech, unconfirmed, three attempts,
- * not redacted — so a template only has to name what it actually wants to be different.
- * Anything that ends up confirmed or redacted below says so explicitly, which is how it
- * should read: those two are the decisions worth seeing.
+ * The defaults are the cautious reading — captured by speech, unconfirmed, three attempts —
+ * so a template only has to name what it actually wants to be different. Anything that ends
+ * up confirmed below says so explicitly, which is how it should read: confirmation is the
+ * decision worth seeing.
  */
 const field = (
   key: string,
@@ -55,7 +55,6 @@ const field = (
   pattern: "",
   attempts: 3,
   required: true,
-  redact: false,
   options: [],
   ...over,
 });

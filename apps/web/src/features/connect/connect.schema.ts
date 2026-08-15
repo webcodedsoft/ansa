@@ -17,23 +17,8 @@ import { z } from "zod";
 export const EVENT_KINDS = ["call.ended", "call.transferred"] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
 
-export const REDACTION_CATEGORIES = [
-  "captured-identifier",
-  "email",
-  "card-number",
-  "digit-sequence",
-  "spoken-digit-sequence",
-] as const;
-export type RedactionCategory = (typeof REDACTION_CATEGORIES)[number];
-
 /** A number field that may be left blank, meaning "use the default" rather than zero. */
 const optionalCount = z.union([z.literal(""), z.coerce.number().int().min(0)]);
-
-const redactionDocSchema = z.object({
-  categories: z.array(z.enum(REDACTION_CATEGORIES)),
-  minDigits: z.number().int().min(0).optional(),
-  minSpokenDigits: z.number().int().min(0).optional(),
-});
 
 // ---------------------------------------------------------------------------
 // Webhooks (event subscriptions)
@@ -45,9 +30,7 @@ const redactionDocSchema = z.object({
  * Managed as a JS array in the form component rather than as indexed
  * `subscriptions[0].url`-style field names, because the list grows and shrinks and
  * reconstructing an array of objects from flat, re-indexed FormData keys is exactly the kind
- * of thing that silently drops a field when a row is removed from the middle. `redaction` has
- * no editor here — there is nowhere on this screen to set a per-receiver override — so it is
- * only ever read from the API and carried back untouched.
+ * of thing that silently drops a field when a row is removed from the middle.
  */
 const subscriptionDraftSchema = z
   .object({
@@ -61,7 +44,6 @@ const subscriptionDraftSchema = z
     credentialRef: z.string().trim(),
     timeoutMs: optionalCount,
     maxAttempts: optionalCount,
-    redaction: redactionDocSchema.nullable(),
   })
   .transform((value) => ({
     name: value.name,
@@ -71,7 +53,6 @@ const subscriptionDraftSchema = z
     ...(value.credentialRef === "" ? {} : { credentialRef: value.credentialRef }),
     ...(value.timeoutMs === "" ? {} : { timeoutMs: value.timeoutMs }),
     ...(value.maxAttempts === "" ? {} : { maxAttempts: value.maxAttempts }),
-    ...(value.redaction === null ? {} : { redaction: value.redaction }),
   }));
 
 /**
@@ -98,11 +79,6 @@ export const webhooksFormSchema = z
     allowedHosts: hostsList,
     allowPlaintextHttp: z.boolean(),
 
-    redactionEnabled: z.boolean(),
-    redactionCategories: z.array(z.enum(REDACTION_CATEGORIES)),
-    minDigits: optionalCount,
-    minSpokenDigits: optionalCount,
-
     subscriptions: z.array(subscriptionDraftSchema),
   })
   .transform((value) => ({
@@ -112,15 +88,6 @@ export const webhooksFormSchema = z
       allowedHosts: value.allowedHosts,
       allowPlaintextHttp: value.allowPlaintextHttp,
     },
-    ...(value.redactionEnabled
-      ? {
-          redaction: {
-            categories: value.redactionCategories,
-            ...(value.minDigits === "" ? {} : { minDigits: value.minDigits }),
-            ...(value.minSpokenDigits === "" ? {} : { minSpokenDigits: value.minSpokenDigits }),
-          },
-        }
-      : {}),
     subscriptions: value.subscriptions,
   }));
 

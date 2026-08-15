@@ -3,7 +3,6 @@ import {
   NO_EVENTS,
   type EventSubscription,
   type PreparedEvents,
-  type RedactionCategory,
 } from "@ansa/tools";
 import { describe, expect, it, vi } from "vitest";
 
@@ -58,17 +57,13 @@ const countingRecorder = () => {
   return { calls, recorder };
 };
 
-const subscription = (
-  name: string,
-  categories: readonly RedactionCategory[] = [],
-): EventSubscription => ({
+const subscription = (name: string): EventSubscription => ({
   name,
   url: "https://hooks.example.test/ansa",
   events: ["call.ended", "call.transferred"],
   signingSecretRef: "hook",
   timeoutMs: 10_000,
   maxAttempts: 8,
-  redaction: { categories, minDigits: 4, minSpokenDigits: 4 },
 });
 
 const preparedWith = (...subscriptions: EventSubscription[]): PreparedEvents => ({
@@ -292,8 +287,16 @@ describe("the payload", () => {
   });
 });
 
-describe("redaction is per receiver and off unless asked for", () => {
-  it("sends the organisation its own data complete by default", async () => {
+/**
+ * What leaves the process, now that R5.2.4 is withdrawn.
+ *
+ * These tests used to prove the opposite — that two receivers of one organisation could be
+ * sent different bytes, and that an identifier heard one way and settled another was masked
+ * in both forms. That whole capability was removed on 2026-08-15. What is worth keeping is
+ * the boundary: the caller's data goes complete, and secret material still never goes.
+ */
+describe("payloads leave complete", () => {
+  it("sends the organisation its own data complete", async () => {
     const db = fakeDb();
     const { recorder } = publisherOver(countingRecorder().recorder, preparedWith(subscription("crm")), db);
 
@@ -304,7 +307,7 @@ describe("redaction is per receiver and off unless asked for", () => {
     expect(String(db.inserted[0]?.params[5])).toContain("08031234567");
   });
 
-  it("gives two receivers of the same organisation different bytes", async () => {
+  it("gives two receivers of the same organisation identical bytes", async () => {
     const db = fakeDb();
     const facts = createCallFacts({
       organizationId: ORGANIZATION,
@@ -315,7 +318,7 @@ describe("redaction is per receiver and off unless asked for", () => {
 
     const { recorder } = publisherOver(
       countingRecorder().recorder,
-      preparedWith(subscription("crm"), subscription("analytics", ["captured-identifier", "digit-sequence"])),
+      preparedWith(subscription("crm"), subscription("analytics")),
       db,
       facts,
     );
@@ -327,27 +330,27 @@ describe("redaction is per receiver and off unless asked for", () => {
     const crm = String(db.inserted[0]?.params[5]);
     const analytics = String(db.inserted[1]?.params[5]);
 
+    // There is no longer any rule that could make these differ. Asserted rather than
+    // assumed, because a delivery still stores its own body and the two must not drift.
+    expect(crm).toBe(analytics);
     expect(crm).toContain("QX7K2M");
     expect(crm).toContain("08031234567");
-    expect(analytics).not.toContain("QX7K2M");
-    expect(analytics).not.toContain("08031234567");
-    expect(analytics).toContain("[redacted:captured-identifier]");
   });
 
-  it("masks a form of the identifier that is only in the transcript", async () => {
+  it("carries an identifier in every form the transcript holds", async () => {
     const db = fakeDb();
     const facts = createCallFacts({
       organizationId: ORGANIZATION,
       callId: asCallId(CALL),
       callDirection: "inbound",
     });
-    // Heard one way, settled another. Both are in the transcript and both must go.
+    // Heard one way, settled another. Both are in the transcript and both stay.
     facts.observe({ field: "policyNumber", value: "RT 88213", source: "stt", atMs: 1 });
     facts.observe({ field: "policyNumber", value: "RT-88213", source: "dtmf", atMs: 2 });
 
     const { recorder } = publisherOver(
       countingRecorder().recorder,
-      preparedWith(subscription("analytics", ["captured-identifier"])),
+      preparedWith(subscription("analytics")),
       db,
       facts,
     );
@@ -356,6 +359,7 @@ describe("redaction is per receiver and off unless asked for", () => {
     await settle();
 
     const sent = String(db.inserted[0]?.params[5]);
-    expect(sent).not.toContain("88213");
+    expect(sent).toContain("RT 88213");
+    expect(sent).toContain("RT-88213");
   });
 });

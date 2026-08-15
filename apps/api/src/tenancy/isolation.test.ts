@@ -506,13 +506,14 @@ describe("each organisation's own receivers and its own redaction", () => {
     expect(a.events.subscribersTo("call.transferred")).toHaveLength(0);
     expect(b.events.subscribersTo("call.transferred")).toHaveLength(1);
 
-    // The redaction policy travels with the subscription, so B's masking never applies to
-    // A's payload and A's silence never applies to B's.
-    const policyOf = (settings: CallSettings): readonly string[] =>
-      settings.events.subscribersTo("call.ended")[0]?.subscription.redaction.categories ?? [];
+    /* Both organisations' stored documents still carry redaction rules from before R5.2.4
+       was withdrawn. Neither reaches a subscription, and neither stops the other's config
+       parsing — which is the isolation question this test exists to ask. */
+    const subscriptionOf = (settings: CallSettings) =>
+      settings.events.subscribersTo("call.ended")[0]?.subscription;
 
-    expect(policyOf(a)).toHaveLength(0);
-    expect(policyOf(b)).toEqual(["captured-identifier", "digit-sequence"]);
+    expect(subscriptionOf(a)).not.toHaveProperty("redaction");
+    expect(subscriptionOf(b)).not.toHaveProperty("redaction");
   });
 
   it("signs each organisation's deliveries with a secret the other's key cannot open", async () => {

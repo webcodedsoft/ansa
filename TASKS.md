@@ -2033,6 +2033,42 @@ fills it. The configured path covers it properly — a field keyed `customerId` 
 and removing the slot would change `IdentifierField` across the fact store, the prompt and
 the event payload for no behavioural gain.
 
+### R5.2.4 withdrawn — nothing redacts a caller's value (2026-08-15)
+
+Removed on instruction, and the instruction was right for a reason worth writing down: a
+masking capability that catches values with a *shape* and misses names in prose, dates of
+birth, addresses and health disclosures is worse than none, because it invites an
+organisation to believe an obligation is handled when it is not.
+
+- [x] `packages/tools/src/redaction.ts` deleted with its tests. `redactPayload` now takes a
+      value and nothing else.
+- [x] The `redaction` block is gone from the events config API, the webhooks form, the
+      connect schema and the server action. A **stored** block is ignored rather than
+      refused — an organisation that saved one would otherwise have every event delivery
+      stop, which is far worse than sending their data complete.
+- [x] `capturedIdentifierValues` deleted. It existed only to feed the redactor.
+- [x] `logSafe` deleted, and `ENTITY_POLICY.sensitive` with it once nothing read it. The
+      event log now carries a NIN, a BVN and a one-time code in full.
+- [x] The per-field `redact` toggle is gone from the API, the field builder and the
+      templates. It was stored and displayed and could never do anything again.
+- [x] R5.2.4 struck through in `PRD.md` with the reasoning; `docs/EVENT_WEBHOOKS.md`
+      rewritten to tell an organisation what changed and what to check.
+
+**What survives, and it is not the same rule.** Credential-shaped keys are still stripped
+from every log line and every outbound payload, unconditionally and with no setting
+(R5.2.1). That is not caller data — it is material held in trust. A test asserts it
+alongside the ones asserting caller values go out complete, so the boundary is pinned in
+both directions rather than described.
+
+**The consequence, stated plainly.** Transcripts, event payloads and the internal event log
+now hold whatever the caller said, national identity numbers and one-time codes included.
+They are identifying data at rest. `recordings/`, `eval/runs/` and `eval/results/` are
+already gitignored for that reason; the event log deserves the same care and does not yet
+have a retention rule of its own.
+
+- [ ] The event log has no retention policy. Audio does (`audio_retention_days`); the words
+      do not, and the words now carry more than they did yesterday.
+
 ### The call that is still owed
 
 `packages/db/seeds/dev-organization.mjs` had rotted — it wrote `organizations.dialled_number`,

@@ -13,7 +13,6 @@ import {
   Row,
   Stack,
   SubmitButton,
-  Tag,
   TextAreaField,
   TextField,
 } from "@/components/ui";
@@ -21,12 +20,7 @@ import { idleForm } from "@/lib/form-state";
 import { useFormToast } from "@/stores/toast.store";
 
 import { saveSubscriptions, type SaveSubscriptionsState } from "../connect.actions";
-import {
-  EVENT_KINDS,
-  REDACTION_CATEGORIES,
-  type EventKind,
-  type RedactionCategory,
-} from "../connect.schema";
+import { EVENT_KINDS, type EventKind } from "../connect.schema";
 import type { SubscriptionDocument, SubscriptionEntry } from "../connect.service";
 
 const START: SaveSubscriptionsState = idleForm();
@@ -36,20 +30,6 @@ const EVENT_LABEL: Record<EventKind, string> = {
   "call.transferred": "Call transferred",
 };
 
-const CATEGORY_LABEL: Record<RedactionCategory, string> = {
-  "captured-identifier": "Captured identifiers",
-  email: "Email addresses",
-  "card-number": "Card numbers",
-  "digit-sequence": "Digit sequences",
-  "spoken-digit-sequence": "Spoken digit sequences",
-};
-
-interface RedactionDraft {
-  readonly categories: readonly RedactionCategory[];
-  readonly minDigits?: number;
-  readonly minSpokenDigits?: number;
-}
-
 interface SubscriptionDraft {
   readonly name: string;
   readonly url: string;
@@ -58,8 +38,6 @@ interface SubscriptionDraft {
   readonly credentialRef: string;
   readonly timeoutMs: string;
   readonly maxAttempts: string;
-  /** Read-only here — there is no editor for a per-receiver override on this screen. */
-  readonly redaction: RedactionDraft | null;
 }
 
 const emptyDraft = (): SubscriptionDraft => ({
@@ -70,7 +48,6 @@ const emptyDraft = (): SubscriptionDraft => ({
   credentialRef: "",
   timeoutMs: "",
   maxAttempts: "",
-  redaction: null,
 });
 
 const draftsFrom = (entries: readonly SubscriptionEntry[]): SubscriptionDraft[] =>
@@ -82,13 +59,12 @@ const draftsFrom = (entries: readonly SubscriptionEntry[]): SubscriptionDraft[] 
     credentialRef: entry.credentialRef ?? "",
     timeoutMs: entry.timeoutMs === undefined ? "" : String(entry.timeoutMs),
     maxAttempts: entry.maxAttempts === undefined ? "" : String(entry.maxAttempts),
-    redaction: entry.redaction ?? null,
   }));
 
 /**
  * Edit and replace the event subscription document.
  *
- * `eventSubscriptions.replace` overwrites the whole thing in one PUT — egress, redaction and
+ * `eventSubscriptions.replace` overwrites the whole thing in one PUT — egress and
  * every receiver — so this form keeps the entire document in state, not just the fields a
  * person is actively changing. `subscriptions` travels to the server action as JSON in a
  * hidden field rather than as indexed `subscriptions[0].url` form fields: the list of
@@ -106,16 +82,6 @@ export const WebhooksForm = ({ document }: { readonly document: SubscriptionDocu
     document.egress.allowPlaintextHttp ?? false,
   );
 
-  const [redactionEnabled, setRedactionEnabled] = useState(document.redaction !== undefined);
-  const [redactionCategories, setRedactionCategories] = useState<readonly RedactionCategory[]>(
-    document.redaction?.categories ?? [],
-  );
-  const [minDigits, setMinDigits] = useState(
-    document.redaction?.minDigits === undefined ? "" : String(document.redaction.minDigits),
-  );
-  const [minSpokenDigits, setMinSpokenDigits] = useState(
-    document.redaction?.minSpokenDigits === undefined ? "" : String(document.redaction.minSpokenDigits),
-  );
 
   const [subscriptions, setSubscriptions] = useState<readonly SubscriptionDraft[]>(
     draftsFrom(document.subscriptions),
@@ -135,10 +101,6 @@ export const WebhooksForm = ({ document }: { readonly document: SubscriptionDocu
       }),
     );
 
-  const toggleCategory = (category: RedactionCategory) =>
-    setRedactionCategories((prev) =>
-      prev.includes(category) ? prev.filter((candidate) => candidate !== category) : [...prev, category],
-    );
 
   useFormToast(state, (data) => `Saved. Now on configuration version ${data.configVersion}.`);
 
@@ -171,60 +133,6 @@ export const WebhooksForm = ({ document }: { readonly document: SubscriptionDocu
               checked={allowPlaintextHttp}
               onChange={(event) => setAllowPlaintextHttp(event.target.checked)}
             />
-          </Stack>
-        </Card>
-
-        <Card
-          title="Redaction"
-          description="What is masked before a payload leaves, for every receiver that does not set its own rule."
-        >
-          <Stack>
-            <CheckboxField
-              label="Redact organisation-wide"
-              name="redactionEnabled"
-              checked={redactionEnabled}
-              onChange={(event) => setRedactionEnabled(event.target.checked)}
-            />
-
-            {redactionEnabled && (
-              <>
-                <CheckboxGroup legend="Categories">
-                  {REDACTION_CATEGORIES.map((category) => (
-                    <CheckboxField
-                      key={category}
-                      label={CATEGORY_LABEL[category]}
-                      name="redactionCategories"
-                      value={category}
-                      checked={redactionCategories.includes(category)}
-                      onChange={() => toggleCategory(category)}
-                    />
-                  ))}
-                </CheckboxGroup>
-                {errors["redactionCategories"] !== undefined && (
-                  <FieldError>{errors["redactionCategories"]}</FieldError>
-                )}
-
-                <div className="grid gap-3.5 sm:grid-cols-2">
-                  <NumberField
-                    label="Minimum digits"
-                    name="minDigits"
-                    min={0}
-                    value={minDigits}
-                    onChange={(event) => setMinDigits(event.target.value)}
-                    error={errors["minDigits"]}
-                    hint="Below this many consecutive digits, a digit sequence is left alone."
-                  />
-                  <NumberField
-                    label="Minimum spoken digits"
-                    name="minSpokenDigits"
-                    min={0}
-                    value={minSpokenDigits}
-                    onChange={(event) => setMinSpokenDigits(event.target.value)}
-                    error={errors["minSpokenDigits"]}
-                  />
-                </div>
-              </>
-            )}
           </Stack>
         </Card>
 
@@ -327,10 +235,6 @@ export const WebhooksForm = ({ document }: { readonly document: SubscriptionDocu
                       className="w-32"
                     />
                   </Row>
-
-                  {subscription.redaction !== null && (
-                    <Tag tone="neutral">carries its own redaction rule, not editable here</Tag>
-                  )}
                 </Stack>
               </div>
             ))}

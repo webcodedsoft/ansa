@@ -103,7 +103,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly pattern: string;
         readonly attempts: number;
         readonly required: boolean;
-        readonly redact: boolean;
         readonly options: readonly (string)[];
       })[];
         readonly archivedAt: string | null;
@@ -146,7 +145,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly pattern: string;
         readonly attempts: number;
         readonly required: boolean;
-        readonly redact: boolean;
         readonly options: readonly (string)[];
       })[];
         readonly archivedAt: string | null;
@@ -182,7 +180,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly pattern: string;
         readonly attempts: number;
         readonly required: boolean;
-        readonly redact: boolean;
         readonly options: readonly (string)[];
       })[];
         readonly archivedAt: string | null;
@@ -229,7 +226,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly pattern: string;
         readonly attempts: number;
         readonly required: boolean;
-        readonly redact: boolean;
         readonly options: readonly (string)[];
       })[];
         readonly archivedAt: string | null;
@@ -249,7 +245,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
 
     /**
      * Replace the form this agent conducts
-     * Sent whole rather than patched: the order of the fields is the order the caller is asked, so a partial update would be a reorder protocol nobody asked for. Defining a field does not yet make the agent conduct it — the capture runtime reads this, and does not exist.
+     * Sent whole rather than patched: the order of the fields is the order the caller is asked, so a partial update would be a reorder protocol nobody asked for. The agent conducts this form on the next call it takes — the order here is the order it asks, and a field with a pattern is re-asked until the value matches or the attempts run out.
      */
     setFields: (input: {
         readonly path: {
@@ -265,7 +261,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
           readonly pattern: string;
           readonly attempts: number;
           readonly required: boolean;
-          readonly redact: boolean;
           readonly options: readonly (string)[];
         })[];
         };
@@ -291,7 +286,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly pattern: string;
         readonly attempts: number;
         readonly required: boolean;
-        readonly redact: boolean;
         readonly options: readonly (string)[];
       })[];
         readonly archivedAt: string | null;
@@ -331,7 +325,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly pattern: string;
         readonly attempts: number;
         readonly required: boolean;
-        readonly redact: boolean;
         readonly options: readonly (string)[];
       })[];
         readonly archivedAt: string | null;
@@ -976,7 +969,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
 
   eventSubscriptions: {
     /**
-     * Where this organisation's calls are pushed, and what is masked on the way
+     * Where this organisation's calls are pushed
      * Each receiver carries the redaction rules that will actually apply to it, resolved from the organisation's default. A receiver that masks nothing reports no redaction, because nothing is masked unless it is asked for.
      */
     read: () =>
@@ -986,11 +979,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly allowedHosts: readonly (string)[];
         readonly allowPlaintextHttp?: boolean;
       };
-        readonly redaction?: {
-        readonly categories: readonly ("captured-identifier" | "email" | "card-number" | "digit-sequence" | "spoken-digit-sequence")[];
-        readonly minDigits?: number;
-        readonly minSpokenDigits?: number;
-      };
         readonly subscriptions: readonly ({
         readonly name: string;
         readonly url: string;
@@ -999,11 +987,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly credentialRef?: string;
         readonly timeoutMs?: number;
         readonly maxAttempts?: number;
-        readonly redaction?: {
-        readonly categories: readonly ("captured-identifier" | "email" | "card-number" | "digit-sequence" | "spoken-digit-sequence")[];
-        readonly minDigits?: number;
-        readonly minSpokenDigits?: number;
-      };
       })[];
       }>(options, "GET", `/api/v1/event-subscriptions`, {}),
 
@@ -1019,11 +1002,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
           readonly allowedHosts: readonly (string)[];
           readonly allowPlaintextHttp?: boolean;
         };
-          readonly redaction?: {
-          readonly categories: readonly ("captured-identifier" | "email" | "card-number" | "digit-sequence" | "spoken-digit-sequence")[];
-          readonly minDigits?: number;
-          readonly minSpokenDigits?: number;
-        };
           readonly subscriptions: readonly ({
           readonly name: string;
           readonly url: string;
@@ -1032,11 +1010,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
           readonly credentialRef?: string;
           readonly timeoutMs?: number;
           readonly maxAttempts?: number;
-          readonly redaction?: {
-          readonly categories: readonly ("captured-identifier" | "email" | "card-number" | "digit-sequence" | "spoken-digit-sequence")[];
-          readonly minDigits?: number;
-          readonly minSpokenDigits?: number;
-        };
         })[];
         };
       }) =>

@@ -6,7 +6,6 @@ import {
   ENTITY_POLICY,
   expecting,
   idle,
-  logSafe,
   mustConfirm,
   spokenAttemptsFor,
   type CaptureState,
@@ -573,12 +572,17 @@ describe("the identifiers with a knowable shape", () => {
     expect(short.say).toContain("nine digits");
   });
 
-  it("never puts a sensitive value in something loggable", () => {
-    // The orchestrator logs the candidate on every entity_candidate event, so without
-    // this the transcript viewer becomes a list of national identity numbers.
-    expect(logSafe("nin", "22113344556")).not.toContain("22113344556");
-    expect(logSafe("otp", "492013")).not.toContain("492013");
-    expect(logSafe("reference", "41729")).toBe("41729");
+  it("treats a NIN as an ordinary value, because nothing is masked any more", () => {
+    /* `logSafe` masked a NIN, a BVN and a one-time code on the way to the event log. It
+       was removed on 2026-08-15 with R5.2.4: no caller value is redacted anywhere, and the
+       organisation is the data controller for its own call records.
+
+       The consequence is deliberate and worth stating where somebody will read it — the
+       event log now holds national identity numbers and one-time codes in the clear, and
+       is identifying data at rest. Nothing in the capture engine decides otherwise. */
+    const policy = ENTITY_POLICY.nin;
+    expect(policy.risk).toBe("identifier");
+    expect("sensitive" in policy).toBe(false);
   });
 });
 

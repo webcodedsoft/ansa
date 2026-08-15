@@ -192,9 +192,6 @@
                                 "required": {
                                   "type": "boolean"
                                 },
-                                "redact": {
-                                  "type": "boolean"
-                                },
                                 "options": {
                                   "type": "array",
                                   "items": {
@@ -213,7 +210,6 @@
                                 "pattern",
                                 "attempts",
                                 "required",
-                                "redact",
                                 "options"
                               ],
                               "additionalProperties": false
@@ -496,9 +492,6 @@
                           "required": {
                             "type": "boolean"
                           },
-                          "redact": {
-                            "type": "boolean"
-                          },
                           "options": {
                             "type": "array",
                             "items": {
@@ -517,7 +510,6 @@
                           "pattern",
                           "attempts",
                           "required",
-                          "redact",
                           "options"
                         ],
                         "additionalProperties": false
@@ -760,9 +752,6 @@
                           "required": {
                             "type": "boolean"
                           },
-                          "redact": {
-                            "type": "boolean"
-                          },
                           "options": {
                             "type": "array",
                             "items": {
@@ -781,7 +770,6 @@
                           "pattern",
                           "attempts",
                           "required",
-                          "redact",
                           "options"
                         ],
                         "additionalProperties": false
@@ -1093,9 +1081,6 @@
                           "required": {
                             "type": "boolean"
                           },
-                          "redact": {
-                            "type": "boolean"
-                          },
                           "options": {
                             "type": "array",
                             "items": {
@@ -1114,7 +1099,6 @@
                           "pattern",
                           "attempts",
                           "required",
-                          "redact",
                           "options"
                         ],
                         "additionalProperties": false
@@ -1391,9 +1375,6 @@
                         "required": {
                           "type": "boolean"
                         },
-                        "redact": {
-                          "type": "boolean"
-                        },
                         "options": {
                           "type": "array",
                           "items": {
@@ -1412,7 +1393,6 @@
                         "pattern",
                         "attempts",
                         "required",
-                        "redact",
                         "options"
                       ],
                       "additionalProperties": false
@@ -1559,9 +1539,6 @@
                           "required": {
                             "type": "boolean"
                           },
-                          "redact": {
-                            "type": "boolean"
-                          },
                           "options": {
                             "type": "array",
                             "items": {
@@ -1580,7 +1557,6 @@
                           "pattern",
                           "attempts",
                           "required",
-                          "redact",
                           "options"
                         ],
                         "additionalProperties": false
@@ -1858,9 +1834,6 @@
                           "required": {
                             "type": "boolean"
                           },
-                          "redact": {
-                            "type": "boolean"
-                          },
                           "options": {
                             "type": "array",
                             "items": {
@@ -1879,7 +1852,6 @@
                           "pattern",
                           "attempts",
                           "required",
-                          "redact",
                           "options"
                         ],
                         "additionalProperties": false
@@ -6361,7 +6333,7 @@
         "tags": [
           "event-subscriptions"
         ],
-        "summary": "Where this organisation's calls are pushed, and what is masked on the way",
+        "summary": "Where this organisation's calls are pushed",
         "description": "Each receiver carries the redaction rules that will actually apply to it, resolved from the organisation's default. A receiver that masks nothing reports no redaction, because nothing is masked unless it is asked for.",
         "x-ansa-capability": "config:read",
         "responses": {
@@ -6394,37 +6366,6 @@
                       },
                       "required": [
                         "allowedHosts"
-                      ],
-                      "additionalProperties": false
-                    },
-                    "redaction": {
-                      "type": "object",
-                      "properties": {
-                        "categories": {
-                          "type": "array",
-                          "items": {
-                            "type": "string",
-                            "enum": [
-                              "captured-identifier",
-                              "email",
-                              "card-number",
-                              "digit-sequence",
-                              "spoken-digit-sequence"
-                            ]
-                          },
-                          "maxItems": 5
-                        },
-                        "minDigits": {
-                          "type": "integer",
-                          "minimum": 2
-                        },
-                        "minSpokenDigits": {
-                          "type": "integer",
-                          "minimum": 2
-                        }
-                      },
-                      "required": [
-                        "categories"
                       ],
                       "additionalProperties": false
                     },
@@ -6472,37 +6413,6 @@
                           "maxAttempts": {
                             "type": "integer",
                             "minimum": 1
-                          },
-                          "redaction": {
-                            "type": "object",
-                            "properties": {
-                              "categories": {
-                                "type": "array",
-                                "items": {
-                                  "type": "string",
-                                  "enum": [
-                                    "captured-identifier",
-                                    "email",
-                                    "card-number",
-                                    "digit-sequence",
-                                    "spoken-digit-sequence"
-                                  ]
-                                },
-                                "maxItems": 5
-                              },
-                              "minDigits": {
-                                "type": "integer",
-                                "minimum": 2
-                              },
-                              "minSpokenDigits": {
-                                "type": "integer",
-                                "minimum": 2
-                              }
-                            },
-                            "required": [
-                              "categories"
-                            ],
-                            "additionalProperties": false
                           }
                         },
                         "required": [
@@ -6613,37 +6523,6 @@
                     ],
                     "additionalProperties": false
                   },
-                  "redaction": {
-                    "type": "object",
-                    "properties": {
-                      "categories": {
-                        "type": "array",
-                        "items": {
-                          "type": "string",
-                          "enum": [
-                            "captured-identifier",
-                            "email",
-                            "card-number",
-                            "digit-sequence",
-                            "spoken-digit-sequence"
-                          ]
-                        },
-                        "maxItems": 5
-                      },
-                      "minDigits": {
-                        "type": "integer",
-                        "minimum": 2
-                      },
-                      "minSpokenDigits": {
-                        "type": "integer",
-                        "minimum": 2
-                      }
-                    },
-                    "required": [
-                      "categories"
-                    ],
-                    "additionalProperties": false
-                  },
                   "subscriptions": {
                     "type": "array",
                     "items": {
@@ -6688,37 +6567,6 @@
                         "maxAttempts": {
                           "type": "integer",
                           "minimum": 1
-                        },
-                        "redaction": {
-                          "type": "object",
-                          "properties": {
-                            "categories": {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "enum": [
-                                  "captured-identifier",
-                                  "email",
-                                  "card-number",
-                                  "digit-sequence",
-                                  "spoken-digit-sequence"
-                                ]
-                              },
-                              "maxItems": 5
-                            },
-                            "minDigits": {
-                              "type": "integer",
-                              "minimum": 2
-                            },
-                            "minSpokenDigits": {
-                              "type": "integer",
-                              "minimum": 2
-                            }
-                          },
-                          "required": [
-                            "categories"
-                          ],
-                          "additionalProperties": false
                         }
                       },
                       "required": [

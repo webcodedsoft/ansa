@@ -9,7 +9,6 @@ import type { CallRecorder } from "../telephony/event-log";
 import {
   callEndedPayload,
   callTransferredPayload,
-  capturedIdentifierValues,
   serialisePayload,
   type CallEndedPayload,
   type CallIdentity,
@@ -54,7 +53,7 @@ export interface EventPublisherDeps {
   readonly events: PreparedEvents;
   readonly call: CallIdentity;
   /** Read at the moment an event fires, not snapshotted: a value confirmed on the last
-   *  turn has to be in the payload and in the redactor's hands. */
+   *  turn has to be in the payload. */
   readonly facts: () => CallFacts | null;
   /** The handoff journal, which is where the transfer summary comes from. */
   readonly journal: () => readonly LoggedEvent[];
@@ -85,9 +84,10 @@ export const withEventPublisher = (
   /**
    * One event, to every receiver that asked for it.
    *
-   * Serialised per receiver rather than once, because two receivers of the same
-   * organisation may have different redaction rules — the CRM gets the policy number and
-   * the analytics vendor does not — and the bytes stored are the bytes each was sent.
+   * Serialised inside the loop, which since R5.2.4 was withdrawn produces identical bytes
+   * for every receiver. Kept that way on purpose: what is stored against a delivery must be
+   * what that delivery sent, and hoisting it would make the two the same object by accident
+   * rather than by rule.
    */
   const publish = (
     type: EventType,
@@ -97,10 +97,8 @@ export const withEventPublisher = (
     if (receivers.length === 0) return;
 
     let payload: CallEndedPayload | CallTransferredPayload;
-    let captured: readonly string[];
     try {
       payload = build();
-      captured = capturedIdentifierValues(deps.facts());
     } catch (error) {
       deps.log.error("could not build an event payload; nothing was queued", {
         organizationId: deps.organizationId,
@@ -113,9 +111,9 @@ export const withEventPublisher = (
     for (const receiver of receivers) {
       let body: string;
       try {
-        body = serialisePayload(payload, receiver.subscription.redaction, captured);
+        body = serialisePayload(payload);
       } catch (error) {
-        // Redaction or serialisation failing must never send the unredacted thing instead.
+        // Serialisation failing must never send something half-built instead.
         deps.log.error("could not prepare an event payload for a receiver", {
           organizationId: deps.organizationId,
           event: type,

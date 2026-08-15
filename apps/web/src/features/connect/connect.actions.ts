@@ -46,8 +46,6 @@ export const saveSubscriptions = async (
     allowedHosts: form.get("allowedHosts") ?? "",
     allowPlaintextHttp: form.get("allowPlaintextHttp") !== null,
 
-    redactionEnabled: form.get("redactionEnabled") !== null,
-    redactionCategories: form.getAll("redactionCategories"),
     minDigits: form.get("minDigits") ?? "",
     minSpokenDigits: form.get("minSpokenDigits") ?? "",
 

@@ -28,7 +28,7 @@ export type NumberProvisioning = Awaited<ReturnType<typeof numberProvisioning>>;
 // Event subscriptions (webhooks)
 // ---------------------------------------------------------------------------
 
-/** The current subscription document, with the redaction rules already resolved per receiver. */
+/** The current subscription document. */
 export const currentSubscriptions = async () => (await api()).eventSubscriptions.read();
 
 export type SubscriptionDocument = Awaited<ReturnType<typeof currentSubscriptions>>;

@@ -3,7 +3,6 @@ export * from "./limits";
 export * from "./registry";
 export * from "./dispatch";
 export * from "./redact";
-export * from "./redaction";
 export * from "./breaker";
 // Event webhooks: the platform pushing an organisation its own data at a lifecycle point.
 // Not tools — see events/config.ts for why registering them as tools would be wrong in

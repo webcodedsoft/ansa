@@ -108,7 +108,6 @@ const subscription = (over: Partial<EventSubscription> = {}): EventSubscription 
   signingSecretRef: "hook_secret",
   timeoutMs: 2_000,
   maxAttempts: 5,
-  redaction: { categories: [], minDigits: 4, minSpokenDigits: 4 },
   ...over,
 });
 
@@ -161,7 +160,11 @@ describe("configuration", () => {
     ).toThrow(/unknown type/);
   });
 
-  it("defaults to no redaction, and a subscription may narrow the organization's rule", () => {
+  it("parses a document saved while redaction existed, and drops the block", () => {
+    /* R5.2.4 was withdrawn on 2026-08-15. Organisations have documents in the column with
+       `redaction` on the config and on individual receivers, and refusing to parse one
+       would stop their events being delivered at all — a far worse outcome than doing what
+       the withdrawal says and sending the data complete. */
     const parsed = parseEventConfig({
       egress: { allowedHosts: ["a.example.test", "b.example.test"] },
       redaction: { categories: ["digit-sequence"] },
@@ -176,16 +179,12 @@ describe("configuration", () => {
         },
       ],
     });
-    expect(parsed.subscriptions[0]?.redaction.categories).toEqual(["digit-sequence"]);
-    expect(parsed.subscriptions[1]?.redaction.categories).toHaveLength(3);
 
-    const bare = parseEventConfig({
-      egress: { allowedHosts: ["a.example.test"] },
-      subscriptions: [
-        { name: "crm", url: "https://a.example.test/x", events: ["call.ended"], signingSecretRef: "s" },
-      ],
-    });
-    expect(bare.subscriptions[0]?.redaction.categories).toEqual([]);
+    expect(parsed.subscriptions).toHaveLength(2);
+    // The receivers survive intact; only the masking rules are gone.
+    expect(parsed.subscriptions.map((s) => s.name)).toEqual(["crm", "analytics"]);
+    expect(parsed.subscriptions[0]).not.toHaveProperty("redaction");
+    expect(parsed.subscriptions[1]).not.toHaveProperty("redaction");
   });
 
   it("routes each event only to the receivers that asked for it", () => {

@@ -209,8 +209,15 @@ adapter, not a second dispatch path. If it doesn't, the abstraction is wrong.
   link-local, no redirects to unlisted hosts.
 - **R5.2.3** Hard timeout, retry policy and circuit breaker per tool. A failing organization
   endpoint must not degrade other organizations.
-- **R5.2.4** Every tool invocation logged with args, result, latency, outcome —
-  redacted per organization's PII rules.
+- **R5.2.4** Every tool invocation logged with args, result, latency, outcome.
+  ~~Redacted per organization's PII rules.~~ **Withdrawn 2026-08-15.** No caller value is
+  redacted anywhere, and there is no setting for it: the organisation is the data
+  controller, the caller is their customer, and deciding on their behalf which of their own
+  data they may receive was not ours to make. It also broke the obvious integrations, and it
+  could only ever catch values with a shape — never a name in prose, a date of birth, an
+  address or a health disclosure — which invited organisations to believe an obligation was
+  handled when it was not. Credential-shaped keys are still stripped from every log line and
+  every payload unconditionally; that is R5.2.1 and it is not the same rule.
 
 ### 5.3 Risk tiers — a required field on every registered tool
 

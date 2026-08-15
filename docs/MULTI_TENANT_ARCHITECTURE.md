@@ -119,7 +119,7 @@ organization_config (versioned; every call records which version served it)
   escalation: destinations, always-transfer intents
   tools[]                    -- registered into the one registry, each with a risk tier
   knowledge_base_ref
-  pii_redaction_rules
+  -- pii_redaction_rules: R5.2.4, withdrawn 2026-08-15; no caller value is redacted
   audio_retention_days       -- already on `organizations`
 ```
 

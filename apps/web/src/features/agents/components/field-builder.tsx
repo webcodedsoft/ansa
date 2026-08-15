@@ -75,7 +75,6 @@ const blankField = (index: number): CapturedField => ({
   pattern: "",
   attempts: 3,
   required: true,
-  redact: false,
   options: [],
 });
 
@@ -376,17 +375,6 @@ export const FieldBuilder = ({
                         checked={current.required}
                         label="Required"
                         onChange={(next) => edit({ required: next })}
-                      />
-                    }
-                  />
-                  <SettingRow
-                    title="Redact in transcripts"
-                    description="Stored and sent to your systems, hidden in the console."
-                    control={
-                      <Toggle
-                        checked={current.redact}
-                        label="Redact in transcripts"
-                        onChange={(next) => edit({ redact: next })}
                       />
                     }
                   />

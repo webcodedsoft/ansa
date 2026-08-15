@@ -1,5 +1,5 @@
 import type { CallDirection } from "@ansa/telephony";
-import { redactPayload, type RedactionPolicy } from "@ansa/tools";
+import { redactPayload } from "@ansa/tools";
 
 import type { CallFacts, Fact } from "../conversation/call-facts";
 import type { HandoffSummary } from "../handoff/summary";
@@ -119,33 +119,6 @@ const reportedIdentifiers = (
   return out;
 };
 
-/**
- * Every form of an identifier this call has seen, for the redactor to match on.
- *
- * The `heard` list matters as much as the settled value and is the reason this is not just
- * `facts.policyNumber.value`. A caller says a reference three times and the transcriber
- * writes it down three ways; the settled value is one of them and the other two are still
- * sitting in the transcript. A organization who switched `captured-identifier` on and got two out
- * of three masked would reasonably call that broken.
- */
-export const capturedIdentifierValues = (facts: CallFacts | null): readonly string[] => {
-  if (facts === null) return [];
-  const values = new Set<string>();
-  /* Configured fields included, and this one is not a feature gap but a privacy defect.
-     The redactor matches on this list. A NIN, a BVN or a one-time code collected through a
-     configured field was never in it, so an organisation that switched `captured-identifier`
-     masking on got the two built-ins masked and their national identity numbers left in
-     the transcript in full — the exact "two out of three masked" failure the comment above
-     calls broken. */
-  for (const fact of [facts.callerName, facts.policyNumber, facts.customerId, ...facts.captured.values()]) {
-    if (fact.value !== null) values.add(fact.value);
-    for (const heard of fact.heard) values.add(heard);
-  }
-  // Longest first, so a value that contains a shorter one is masked whole rather than
-  // being left with the tail of itself hanging out of a mask.
-  return [...values].sort((a, b) => b.length - a.length);
-};
-
 export interface CallEndedInput {
   readonly call: CallIdentity;
   readonly endedAt: number;
@@ -193,16 +166,15 @@ export const callTransferredPayload = (input: {
 });
 
 /**
- * The payload as bytes, under this receiver's rules.
+ * The payload as bytes.
  *
- * The two things `redactPayload` does are not the same thing and it is worth saying which
- * is which at the one call site that matters. Credential-shaped keys go unconditionally,
- * because secret material is not the organisation's data to receive. Free text is touched
- * only if the organization asked for it: the default is `NO_REDACTION` and the default is that
- * an organisation gets a complete record of a conversation its own agent had.
+ * `redactPayload` now does exactly one thing, and it is worth saying so at the one call
+ * site that matters: credential-shaped keys go unconditionally, because secret material is
+ * not the organisation's data to receive (R5.2.1). No caller value is touched. R5.2.4 —
+ * per-organisation masking of names, identifiers and digit runs — was withdrawn on
+ * 2026-08-15: the organisation is the data controller and gets a complete record of a
+ * conversation its own agent had.
  */
 export const serialisePayload = (
   payload: CallEndedPayload | CallTransferredPayload,
-  policy: RedactionPolicy,
-  capturedIdentifiers: readonly string[],
-): string => JSON.stringify(redactPayload(payload, policy, { capturedIdentifiers }));
+): string => JSON.stringify(redactPayload(payload));

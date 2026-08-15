@@ -226,12 +226,13 @@ describe("an event configuration", () => {
   };
 
   /**
-   * The default this whole area defends. The organisation is the data controller and the
-   * payload records a conversation their own agent had.
+   * The rule this whole area defends, and since 2026-08-15 it is absolute rather than a
+   * default. The organisation is the data controller and the payload records a conversation
+   * their own agent had.
    */
-  it("masks nothing unless the organisation asks for it", () => {
+  it("masks nothing, and offers no way to ask for masking", () => {
     const parsed = checkEventConfig(withEvents([subscription()]));
-    expect(parsed.subscriptions[0]?.redaction.categories).toEqual([]);
+    expect(parsed.subscriptions[0]).not.toHaveProperty("redaction");
   });
 
   it("is refused without a signing secret, because an unsigned POST is anybody's", () => {
@@ -263,14 +264,10 @@ describe("an event configuration", () => {
     expect(message).toContain("both named crm");
   });
 
-  it("is refused for a redaction category nobody implements", () => {
-    const message = eventRefusal(
-      withEvents([subscription()], { redaction: { categories: ["date-of-birth"] } }),
-    );
-    expect(message).toContain("unknown entry");
-  });
-
-  it("lets one receiver mask what another does not", () => {
+  it("keeps every receiver when a stored document still carries redaction rules", () => {
+    /* Documents saved before R5.2.4 was withdrawn are still in the column. Refusing one
+       would stop that organisation's events being delivered at all, which is far worse
+       than ignoring a block that no longer means anything. */
     const parsed = checkEventConfig(
       withEvents(
         [
@@ -283,11 +280,9 @@ describe("an event configuration", () => {
         { redaction: { categories: ["card-number"] } },
       ),
     );
-    expect(parsed.subscriptions[0]?.redaction.categories).toEqual(["card-number"]);
-    expect(parsed.subscriptions[1]?.redaction.categories).toEqual([
-      "captured-identifier",
-      "digit-sequence",
-    ]);
+    expect(parsed.subscriptions.map((entry) => entry.name)).toEqual(["crm", "analytics"]);
+    expect(parsed.subscriptions[0]).not.toHaveProperty("redaction");
+    expect(parsed.subscriptions[1]).not.toHaveProperty("redaction");
   });
 });
 
