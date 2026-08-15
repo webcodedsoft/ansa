@@ -44,6 +44,9 @@
     },
     {
       "name": "tools"
+    },
+    {
+      "name": "voices"
     }
   ],
   "paths": {
@@ -9884,6 +9887,165 @@
           },
           "429": {
             "description": "Too many attempts; see the Retry-After header",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/voices": {
+      "get": {
+        "operationId": "voices.list",
+        "tags": [
+          "voices"
+        ],
+        "summary": "The voices this deployment's speech account can speak with",
+        "description": "Two populations in one list. `usable` is on the account and safe to save right now; `addable` is in the vendor's public library and has to be added there first; `beyond-plan` is in the library and this plan may not add it. Nothing here is organisation-specific and nothing here is written. A 503 means the account could not be read at all, which is deliberately not the same answer as an empty list.",
+        "x-ansa-capability": "config:read",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "voices": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "voiceId": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "availability": {
+                            "type": "string",
+                            "enum": [
+                              "usable",
+                              "addable",
+                              "beyond-plan"
+                            ]
+                          },
+                          "previewUrl": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "labels": {
+                            "type": "object",
+                            "properties": {
+                              "accent": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "gender": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "age": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "useCase": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "language": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "accent",
+                              "gender",
+                              "age",
+                              "useCase",
+                              "language"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "voiceId",
+                          "name",
+                          "description",
+                          "availability",
+                          "previewUrl",
+                          "labels"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "libraryUnread": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "voices",
+                    "libraryUnread"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:read",
             "content": {
               "application/problem+json": {
                 "schema": {

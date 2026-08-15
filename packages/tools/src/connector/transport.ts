@@ -21,6 +21,16 @@ export interface ConnectorRequest {
   readonly headers: Readonly<Record<string, string>>;
   readonly body?: string;
   /**
+   * Header names that carry a secret, dropped when a redirect changes origin.
+   *
+   * Named by the caller because only the caller knows: a vault credential can be a bearer
+   * token, basic auth, or a header of the organisation's own choosing, and `x-api-key` is
+   * as much a secret as `authorization`. Same rule browsers and curl follow, and it matters
+   * here in particular because the allowlist a redirect is checked against accumulates —
+   * every tool save adds its host and nothing ever removes one.
+   */
+  readonly sensitiveHeaders?: readonly string[];
+  /**
    * When to give up, decided by the caller rather than here.
    *
    * The dispatcher passes its hard ceiling, which is three seconds because a caller is
@@ -201,13 +211,15 @@ export const createTransport = (options: TransportOptions): Transport => {
       let url = request.url;
       let method = request.method;
       let body = request.body;
+      let headers = request.headers;
+      const sensitive = new Set((request.sensitiveHeaders ?? []).map((name) => name.toLowerCase()));
 
       for (let hop = 0; ; hop += 1) {
         const verdict = await options.guard.check(url);
         if (!verdict.ok) throw new EgressRefusedError(verdict.reason, verdict.detail);
 
         const response = await sendOne(
-          { ...request, url, method, body },
+          { ...request, url, method, body, headers },
           verdict.target.url,
           verdict.target.addresses,
           maxBytes,
@@ -219,7 +231,16 @@ export const createTransport = (options: TransportOptions): Transport => {
 
         // Resolved against the hop we are on, so a relative Location is handled and a
         // scheme downgrade in an absolute one is caught by the guard on the next pass.
-        url = new URL(location, verdict.target.url).toString();
+        const next = new URL(location, verdict.target.url);
+        if (next.origin !== verdict.target.url.origin && sensitive.size > 0) {
+          // The credential was sealed for the host the operator configured. A server that
+          // answers 302 has chosen the next host itself, and the allowlist it is checked
+          // against still holds every host this organisation has ever saved a tool for.
+          headers = Object.fromEntries(
+            Object.entries(headers).filter(([name]) => !sensitive.has(name.toLowerCase())),
+          );
+        }
+        url = next.toString();
         if (response.status === 303 || response.status === 301 || response.status === 302) {
           // Standard behaviour, and the safer one: the body is not replayed to a host the
           // original request was not addressed to.

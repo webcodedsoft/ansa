@@ -13,6 +13,7 @@
  * you, let me put you through to someone who can".
  */
 
+import { KNOWLEDGE_TOOL_NAME } from "../orchestrator/knowledge";
 import type { CaptureRoute, CollectedField, Confirmation } from "../tenancy/captured-fields";
 
 /**
@@ -107,11 +108,41 @@ const collectionSection = (fields: readonly CollectedField[]): readonly string[]
   ];
 };
 
+/**
+ * Answer from what was retrieved, or say you don't know.
+ *
+ * Composed only when `search_knowledge_base` is in the list, and it is only in the list
+ * when the agent has sources behind it — so an agent with none is never told about a
+ * knowledge base it hasn't got. Derived from the tools rather than passed in as a flag,
+ * for the same reason the tool list is derived from the registered definitions: the prompt
+ * then cannot ground the model in a store nobody registered.
+ *
+ * The last two lines are the ones that matter. A model told only to search will search,
+ * find nothing, and answer anyway from what it knows about businesses of that kind — a
+ * delivery charge that is right for most Lagos couriers and wrong for this one. Nothing on
+ * the call distinguishes that from the truth until the caller has acted on it.
+ */
+const groundingSection = (tools: readonly AvailableTool[]): readonly string[] => {
+  if (!tools.some((tool) => tool.name === KNOWLEDGE_TOOL_NAME)) return [];
+
+  return [
+    "",
+    "One of those searches what the organisation has actually written down. Use it for",
+    "anything about how they work — what they offer, what it costs, what their rules are,",
+    "where they are — rather than answering from what you know about businesses like theirs.",
+    "Say only what came back. Your own words are fine; going further than the words you were",
+    "given is not.",
+    "If it comes back with nothing, say plainly that you don't have that and offer to put",
+    "them through to someone who does. Never fill the gap yourself.",
+  ];
+};
+
 export const taskLayer = (
   tools: readonly AvailableTool[],
   fields: readonly CollectedField[] = [],
 ): string => {
   const collection = collectionSection(fields);
+  const grounding = groundingSection(tools);
 
   if (tools.length === 0) {
     // Deliberately says "their records" rather than naming what kind of records this
@@ -138,6 +169,7 @@ export const taskLayer = (
     "Ask for one instead of answering, and wait. The pause is covered for you.",
     "You'll be told what came back, in plain words. Never say a lookup worked, or that",
     "anything has been changed, until you have been told it did.",
+    ...grounding,
     ...collection,
   ].join("\n");
 };

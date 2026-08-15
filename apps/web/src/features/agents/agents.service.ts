@@ -90,6 +90,17 @@ export const listGuarantees = async () => (await api()).config.listGuarantees();
 
 export const readinessReport = async () => (await api()).readiness.report();
 
+/**
+ * The voices the deployment's speech account can speak with.
+ *
+ * Not organisation data — the same answer for everyone, cached inside the API — but read
+ * from the server like everything else here, because the ElevenLabs key lives there and the
+ * browser has no session with anything except this app.
+ */
+export const listVoices = async () => (await api()).voices.list();
+
+export type VoiceChoice = Awaited<ReturnType<typeof listVoices>>["voices"][number];
+
 export const readTools = async () => (await api()).tools.read();
 
 export type ToolsDocument = Awaited<ReturnType<typeof readTools>>;

@@ -12,4 +12,5 @@ export * from "./call-log";
 export * from "./call-records";
 export * from "./event-deliveries";
 export * from "./corrections";
+export * from "./knowledge";
 export * from "./retention";

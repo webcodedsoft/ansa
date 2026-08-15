@@ -20,6 +20,7 @@ import {
 import {
   createAgent,
   diffVersions,
+  listVoices,
   readTools,
   sampleEndpoint,
   tryTool,
@@ -31,6 +32,7 @@ import {
   replaceTools,
   rollbackToVersion,
   testTool,
+  type VoiceChoice,
 } from "./agents.service";
 import { findTemplate } from "./templates";
 
@@ -130,6 +132,36 @@ export type DiffResult =
 export const getDiff = async (from: number, to: number): Promise<DiffResult> => {
   try {
     return { ok: true, diff: await diffVersions(from, to) };
+  } catch (error) {
+    return { ok: false, message: failureMessage(error) };
+  }
+};
+
+export type VoiceCatalogueLoaded =
+  | {
+      readonly ok: true;
+      readonly voices: readonly VoiceChoice[];
+      /** The vendor's library did not answer. See the Voice tab for what it says about it. */
+      readonly libraryUnread: boolean;
+    }
+  | { readonly ok: false; readonly message: string };
+
+/**
+ * The voice list, fetched by the Voice tab rather than by the page.
+ *
+ * Called from a client component the way `getDiff` is, and for a stronger reason than that
+ * one: the workspace is a client tree, so a Server Component cannot be dropped into it, and
+ * loading the list on the page would put a vendor round trip in front of every tab —
+ * Overview, Tools, Versions — none of which needs it. The list is cached in the API, so the
+ * cost of asking here is a request rather than a fetch to ElevenLabs.
+ *
+ * Failure comes back as a message rather than a thrown error, so a tab whose picker cannot
+ * load falls back to a plain id field instead of taking the workspace down with it.
+ */
+export const loadVoiceCatalogue = async (): Promise<VoiceCatalogueLoaded> => {
+  try {
+    const listing = await listVoices();
+    return { ok: true, voices: listing.voices, libraryUnread: listing.libraryUnread };
   } catch (error) {
     return { ok: false, message: failureMessage(error) };
   }

@@ -1486,6 +1486,31 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly latencyMs: number;
       }>(options, "POST", `/api/v1/tools/try`, input),
   },
+
+  voices: {
+    /**
+     * The voices this deployment's speech account can speak with
+     * Two populations in one list. `usable` is on the account and safe to save right now; `addable` is in the vendor's public library and has to be added there first; `beyond-plan` is in the library and this plan may not add it. Nothing here is organisation-specific and nothing here is written. A 503 means the account could not be read at all, which is deliberately not the same answer as an empty list.
+     */
+    list: () =>
+      send<{
+        readonly voices: readonly ({
+        readonly voiceId: string;
+        readonly name: string;
+        readonly description: string | null;
+        readonly availability: "usable" | "addable" | "beyond-plan";
+        readonly previewUrl: string | null;
+        readonly labels: {
+        readonly accent: string | null;
+        readonly gender: string | null;
+        readonly age: string | null;
+        readonly useCase: string | null;
+        readonly language: string | null;
+      };
+      })[];
+        readonly libraryUnread: boolean;
+      }>(options, "GET", `/api/v1/voices`, {}),
+  },
 });
 
 export type AnsaClient = ReturnType<typeof createAnsaClient>;

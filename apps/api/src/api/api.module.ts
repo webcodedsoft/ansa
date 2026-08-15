@@ -27,6 +27,7 @@ import { TestCallController } from "./testcall/testcall.controller";
 import { CredentialsController } from "./tools/credentials.controller";
 import { EventSubscriptionsController } from "./tools/events.controller";
 import { ToolsController } from "./tools/tools.controller";
+import { VoicesController } from "./voices/voices.controller";
 
 /**
  * The organization-facing dashboard API.
@@ -50,6 +51,7 @@ export const API_CONTROLLERS = [
   ReadinessController,
   TestCallController,
   ToolsController,
+  VoicesController,
 ];
 
 @Module({

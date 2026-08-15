@@ -155,12 +155,24 @@ export const prepareConnectors = async (options: PrepareOptions): Promise<Prepar
   const registrars: ((registry: ToolRegistry) => void)[] = [];
   const tools: ToolBrief[] = [];
 
-  if (usableHttp.length > 0) {
+  /*
+   * One registrar per tool, not one for the list.
+   *
+   * `registerHttpTools` throws on a definition the registry will not take — a name that
+   * shadows a platform tool, a duplicate, one the pattern refuses — and that throw has to
+   * stay, because `checkToolConfig` is what turns it into a 422 on the screen somebody
+   * typed it on. What could not stay is a single registrar holding every HTTP tool: the
+   * catch below then fired once for the whole list, so the first refusal cost every tool
+   * after it in the document while the prompt had already been told all of them existed.
+   * The caller heard "that's not something I can do on this line" about a tool the
+   * organisation had configured, and nothing on any screen said why.
+   */
+  for (const tool of usableHttp) {
     registrars.push((registry) =>
-      registerHttpTools(registry, usableHttp, { organizationId, transport, vault, log }),
+      registerHttpTools(registry, [tool], { organizationId, transport, vault, log }),
     );
-    tools.push(...brief(usableHttp));
   }
+  tools.push(...brief(usableHttp));
 
   for (const server of parsed.mcp) {
     if (key === null && needsCredential(server.credentialRef)) {

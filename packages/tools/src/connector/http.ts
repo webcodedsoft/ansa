@@ -36,6 +36,17 @@ const queryValue = (value: unknown): string | null => {
 };
 
 /**
+ * The one thing `encodeURIComponent` does not stop.
+ *
+ * `.` and `..` are unreserved, so they come back out of the encoder unchanged, and the URL
+ * parser reads them as navigation rather than as a segment: `/customers/{id}/orders` with an
+ * id of `..` resolves to `/customers/orders`, which is a different endpoint and quite
+ * possibly the one that lists everybody. The slashes in `../../admin` are what the encoding
+ * was catching, not the dots.
+ */
+const DOT_SEGMENT = /^\.{1,2}$/;
+
+/**
  * Fills `{placeholders}` in the URL and reports which arguments they used up.
  *
  * A plain string replace across the whole URL, so `/policies/{id}` and `?regNo={id}` both
@@ -62,8 +73,16 @@ const fillPath = (
 
   for (const name of config.urlParams) {
     const value = queryValue(args[name]);
-    if (value === null || value === "") {
+    // Whitespace as well as empty: `/orders/%20%20` is a request for a record whose id is
+    // three spaces, which no endpoint has, so it comes back 404 — and 404 is the code this
+    // adapter reads as "no such record" and speaks the organisation's fallback for.
+    if (value === null || value.trim() === "") {
       throw new Error(`${config.name} needs ${name} for its URL and did not get one`);
+    }
+    if (DOT_SEGMENT.test(value)) {
+      // Refused rather than encoded, because there is no encoding that keeps it in place.
+      // The value is not quoted back: it goes into a log line either way.
+      throw new Error(`${config.name} was given a path navigation for ${name}, not a value`);
     }
     url = url.split(`{${name}}`).join(encodeURIComponent(value));
     // Consumed. Sending it again in the query string or body would duplicate it, and an
@@ -128,6 +147,13 @@ const execute = async (
     headers["content-length"] = String(Buffer.byteLength(body));
   }
 
+  /* Which headers the credential wrote, so the transport can take them off again if the
+     organisation's server redirects to a different origin. Diffed rather than named: a
+     `header` credential can be called anything, and `x-api-key` is as much a secret as
+     `authorization`. Saving a host in the allowlist is one click and removing one is a
+     script, so an allowlist accumulates hosts an organisation no longer uses — and without
+     this, any of them could be redirected to and handed the credential. */
+  const sensitiveHeaders: string[] = [];
   if (config.credentialRef !== undefined) {
     const credential = await options.vault.resolve(call.organizationId, config.credentialRef);
     if (credential === null) {
@@ -135,7 +161,11 @@ const execute = async (
       // customer API is either rejected — a confusing failure — or, far worse, accepted.
       throw new Error(`no credential named ${config.credentialRef} for this organization`);
     }
+    const before = { ...headers };
     credential.applyTo(headers);
+    for (const [name, value] of Object.entries(headers)) {
+      if (before[name] !== value) sensitiveHeaders.push(name);
+    }
   }
 
   const response = await options.transport.send({
@@ -143,6 +173,7 @@ const execute = async (
     method: config.method,
     headers,
     body,
+    sensitiveHeaders,
     signal: call.signal,
   });
 
@@ -235,5 +266,10 @@ export const registerHttpTools = (
     },
   };
 
+  /* Throws on the first definition the registry will not take, and that is load-bearing in
+     two directions. `checkToolConfig` calls this against a throwaway registry and uses the
+     throw to refuse a publish — a organization tool named `transfer_to_human` is caught on the
+     screen it was typed on. The call path needs the opposite, one bad tool costing only
+     itself, and gets it in `prepare.ts` by registering each tool as its own registrar. */
   for (const config of tools) registry.register(definitionFor(config, options.organizationId), adapter);
 };

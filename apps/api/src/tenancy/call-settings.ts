@@ -30,6 +30,8 @@ export interface CallSettings {
   readonly organizationId: OrganizationId | null;
   /** Which agent answered, recorded on the call row. Null on an unregistered number. */
   readonly agentId: AgentId | null;
+  /** Whether this agent has knowledge sources, resolved with its configuration. */
+  readonly hasKnowledgeSources: boolean;
   /** Whether the caller may cut the agent off. Read by the orchestrator per call. */
   readonly bargeIn: boolean;
   /** The form this agent conducts, in the order it asks. Empty when it has none. */
@@ -95,6 +97,7 @@ export const callSettings = (
     agentId: resolved.agentId,
     bargeIn: resolved.bargeIn,
     capturedFields: resolved.capturedFields,
+    hasKnowledgeSources: resolved.hasKnowledgeSources,
     answeringMachineDetection: resolved.answeringMachineDetection,
     name: resolved.name,
     keyterms: resolved.keyterms,

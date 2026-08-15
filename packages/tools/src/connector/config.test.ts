@@ -229,6 +229,30 @@ describe("a URL with {placeholders}", () => {
     expect(withUrl("https://api.partner.test/orders")?.urlParams).toEqual([]);
   });
 
+  /**
+   * A host with an underscore in it, which the origin check used to mistake for a hole.
+   *
+   * The check blanked every placeholder to `_` and refused the URL if the first `_` fell
+   * inside the origin. In `api_test.partner.test` the first `_` is the hostname's own, so an
+   * ordinary tool was refused — and `parseConnectorConfig` throws for the whole document, so
+   * that one tool cost the organisation every other tool on every call.
+   */
+  it("does not mistake an underscore in the host for a placeholder in it", () => {
+    expect(
+      parseConnectorConfig({
+        egress: { allowedHosts: ["api_test.partner.test"] },
+        http: [httpTool({ url: "https://api_test.partner.test/orders/{orderId}" })],
+      }).http[0]?.urlParams,
+    ).toEqual(["orderId"]);
+  });
+
+  it("refuses one after the #, which is never sent to the server", () => {
+    /* The fragment does not leave the client. A placeholder there is filled and consumed
+       like any other, and then dropped by the transport — so the endpoint is called
+       without the argument at all and answers about the wrong thing rather than failing. */
+    expect(() => withUrl("https://api.partner.test/orders#{orderId}")).toThrow(/after the #/);
+  });
+
   it("refuses a placeholder in the host, which would let an argument pick the server", () => {
     /* The egress allowlist is checked against the configured host. If the host could be
        filled from an argument the check would pass and the request would go somewhere
@@ -288,5 +312,83 @@ describe("static headers", () => {
 
   it("refuses a value that is not a string", () => {
     expect(() => withHeaders({ "X-Count": 7 })).toThrow(/must be a string/);
+  });
+
+  for (const name of ["Content-Length", "host", "Transfer-Encoding", "Connection"]) {
+    it(`refuses ${name}, which the transport frames and an operator can only break`, () => {
+      /* A Content-Length on a tool that sends no body leaves the organisation's server
+         waiting for bytes that never arrive. That is not a broken tool, it is three
+         seconds of the caller's time followed by the timeout apology. */
+      expect(() => withHeaders({ [name]: "42" })).toThrow(/how the request is framed/);
+    });
+  }
+});
+
+/**
+ * The keys `df95c6d` started writing into the same jsonb the call path parses.
+ *
+ * Every call reads this column. A stamp the parser did not expect would either throw — and
+ * a throw costs the organisation every tool in the document, not just the stamped one — or
+ * quietly change what registers. Neither is visible from the console, so it is pinned here.
+ */
+describe("a stored tool carrying createdAt and updatedAt", () => {
+  const parse = (over: Record<string, unknown>) =>
+    parseConnectorConfig({
+      egress: { allowedHosts: ["api.partner.test"] },
+      http: [httpTool(over)],
+    }).http[0];
+
+  it("parses to exactly the same tool as one without them", () => {
+    const stamps = { createdAt: "2026-08-15T21:10:38.442Z", updatedAt: "2026-08-15T21:10:38.442Z" };
+    expect(parse(stamps)).toEqual(parse({}));
+  });
+
+  it("does not leak the stamps into what the adapter acts on", () => {
+    // `ConnectorConfig` is what the dispatch path reads. When a tool was written is no
+    // business of the code that calls it, and a stray key here would reach `definitionFor`.
+    const tool = parse({ createdAt: "2026-08-15T21:10:38.442Z" }) as unknown as Record<string, unknown>;
+    expect(Object.keys(tool)).not.toContain("createdAt");
+    expect(Object.keys(tool)).not.toContain("updatedAt");
+  });
+
+  /**
+   * The document one organisation actually has stored, reduced to its shape.
+   *
+   * A query-string placeholder, the same name in `required`, a credential, a timeout and
+   * both stamps — every part of what changed on 2026-08-15 in one tool. Copied from the
+   * column rather than invented, because the invented version is the one that passes.
+   */
+  it("registers the live document: a query placeholder, a credential and both stamps", () => {
+    const config = parseConnectorConfig({
+      egress: { allowedHosts: ["webapp.leadway.com"] },
+      http: [
+        {
+          name: "risk_lookup",
+          description: "Look up for motor by risk or plate number",
+          url: "https://webapp.leadway.com/interBusinessConnection/interBusinessConnection.svc/quotation/autoRegVehicleDetails?regNo={riskId}",
+          method: "GET",
+          send: "query",
+          riskTier: "read",
+          timeoutMs: 3000,
+          createdAt: "2026-08-15T21:10:38.442Z",
+          updatedAt: "2026-08-15T21:10:38.442Z",
+          credentialRef: "policy_api",
+          speech: {
+            template: "Your chassis number is {chassisNumber} with the engine number {engineNumber}",
+            fallback: "We could not find your risk",
+          },
+          parameters: {
+            type: "object",
+            required: ["riskId"],
+            properties: { riskId: { type: "string", description: "This is riskId or plate number" } },
+          },
+        },
+      ],
+    });
+
+    // A name that is both a URL placeholder and a required parameter is the ordinary case,
+    // not a conflict: the model has to be told to supply it, and the URL then consumes it.
+    expect(config.http[0]?.urlParams).toEqual(["riskId"]);
+    expect(config.http[0]?.credentialRef).toBe("policy_api");
   });
 });

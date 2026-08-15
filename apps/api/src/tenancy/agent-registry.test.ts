@@ -19,7 +19,7 @@ const silentLog = () => {
  * test is `dataSource.query`. Shaping the fake around the SQL keeps the test honest
  * about which call is which.
  */
-const fakeDb = (rows: { resolve?: unknown[]; config?: unknown[] }) => ({
+const fakeDb = (rows: { resolve?: unknown[]; config?: unknown[]; knowledge?: unknown[] }) => ({
   query: vi.fn(async (sql: string) => {
     // One round trip either way: by number at ingress (0004), by id for outbound,
     // which meets its organization on the media socket and has no number to key on (0005).
@@ -39,6 +39,9 @@ const fakeDb = (rows: { resolve?: unknown[]; config?: unknown[] }) => ({
     manager: {},
     query: async (sql: string) => {
       if (sql.includes("select id, name")) return rows.config ?? [];
+      // The knowledge lookup runs on the same runner. Empty unless a test says otherwise,
+      // which is the ordinary case: an agent with no sources offers no search.
+      if (sql.includes("agent_knowledge_sources")) return rows.knowledge ?? [];
       return [];
     },
   }),
@@ -46,11 +49,15 @@ const fakeDb = (rows: { resolve?: unknown[]; config?: unknown[] }) => ({
 
 const ORGANIZATION = "11111111-1111-4111-8111-111111111111";
 
-const configuredDb = (keyterms: string[]) =>
+const configuredDb = (keyterms: string[], knowledge: unknown[] = []) =>
   fakeDb({
+    knowledge,
     config: [
       {
         id: ORGANIZATION,
+        // A configured number is answered by an agent, and knowledge is scoped to it — a
+        // fixture without one cannot exercise anything keyed on the agent.
+        agent_id: "a0e86fd0-f67a-4ab5-af57-f4d06a5754ac",
         name: "Kano General",
         keyterms,
         voice_id: null,
@@ -289,5 +296,46 @@ describe("a call that never passed through ingress", () => {
 
     // Configuration failing must never become silence on the line (R6.2).
     expect(await registry.load(ORGANIZATION as never)).toBeNull();
+  });
+});
+
+/**
+ * The knowledge seam.
+ *
+ * Both halves were built and tested apart — the tool decides registration from an
+ * availability, the registry resolves that availability — and neither test could tell you
+ * whether they were joined. They were not: the module sat unwired, so the model would never
+ * have been told it could search anything. That is the failure this pair exists to catch,
+ * and it is why an unwired module is not a finished one.
+ */
+describe("knowledge, from configuration to prompt", () => {
+  it("offers a search when the agent has sources", async () => {
+    const registry = createAgentRegistry({
+      dataSource: configuredDb([], [{ id: "5c3d0a5e-1f6d-4f6f-9b3a-0f2d7c8a4e11" }]) as never,
+      log: silentLog() as never,
+    });
+
+    const organization = await registry.resolve("+2348138178550");
+
+    expect(organization.hasKnowledgeSources).toBe(true);
+    expect(organization.systemPrompt).toContain("search_knowledge_base");
+    // The grounding instruction is derived from the same tool list, so it travels with it.
+    expect(organization.systemPrompt).toContain("Say only what came back");
+  });
+
+  it("says nothing about a knowledge base when the agent has none", async () => {
+    const registry = createAgentRegistry({
+      dataSource: configuredDb([]) as never,
+      log: silentLog() as never,
+    });
+
+    const organization = await registry.resolve("+2348138178550");
+
+    /* Not "an empty knowledge base". An agent offered a search that can only come back
+       empty spends a turn and three seconds of a caller's time discovering that, on every
+       question it cannot answer. */
+    expect(organization.hasKnowledgeSources).toBe(false);
+    expect(organization.systemPrompt).not.toContain("search_knowledge_base");
+    expect(organization.systemPrompt).not.toContain("Say only what came back");
   });
 });

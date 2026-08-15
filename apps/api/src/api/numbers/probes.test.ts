@@ -105,9 +105,19 @@ describe("the carrier webhook probe", () => {
   });
 });
 
+/**
+ * Readiness asks one question of the catalogue and it is never `list`. Rejecting rather
+ * than returning an empty listing is what fails this file loudly if that ever changes,
+ * instead of a probe quietly deciding a voice is unknown because a list came back empty.
+ */
+const neverListed = async (): Promise<never> => {
+  throw new Error("the readiness probe must not list the account");
+};
+
 const catalogueReturning = (known: boolean): VoiceCatalogue => ({
   name: "elevenlabs",
   knows: async () => known,
+  list: neverListed,
 });
 
 const catalogueFailing = (): VoiceCatalogue => ({
@@ -115,6 +125,7 @@ const catalogueFailing = (): VoiceCatalogue => ({
   knows: async () => {
     throw new Error("401 Unauthorized: key sk_abc123");
   },
+  list: neverListed,
 });
 
 describe("the voice probe", () => {

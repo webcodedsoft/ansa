@@ -13,6 +13,7 @@ import {
 } from "@ansa/shared";
 import type { CallDirection, CallMediaStream, TelephonyProvider } from "@ansa/telephony";
 import type { LlmProvider } from "@ansa/llm";
+import { searchKnowledge, withOrganization } from "@ansa/db";
 import { buildUrl, openDeepgramSession } from "@ansa/deepgram-listen";
 import { openListenSession } from "@ansa/openai-listen";
 import type { TtsProvider } from "@ansa/tts";
@@ -37,6 +38,7 @@ import { withEventPublisher } from "../events/publisher";
 import { HANDOFF_DESTINATION, WHISPER_REGISTRY } from "../handoff/tokens";
 import type { WhisperRegistry } from "../handoff/whisper";
 import { confirmedFact, createCallFacts } from "../conversation/call-facts";
+import { knowledgeTools } from "../orchestrator/knowledge";
 import { createCallRecorder } from "./event-log";
 import type { Db } from "@ansa/db";
 import { callSettings, type PlatformDefaults } from "../tenancy/call-settings";
@@ -564,6 +566,9 @@ export class MediaGateway implements OnApplicationShutdown {
        */
       makeTools: (hooks) => {
         const registry = createToolRegistry();
+        // Bound out of `this` here rather than inside the closure below, which runs per
+        // tool call and must not depend on how it was invoked.
+        const dataSource = this.dataSource;
         registerInternalTools(
           registry,
           callControlTools({
@@ -571,6 +576,29 @@ export class MediaGateway implements OnApplicationShutdown {
             // Null until the organization configures hours; the tool then says it does not know
             // rather than inventing a nine to five (R6.5, migration 0012).
             businessHours: settings.businessHours,
+          }),
+        );
+        /* Registered only when the agent has sources, which `knowledgeTools` decides from
+           the same availability the prompt was composed from — so the model is never told
+           it can search something the registry does not hold.
+
+           The search closes over the organisation scope rather than taking one: a scope is
+           a transaction handle, and holding one open across a tool call would keep a
+           connection for the length of a caller's pause. */
+        registerInternalTools(
+          registry,
+          knowledgeTools({
+            agentId: settings.agentId,
+            hasSources: settings.hasKnowledgeSources,
+            search: async (organizationId, agentId, query, limit) => {
+              // An unregistered number never gets here — `knowledgeTools` refuses to
+              // register without an agent — but the type admits it, and returning nothing
+              // is the same answer the store would give.
+              if (dataSource === null) return [];
+              return withOrganization(dataSource, organizationId, (scope) =>
+                searchKnowledge(scope, agentId, query, limit),
+              );
+            },
           }),
         );
         // Prepared when the organization's configuration was loaded, so this is map writes

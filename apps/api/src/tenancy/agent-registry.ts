@@ -5,7 +5,14 @@ import {
   type Logger,
   type OrganizationId,
 } from "@ansa/shared";
-import { loadAgentForOrganization, loadAgentForNumber, type Db, type AgentConfig } from "@ansa/db";
+import {
+  listAgentKnowledgeSources,
+  loadAgentForOrganization,
+  loadAgentForNumber,
+  withOrganization,
+  type Db,
+  type AgentConfig,
+} from "@ansa/db";
 import {
   CALL_CONTROL_DEFINITIONS,
   NO_CONNECTORS,
@@ -16,6 +23,7 @@ import {
   type PreparedEvents,
 } from "@ansa/tools";
 
+import { knowledgeDefinitions } from "../orchestrator/knowledge";
 import { composeSystemPrompt, DEFAULT_SYSTEM_PROMPT } from "../prompts/compose";
 import { compileOrganizationLayer } from "../prompts/organization-layer";
 
@@ -34,6 +42,8 @@ export interface CallAgent {
    * its own — two agents are routinely both on version 3.
    */
   readonly agentId: AgentId | null;
+  /** Whether a `search_knowledge_base` should be registered for this call. */
+  readonly hasKnowledgeSources: boolean;
   readonly name: string;
   /** Base vocabulary merged with the organization's own (R4.1.3). */
   readonly keyterms: readonly string[];
@@ -116,6 +126,8 @@ const PLATFORM_TOOLS = CALL_CONTROL_DEFINITIONS.map((definition) => ({
 export const UNKNOWN_AGENT: CallAgent = {
   organizationId: null,
   agentId: null,
+  // Nobody answered, so there is no agent whose sources could be searched.
+  hasKnowledgeSources: false,
   name: "unknown",
   keyterms: BASE_KEYTERMS,
   voiceId: null,
@@ -181,10 +193,42 @@ const mergeKeyterms = (
  *     (R6.2), and the guarantees hold in the dispatch paths regardless of what the prompt
  *     says, so the safe thing and the available thing are the same thing here.
  */
+/**
+ * Whether this agent has anything to search, resolved once with its configuration.
+ *
+ * A query rather than a column on `agent_config_for_number`, because it is a count over a
+ * join and the registry caches the whole answer for ten minutes — so this costs one extra
+ * round trip per configuration load, not one per call. It never throws: a knowledge lookup
+ * that cannot be resolved leaves the tool unregistered, which is the same degradation
+ * `prepareConnectors` makes for an unreachable endpoint (R6.2).
+ */
+const resolveKnowledge = async (
+  dataSource: Db,
+  config: AgentConfig,
+  log: Logger,
+): Promise<boolean> => {
+  if (config.agentId === null) return false;
+  const agentId = config.agentId;
+  try {
+    const sources = await withOrganization(dataSource, config.organizationId, (scope) =>
+      listAgentKnowledgeSources(scope, agentId),
+    );
+    return sources.length > 0;
+  } catch (error) {
+    log.error("could not resolve knowledge sources; the agent will not offer a search", {
+      organizationId: config.organizationId,
+      agentId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+};
+
 const toCallAgent = async (
   config: AgentConfig,
   log: Logger,
   credentialKey: Buffer | null,
+  hasKnowledgeSources: boolean,
 ): Promise<CallAgent> => {
   const { layer, violations } = compileOrganizationLayer({
     name: config.name,
@@ -247,11 +291,20 @@ const toCallAgent = async (
     // The platform tools every registered organization gets, plus this organization's own. Both come
     // from what is actually registered, so the prompt cannot promise a lookup the
     // dispatcher would refuse.
+    /* Knowledge sits with the platform tools rather than the organisation's, because it is
+       one of ours: the registry builds it, not `prepareConnectors`. Listed only when the
+       agent actually has sources, so the grounding instruction the task layer derives from
+       this list appears on the same condition the tool does. */
     systemPrompt: composeSystemPrompt({
       organization: layer,
-      tools: [...PLATFORM_TOOLS, ...connectors.tools],
+      tools: [
+        ...PLATFORM_TOOLS,
+        ...knowledgeDefinitions({ agentId: config.agentId, hasSources: hasKnowledgeSources }),
+        ...connectors.tools,
+      ],
       fields,
     }),
+    hasKnowledgeSources,
     businessHours: config.businessHours,
     handoff: config.handoff,
     connectors,
@@ -322,7 +375,8 @@ export const createAgentRegistry = (options: AgentRegistryOptions) => {
           log.warn("dialled number is not registered to a organization", { dialled });
           return remember(dialled, UNKNOWN_AGENT);
         }
-        return remember(dialled, await toCallAgent(config, log, credentialKey));
+        const knowledge = await resolveKnowledge(dataSource, config, log);
+        return remember(dialled, await toCallAgent(config, log, credentialKey, knowledge));
       } catch (error) {
         // A database that is down must cost the caller a personalised greeting, not the
         // call. Deliberately not cached: retry on the next call rather than serving
@@ -362,7 +416,8 @@ export const createAgentRegistry = (options: AgentRegistryOptions) => {
           return null;
         }
 
-        const organization = await toCallAgent(config, log, credentialKey);
+        const knowledge = await resolveKnowledge(dataSource, config, log);
+        const organization = await toCallAgent(config, log, credentialKey, knowledge);
         // Cached by id only: this call never had a dialled number to key on.
         byOrganization.set(organizationId, { organization, expiresAt: now() + ttlMs });
         return organization;

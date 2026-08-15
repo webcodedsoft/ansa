@@ -266,8 +266,12 @@ export const updateAgent = async (
 
   if (sets.length === 0) return findAgent(scope, agentId);
 
+  /* `mutate`, not `query`. An update with `returning` comes back as `[rows, affectedCount]`,
+     so a length check on `query` is always 2 and never zero — and `findAgent` below does not
+     filter `deleted_at`, deliberately, because a call log needs a retired agent's name. The
+     two together meant editing a deleted agent answered 200 with the agent unchanged. */
   const updated = await scope
-    .query<{ id: string }>(
+    .mutate<{ id: string }>(
       `update agents set ${sets.join(", ")}
         where id = $1 and deleted_at is null
         returning id`,
@@ -290,7 +294,10 @@ export const updateAgent = async (
  * cannot be reassigned — a dead number the organisation keeps paying for.
  */
 export const archiveAgent = async (scope: OrganizationScope, agentId: string): Promise<boolean> => {
-  const rows = await scope.query<{ id: string }>(
+  // `mutate` for the reason its doc comment gives: `query` returns `[rows, affectedCount]`
+  // for an update, so this reported success for an agent it had not touched — including one
+  // that does not exist, and one archived a second time.
+  const rows = await scope.mutate<{ id: string }>(
     `update agents set deleted_at = now(), dialled_number = null
       where id = $1 and deleted_at is null
       returning id`,
@@ -319,7 +326,12 @@ export const setAgentTools = async (
   agentId: string,
   toolNames: readonly string[],
 ): Promise<readonly string[] | null> => {
-  const live = await scope.query<{ id: string }>(`select id from agents where id = $1`, [agentId]);
+  // A retired agent keeps no tools. Without the filter its selection could still be edited,
+  // and `prepareConnectors` would register them the moment it was brought back.
+  const live = await scope.query<{ id: string }>(
+    `select id from agents where id = $1 and deleted_at is null`,
+    [agentId],
+  );
   if (live.length === 0) return null;
 
   await scope.query(`delete from agent_tools where agent_id = $1`, [agentId]);

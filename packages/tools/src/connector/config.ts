@@ -237,6 +237,24 @@ const RESERVED_HEADERS: ReadonlySet<string> = new Set([
   "api-key",
 ]);
 
+/**
+ * Headers the transport owns, refused for a different reason than the credential ones.
+ *
+ * Nothing an operator writes here can improve the request and one of them can stop it: a
+ * `Content-Length` on a tool that sends no body leaves the organisation's server waiting
+ * for bytes that never arrive, which spends the caller's whole three seconds and ends in
+ * the timeout apology. `Host` is overwritten by the transport anyway, so accepting it only
+ * teaches somebody that it works.
+ */
+const TRANSPORT_HEADERS: ReadonlySet<string> = new Set([
+  "host",
+  "content-length",
+  "transfer-encoding",
+  "connection",
+  "expect",
+  "upgrade",
+]);
+
 /** RFC 7230 token characters, minus the exotica nobody needs and proxies mangle. */
 const HEADER_NAME = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/;
 
@@ -258,6 +276,12 @@ const parseHeaders = (
           "credential vault, and a header here would store the secret in the configuration",
       );
     }
+    if (TRANSPORT_HEADERS.has(name.toLowerCase())) {
+      throw new Error(
+        `tool config: ${where}.headers cannot set ${name} — the transport decides how the ` +
+          "request is framed, and a value here can only break it",
+      );
+    }
     if (typeof value !== "string") {
       throw new Error(`tool config: ${where}.headers.${name} must be a string`);
     }
@@ -277,6 +301,22 @@ const parseHeaders = (
 };
 
 /**
+ * Where the origin stops: the first `/`, `?` or `#` after the scheme.
+ *
+ * Measured on the URL as written, because a copy with the placeholders blanked out cannot be
+ * indexed back. Comparing the first blank's position against `origin.length` looked
+ * equivalent and was not: `https://api_test.partner.test/x/{id}` blanks to a string whose
+ * first `_` sits inside the *host*, so an ordinary tool was refused — and a refusal here
+ * throws the whole parse, which costs the organisation every other tool in the document.
+ */
+const originEnd = (url: string): number => {
+  const scheme = url.indexOf("://");
+  if (scheme === -1) return url.length;
+  const stop = url.slice(scheme + 3).search(/[/?#]/);
+  return stop === -1 ? url.length : scheme + 3 + stop;
+};
+
+/**
  * The `{placeholders}` a URL will consume, refusing any that could move the request.
  *
  * The rule that matters: a placeholder may appear anywhere after the origin, and nowhere
@@ -292,21 +332,33 @@ const parseUrlParams = (url: string, where: string): readonly string[] => {
   const names = templateFields(url);
   if (names.length === 0) return [];
 
-  let origin: string;
+  // Blanked only to answer "is this a URL at all". A placeholder in the scheme or the port
+  // fails here rather than below, because neither `_://host` nor `host:_` parses.
   try {
-    origin = new URL(url.replace(PATH_PLACEHOLDER, "_")).origin;
+    new URL(url.replace(PATH_PLACEHOLDER, "_"));
   } catch {
     throw new Error(`tool config: ${where}.url is not a URL`);
   }
 
-  // Compare against the template with placeholders blanked, so the index is the real one.
-  const blanked = url.replace(PATH_PLACEHOLDER, "_");
-  const firstHole = blanked.indexOf("_");
-  if (firstHole !== -1 && firstHole < origin.length) {
-    throw new Error(
-      `tool config: ${where}.url may only use {placeholders} after the host — one in the ` +
-        "scheme, host or port would let an argument choose which server is called",
-    );
+  const host = originEnd(url);
+  const fragment = url.indexOf("#");
+  for (const match of url.matchAll(PATH_PLACEHOLDER)) {
+    const at = match.index ?? 0;
+    if (at < host) {
+      throw new Error(
+        `tool config: ${where}.url may only use {placeholders} after the host — one in the ` +
+          "scheme, host or port would let an argument choose which server is called",
+      );
+    }
+    // The fragment never leaves the client, so a placeholder there is filled, consumed, and
+    // then dropped by the transport — the endpoint is called without the argument at all
+    // and answers about the wrong thing rather than failing.
+    if (fragment !== -1 && at > fragment) {
+      throw new Error(
+        `tool config: ${where}.url has a {placeholder} after the #, which is never sent to ` +
+          "the server — the argument would be used up and then disappear",
+      );
+    }
   }
 
   for (const name of names) {
