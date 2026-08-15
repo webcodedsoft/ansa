@@ -118,7 +118,7 @@ const STORED_COLUMNS = `
 const OLDEST_LIVE_AGENT = `
   from agents a
   join organizations t on t.id = a.organization_id
- where a.archived_at is null
+ where a.deleted_at is null
  order by a.created_at, a.id
  limit 1`;
 
@@ -424,7 +424,7 @@ export const loadCurrentAgentConfig = async (
        join organizations t on t.id = a.organization_id
        left join agent_prompt_versions p
          on p.agent_id = a.id and p.version = a.config_version
-      where a.archived_at is null
+      where a.deleted_at is null
       order by a.created_at, a.id
       limit 1`,
   );

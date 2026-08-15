@@ -154,7 +154,7 @@ const agent = object({
   /** The voice form this agent conducts, in the order it asks. */
   capturedFields: list(capturedField),
   /** Set when the agent was retired. Retired agents are listed so call logs can name them. */
-  archivedAt: nullable(timestamp()),
+  deletedAt: nullable(timestamp()),
   createdAt: timestamp(),
 });
 
@@ -234,7 +234,7 @@ export class AgentsController {
   @Endpoint({
     summary: "List this organisation's agents, oldest first",
     description:
-      "Includes retired agents, because a call log that references one still needs its name. Filter on `archivedAt` when offering a choice.",
+      "Includes retired agents, because a call log that references one still needs its name. Filter on `deletedAt` when offering a choice.",
     capability: "config:read",
     response: agentList,
   })

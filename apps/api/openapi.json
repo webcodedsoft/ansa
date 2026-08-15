@@ -54,7 +54,7 @@
           "agents"
         ],
         "summary": "List this organisation's agents, oldest first",
-        "description": "Includes retired agents, because a call log that references one still needs its name. Filter on `archivedAt` when offering a choice.",
+        "description": "Includes retired agents, because a call log that references one still needs its name. Filter on `deletedAt` when offering a choice.",
         "x-ansa-capability": "config:read",
         "responses": {
           "200": {
@@ -215,7 +215,7 @@
                               "additionalProperties": false
                             }
                           },
-                          "archivedAt": {
+                          "deletedAt": {
                             "type": [
                               "string",
                               "null"
@@ -240,7 +240,7 @@
                           "bargeIn",
                           "answeringMachineDetection",
                           "capturedFields",
-                          "archivedAt",
+                          "deletedAt",
                           "createdAt"
                         ],
                         "additionalProperties": false
@@ -515,7 +515,7 @@
                         "additionalProperties": false
                       }
                     },
-                    "archivedAt": {
+                    "deletedAt": {
                       "type": [
                         "string",
                         "null"
@@ -540,7 +540,7 @@
                     "bargeIn",
                     "answeringMachineDetection",
                     "capturedFields",
-                    "archivedAt",
+                    "deletedAt",
                     "createdAt"
                   ],
                   "additionalProperties": false
@@ -775,7 +775,7 @@
                         "additionalProperties": false
                       }
                     },
-                    "archivedAt": {
+                    "deletedAt": {
                       "type": [
                         "string",
                         "null"
@@ -800,7 +800,7 @@
                     "bargeIn",
                     "answeringMachineDetection",
                     "capturedFields",
-                    "archivedAt",
+                    "deletedAt",
                     "createdAt"
                   ],
                   "additionalProperties": false
@@ -1104,7 +1104,7 @@
                         "additionalProperties": false
                       }
                     },
-                    "archivedAt": {
+                    "deletedAt": {
                       "type": [
                         "string",
                         "null"
@@ -1129,7 +1129,7 @@
                     "bargeIn",
                     "answeringMachineDetection",
                     "capturedFields",
-                    "archivedAt",
+                    "deletedAt",
                     "createdAt"
                   ],
                   "additionalProperties": false
@@ -1562,7 +1562,7 @@
                         "additionalProperties": false
                       }
                     },
-                    "archivedAt": {
+                    "deletedAt": {
                       "type": [
                         "string",
                         "null"
@@ -1587,7 +1587,7 @@
                     "bargeIn",
                     "answeringMachineDetection",
                     "capturedFields",
-                    "archivedAt",
+                    "deletedAt",
                     "createdAt"
                   ],
                   "additionalProperties": false
@@ -1857,7 +1857,7 @@
                         "additionalProperties": false
                       }
                     },
-                    "archivedAt": {
+                    "deletedAt": {
                       "type": [
                         "string",
                         "null"
@@ -1882,7 +1882,7 @@
                     "bargeIn",
                     "answeringMachineDetection",
                     "capturedFields",
-                    "archivedAt",
+                    "deletedAt",
                     "createdAt"
                   ],
                   "additionalProperties": false

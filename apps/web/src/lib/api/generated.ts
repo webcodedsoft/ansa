@@ -78,7 +78,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
   agents: {
     /**
      * List this organisation's agents, oldest first
-     * Includes retired agents, because a call log that references one still needs its name. Filter on `archivedAt` when offering a choice.
+     * Includes retired agents, because a call log that references one still needs its name. Filter on `deletedAt` when offering a choice.
      */
     list: () =>
       send<{
@@ -105,7 +105,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly required: boolean;
         readonly options: readonly (string)[];
       })[];
-        readonly archivedAt: string | null;
+        readonly deletedAt: string | null;
         readonly createdAt: string;
       })[];
       }>(options, "GET", `/api/v1/agents`, {}),
@@ -147,7 +147,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly required: boolean;
         readonly options: readonly (string)[];
       })[];
-        readonly archivedAt: string | null;
+        readonly deletedAt: string | null;
         readonly createdAt: string;
       }>(options, "POST", `/api/v1/agents`, input),
 
@@ -182,7 +182,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly required: boolean;
         readonly options: readonly (string)[];
       })[];
-        readonly archivedAt: string | null;
+        readonly deletedAt: string | null;
         readonly createdAt: string;
       }>(options, "GET", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}`, input),
 
@@ -228,7 +228,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly required: boolean;
         readonly options: readonly (string)[];
       })[];
-        readonly archivedAt: string | null;
+        readonly deletedAt: string | null;
         readonly createdAt: string;
       }>(options, "PATCH", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}`, input),
 
@@ -288,7 +288,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly required: boolean;
         readonly options: readonly (string)[];
       })[];
-        readonly archivedAt: string | null;
+        readonly deletedAt: string | null;
         readonly createdAt: string;
       }>(options, "PUT", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}/fields`, input),
 
@@ -327,7 +327,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly required: boolean;
         readonly options: readonly (string)[];
       })[];
-        readonly archivedAt: string | null;
+        readonly deletedAt: string | null;
         readonly createdAt: string;
       }>(options, "PUT", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}/tools`, input),
   },

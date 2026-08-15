@@ -106,7 +106,7 @@ export const loadOnboardingFacts = async (scope: OrganizationScope): Promise<Onb
   const agents = await scope.query<Record<string, unknown>>(
     `select greeting, voice_id, dialled_number, escalation_to_number, escalation_from_number
        from agents
-      where archived_at is null
+      where deleted_at is null
       order by created_at, id
       limit 1`,
   );

@@ -74,6 +74,11 @@ export const findSessionByToken = async (
       where s.token_hash = $1
         and s.revoked_at is null
         and s.expires_at > $2
+        -- Both, and this is the point of the whole column. A session outlives the
+        -- membership that justified it, so removing somebody from an organisation has to
+        -- end their access here rather than only hiding them from a list.
+        and u.deleted_at is null
+        and m.deleted_at is null
       limit 1`,
     [tokenHash, now],
   );
@@ -172,6 +177,7 @@ export const listMembers = async (
     `select m.user_id, u.email, u.display_name, m.role, m.created_at, ${TOTAL_COLUMN}
        from memberships m
        join users u on u.id = m.user_id
+      where m.deleted_at is null and u.deleted_at is null
       ${pageOrder("m.created_at", "m.user_id")}`,
     pageParams(page),
   );
@@ -208,9 +214,22 @@ export const setMemberRole = async (
   return rows.length > 0;
 };
 
+/**
+ * Remove somebody from an organisation, without losing that they were in it.
+ *
+ * A soft delete since 0032. The row is what a call log, an invitation trail and an audit
+ * question all point back at, and hard-deleting it made "who published version 4" unanswerable
+ * the moment that person left. Access ends immediately regardless: `authenticateSession`
+ * requires a live membership, so an existing session stops working on its next request.
+ *
+ * Already-removed returns false rather than true, so a second call is not reported as having
+ * done something.
+ */
 export const removeMember = async (scope: OrganizationScope, userId: string): Promise<boolean> => {
   const rows = await scope.mutate<{ user_id: string }>(
-    `delete from memberships where user_id = $1 returning user_id`,
+    `update memberships set deleted_at = now()
+      where user_id = $1 and deleted_at is null
+      returning user_id`,
     [userId],
   );
   return rows.length > 0;

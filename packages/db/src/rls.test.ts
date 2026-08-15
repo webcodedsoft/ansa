@@ -235,3 +235,134 @@ describe("organization isolation", () => {
     // role, which this suite connects as ansa_app precisely to avoid.
   });
 });
+
+/**
+ * Soft delete has to bite, not merely be recorded (0032, 0033).
+ *
+ * A `deleted_at` column that reads still return is worse than no column: it looks like the
+ * row is gone while it goes on working. These play the same adversary as the isolation tests
+ * above — somebody removed from an organisation, trying to keep the access they had.
+ *
+ * Seeded through a second connection as the operator, because `ansa_app` cannot insert a
+ * user: accounts are created only through `SECURITY DEFINER` functions, and that grant is
+ * itself part of the isolation. Every assertion still runs as `ansa_app`, which is the role
+ * whose view of the world is under test.
+ */
+describe("soft delete", () => {
+  const USER = "33333333-3333-4333-8333-333333333333";
+  /* An owner beside the member under test. `memberships_keep_an_owner` refuses to leave an
+     organisation without one, so removing the only membership would fail for a reason that
+     has nothing to do with soft delete — and would hide whether soft delete worked. */
+  const OWNER = "44444444-4444-4444-8444-444444444444";
+  const NUMBER = "+10000000009";
+  const operatorUrl = process.env["MIGRATION_DIRECT_URL"] ?? url;
+  let operator: Client;
+
+  beforeAll(async () => {
+    operator = new Client({ connectionString: operatorUrl });
+    await operator.connect();
+  });
+
+  afterAll(async () => {
+    /* Marked deleted before the memberships go. `memberships_keep_an_owner` exempts an
+       organisation that is already gone, and without this the teardown raises — noise that
+       would sit in the output and could hide a real failure later. */
+    await operator.query("update organizations set deleted_at = now() where id = $1", [ORGANIZATION_A]);
+    await operator.query("delete from agents where dialled_number = $1", [NUMBER]);
+    await operator.query("delete from organization_numbers where number = $1", [NUMBER]);
+    await operator.query("delete from memberships where user_id = any($1)", [[USER, OWNER]]);
+    await operator.query("delete from users where id = any($1)", [[USER, OWNER]]);
+    await operator.end();
+  });
+
+  /** Back to a clean slate between tests: these mutate the same two rows in turn. */
+  const reset = async () => {
+    await operator.query(
+      `insert into users (id, email, password_hash, display_name)
+       values ($1, 'owner@example.test', 'x', 'Owner'), ($2, 'left@example.test', 'x', 'Left')
+       on conflict (id) do update set deleted_at = null`,
+      [OWNER, USER],
+    );
+    await operator.query(
+      `insert into memberships (organization_id, user_id, role)
+       values ($1, $2, 'owner'), ($1, $3, 'admin')
+       on conflict (organization_id, user_id) do update set deleted_at = null`,
+      [ORGANIZATION_A, OWNER, USER],
+    );
+    await operator.query("update organizations set deleted_at = null where id = $1", [ORGANIZATION_A]);
+  };
+
+  it("stops a removed member's row being visible through the users policy", async () => {
+    await reset();
+    const before = await asOrganization(ORGANIZATION_A, async (c) =>
+      (await c.query("select id from users where id = $1", [USER])).rowCount,
+    );
+
+    await operator.query("update memberships set deleted_at = now() where user_id = $1", [USER]);
+    const after = await asOrganization(ORGANIZATION_A, async (c) =>
+      (await c.query("select id from users where id = $1", [USER])).rowCount,
+    );
+
+    /* The policy grants sight of a user through a membership. If a deleted membership still
+       satisfied it, removing somebody would leave them readable — and leave the row saying
+       they belong. */
+    expect(before).toBe(1);
+    expect(after).toBe(0);
+  });
+
+  it("does not offer a deleted organisation back to the user who was in it", async () => {
+    await reset();
+    await operator.query("update organizations set deleted_at = now() where id = $1", [ORGANIZATION_A]);
+
+    // A live membership into a deleted organisation is still nothing to sign in to.
+    const listed = await asOrganization(ORGANIZATION_A, async (c) =>
+      (await c.query("select * from app.organisations_for_user($1)", [USER])).rowCount,
+    );
+    expect(listed).toBe(0);
+  });
+
+  it("stops a deleted organisation answering a number that still routes to it", async () => {
+    await reset();
+    await operator.query(
+      `insert into organization_numbers (organization_id, number) values ($1, $2)
+       on conflict (number) do update set organization_id = excluded.organization_id`,
+      [ORGANIZATION_A, NUMBER],
+    );
+    await operator.query(
+      `insert into agents (organization_id, name, dialled_number) values ($1, 'Soft delete probe', $2)
+       on conflict (dialled_number) where dialled_number is not null
+       do update set deleted_at = null`,
+      [ORGANIZATION_A, NUMBER],
+    );
+
+    const before = await asOrganization(null, async (c) =>
+      (await c.query("select app.organization_for_number($1) as id", [NUMBER])).rows[0]?.id ?? null,
+    );
+
+    await operator.query("update organizations set deleted_at = now() where id = $1", [ORGANIZATION_A]);
+    const after = await asOrganization(null, async (c) =>
+      (await c.query("select app.organization_for_number($1) as id", [NUMBER])).rows[0]?.id ?? null,
+    );
+
+    /* The number stays registered and the carrier goes on dialling it. Without the check the
+       caller would be connected to an organisation that no longer exists. */
+    expect(before).toBe(ORGANIZATION_A);
+    expect(after).toBeNull();
+  });
+
+  it("will not let a deleted user sign in", async () => {
+    await reset();
+    const before = await asOrganization(null, async (c) =>
+      (await c.query("select * from app.credentials_for_email('left@example.test')")).rowCount,
+    );
+
+    await operator.query("update users set deleted_at = now() where id = $1", [USER]);
+    const after = await asOrganization(null, async (c) =>
+      (await c.query("select * from app.credentials_for_email('left@example.test')")).rowCount,
+    );
+
+    // Reached before there is a session or an organisation scope, so nothing else catches it.
+    expect(before).toBe(1);
+    expect(after).toBe(0);
+  });
+});

@@ -92,7 +92,7 @@ export interface AgentSummary {
    * wrong way — the same argument `toolConfig` makes in `organizations.ts`.
    */
   readonly capturedFields: readonly unknown[];
-  readonly archivedAt: string | null;
+  readonly deletedAt: string | null;
   readonly createdAt: string;
 }
 
@@ -110,7 +110,7 @@ interface AgentRow {
   barge_in: boolean;
   answering_machine_detection: boolean;
   captured_fields: unknown[] | null;
-  archived_at: Date | string | null;
+  deleted_at: Date | string | null;
   created_at: Date | string;
 }
 
@@ -132,7 +132,7 @@ const toSummary = (row: AgentRow): AgentSummary => ({
   bargeIn: row.barge_in,
   answeringMachineDetection: row.answering_machine_detection,
   capturedFields: row.captured_fields ?? [],
-  archivedAt: row.archived_at === null ? null : iso(row.archived_at),
+  deletedAt: row.deleted_at === null ? null : iso(row.deleted_at),
   createdAt: iso(row.created_at),
 });
 
@@ -140,7 +140,7 @@ const COLUMNS = `
   a.id, a.organization_id, a.name, a.persona, a.greeting, a.instructions, a.voice_id,
   a.dialled_number,
   a.config_version, a.barge_in, a.answering_machine_detection, a.captured_fields,
-  a.archived_at, a.created_at,
+  a.deleted_at, a.created_at,
   (select coalesce(array_agg(t.tool_name order by t.tool_name), '{}')
      from agent_tools t where t.agent_id = a.id) as enabled_tools
 `;
@@ -153,7 +153,7 @@ const COLUMNS = `
  * drafted a new one this morning.
  *
  * Archived agents are included, because a call log that references one still needs its
- * name. Callers offering a choice filter on `archivedAt`.
+ * name. Callers offering a choice filter on `deletedAt`.
  */
 export const listAgents = async (scope: OrganizationScope): Promise<readonly AgentSummary[]> => {
   const rows = await scope.query<AgentRow>(
@@ -269,7 +269,7 @@ export const updateAgent = async (
   const updated = await scope
     .query<{ id: string }>(
       `update agents set ${sets.join(", ")}
-        where id = $1 and archived_at is null
+        where id = $1 and deleted_at is null
         returning id`,
       values,
     )
@@ -291,8 +291,8 @@ export const updateAgent = async (
  */
 export const archiveAgent = async (scope: OrganizationScope, agentId: string): Promise<boolean> => {
   const rows = await scope.query<{ id: string }>(
-    `update agents set archived_at = now(), dialled_number = null
-      where id = $1 and archived_at is null
+    `update agents set deleted_at = now(), dialled_number = null
+      where id = $1 and deleted_at is null
       returning id`,
     [agentId],
   );

@@ -16,14 +16,14 @@ import type { PublishBody, TestCallInput } from "./agents.schema";
  * Every agent this organisation runs, oldest first (migration 0018).
  *
  * Includes retired ones, because a call log referencing an agent still needs its name.
- * Screens offering a choice filter on `archivedAt` — see `liveAgents`.
+ * Screens offering a choice filter on `deletedAt` — see `liveAgents`.
  */
 export const listAgents = async () => (await api()).agents.list();
 
 /** The ones that can still answer a call. What the list page and any picker should show. */
 export const liveAgents = async () => {
   const { items } = await listAgents();
-  return items.filter((agent) => agent.archivedAt === null);
+  return items.filter((agent) => agent.deletedAt === null);
 };
 
 export const findAgent = async (agentId: string) =>

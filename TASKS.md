@@ -2172,6 +2172,60 @@ MCP servers appear in the list, still run, and round-trip untouched.
       it wrong too. A test now pins query-string substitution end to end.
 - [ ] Not built: the curl/OpenAPI import.
 
+### Soft delete, where it means something (2026-08-15)
+
+`deleted_at` on `organizations`, `users`, `memberships`, and `agents` — whose `archived_at`
+was renamed rather than joined by a second flag, because two columns meaning "gone" is a
+bug the first time code checks one. Not on the other sixteen: a soft delete that reads
+still return is worse than none, and audio is hard-deleted on purpose because retention is
+a promise that a caller's voice actually goes.
+
+The column was the hour; honouring it was the work.
+
+- [x] `users` RLS policy grants sight through a membership, so it now requires a live one.
+      Without that, removing somebody left them readable — and left the row saying they
+      belonged.
+- [x] `authenticateSession` requires a live user *and* a live membership. A session outlives
+      the membership that justified it, so removal has to end access on the next request
+      rather than only hide a name from a list.
+- [x] `credentials_for_email` skips a deleted user. It runs before there is a session or an
+      organisation scope, so nothing else would have caught it.
+- [x] `organization_for_number` skips a deleted organisation. Its numbers stay registered and
+      the carrier goes on dialling them; without this a caller reaches an organisation that
+      no longer exists.
+- [x] `organisations_for_user` filters both — a deleted membership means they left, a deleted
+      organisation means there is nothing to go back to.
+- [x] `memberships_keep_an_owner` counts only live memberships, or soft-deleting the last
+      owner would pass by being counted as its own replacement.
+- [x] `removeMember` is a soft delete. The row is what a call log and an audit question point
+      back at, and hard-deleting it made "who published version 4" unanswerable the moment
+      that person left.
+- [x] Six functions recreated for the rename, generated from `pg_get_functiondef` so nothing
+      drifts from what was deployed. Partial indexes rebuilt against the new name.
+- [x] Four adversarial tests in `rls.test.ts`, seeded as the operator because `ansa_app`
+      cannot insert a user — that grant is itself part of the isolation — and asserted as
+      `ansa_app`, which is the role whose view is under test.
+
+**Still open.**
+
+- [ ] Nothing in the console soft-deletes an organisation or a user yet. The column and every
+      read are ready; the buttons are not.
+- [ ] A deleted organisation's calls, tools and events are untouched. That is deliberate for
+      now — they are records — but "delete an organisation" as a product action needs a
+      decision about them, and retention already hard-deletes the audio.
+
+### Knowledge base — decided shape, not built
+
+Sources belong to the **organisation**, and an agent selects from them. Exactly the tools
+registry pattern: one registry per organisation, per-agent enablement through a join table,
+so a second agent reuses what the first already ingested rather than uploading it again.
+`agent_tools` is the model to copy.
+
+Still unbuilt, and it is a slice rather than a screen: storage, ingestion, retrieval through
+`search_knowledge_base` in the one dispatch path, grounded-only answering, and the screen.
+The tab holds an empty state until then, which is honest — a list of sources the agent
+cannot use would be furniture.
+
 ### The call that is still owed
 
 `packages/db/seeds/dev-organization.mjs` had rotted — it wrote `organizations.dialled_number`,
