@@ -128,7 +128,17 @@ export const apiIfSignedIn = async (): Promise<AnsaClient | null> => {
  */
 export const failureMessage = (error: unknown): string => {
   if (error instanceof AnsaApiError) {
-    const { title, detail } = error.problem;
+    const { title, detail, errors } = error.problem;
+
+    /* A 422 carries one entry per field that failed, and they were being thrown away — so
+       every validation error in the console read "The request did not validate: validation
+       failed", which says the same nothing twice and leaves somebody guessing which box.
+       The messages are written to follow the field name ("is required", "is not in the
+       expected format"), so they join to it directly. */
+    if (errors !== undefined && errors.length > 0) {
+      return errors.map((entry) => `${entry.path} ${entry.message}`).join(". ");
+    }
+
     return detail === undefined || detail === "" ? title : `${title}: ${detail}`;
   }
   if (error instanceof Error && error.message !== "") return error.message;

@@ -100,11 +100,22 @@ export type WebhooksBody = z.infer<typeof webhooksFormSchema>;
 export const CREDENTIAL_KINDS = ["bearer", "header", "basic", "signing"] as const;
 export type CredentialKind = (typeof CREDENTIAL_KINDS)[number];
 
+/**
+ * The same shape the API enforces, checked here so it lands on the field.
+ *
+ * Underscores, not hyphens. The name becomes a key a tool references, and the API's
+ * `CREDENTIAL_REF` has always refused a hyphen — but nothing said so until the request came
+ * back, and the placeholder was `billing-api`, which could never have been stored.
+ */
 const credentialRef = z
   .string()
   .trim()
-  .min(1, "Name this credential.")
-  .max(200, "That name is too long.");
+  .min(2, "Name this credential.")
+  .max(64, "That name is too long — 64 characters at most.")
+  .regex(
+    /^[a-z][a-z0-9_]{1,63}$/,
+    "Lowercase letters, numbers and underscores, starting with a letter. No hyphens or spaces.",
+  );
 
 /**
  * Store or rotate a credential.

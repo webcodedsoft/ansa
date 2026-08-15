@@ -59,9 +59,10 @@ export const CredentialForm = ({
           <TextField
             label="Name"
             name="ref"
-            maxLength={200}
+            maxLength={64}
             required
-            placeholder="billing-api"
+            placeholder="billing_api"
+            hint="Lowercase, underscores. Tools reference the credential by this name; the value itself is never shown again."
             error={errors["ref"]}
           />
         ) : (
