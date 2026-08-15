@@ -9558,6 +9558,338 @@
           }
         }
       }
+    },
+    "/api/v1/tools/try": {
+      "post": {
+        "operationId": "tools.try",
+        "tags": [
+          "tools"
+        ],
+        "summary": "Run a tool that has not been saved yet",
+        "description": "Takes the tool as it stands on screen and runs it through the same dispatch path a call uses, without storing anything. The risk tiers still apply, because they are the dispatcher's and not this endpoint's: a `write` answers `confirm` with the readback and does not fire, an `irreversible` answers `transfer` and never runs. Nothing is persisted and no configuration version is created. The egress allowlist for the run is the tool's own host — the guard's address checks are unchanged, so a private or link-local target is refused exactly as it would be on a call.",
+        "x-ansa-capability": "config:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tool": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 64,
+                        "pattern": "^[a-z][a-z0-9_]{2,63}$"
+                      },
+                      "description": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2000
+                      },
+                      "parametersJson": {
+                        "type": "string",
+                        "format": "json",
+                        "minLength": 2,
+                        "maxLength": 20000
+                      },
+                      "riskTier": {
+                        "type": "string",
+                        "enum": [
+                          "read",
+                          "write",
+                          "irreversible"
+                        ]
+                      },
+                      "url": {
+                        "type": "string",
+                        "format": "uri",
+                        "minLength": 1,
+                        "maxLength": 2048
+                      },
+                      "method": {
+                        "type": "string",
+                        "enum": [
+                          "GET",
+                          "POST",
+                          "PUT",
+                          "PATCH",
+                          "DELETE"
+                        ]
+                      },
+                      "send": {
+                        "type": "string",
+                        "enum": [
+                          "query",
+                          "body"
+                        ]
+                      },
+                      "headers": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string",
+                          "maxLength": 1024
+                        },
+                        "maxProperties": 24
+                      },
+                      "timeoutMs": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 3000
+                      },
+                      "credentialRef": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "pattern": "^[a-z][a-z0-9_]{1,63}$"
+                      },
+                      "speech": {
+                        "type": "object",
+                        "properties": {
+                          "template": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1000
+                          },
+                          "fallback": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1000
+                          }
+                        },
+                        "required": [
+                          "template",
+                          "fallback"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "readback": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1000
+                      },
+                      "transferReason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1000
+                      },
+                      "identifiers": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "argument": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "fact": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            }
+                          },
+                          "required": [
+                            "argument",
+                            "fact"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "maxItems": 16
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "description",
+                      "parametersJson",
+                      "riskTier",
+                      "url",
+                      "method",
+                      "send"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "argumentsJson": {
+                    "type": "string",
+                    "format": "json",
+                    "minLength": 2,
+                    "maxLength": 20000
+                  },
+                  "confirmed": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "fact": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "value": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        }
+                      },
+                      "required": [
+                        "fact",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 16
+                  }
+                },
+                "required": [
+                  "tool",
+                  "argumentsJson"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tool": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "riskTier": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "read",
+                        "write",
+                        "irreversible"
+                      ]
+                    },
+                    "outcome": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "confirm",
+                        "transfer",
+                        "failed"
+                      ]
+                    },
+                    "raw": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "speech": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "route": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 32
+                    },
+                    "latencyMs": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "tool",
+                    "riskTier",
+                    "outcome",
+                    "raw",
+                    "summary",
+                    "speech",
+                    "reason",
+                    "route",
+                    "latencyMs"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts; see the Retry-After header",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

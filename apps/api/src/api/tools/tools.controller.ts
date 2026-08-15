@@ -378,6 +378,30 @@ const tierPart = (tool: HttpToolInput | McpToolInput): Record<string, unknown> =
   ...(tool.timeoutMs === undefined ? {} : { timeoutMs: tool.timeoutMs }),
 });
 
+/**
+ * One HTTP tool, as it is stored.
+ *
+ * Shared by `PUT /tools` and by `POST /tools/try`, which builds an ephemeral document from
+ * a single tool. Extracted when `headers` was added to the schema and not to the mapping,
+ * so every header an operator typed was accepted, validated, and then silently dropped on
+ * the way into the column. Two copies of this list is how that happens.
+ */
+const toStoredTool = (tool: HttpToolInput): Record<string, unknown> => ({
+  name: tool.name,
+  description: tool.description,
+  parameters: toParameters(tool.parametersJson, `http[${tool.name}]`),
+  riskTier: tool.riskTier,
+  url: tool.url,
+  method: tool.method,
+  send: tool.send,
+  ...(tool.headers === undefined || Object.keys(tool.headers).length === 0
+    ? {}
+    : { headers: tool.headers }),
+  ...(tool.timeoutMs === undefined ? {} : { timeoutMs: tool.timeoutMs }),
+  ...(tool.credentialRef === undefined ? {} : { credentialRef: tool.credentialRef }),
+  ...tierPart(tool),
+});
+
 /** The request body, as the document that goes in the column. */
 export const toToolDocument = (body: Infer<typeof replacement>): Record<string, unknown> => ({
   egress: {
@@ -386,17 +410,7 @@ export const toToolDocument = (body: Infer<typeof replacement>): Record<string, 
       ? {}
       : { allowPlaintextHttp: body.egress.allowPlaintextHttp }),
   },
-  http: body.http.map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    parameters: toParameters(tool.parametersJson, `http[${tool.name}]`),
-    riskTier: tool.riskTier,
-    url: tool.url,
-    method: tool.method,
-    send: tool.send,
-    ...(tool.credentialRef === undefined ? {} : { credentialRef: tool.credentialRef }),
-    ...tierPart(tool),
-  })),
+  http: body.http.map(toStoredTool),
   mcp: body.mcp.map((server) => ({
     url: server.url,
     ...(server.credentialRef === undefined ? {} : { credentialRef: server.credentialRef }),
@@ -424,6 +438,7 @@ export const toToolResponseBody = (
     url: tool.url,
     method: tool.method,
     send: tool.send,
+    ...(tool.headers === undefined ? {} : { headers: tool.headers }),
     ...(tool.timeoutMs === undefined ? {} : { timeoutMs: tool.timeoutMs }),
     ...(tool.credentialRef === undefined ? {} : { credentialRef: tool.credentialRef }),
     ...(tool.speech === undefined ? {} : { speech: tool.speech }),
@@ -444,6 +459,13 @@ export const toToolResponseBody = (
       ...identifierList(tool.identifiers),
     })),
   })),
+});
+
+const draftRun = object({
+  /** The tool as it stands on screen, in the same shape `PUT /tools` takes. */
+  tool: httpTool,
+  argumentsJson: text({ minLength: 2, maxLength: MAX_ARGS_JSON, format: "json" }),
+  confirmed: optional(list(confirmedFact, { maxItems: 16 })),
 });
 
 @Controller(apiRoute("tools"))
@@ -533,6 +555,68 @@ export class ToolsController {
    * systems. A `member` who may look at the configuration must not be able to fire a lookup
    * of a real customer's record at it.
    */
+  @Post("try")
+  @Endpoint({
+    summary: "Run a tool that has not been saved yet",
+    description:
+      "Takes the tool as it stands on screen and runs it through the same dispatch path a " +
+      "call uses, without storing anything. The risk tiers still apply, because they are the " +
+      "dispatcher's and not this endpoint's: a `write` answers `confirm` with the readback " +
+      "and does not fire, an `irreversible` answers `transfer` and never runs. Nothing is " +
+      "persisted and no configuration version is created. The egress allowlist for the run " +
+      "is the tool's own host — the guard's address checks are unchanged, so a private or " +
+      "link-local target is refused exactly as it would be on a call.",
+    capability: "config:write",
+    body: draftRun,
+    response: sandboxResult,
+    rateLimit: { limit: 30, windowMs: 60_000, by: "ip" },
+  })
+  async try(@FromBody() body: Infer<typeof draftRun>): Promise<Infer<typeof sandboxResult>> {
+    const args = toArguments(body.argumentsJson);
+    const sealed = await this.db.tx((scope) => sealedCredentials(scope));
+
+    /* An ephemeral document rather than the stored one, run through `runToolInSandbox`
+       unchanged. That is the whole design: there is one execution route in this repository
+       and a test enforces it, so "try before saving" has to be a different *document*, never
+       a different path. The tiers, the identity gate, the timeout ceiling and the R5.4.3
+       check on the spoken sentence are therefore the real ones rather than a copy.
+
+       The allowlist is the tool's own host for the same reason the sample fetch's is: the
+       operator is looking at a URL they are about to save into it. Every address check the
+       guard makes is untouched. */
+    const host = (() => {
+      try {
+        return new URL(body.tool.url.replace(/\{[^}]+\}/g, "_")).hostname;
+      } catch {
+        return null;
+      }
+    })();
+    if (host === null) throw new UnprocessableEntityException("The tool's URL is not a URL.");
+
+    const toolConfig = {
+      egress: { allowedHosts: [host], allowPlaintextHttp: body.tool.url.startsWith("http:") },
+      http: [toStoredTool(body.tool)],
+      mcp: [],
+    };
+
+    // Refused here rather than inside the sandbox, so a draft that could never register
+    // comes back as a 422 naming the field instead of as a failed run.
+    orRefuse(() => checkToolConfig(toolConfig, this.db.caller.organizationId));
+
+    const result = await runToolInSandbox({
+      owner: this.db.caller.organizationId,
+      toolConfig,
+      sealedCredentials: sealed,
+      credentialKey: vaultKey(),
+      name: body.tool.name,
+      args,
+      confirmed: new Map((body.confirmed ?? []).map((fact) => [fact.fact, fact.value])),
+    });
+
+    if (result === null) throw new UnprocessableEntityException("That tool could not be registered.");
+    return result;
+  }
+
   @Post("sample")
   @Endpoint({
     summary: "Fetch one response from an endpoint, to see what shape it has",

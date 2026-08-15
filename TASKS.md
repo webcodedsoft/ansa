@@ -2140,6 +2140,28 @@ MCP servers appear in the list, still run, and round-trip untouched.
 - [x] An empty credential list says so and links to `/credentials`, instead of a dropdown
       whose only option is None. Not a bug — RLS was correctly hiding another organisation's
       credentials — but indistinguishable from one on screen.
+- [x] **A step with a problem is marked in the rail (2026-08-15).** `StepDef.invalid`
+      replaces the number with `!` and reads "needs a fix" beside the title — not colour
+      alone, and it beats "done" so walking past a broken step does not tick it off. Problem
+      keys are prefix-matched to steps, and anything unrecognised is attributed to the first
+      step rather than dropped: a key with no home would mean a save that refuses while no
+      step says why.
+- [x] **Testing no longer waits for a save.** `POST /tools/try` builds an ephemeral document
+      from the draft and hands it to the same `runToolInSandbox` the saved test uses — one
+      execution route, a different document, which is the only version of this that does not
+      become a second dispatch path. The tiers therefore still hold: a write answers
+      `confirm` without firing, an irreversible one `transfer` and never runs.
+      Waiting for a save meant publishing a configuration version to find out whether the
+      thing worked and another to fix it, so the history filled with attempts rather than
+      decisions — and every attempt was live on the line in between.
+      The run is blocked while anything is invalid, because a half-written tool reports the
+      wrong problem: a missing readback comes back as a refusal and the operator goes
+      looking at their endpoint.
+- [x] **Headers were being dropped on save.** They went into the request schema and the
+      connector in one commit and into `toToolDocument` in the next, so for one commit a
+      header could be typed, validated, saved and silently absent from the column. One
+      `toStoredTool` now serves both `PUT /tools` and `POST /tools/try`, with a round-trip
+      test.
 - [ ] Not built: the curl/OpenAPI import.
 
 ### The call that is still owed

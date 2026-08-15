@@ -1432,6 +1432,53 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly json: string | null;
         readonly detail: string | null;
       }>(options, "POST", `/api/v1/tools/sample`, input),
+
+    /**
+     * Run a tool that has not been saved yet
+     * Takes the tool as it stands on screen and runs it through the same dispatch path a call uses, without storing anything. The risk tiers still apply, because they are the dispatcher's and not this endpoint's: a `write` answers `confirm` with the readback and does not fire, an `irreversible` answers `transfer` and never runs. Nothing is persisted and no configuration version is created. The egress allowlist for the run is the tool's own host — the guard's address checks are unchanged, so a private or link-local target is refused exactly as it would be on a call.
+     */
+    try: (input: {
+        readonly body: {
+          readonly tool: {
+          readonly name: string;
+          readonly description: string;
+          readonly parametersJson: string;
+          readonly riskTier: "read" | "write" | "irreversible";
+          readonly url: string;
+          readonly method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+          readonly send: "query" | "body";
+          readonly headers?: Readonly<Record<string, string>>;
+          readonly timeoutMs?: number;
+          readonly credentialRef?: string;
+          readonly speech?: {
+          readonly template: string;
+          readonly fallback: string;
+        };
+          readonly readback?: string;
+          readonly transferReason?: string;
+          readonly identifiers?: readonly ({
+          readonly argument: string;
+          readonly fact: string;
+        })[];
+        };
+          readonly argumentsJson: string;
+          readonly confirmed?: readonly ({
+          readonly fact: string;
+          readonly value: string;
+        })[];
+        };
+      }) =>
+      send<{
+        readonly tool: string;
+        readonly riskTier: "read" | "write" | "irreversible" | null;
+        readonly outcome: "ok" | "confirm" | "transfer" | "failed";
+        readonly raw: string | null;
+        readonly summary: string;
+        readonly speech: string;
+        readonly reason: string | null;
+        readonly route: string | null;
+        readonly latencyMs: number;
+      }>(options, "POST", `/api/v1/tools/try`, input),
   },
 });
 

@@ -20,6 +20,14 @@ export interface StepDef {
   readonly title: string;
   readonly hint?: string;
   readonly panel: ReactNode;
+  /**
+   * Something on this step needs fixing.
+   *
+   * The marker replaces the number rather than sitting beside it, because the rail is
+   * scanned rather than read: a step that is wrong has to be findable without reading the
+   * titles. It also beats "done", so walking past a broken step does not tick it off.
+   */
+  readonly invalid?: boolean;
 }
 
 export const Stepper = ({
@@ -43,6 +51,7 @@ export const Stepper = ({
         {steps.map((step, i) => {
           const done = i < at;
           const current = i === at;
+          const wrong = step.invalid === true;
           return (
             <div key={step.id} className="contents lg:block">
               <button
@@ -54,21 +63,35 @@ export const Stepper = ({
                   current
                     ? "glass border-[var(--hairline)]"
                     : "border-transparent hover:bg-[var(--glass)]",
+                  wrong && "border-[var(--bad)]",
                 )}
               >
                 <span
+                  aria-hidden
                   className={cn(
                     "grid size-[22px] flex-none place-items-center rounded-full border-[1.5px] text-[11px] font-semibold tabular-nums transition-colors",
                     done && "border-transparent bg-[var(--accent)] text-[var(--accent-on)]",
                     current && !done && "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]",
                     !done && !current && "border-[var(--hairline)] bg-[var(--surface-2)] text-[var(--ink-3)]",
+                    // Last, so it wins over done and current: a step that is wrong is wrong
+                    // whether or not somebody has walked past it.
+                    wrong && "border-[var(--bad)] bg-[var(--bad)] text-white",
                   )}
                 >
-                  {done ? "✓" : i + 1}
+                  {wrong ? "!" : done ? "✓" : i + 1}
                 </span>
                 <span className="min-w-0 pt-px">
-                  <span className={cn("block text-[13.5px] font-medium", current ? "text-[var(--ink)]" : "text-[var(--ink-2)]")}>
+                  <span
+                    className={cn(
+                      "block text-[13.5px] font-medium",
+                      current ? "text-[var(--ink)]" : "text-[var(--ink-2)]",
+                      wrong && "text-[var(--bad)]",
+                    )}
+                  >
                     {step.title}
+                    {/* Not colour alone: the rail has to work for somebody who cannot see
+                        the red, and for anybody reading it with a screen reader. */}
+                    {wrong && <span className="ml-1.5 text-[11.5px] font-normal">needs a fix</span>}
                   </span>
                   {step.hint !== undefined && (
                     <span className="mt-px hidden text-[11.5px] text-[var(--ink-3)] lg:block">{step.hint}</span>

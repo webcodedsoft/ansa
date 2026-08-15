@@ -24,8 +24,9 @@ import { useFormToast } from "@/stores/toast.store";
 import {
   sampleEndpointAction,
   saveHttpToolAction,
-  testToolAction,
+  tryToolAction,
   type SampleState,
+  type ToolTestState,
   type ToolsState,
 } from "../agents.actions";
 import {
@@ -145,6 +146,23 @@ export const HttpToolForm = ({
 
   const count = Object.keys(problems).length;
 
+  /**
+   * Which step a problem belongs to.
+   *
+   * Prefix-matched, so `headers.2` and `params.0` land without being enumerated. A key with
+   * no home would be invisible — the save would refuse and no step would say why — so
+   * anything unrecognised is attributed to the first step rather than dropped.
+   */
+  const stepOf = (key: string): string => {
+    if (key.startsWith("params") || key === "parametersJson") return "parameters";
+    if (["speechTemplate", "speechFallback", "readback", "transferReason", "timeoutMs"].includes(key)) {
+      return "behaviour";
+    }
+    return "endpoint";
+  };
+
+  const broken = new Set(showProblems ? Object.keys(problems).map(stepOf) : []);
+
   const save = () => {
     setShowProblems(true);
     formRef.current?.requestSubmit();
@@ -153,6 +171,7 @@ export const HttpToolForm = ({
   const steps: readonly StepDef[] = [
     {
       id: "endpoint",
+      invalid: broken.has("endpoint"),
       title: "Endpoint",
       hint: "What it is and where it goes",
       panel: (
@@ -336,6 +355,7 @@ export const HttpToolForm = ({
 
     {
       id: "parameters",
+      invalid: broken.has("parameters"),
       title: "Parameters",
       hint: "What the agent may send",
       panel: (
@@ -459,6 +479,7 @@ export const HttpToolForm = ({
 
     {
       id: "behaviour",
+      invalid: broken.has("behaviour"),
       title: "What it says",
       hint: "Risk tier and the sentences",
       panel: (
@@ -572,7 +593,7 @@ export const HttpToolForm = ({
       id: "test",
       title: "Test",
       hint: "Through the real dispatch path",
-      panel: <ToolTest name={initial?.name ?? ""} draft={draft} />,
+      panel: <ToolTest draft={draft} blocked={count > 0} />,
     },
   ];
 
@@ -746,14 +767,36 @@ const SampleStep = ({
 };
 
 /**
- * Run the saved tool through the real dispatch path.
+ * Run the tool as it stands, without saving it first.
  *
- * Only for a tool that exists: the sandbox runs what is stored, not what is on screen.
- * Saying so matters — a tester that silently ran the previous version would be worse than
- * none, because it would build confidence in the wrong thing.
+ * It used to require a save, which meant publishing a configuration version to find out
+ * whether the thing worked and another to fix it — so the version history filled with
+ * attempts rather than decisions, and every attempt was live on the phone line in between.
+ *
+ * `POST /tools/try` builds an ephemeral document from this draft and hands it to the same
+ * `runToolInSandbox` the saved test uses. One execution route, a different document. The
+ * tiers therefore still hold: a write answers `confirm` without firing, an irreversible one
+ * answers `transfer` and never runs.
+ *
+ * Blocked while anything is invalid, because a run against a half-written tool reports the
+ * wrong problem — a missing readback comes back as a refusal, and the operator goes looking
+ * at their endpoint.
  */
-const ToolTest = ({ name, draft }: { readonly name: string; readonly draft: HttpToolDraft }) => {
-  const [state, action, pending] = useActionState(testToolAction, idleForm());
+const OUTCOME_TONE: Record<string, Tone> = {
+  ok: "ok",
+  confirm: "warn",
+  transfer: "bad",
+  failed: "bad",
+};
+
+const ToolTest = ({
+  draft,
+  blocked,
+}: {
+  readonly draft: HttpToolDraft;
+  readonly blocked: boolean;
+}) => {
+  const [state, action, pending] = useActionState(tryToolAction, idleForm() as ToolTestState);
 
   const suggested = useMemo(
     () =>
@@ -769,26 +812,28 @@ const ToolTest = ({ name, draft }: { readonly name: string; readonly draft: Http
     [draft.params],
   );
 
-  if (name === "") {
-    return (
-      <Card title="Test it" description="Available once the tool is saved.">
-        <p className="max-w-[70ch] text-[13px] text-[var(--ink-2)]">
-          The sandbox runs what is stored, not what is on screen. Save first, then come back
-          &mdash; unlike the sample fetch, this goes through the whole dispatch path, so the
-          risk tier, the timeout and the spoken sentence are the ones a caller would get.
-        </p>
-      </Card>
-    );
-  }
+  const ran = state.status === "succeeded" ? state.data : null;
 
   return (
     <Card
       title="Test it"
-      description="Runs through the same dispatch path a call uses, with the same risk tier."
+      description="The same dispatch path a call uses, on the tool as it stands. Nothing is saved."
     >
-      <form action={action}>
-        <input type="hidden" name="name" value={name} />
+      <form
+        action={(form) => {
+          form.set("tool", JSON.stringify(toApiTool(draft)));
+          action(form);
+        }}
+      >
         <Stack>
+          {blocked && (
+            <Notice tone="warn">
+              Fix the steps marked in the rail first. Running a half-written tool reports the
+              wrong problem &mdash; a missing readback comes back as a refusal, and you go
+              looking at your endpoint.
+            </Notice>
+          )}
+
           <TextAreaField
             label="Arguments"
             name="argsJson"
@@ -797,18 +842,53 @@ const ToolTest = ({ name, draft }: { readonly name: string; readonly draft: Http
             className="font-mono text-[12.5px]"
             hint="Stands in for what the model would pass."
           />
+
           <Notice tone="warn">
-            A <span className="font-mono">write</span> tool answers &ldquo;confirm&rdquo; and does
-            not fire; an <span className="font-mono">irreversible</span> one answers
+            A <span className="font-mono">write</span> tool answers &ldquo;confirm&rdquo; and
+            does not fire; an <span className="font-mono">irreversible</span> one answers
             &ldquo;transfer&rdquo; and never runs. That is the tier working, not a failure.
           </Notice>
+
           <div>
-            <Button type="submit" disabled={pending}>
+            <Button type="submit" disabled={pending || blocked}>
               {pending ? "Running…" : "Run test"}
             </Button>
           </div>
+
           {(state.status === "failed" || state.status === "invalid") && (
             <Notice tone="error">{state.message}</Notice>
+          )}
+
+          {ran !== null && (
+            <Stack>
+              <div className="flex flex-wrap items-center gap-2">
+                <Tag tone={OUTCOME_TONE[ran.outcome] ?? "warn"}>{ran.outcome}</Tag>
+                <span className="text-[12.5px] tabular-nums text-[var(--ink-3)]">
+                  {ran.latencyMs} ms
+                </span>
+              </div>
+
+              <div>
+                <span className={SECTION}>What the caller would hear</span>
+                <p className="mt-1.5 rounded-lg border border-[var(--surface-line)] bg-[var(--surface-2)] px-3 py-2 text-[13.5px] text-[var(--ink)]">
+                  {ran.speech}
+                </p>
+              </div>
+
+              {ran.raw !== null && (
+                <div>
+                  <span className={SECTION}>What the endpoint returned</span>
+                  <p className="mt-1 text-[12px] text-[var(--ink-3)]">
+                    Beside the sentence on purpose. A template naming a field this does not
+                    have renders the no-record line, and nothing else would report that the
+                    lookup in fact worked.
+                  </p>
+                  <pre className="mt-1.5 max-h-64 overflow-auto rounded-lg border border-[var(--surface-line)] bg-[var(--surface-2)] p-3 font-mono text-[11.5px] leading-relaxed text-[var(--ink-2)]">
+                    {ran.raw}
+                  </pre>
+                </div>
+              )}
+            </Stack>
           )}
         </Stack>
       </form>

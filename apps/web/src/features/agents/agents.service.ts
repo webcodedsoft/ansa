@@ -100,6 +100,12 @@ export type ToolsDocument = Awaited<ReturnType<typeof readTools>>;
  * Server-side, like everything else here: the API enables no CORS, and the credential is
  * resolved inside the API from the vault — the browser never holds one.
  */
+/** Run a tool that has not been saved, through the real dispatch path. */
+export const tryTool = async (input: {
+  tool: Record<string, unknown>;
+  argumentsJson: string;
+}) => (await api()).tools.try({ body: input as never });
+
 export const sampleEndpoint = async (input: {
   url: string;
   headers?: Readonly<Record<string, string>>;

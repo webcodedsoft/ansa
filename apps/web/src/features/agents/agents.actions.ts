@@ -23,6 +23,7 @@ import {
   diffVersions,
   readTools,
   sampleEndpoint,
+  tryTool,
   placeTestCall,
   setAgentFields,
   setAgentTools,
@@ -523,6 +524,53 @@ export const sampleEndpointAction = async (
     return succeededForm(
       { status: result.status, json: result.json, detail: result.detail },
       `Endpoint answered ${result.status ?? ""}.`.trim(),
+    );
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+};
+
+
+/**
+ * Run the tool as it stands on screen, without saving it first.
+ *
+ * Waiting for a save meant publishing a configuration version to find out whether the thing
+ * worked, and publishing another to fix it — so the version history filled with attempts
+ * rather than decisions, and every attempt was live on the phone line in between.
+ *
+ * Nothing is stored. The risk tiers still hold, because they belong to the dispatcher and
+ * not to this route: a write answers `confirm` without firing, an irreversible one answers
+ * `transfer` and never runs at all.
+ */
+export const tryToolAction = async (
+  _previous: ToolTestState,
+  form: FormData,
+): Promise<ToolTestState> => {
+  let tool: Record<string, unknown>;
+  try {
+    tool = JSON.parse(String(form.get("tool") ?? "")) as Record<string, unknown>;
+  } catch {
+    return failedForm("The form could not be read. Reload the page and try again.");
+  }
+
+  const argumentsJson = String(form.get("argsJson") ?? "").trim();
+  try {
+    JSON.parse(argumentsJson);
+  } catch {
+    return failedForm("The arguments must be a JSON object.");
+  }
+
+  try {
+    const result = await tryTool({ tool, argumentsJson });
+    return succeededForm(
+      {
+        outcome: result.outcome,
+        summary: result.summary,
+        speech: result.speech,
+        raw: result.raw,
+        latencyMs: result.latencyMs,
+      },
+      `Ran ${String(tool["name"])}.`,
     );
   } catch (error) {
     return failedForm(failureMessage(error));

@@ -50,6 +50,7 @@ describe("a tool configuration, read back and published again", () => {
         url: `https://one.${HOST}/policies`,
         method: "GET",
         send: "query",
+        headers: { "X-Tenant": "acme" },
         timeoutMs: 2000,
         credentialRef: "partner_api",
         speech: { template: "Policy {number} is {state}.", fallback: "I cannot find that policy." },
@@ -87,6 +88,26 @@ describe("a tool configuration, read back and published again", () => {
     const parsed = parseConnectorConfig(document);
     const response = toToolResponseBody(parsed);
     expect(toToolDocument({ expectedVersion: 0, ...response })).toEqual(document);
+  });
+
+  /**
+   * Added because headers did not survive it.
+   *
+   * They went into the request schema and the connector in one commit and into
+   * `toToolDocument` in the next, so for one commit an operator could type a header, have it
+   * validated, watch it save, and find it silently absent from the column. Two copies of the
+   * field list is how that happens; there is one now, and this is what keeps it.
+   */
+  it("carries headers into the stored document and back out", () => {
+    const stored = toToolDocument({
+      expectedVersion: 0,
+      ...toToolResponseBody(parseConnectorConfig(document)),
+    }) as { http: readonly Record<string, unknown>[] };
+
+    expect(stored.http[0]?.["headers"]).toEqual({ "X-Tenant": "acme" });
+    expect(toToolResponseBody(parseConnectorConfig(stored)).http[0]?.headers).toEqual({
+      "X-Tenant": "acme",
+    });
   });
 
   it("carries the argument schema verbatim rather than describing it", () => {
