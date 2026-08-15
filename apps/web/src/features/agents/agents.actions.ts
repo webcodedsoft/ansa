@@ -7,6 +7,9 @@ import { failureMessage } from "@/lib/api/server";
 import { failedForm, invalidForm, succeededForm, type FormState } from "@/lib/form-state";
 
 import {
+  httpToolBodySchema,
+} from "./http-tool.schema";
+import {
   capturedFieldsSchema,
   publishFormInput,
   publishSchema,
@@ -18,6 +21,7 @@ import {
 import {
   createAgent,
   diffVersions,
+  readTools,
   placeTestCall,
   setAgentFields,
   setAgentTools,
@@ -351,5 +355,115 @@ export const saveAgentTools = async (
     return { ok: true };
   } catch (error) {
     return { ok: false, message: failureMessage(error) };
+  }
+};
+
+
+/**
+ * Save one HTTP tool into the organisation's document.
+ *
+ * `PUT /tools` replaces the whole document, so this reads the current one, swaps a single
+ * entry and writes it back. Three things about that are load-bearing:
+ *
+ * - **The MCP section round-trips untouched.** The console has no editor for it, and a save
+ *   that dropped what it could not display would delete a working integration.
+ * - **The host is added to the egress allowlist.** Forgetting it is the failure that costs
+ *   the most and shows the least: the tool registers, the model is told it can use it, and
+ *   every call answers "sorry, I couldn't get that just now". No screen ever said why.
+ * - **`replacing` is separate from the new name**, so renaming a tool edits it in place
+ *   rather than leaving the old one behind beside its replacement.
+ *
+ * `expectedVersion` still decides the race. Two people with the tools page open is ordinary,
+ * and the loser hears about it rather than finding their tool gone next week.
+ */
+export const saveHttpToolAction = async (
+  _previous: ToolsState,
+  form: FormData,
+): Promise<ToolsState> => {
+  const parsed = httpToolBodySchema.safeParse({
+    expectedVersion: form.get("expectedVersion") ?? "",
+    tool: form.get("tool") ?? "",
+    replacing: form.get("replacing") ?? "",
+  });
+  if (!parsed.success) return invalidForm(parsed.error);
+
+  let tool: Record<string, unknown>;
+  try {
+    tool = JSON.parse(parsed.data.tool) as Record<string, unknown>;
+  } catch {
+    return failedForm("The form could not be read. Reload the page and try again.");
+  }
+
+  try {
+    const current = await readTools();
+    const replacing = parsed.data.replacing === "" ? null : parsed.data.replacing;
+
+    const http = [...(current.http as unknown as Record<string, unknown>[])];
+    const at = replacing === null ? -1 : http.findIndex((entry) => entry["name"] === replacing);
+    if (at === -1) http.push(tool);
+    else http[at] = tool;
+
+    let host: string | null = null;
+    try {
+      host = new URL(String(tool["url"]).replace(/\{[^}]+\}/g, "_")).hostname;
+    } catch {
+      // The API refuses a malformed URL with a better message than this action could write.
+      host = null;
+    }
+    const allowedHosts = [...current.egress.allowedHosts];
+    if (host !== null && !allowedHosts.includes(host)) allowedHosts.push(host);
+
+    const result = await replaceTools(
+      parsed.data.expectedVersion,
+      `dashboard: saved ${String(tool["name"])}`,
+      { allowedHosts, allowPlaintextHttp: current.egress.allowPlaintextHttp },
+      http as never,
+      current.mcp as never,
+    );
+
+    revalidatePath("/tools");
+    revalidatePath("/agents", "layout");
+    return succeededForm(
+      { configVersion: result.configVersion },
+      `Saved ${String(tool["name"])}.`,
+    );
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+};
+
+/** Remove one HTTP tool. The MCP section and every other tool round-trip untouched. */
+export const deleteHttpToolAction = async (
+  _previous: ToolsState,
+  form: FormData,
+): Promise<ToolsState> => {
+  const name = String(form.get("name") ?? "");
+  const expectedVersion = Number(form.get("expectedVersion") ?? Number.NaN);
+  if (name === "" || !Number.isInteger(expectedVersion)) {
+    return failedForm("The form could not be read. Reload the page and try again.");
+  }
+
+  try {
+    const current = await readTools();
+    const http = (current.http as unknown as Record<string, unknown>[]).filter(
+      (entry) => entry["name"] !== name,
+    );
+
+    /* The allowlist is left alone. Another tool may share the host, and working out whether
+       one does is a judgement about hosts rather than about this tool — an entry nothing
+       points at costs nothing, and removing one somebody still needs breaks a call. */
+    const result = await replaceTools(
+      expectedVersion,
+      `dashboard: removed ${name}`,
+      current.egress,
+      http as never,
+      current.mcp as never,
+    );
+
+    revalidatePath("/tools");
+    revalidatePath("/agents", "layout");
+    return succeededForm({ configVersion: result.configVersion }, `Removed ${name}.`);
+  } catch (error) {
+    return failedForm(failureMessage(error));
   }
 };

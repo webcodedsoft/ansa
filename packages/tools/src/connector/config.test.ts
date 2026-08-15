@@ -192,3 +192,90 @@ describe("parsing a organization's tool configuration", () => {
     ).toBe(true);
   });
 });
+
+/**
+ * Path parameters and static headers, added 2026-08-15 so the console can describe the
+ * endpoints organisations actually have. Both are places where a configuration mistake
+ * turns into something worse than a broken tool, so most of what is here is refusals.
+ */
+describe("a URL with {placeholders} in its path", () => {
+  const withUrl = (url: string) =>
+    parseConnectorConfig({
+      egress: { allowedHosts: ["api.partner.test"] },
+      http: [httpTool({ url })],
+    }).http[0];
+
+  it("records which arguments the path will consume", () => {
+    expect(withUrl("https://api.partner.test/orders/{orderId}")?.pathParams).toEqual(["orderId"]);
+  });
+
+  it("takes more than one, in the order they appear", () => {
+    expect(withUrl("https://api.partner.test/c/{customerId}/orders/{orderId}")?.pathParams).toEqual([
+      "customerId",
+      "orderId",
+    ]);
+  });
+
+  it("leaves a plain URL with none", () => {
+    expect(withUrl("https://api.partner.test/orders")?.pathParams).toEqual([]);
+  });
+
+  it("refuses a placeholder in the host, which would let an argument pick the server", () => {
+    /* The egress allowlist is checked against the configured host. If the host could be
+       filled from an argument the check would pass and the request would go somewhere
+       else — an SSRF with extra steps, and the argument comes from words a caller said. */
+    expect(() => withUrl("https://{region}.partner.test/orders")).toThrow(/only use \{placeholders\} in the path/);
+  });
+
+  /* The scheme and the port are refused a step earlier, by URL parsing: neither `_://host`
+     nor `host:_` is a URL once the placeholder is blanked out. Different message, same
+     outcome. Pinned so a later refactor cannot quietly let one through on the assumption
+     the origin check above covers every part of the origin — it only covers the host. */
+  for (const [part, url] of [
+    ["scheme", "{scheme}://api.partner.test/orders"],
+    ["port", "https://api.partner.test:{port}/orders"],
+  ] as const) {
+    it(`refuses one in the ${part}`, () => {
+      expect(() => withUrl(url)).toThrow(/is not a URL/);
+    });
+  }
+});
+
+describe("static headers", () => {
+  const withHeaders = (headers: unknown) =>
+    parseConnectorConfig({
+      egress: { allowedHosts: ["api.partner.test"] },
+      http: [httpTool({ headers })],
+    }).http[0];
+
+  it("keeps an ordinary one", () => {
+    expect(withHeaders({ "X-Tenant": "acme" })?.headers).toEqual({ "X-Tenant": "acme" });
+  });
+
+  it("treats none and empty the same, so nothing downstream branches on it", () => {
+    expect(withHeaders(undefined)?.headers).toBeUndefined();
+    expect(withHeaders({})?.headers).toBeUndefined();
+  });
+
+  for (const name of ["Authorization", "authorization", "Cookie", "X-API-Key"]) {
+    it(`refuses ${name}, because that secret would then live in the tool document`, () => {
+      /* `GET /tools` returns the document. A static credential header would make the
+         secret readable by anyone who can read the configuration, which is exactly what
+         credentialRef exists to prevent. A warning beside a box that still accepts the
+         value is not a control. */
+      expect(() => withHeaders({ [name]: "Bearer sk-live-abc" })).toThrow(/credential vault/);
+    });
+  }
+
+  it("refuses a line break, which would split one header into two at the socket", () => {
+    expect(() => withHeaders({ "X-Trace": "a\r\nX-Admin: true" })).toThrow(/line break/);
+  });
+
+  it("refuses a name that is not a header name", () => {
+    expect(() => withHeaders({ "bad name": "x" })).toThrow(/unusable name/);
+  });
+
+  it("refuses a value that is not a string", () => {
+    expect(() => withHeaders({ "X-Count": 7 })).toThrow(/must be a string/);
+  });
+});

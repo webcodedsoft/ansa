@@ -35,6 +35,41 @@ const queryValue = (value: unknown): string | null => {
   return null;
 };
 
+/**
+ * Fills `{placeholders}` in the path and reports which arguments they used up.
+ *
+ * Each value goes through `encodeURIComponent`, and that is the whole security of this
+ * feature. Without it an argument of `../../admin` climbs out of its segment, and one
+ * containing `?` or `#` rewrites the rest of the request. The model chooses these values
+ * from words a caller said out loud, so they are untrusted input in the ordinary sense.
+ *
+ * A placeholder with no argument throws rather than sending `{id}` as a literal. A request
+ * to `/policies/%7Bid%7D` returns 404, 404 means "no such record", and the caller would be
+ * told their policy does not exist when in fact the tool was misconfigured.
+ */
+const fillPath = (
+  config: HttpToolConfig,
+  args: ToolArgs,
+): { readonly url: string; readonly rest: ToolArgs } => {
+  if (config.pathParams.length === 0) return { url: config.url, rest: args };
+
+  const rest: Record<string, unknown> = { ...args };
+  let url = config.url;
+
+  for (const name of config.pathParams) {
+    const value = queryValue(args[name]);
+    if (value === null || value === "") {
+      throw new Error(`${config.name} needs ${name} for its path and did not get one`);
+    }
+    url = url.split(`{${name}}`).join(encodeURIComponent(value));
+    // Consumed. Sending it again in the query string or body would duplicate it, and an
+    // endpoint that reads both has two chances to disagree with itself.
+    delete rest[name];
+  }
+
+  return { url, rest };
+};
+
 const withQuery = (url: string, args: ToolArgs): string => {
   const target = new URL(url);
   for (const [key, value] of Object.entries(args)) {
@@ -68,14 +103,23 @@ const execute = async (
   options: HttpConnectorOptions,
   call: AdapterCall,
 ): Promise<unknown> => {
-  const headers: Record<string, string> = { accept: "application/json" };
+  /* The organisation's own headers go down first, so everything below overrides them
+     rather than the other way round. `parseHeaders` already refuses the authentication
+     names outright; this ordering is the second half of the same promise — a header set
+     here can never displace the credential the vault resolved. */
+  const headers: Record<string, string> = { ...(config.headers ?? {}) };
+  if (!Object.keys(headers).some((name) => name.toLowerCase() === "accept")) {
+    headers["accept"] = "application/json";
+  }
+
   let body: string | undefined;
-  let url = config.url;
+  const { url: withPath, rest } = fillPath(config, call.args);
+  let url = withPath;
 
   if (config.send === "query") {
-    url = withQuery(url, call.args);
+    url = withQuery(url, rest);
   } else {
-    body = JSON.stringify(call.args);
+    body = JSON.stringify(rest);
     headers["content-type"] = "application/json";
     headers["content-length"] = String(Buffer.byteLength(body));
   }

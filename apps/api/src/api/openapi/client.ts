@@ -71,6 +71,15 @@ export const tsType = (schema: unknown): string => {
       // type is a single word and are required as soon as it is a union or an object.
       return `readonly (${tsType(schema["items"])})[]${suffix}`;
     case "object": {
+      /* An open map — keys the caller chooses, like request headers. Checked before
+         `properties`, because such a schema has none and would otherwise be emitted as
+         `Record<string, never>`: a type that accepts no entry at all, so the field would
+         be unusable from the console and the mistake would only show up at the call site. */
+      const open = schema["additionalProperties"];
+      if (open !== undefined && open !== false) {
+        return `Readonly<Record<string, ${open === true ? "unknown" : tsType(open)}>>${suffix}`;
+      }
+
       const properties = isRecord(schema["properties"]) ? schema["properties"] : {};
       const required = new Set(
         Array.isArray(schema["required"]) ? schema["required"].filter((k): k is string => typeof k === "string") : [],

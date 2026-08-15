@@ -65,6 +65,18 @@ beforeAll(async () => {
         .end(JSON.stringify({ reference: "OK-1", state: "seen", authorization: request.headers.authorization ?? "none" }));
       return;
     }
+    if (path.startsWith("/echo")) {
+      response.writeHead(200, { "content-type": "application/json" }).end(
+        JSON.stringify({
+          reference: "OK-1",
+          state: "seen",
+          sawPath: path,
+          sawTenant: request.headers["x-tenant"] ?? "none",
+          sawAccept: request.headers.accept ?? "none",
+        }),
+      );
+      return;
+    }
     response.writeHead(404).end();
   });
   await new Promise<void>((ready) => server.listen(0, "127.0.0.1", ready));
@@ -86,7 +98,12 @@ const guard: EgressGuard = {
   },
 };
 
-const dispatcherFor = (path: string, credentialRef: string | undefined, sealed: ReadonlyMap<string, string>) => {
+const dispatcherFor = (
+  path: string,
+  credentialRef: string | undefined,
+  sealed: ReadonlyMap<string, string>,
+  over: Record<string, unknown> = {},
+) => {
   const recorder = recordingLogger();
   const registry = createToolRegistry();
   const config = parseConnectorConfig({
@@ -105,6 +122,7 @@ const dispatcherFor = (path: string, credentialRef: string | undefined, sealed: 
         send: "query",
         credentialRef,
         speech: { template: "Order {reference} is {state}.", fallback: "I can't find that order." },
+        ...over,
       } satisfies Partial<HttpToolConfig> as unknown,
     ],
   });
@@ -168,5 +186,95 @@ describe("when the organization's endpoint misbehaves", () => {
     const line = lines.find((entry) => entry.message === "connector responded");
     expect(line?.fields.endpoint).toBe(`${host}/anonymous`);
     expect(JSON.stringify(line)).not.toContain("ZR/88/AA");
+  });
+});
+
+/**
+ * Path parameters and static headers on a real socket.
+ *
+ * `config.test.ts` proves what is refused at parse time. These prove what actually goes
+ * down the wire, which is the half that matters for encoding: a value that escapes its
+ * segment is a request to a different path than the one anybody configured.
+ */
+describe("a URL with a path parameter", () => {
+  const raw = async (over: Record<string, unknown>, args: Record<string, unknown>) => {
+    const { dispatcher } = dispatcherFor("/echo/{orderId}", undefined, new Map(), over);
+    return dispatcher.dispatch({
+      organizationId: ORGANIZATION,
+      callId: CALL,
+      name: "order_status",
+      args,
+    });
+  };
+
+  it("puts the argument in the path and not also in the query string", async () => {
+    const { dispatcher } = dispatcherFor("/echo/{orderId}", undefined, new Map(), {
+      speech: { template: "Path was {sawPath}.", fallback: "no" },
+    });
+    const outcome = await dispatcher.dispatch({
+      organizationId: ORGANIZATION,
+      callId: CALL,
+      name: "order_status",
+      args: { orderId: "QT-1" },
+    });
+
+    // Consumed by the path. Sending it again as ?orderId=QT-1 would give an endpoint that
+    // reads both two chances to disagree with itself.
+    expect(outcome.speech).toContain("/echo/QT-1");
+    expect(outcome.speech).not.toContain("orderId=");
+  });
+
+  it("encodes a value that would otherwise climb out of its segment", async () => {
+    const { dispatcher } = dispatcherFor("/echo/{orderId}", undefined, new Map(), {
+      speech: { template: "Path was {sawPath}.", fallback: "no" },
+    });
+    const outcome = await dispatcher.dispatch({
+      organizationId: ORGANIZATION,
+      callId: CALL,
+      name: "order_status",
+      args: { orderId: "../../admin" },
+    });
+
+    /* The model chooses this value from words a caller said, so it is untrusted in the
+       ordinary sense. Unencoded it reaches /admin; encoded it stays one segment. */
+    expect(outcome.speech).not.toContain("/admin");
+    expect(outcome.speech).toContain("%2F");
+  });
+
+  it("refuses the call when the path parameter is missing", async () => {
+    /* Sending `{orderId}` as a literal would produce a 404, and a 404 means "no such
+       record" — so the caller would be told their order does not exist when in fact the
+       tool was misconfigured. */
+    expect(await raw({}, {})).toMatchObject({ kind: "failed" });
+  });
+});
+
+describe("static headers on the way out", () => {
+  it("sends the organisation's own header", async () => {
+    const { dispatcher } = dispatcherFor("/echo", undefined, new Map(), {
+      headers: { "X-Tenant": "acme" },
+      speech: { template: "Tenant {sawTenant}.", fallback: "no" },
+    });
+    const outcome = await dispatcher.dispatch({
+      organizationId: ORGANIZATION,
+      callId: CALL,
+      name: "order_status",
+      args: {},
+    });
+    expect(outcome.speech).toContain("acme");
+  });
+
+  it("still defaults accept to JSON when the organisation set other headers", async () => {
+    const { dispatcher } = dispatcherFor("/echo", undefined, new Map(), {
+      headers: { "X-Tenant": "acme" },
+      speech: { template: "Accept {sawAccept}.", fallback: "no" },
+    });
+    const outcome = await dispatcher.dispatch({
+      organizationId: ORGANIZATION,
+      callId: CALL,
+      name: "order_status",
+      args: {},
+    });
+    expect(outcome.speech).toContain("application/json");
   });
 });

@@ -22,7 +22,9 @@ export type SchemaNode =
   | { readonly type: "integer"; readonly minimum?: number; readonly maximum?: number; readonly nullable?: boolean; readonly optional?: boolean }
   | { readonly type: "boolean"; readonly nullable?: boolean; readonly optional?: boolean }
   | { readonly type: "array"; readonly items: SchemaNode; readonly maxItems?: number; readonly nullable?: boolean; readonly optional?: boolean }
-  | { readonly type: "object"; readonly properties: Readonly<Record<string, SchemaNode>>; readonly nullable?: boolean; readonly optional?: boolean };
+  | { readonly type: "object"; readonly properties: Readonly<Record<string, SchemaNode>>; readonly nullable?: boolean; readonly optional?: boolean }
+  /** Keys the caller chooses — headers, where the names belong to somebody else's API. */
+  | { readonly type: "object"; readonly additionalProperties: SchemaNode; readonly maxProperties?: number; readonly nullable?: boolean; readonly optional?: boolean };
 
 /**
  * A schema carrying the type it produces.
@@ -83,6 +85,25 @@ export const flag = (): Schema<boolean> => ({ node: { type: "boolean" } });
 
 export const list = <T>(items: Schema<T>, options: { readonly maxItems?: number } = {}): Schema<readonly T[]> => ({
   node: defined({ type: "array" as const, items: items.node, maxItems: options.maxItems }),
+});
+
+/**
+ * An object with a fixed value type and keys nobody declared in advance.
+ *
+ * For headers, where the names belong to the organisation's endpoint rather than to us.
+ * `object` cannot express it — every key there is known at schema time. Key *shape* is not
+ * checked here: `parseConnectorConfig` refuses a name that is not a header token, and one
+ * rule in one place beats a weaker copy of it in two.
+ */
+export const map = <T>(
+  values: Schema<T>,
+  options: { readonly maxProperties?: number } = {},
+): Schema<Readonly<Record<string, T>>> => ({
+  node: defined({
+    type: "object" as const,
+    additionalProperties: values.node,
+    maxProperties: options.maxProperties,
+  }),
 });
 
 export const object = <const P extends Props>(properties: P): Schema<ObjectOut<P>> => ({
@@ -202,6 +223,20 @@ const parseNode = (node: SchemaNode, value: unknown, path: string, options: Pars
       const out: Record<string, unknown> = {};
       const errors: FieldError[] = [];
 
+      // An open map: the keys belong to the caller, so every value is checked and no key
+      // is ever "not recognised". Key shape is somebody else's rule — see `map`.
+      if (!("properties" in node)) {
+        if (node.maxProperties !== undefined && Object.keys(source).length > node.maxProperties) {
+          return fail(path, `must have at most ${node.maxProperties} entries`);
+        }
+        for (const [key, child] of Object.entries(source)) {
+          const result = parseNode(node.additionalProperties, child, join(path, key), options);
+          if (result.ok) out[key] = result.value;
+          else errors.push(...result.errors);
+        }
+        return errors.length > 0 ? { ok: false, errors } : { ok: true, value: out };
+      }
+
       for (const [key, child] of Object.entries(node.properties)) {
         const present = Object.hasOwn(source, key) && source[key] !== undefined;
         if (!present) {
@@ -260,6 +295,13 @@ export const toJsonSchema = (node: SchemaNode): JsonSchema => {
       case "array":
         return defined({ type: "array", items: toJsonSchema(node.items), maxItems: node.maxItems });
       case "object": {
+        if (!("properties" in node)) {
+          return defined({
+            type: "object",
+            additionalProperties: toJsonSchema(node.additionalProperties),
+            maxProperties: node.maxProperties,
+          });
+        }
         const required = Object.entries(node.properties)
           .filter(([, child]) => child.optional !== true)
           .map(([key]) => key);

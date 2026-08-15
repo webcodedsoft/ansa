@@ -17,6 +17,7 @@ import {
   flag,
   integer,
   list,
+  map,
   nullable,
   object,
   optional,
@@ -131,8 +132,24 @@ const httpTool = object({
   riskTier: choice(["read", "write", "irreversible"]),
   url: text({ minLength: 1, maxLength: MAX_URL, format: "uri" }),
   method: choice(["GET", "POST", "PUT", "PATCH", "DELETE"]),
-  /** Where the model's arguments go. */
+  /**
+   * Where the model's arguments go — the ones the URL has not already taken.
+   *
+   * Path parameters are written into `url` as `{name}` and are orthogonal to this:
+   * `POST /policies/{id}/claims` puts one argument in the path and the rest in the body.
+   * `parseConnectorConfig` refuses a placeholder anywhere but the path, because one in the
+   * host would let an argument choose which server is called.
+   */
   send: choice(["query", "body"]),
+  /**
+   * Fixed headers sent with every request. Never authentication.
+   *
+   * `parseConnectorConfig` refuses `authorization`, `cookie`, `x-api-key` and the rest
+   * outright, and the refusal is the point: this document is returned by `GET /tools`, so a
+   * static credential header would make the secret readable by anyone who can read the
+   * configuration. That is what `credentialRef` exists to prevent.
+   */
+  headers: optional(map(text({ maxLength: 1024 }), { maxProperties: 24 })),
   timeoutMs,
   /** A name in this organisation's credential vault. Never the credential itself. */
   credentialRef: optional(text({ maxLength: 64, pattern: CREDENTIAL_REF })),

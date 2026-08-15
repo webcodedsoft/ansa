@@ -1,17 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  choice,
-  flag,
-  integer,
-  list,
-  nullable,
-  object,
-  optional,
-  parse,
-  text,
-  toJsonSchema,
-} from "./schema";
+import { choice, flag, integer, list, map, nullable, object, optional, parse, text, toJsonSchema } from "./schema";
 
 const INPUT = { unknown: "reject" } as const;
 const OUTPUT = { unknown: "strip" } as const;
@@ -127,5 +116,47 @@ describe("the OpenAPI projection", () => {
   it("carries the constraints the validator enforces", () => {
     const schema = toJsonSchema(text({ minLength: 2, maxLength: 5, pattern: /^a/ }).node);
     expect(schema).toMatchObject({ minLength: 2, maxLength: 5, pattern: "^a" });
+  });
+});
+
+describe("an open map", () => {
+  const headers = object({ headers: map(text({ maxLength: 12 }), { maxProperties: 2 }) });
+  const read = (value: unknown) => parse(headers, value, { unknown: "reject" });
+
+  it("accepts keys nobody declared", () => {
+    // The whole point: header names belong to somebody else's API, not to this schema.
+    expect(read({ headers: { "X-Tenant": "acme", "X-Region": "lagos" } })).toMatchObject({
+      ok: true,
+      value: { headers: { "X-Tenant": "acme", "X-Region": "lagos" } },
+    });
+  });
+
+  it("never calls a key unrecognised, even under unknown: reject", () => {
+    // A declared object would refuse every one of these. An open map must not, or the
+    // rejection rule for the document around it would make the map unusable.
+    expect(read({ headers: { anything: "at all" } }).ok).toBe(true);
+  });
+
+  it("checks every value against the value schema", () => {
+    expect(read({ headers: { "X-Tenant": "far too long to fit" } })).toMatchObject({ ok: false });
+  });
+
+  it("names the offending key in the error path, not just the map", () => {
+    const result = read({ headers: { "X-Ok": "fine", "X-Bad": "far too long to fit" } });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]?.path).toContain("X-Bad");
+  });
+
+  it("bounds how many there can be", () => {
+    expect(read({ headers: { a: "1", b: "2", c: "3" } })).toMatchObject({ ok: false });
+  });
+
+  it("takes an empty map", () => {
+    expect(read({ headers: {} })).toMatchObject({ ok: true, value: { headers: {} } });
+  });
+
+  it("still refuses a non-object", () => {
+    expect(read({ headers: ["X-Tenant", "acme"] })).toMatchObject({ ok: false });
   });
 });

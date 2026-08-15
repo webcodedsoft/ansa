@@ -8558,6 +8558,14 @@
                               "body"
                             ]
                           },
+                          "headers": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string",
+                              "maxLength": 1024
+                            },
+                            "maxProperties": 24
+                          },
                           "timeoutMs": {
                             "type": "integer",
                             "minimum": 1,
@@ -8898,6 +8906,14 @@
                             "query",
                             "body"
                           ]
+                        },
+                        "headers": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string",
+                            "maxLength": 1024
+                          },
+                          "maxProperties": 24
                         },
                         "timeoutMs": {
                           "type": "integer",

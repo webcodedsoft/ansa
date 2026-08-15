@@ -2069,6 +2069,54 @@ have a retention rule of its own.
 - [ ] The event log has no retention policy. Audio does (`audio_retention_days`); the words
       do not, and the words now carry more than they did yesterday.
 
+### Tool creation is a form now (2026-08-15)
+
+The whole registry was one JSON textarea labelled `http and mcp`. It asked every operator
+to know JSON Schema, the tier rules and the egress allowlist, and gave them one error at a
+time to find out with. Replaced with a per-tool form, grouped like a wizard and laid out on
+one sheet — steps read better the first time, a sheet reads better every time after, and
+most of a tool's life is spent being edited.
+
+Two of the four asks were not form work at all; the connector could not express them.
+
+- [x] **Path parameters.** `{placeholders}` in the URL path, filled from arguments and
+      consumed so they are not also sent in the query or body. Orthogonal to `send`, because
+      REST is: `POST /policies/{id}/claims` puts one argument in the path and the rest in a
+      body. Each value goes through `encodeURIComponent`, which is the whole security of the
+      feature — unencoded, an argument of `../../admin` climbs out of its segment, and the
+      model picks these values from words a caller said. A placeholder anywhere but the path
+      is refused: one in the host would let an argument choose which server is called while
+      the egress allowlist still checked the configured host.
+- [x] **Static headers**, with `authorization`, `cookie`, `x-api-key` and the rest refused
+      outright. Not a style rule — `GET /tools` returns the document, so a static credential
+      header would make the secret readable by anyone who can read the configuration, which
+      is exactly what `credentialRef` exists to prevent. Line breaks in a value are refused
+      too. Custom headers are applied *before* the credential and content-type, so one can
+      never displace them.
+- [x] **The no-record sentence** was already `speech.fallback` and already wired to the
+      404-means-no-record path. It now has a labelled field saying what it is for.
+- [x] **Query or body** is a control that disappears on GET rather than a save that fails.
+
+Also: the URL's host is added to the egress allowlist on save. That was the failure costing
+the most and showing the least — the tool registered, the model was told it could use it,
+and every call answered "sorry, I couldn't get that just now" with nothing on screen
+explaining why.
+
+`map()` is new in the request-schema DSL, for header names that belong to somebody else's
+API. The client generator emitted `Record<string, never>` for it — a type accepting no
+entry at all — so that was fixed in the same pass.
+
+The parameter builder degrades rather than flattens: a stored schema with nested objects or
+enums opens as raw JSON with a note, because rewriting somebody's hand-written schema into
+three simplified rows on save is worse than not editing it.
+
+MCP servers appear in the list, still run, and round-trip untouched.
+
+- [ ] Not built: the curl/OpenAPI import, and fetching a sample response to pick
+      `{placeholders}` from. The test section runs the saved tool through the real dispatch
+      path, so the response is visible — but only after a save, not while writing the
+      sentence.
+
 ### The call that is still owed
 
 `packages/db/seeds/dev-organization.mjs` had rotted — it wrote `organizations.dialled_number`,

@@ -42,8 +42,12 @@ const joinPath = (base: string, route: string): string => {
   return `/${parts.join("/")}`;
 };
 
+/* Only used for path and query parameters, which are always declared objects. An open map
+   has no named properties to walk, and one could not describe a path parameter anyway. */
 const objectProperties = (node: SchemaNode | undefined): readonly [string, SchemaNode][] =>
-  node !== undefined && node.type === "object" ? Object.entries(node.properties) : [];
+  node !== undefined && node.type === "object" && "properties" in node
+    ? Object.entries(node.properties)
+    : [];
 
 const parametersFor = (spec: EndpointSpec): readonly JsonSchema[] => [
   ...objectProperties(spec.params?.node).map(([name, child]) => ({

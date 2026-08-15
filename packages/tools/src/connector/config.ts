@@ -53,8 +53,31 @@ export interface HttpToolConfig extends ConnectorToolBase {
   readonly route: "http";
   readonly url: string;
   readonly method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-  /** Where the model's arguments go. */
+  /**
+   * Where the model's arguments go — the ones the URL has not already taken.
+   *
+   * Orthogonal to path parameters, because REST is: `POST /policies/{id}/claims` puts one
+   * argument in the path and the rest in the body, and a model that made those exclusive
+   * would not be able to describe half the endpoints organisations actually have.
+   */
   readonly send: "query" | "body";
+  /**
+   * Arguments the URL consumes, in order, from `{placeholders}` in its path.
+   *
+   * Derived at parse time rather than configured, so the URL is the single statement of
+   * what the path looks like. Held here so the adapter does not re-scan the string on
+   * every call, and so `prepare` can refuse a tool whose path names an argument its own
+   * parameter schema does not declare.
+   */
+  readonly pathParams: readonly string[];
+  /**
+   * Static headers sent with every request. Never a credential — see `parseHeaders`.
+   *
+   * Values are fixed strings, not templates. A header carrying the caller's own details is
+   * a different feature with a different threat model, and inventing it here would mean
+   * caller data leaving in a place nothing audits.
+   */
+  readonly headers?: Readonly<Record<string, string>>;
   /** A name in the organization's credential vault. Never the credential itself. */
   readonly credentialRef?: string;
 }
@@ -191,6 +214,104 @@ const tierFields = (
   return { speech };
 };
 
+/**
+ * Headers a organization may not set, because the vault owns them.
+ *
+ * Not a style rule. A static `Authorization: Bearer sk-live-…` would put a plaintext
+ * credential in the tool document, and `GET /tools` returns that document — so the secret
+ * would be readable by anyone who can read the configuration, which is the exact thing
+ * `credentialRef` exists to prevent. Refused rather than warned about: a warning next to a
+ * text box that still accepts the value is not a control.
+ */
+/** Same shape `templateFields` matches, as a fresh regex because that one is stateful. */
+const PATH_PLACEHOLDER = /\{[A-Za-z0-9_.[\]-]+\}/g;
+
+const RESERVED_HEADERS: ReadonlySet<string> = new Set([
+  "authorization",
+  "proxy-authorization",
+  "cookie",
+  "set-cookie",
+  "x-api-key",
+  "api-key",
+]);
+
+/** RFC 7230 token characters, minus the exotica nobody needs and proxies mangle. */
+const HEADER_NAME = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/;
+
+const parseHeaders = (
+  raw: unknown,
+  where: string,
+): Readonly<Record<string, string>> | undefined => {
+  if (raw === undefined || raw === null) return undefined;
+  const record = asRecord(raw, `${where}.headers`);
+  const out: Record<string, string> = {};
+
+  for (const [name, value] of Object.entries(record)) {
+    if (!HEADER_NAME.test(name)) {
+      throw new Error(`tool config: ${where}.headers has an unusable name ${JSON.stringify(name)}`);
+    }
+    if (RESERVED_HEADERS.has(name.toLowerCase())) {
+      throw new Error(
+        `tool config: ${where}.headers cannot set ${name} — authentication belongs in the ` +
+          "credential vault, and a header here would store the secret in the configuration",
+      );
+    }
+    if (typeof value !== "string") {
+      throw new Error(`tool config: ${where}.headers.${name} must be a string`);
+    }
+    // A newline in a value splits one header into two at the socket, which is how a
+    // response gets forged. The transport would likely refuse it; refusing here means it
+    // never reaches a call in the first place.
+    if (/[\r\n]/.test(value)) {
+      throw new Error(`tool config: ${where}.headers.${name} cannot contain a line break`);
+    }
+    if (value.length > 1024) {
+      throw new Error(`tool config: ${where}.headers.${name} is too long`);
+    }
+    out[name] = value;
+  }
+
+  return Object.keys(out).length === 0 ? undefined : out;
+};
+
+/**
+ * The `{placeholders}` a URL's path will consume, refusing any that could move the request.
+ *
+ * The rule that matters: a placeholder may appear only after the origin. `https://{host}/x`
+ * would let an argument chosen by the model — from words a caller said — decide which
+ * server we talk to, and the egress allowlist is checked against the configured host, so
+ * the check would pass and the request would go somewhere else entirely. That is an SSRF
+ * with extra steps, and it is refused at parse time rather than guarded at send time.
+ */
+const parsePathParams = (url: string, where: string): readonly string[] => {
+  const names = templateFields(url);
+  if (names.length === 0) return [];
+
+  let origin: string;
+  try {
+    origin = new URL(url.replace(PATH_PLACEHOLDER, "_")).origin;
+  } catch {
+    throw new Error(`tool config: ${where}.url is not a URL`);
+  }
+
+  // Compare against the template with placeholders blanked, so the index is the real one.
+  const blanked = url.replace(PATH_PLACEHOLDER, "_");
+  const firstHole = blanked.indexOf("_");
+  if (firstHole !== -1 && firstHole < origin.length) {
+    throw new Error(
+      `tool config: ${where}.url may only use {placeholders} in the path — one in the ` +
+        "scheme, host or port would let an argument choose which server is called",
+    );
+  }
+
+  for (const name of names) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+      throw new Error(`tool config: ${where}.url has an unusable placeholder {${name}}`);
+    }
+  }
+  return names;
+};
+
 const parseHttpTool = (value: unknown, index: number): HttpToolConfig => {
   const where = `http[${index}]`;
   const raw = asRecord(value, where);
@@ -208,16 +329,21 @@ const parseHttpTool = (value: unknown, index: number): HttpToolConfig => {
     throw new Error(`tool config: ${where} cannot send a body on a GET`);
   }
 
+  const url = asText(raw.url, `${where}.url`);
+  const pathParams = parsePathParams(url, where);
+
   return {
     route: "http",
     name,
     description: asText(raw.description, `${where}.description`),
     parameters: asRecord(raw.parameters, `${where}.parameters`),
+    pathParams,
     riskTier: tier,
     timeoutMs: asTimeout(raw.timeoutMs, where),
-    url: asText(raw.url, `${where}.url`),
+    url,
     method: method as HttpToolConfig["method"],
     send,
+    headers: parseHeaders(raw.headers, where),
     credentialRef: asOptionalText(raw.credentialRef, `${where}.credentialRef`),
     identifiers: asIdentifiers(raw.identifiers, where),
     ...tierFields(raw, tier, where, true),

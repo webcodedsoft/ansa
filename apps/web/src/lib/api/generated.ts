@@ -1293,6 +1293,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly url: string;
         readonly method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
         readonly send: "query" | "body";
+        readonly headers?: Readonly<Record<string, string>>;
         readonly timeoutMs?: number;
         readonly credentialRef?: string;
         readonly speech?: {
@@ -1347,6 +1348,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
           readonly url: string;
           readonly method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
           readonly send: "query" | "body";
+          readonly headers?: Readonly<Record<string, string>>;
           readonly timeoutMs?: number;
           readonly credentialRef?: string;
           readonly speech?: {
