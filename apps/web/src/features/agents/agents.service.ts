@@ -94,6 +94,18 @@ export const readTools = async () => (await api()).tools.read();
 
 export type ToolsDocument = Awaited<ReturnType<typeof readTools>>;
 
+/**
+ * One GET against an endpoint, to see what shape it answers with.
+ *
+ * Server-side, like everything else here: the API enables no CORS, and the credential is
+ * resolved inside the API from the vault — the browser never holds one.
+ */
+export const sampleEndpoint = async (input: {
+  url: string;
+  headers?: Readonly<Record<string, string>>;
+  credentialRef?: string;
+}) => (await api()).tools.sample({ body: input });
+
 export const replaceTools = async (
   expectedVersion: number,
   note: string | undefined,

@@ -27,6 +27,7 @@ import {
 import { OrganizationContext } from "../tenancy/organization-context";
 
 import { checkToolConfig, eventsOrNothing, orConflict, orRefuse } from "./refusals";
+import { fetchSample } from "./sample";
 import { runToolInSandbox } from "./sandbox";
 import { publishConfiguration, readConfiguration, sealedCredentials } from "./store";
 import { classifyCredentials, credentialUses, refuseUnusableReferences, vaultKey } from "./vault";
@@ -214,6 +215,20 @@ const replacement = object({
 });
 
 const published = object({ configVersion: integer({ minimum: 1 }) });
+
+const sampleRequest = object({
+  url: text({ minLength: 1, maxLength: MAX_URL, format: "uri" }),
+  headers: optional(map(text({ maxLength: 1024 }), { maxProperties: 24 })),
+  credentialRef: optional(text({ maxLength: 64, pattern: CREDENTIAL_REF })),
+});
+
+const sampleResponse = object({
+  ok: flag(),
+  status: nullable(integer({ minimum: 100 })),
+  /** The body as JSON text, so a response of any shape survives without a schema for it. */
+  json: nullable(text({ maxLength: 65_536 })),
+  detail: nullable(text({ maxLength: 400 })),
+});
 
 // ---------------------------------------------------------------------------
 // The sandbox
@@ -518,6 +533,54 @@ export class ToolsController {
    * systems. A `member` who may look at the configuration must not be able to fire a lookup
    * of a real customer's record at it.
    */
+  @Post("sample")
+  @Endpoint({
+    summary: "Fetch one response from an endpoint, to see what shape it has",
+    description:
+      "A GET, run through the same egress guard a call uses: https only unless plaintext is " +
+      "enabled, no credentials in the URL, and no host that resolves to a private or " +
+      "link-local address, checked on every redirect hop and every resolved address. The " +
+      "host does not need to be in the allowlist yet — this is for a URL you are about to " +
+      "save into it. GET only, because a sample of a POST would perform whatever that POST " +
+      "does. Returns the body and nothing else: never a request header, and never the " +
+      "credential it was sent with.",
+    capability: "config:write",
+    body: sampleRequest,
+    response: sampleResponse,
+    // A real outbound request to somebody else's server, from a button. The brake is on the
+    // held-down button rather than on a quota, same as the sandbox.
+    rateLimit: { limit: 30, windowMs: 60_000, by: "ip" },
+  })
+  async sample(@FromBody() body: Infer<typeof sampleRequest>): Promise<Infer<typeof sampleResponse>> {
+    const stored = await this.db.tx(async (scope) => {
+      const current = await readConfiguration(scope);
+      return {
+        allowPlaintextHttp:
+          parseConnectorConfig(current?.toolConfig).egress.allowPlaintextHttp === true,
+        sealed: await sealedCredentials(scope),
+      };
+    });
+
+    const result = await fetchSample({
+      owner: this.db.caller.organizationId,
+      url: body.url,
+      allowPlaintextHttp: stored.allowPlaintextHttp,
+      headers: body.headers ?? {},
+      credentialRef: body.credentialRef ?? null,
+      sealedCredentials: stored.sealed,
+      credentialKey: vaultKey(),
+    });
+
+    return {
+      ok: result.ok,
+      status: result.status,
+      // Re-serialised rather than passed through as an object: the response shape belongs to
+      // somebody else's API and cannot be described by a schema here.
+      json: result.json === null ? null : JSON.stringify(result.json).slice(0, 65_536),
+      detail: result.detail,
+    };
+  }
+
   @Post(":name/test")
   @Endpoint({
     summary: "Run one of this organisation's tools with test arguments",

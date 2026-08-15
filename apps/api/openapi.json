@@ -9407,6 +9407,157 @@
           }
         }
       }
+    },
+    "/api/v1/tools/sample": {
+      "post": {
+        "operationId": "tools.sample",
+        "tags": [
+          "tools"
+        ],
+        "summary": "Fetch one response from an endpoint, to see what shape it has",
+        "description": "A GET, run through the same egress guard a call uses: https only unless plaintext is enabled, no credentials in the URL, and no host that resolves to a private or link-local address, checked on every redirect hop and every resolved address. The host does not need to be in the allowlist yet — this is for a URL you are about to save into it. GET only, because a sample of a POST would perform whatever that POST does. Returns the body and nothing else: never a request header, and never the credential it was sent with.",
+        "x-ansa-capability": "config:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri",
+                    "minLength": 1,
+                    "maxLength": 2048
+                  },
+                  "headers": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string",
+                      "maxLength": 1024
+                    },
+                    "maxProperties": 24
+                  },
+                  "credentialRef": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "pattern": "^[a-z][a-z0-9_]{1,63}$"
+                  }
+                },
+                "required": [
+                  "url"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 100
+                    },
+                    "json": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 65536
+                    },
+                    "detail": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 400
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "status",
+                    "json",
+                    "detail"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts; see the Retry-After header",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

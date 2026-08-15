@@ -2112,10 +2112,35 @@ three simplified rows on save is worse than not editing it.
 
 MCP servers appear in the list, still run, and round-trip untouched.
 
-- [ ] Not built: the curl/OpenAPI import, and fetching a sample response to pick
-      `{placeholders}` from. The test section runs the saved tool through the real dispatch
-      path, so the response is visible — but only after a save, not while writing the
-      sentence.
+- [x] **Fetch a sample response, and the form is steps (2026-08-15).** `POST /tools/sample`
+      does one GET and hands back the body; the fields it found become clickable chips that
+      insert `{placeholders}` into the sentence. It closes the failure the step exists for: a
+      template naming a field the response does not have renders the no-record sentence, and
+      on a call that is indistinguishable from the customer genuinely having no record.
+      - It is a server-side fetch of a URL somebody typed, which is the shape of every SSRF.
+        Safe because it goes through `createEgressGuard` — the same guard the call path uses
+        — so no non-https scheme, no credentials in the userinfo, no private or link-local
+        address, checked on every redirect hop and every resolved address rather than the
+        first. Five of the eight tests are refusals, and they deliberately do not inject a
+        guard, because what they prove is that the default is the real one.
+      - The **allowlist** is the previewed host rather than the saved list. That list stops
+        the *model* reaching an unlisted host mid-call; this is an operator asking to see a
+        URL they are about to save into it, and requiring it first would mean editing your
+        egress policy to find out whether you want to. Nothing about reaching inside the
+        network changes — those checks are on the address.
+      - **GET only.** A sample of a POST would perform whatever that POST does, and finding
+        out what a cancellation endpoint returns by cancelling something is not a preview.
+        For those the tier is the answer: save, then use the test step.
+      - Paths are offered exactly as `renderTemplate` reads them, arrays at index 0 only. A
+        field that cannot be addressed would be worse than none — it would be pasted in and
+        fall through to the fallback.
+- [x] The form is a `Stepper`, whose steps stay clickable: stepped to learn, jumpable to
+      edit. Saving works from any step, because somebody who came back to change a timeout
+      should not have to walk to the end to keep it.
+- [x] An empty credential list says so and links to `/credentials`, instead of a dropdown
+      whose only option is None. Not a bug — RLS was correctly hiding another organisation's
+      credentials — but indistinguishable from one on screen.
+- [ ] Not built: the curl/OpenAPI import.
 
 ### The call that is still owed
 

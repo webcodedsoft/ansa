@@ -403,3 +403,39 @@ export const httpToolBodySchema = z.object({
   /** The name being replaced, empty when adding. Lets a rename keep its place in the list. */
   replacing: z.string(),
 });
+
+
+/**
+ * A response flattened into the dotted paths a speech template can name.
+ *
+ * `renderTemplate` reads `{a.b}` and `{a[0].b}`, so the paths offered here are exactly the
+ * ones that will resolve. Offering a field that cannot be addressed would be worse than
+ * offering none: the operator would paste it in, the template would fall through to its
+ * fallback, and on a call that sounds like the customer having no record.
+ *
+ * Arrays are walked only at index 0. A list of twenty claims would otherwise bury the four
+ * fields somebody is looking for, and a template naming `[7]` is describing one response
+ * rather than the shape of every response.
+ */
+export const fieldsIn = (
+  value: unknown,
+  prefix = "",
+  depth = 0,
+): readonly { readonly path: string; readonly sample: string }[] => {
+  if (depth > 4) return [];
+
+  if (Array.isArray(value)) {
+    const first = value[0];
+    return first === undefined ? [] : fieldsIn(first, `${prefix}[0]`, depth + 1);
+  }
+
+  if (typeof value === "object" && value !== null) {
+    return Object.entries(value as Record<string, unknown>).flatMap(([key, child]) =>
+      fieldsIn(child, prefix === "" ? key : `${prefix}.${key}`, depth + 1),
+    );
+  }
+
+  if (prefix === "") return [];
+  const sample = value === null ? "null" : String(value);
+  return [{ path: prefix, sample: sample.length > 60 ? `${sample.slice(0, 60)}…` : sample }];
+};

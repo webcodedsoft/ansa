@@ -1414,6 +1414,24 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly route: string | null;
         readonly latencyMs: number;
       }>(options, "POST", `/api/v1/tools/${encodeURIComponent(input.path.name)}/test`, input),
+
+    /**
+     * Fetch one response from an endpoint, to see what shape it has
+     * A GET, run through the same egress guard a call uses: https only unless plaintext is enabled, no credentials in the URL, and no host that resolves to a private or link-local address, checked on every redirect hop and every resolved address. The host does not need to be in the allowlist yet — this is for a URL you are about to save into it. GET only, because a sample of a POST would perform whatever that POST does. Returns the body and nothing else: never a request header, and never the credential it was sent with.
+     */
+    sample: (input: {
+        readonly body: {
+          readonly url: string;
+          readonly headers?: Readonly<Record<string, string>>;
+          readonly credentialRef?: string;
+        };
+      }) =>
+      send<{
+        readonly ok: boolean;
+        readonly status: number | null;
+        readonly json: string | null;
+        readonly detail: string | null;
+      }>(options, "POST", `/api/v1/tools/sample`, input),
   },
 });
 

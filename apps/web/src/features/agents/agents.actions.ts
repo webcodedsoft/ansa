@@ -22,6 +22,7 @@ import {
   createAgent,
   diffVersions,
   readTools,
+  sampleEndpoint,
   placeTestCall,
   setAgentFields,
   setAgentTools,
@@ -463,6 +464,66 @@ export const deleteHttpToolAction = async (
     revalidatePath("/tools");
     revalidatePath("/agents", "layout");
     return succeededForm({ configVersion: result.configVersion }, `Removed ${name}.`);
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+};
+
+
+export interface SampleSeen {
+  readonly status: number | null;
+  /** The body as JSON text. Parsed in the component, which is where it is rendered. */
+  readonly json: string | null;
+  readonly detail: string | null;
+}
+
+export type SampleState = FormState<SampleSeen>;
+
+/**
+ * Fetch one response from an endpoint so the speech template can be written against it.
+ *
+ * The whole point is the failure it prevents: a template naming a field the response does
+ * not have renders its fallback, and on a call that sounds exactly like the customer having
+ * no record — not like a typo in a form nobody has looked at since.
+ *
+ * Every guard lives in the API. This carries the URL across and hands back what came back.
+ */
+export const sampleEndpointAction = async (
+  _previous: SampleState,
+  form: FormData,
+): Promise<SampleState> => {
+  const url = String(form.get("url") ?? "").trim();
+  if (url === "") return failedForm("Enter a URL first.");
+
+  const credentialRef = String(form.get("credentialRef") ?? "");
+
+  /* Malformed headers become none rather than a refusal. They are the operator's own rows,
+     already checked on the client, and failing the preview over them would report the wrong
+     problem — the API refuses an unusable header name on save, which is where it matters. */
+  const readHeaders = (): Record<string, string> => {
+    try {
+      return JSON.parse(String(form.get("headers") ?? "{}")) as Record<string, string>;
+    } catch {
+      return {};
+    }
+  };
+  const headers = readHeaders();
+
+  try {
+    const result = await sampleEndpoint({
+      url,
+      ...(Object.keys(headers).length > 0 ? { headers } : {}),
+      ...(credentialRef === "" ? {} : { credentialRef }),
+    });
+
+    // `ok: false` is the guard refusing, and it arrives as a 200 with a reason rather than
+    // as an error — the reason is the useful part and belongs on the screen, not in a stack.
+    if (!result.ok) return failedForm(result.detail ?? "The request was refused.");
+
+    return succeededForm(
+      { status: result.status, json: result.json, detail: result.detail },
+      `Endpoint answered ${result.status ?? ""}.`.trim(),
+    );
   } catch (error) {
     return failedForm(failureMessage(error));
   }
