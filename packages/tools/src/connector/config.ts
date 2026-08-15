@@ -62,14 +62,16 @@ export interface HttpToolConfig extends ConnectorToolBase {
    */
   readonly send: "query" | "body";
   /**
-   * Arguments the URL consumes, in order, from `{placeholders}` in its path.
+   * Arguments the URL consumes, in order, from `{placeholders}` anywhere after the host.
+   *
+   * Named for the URL rather than the path because both work: `/policies/{id}` and
+   * `?regNo={id}` are each filled from an argument and each consumed, so neither is sent
+   * again in the query or body. Only the origin is off limits — see `parseUrlParams`.
    *
    * Derived at parse time rather than configured, so the URL is the single statement of
-   * what the path looks like. Held here so the adapter does not re-scan the string on
-   * every call, and so `prepare` can refuse a tool whose path names an argument its own
-   * parameter schema does not declare.
+   * what it looks like. Held here so the adapter does not re-scan the string on every call.
    */
-  readonly pathParams: readonly string[];
+  readonly urlParams: readonly string[];
   /**
    * Static headers sent with every request. Never a credential — see `parseHeaders`.
    *
@@ -275,15 +277,18 @@ const parseHeaders = (
 };
 
 /**
- * The `{placeholders}` a URL's path will consume, refusing any that could move the request.
+ * The `{placeholders}` a URL will consume, refusing any that could move the request.
  *
- * The rule that matters: a placeholder may appear only after the origin. `https://{host}/x`
- * would let an argument chosen by the model — from words a caller said — decide which
- * server we talk to, and the egress allowlist is checked against the configured host, so
- * the check would pass and the request would go somewhere else entirely. That is an SSRF
- * with extra steps, and it is refused at parse time rather than guarded at send time.
+ * The rule that matters: a placeholder may appear anywhere after the origin, and nowhere
+ * inside it. The path and the query string both qualify — `/policies/{id}` and `?regNo={id}`
+ * are equally ordinary in the APIs organisations actually have.
+ *
+ * `https://{host}/x` would let an argument chosen by the model — from words a caller said —
+ * decide which server we talk to, while the egress allowlist went on checking the host that
+ * was configured. That is an SSRF with extra steps, and it is refused at parse time rather
+ * than guarded at send time.
  */
-const parsePathParams = (url: string, where: string): readonly string[] => {
+const parseUrlParams = (url: string, where: string): readonly string[] => {
   const names = templateFields(url);
   if (names.length === 0) return [];
 
@@ -299,7 +304,7 @@ const parsePathParams = (url: string, where: string): readonly string[] => {
   const firstHole = blanked.indexOf("_");
   if (firstHole !== -1 && firstHole < origin.length) {
     throw new Error(
-      `tool config: ${where}.url may only use {placeholders} in the path — one in the ` +
+      `tool config: ${where}.url may only use {placeholders} after the host — one in the ` +
         "scheme, host or port would let an argument choose which server is called",
     );
   }
@@ -330,14 +335,14 @@ const parseHttpTool = (value: unknown, index: number): HttpToolConfig => {
   }
 
   const url = asText(raw.url, `${where}.url`);
-  const pathParams = parsePathParams(url, where);
+  const urlParams = parseUrlParams(url, where);
 
   return {
     route: "http",
     name,
     description: asText(raw.description, `${where}.description`),
     parameters: asRecord(raw.parameters, `${where}.parameters`),
-    pathParams,
+    urlParams,
     riskTier: tier,
     timeoutMs: asTimeout(raw.timeoutMs, where),
     url,

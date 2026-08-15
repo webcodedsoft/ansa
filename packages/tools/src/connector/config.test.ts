@@ -198,7 +198,7 @@ describe("parsing a organization's tool configuration", () => {
  * endpoints organisations actually have. Both are places where a configuration mistake
  * turns into something worse than a broken tool, so most of what is here is refusals.
  */
-describe("a URL with {placeholders} in its path", () => {
+describe("a URL with {placeholders}", () => {
   const withUrl = (url: string) =>
     parseConnectorConfig({
       egress: { allowedHosts: ["api.partner.test"] },
@@ -206,25 +206,36 @@ describe("a URL with {placeholders} in its path", () => {
     }).http[0];
 
   it("records which arguments the path will consume", () => {
-    expect(withUrl("https://api.partner.test/orders/{orderId}")?.pathParams).toEqual(["orderId"]);
+    expect(withUrl("https://api.partner.test/orders/{orderId}")?.urlParams).toEqual(["orderId"]);
   });
 
   it("takes more than one, in the order they appear", () => {
-    expect(withUrl("https://api.partner.test/c/{customerId}/orders/{orderId}")?.pathParams).toEqual([
+    expect(withUrl("https://api.partner.test/c/{customerId}/orders/{orderId}")?.urlParams).toEqual([
       "customerId",
       "orderId",
     ]);
   });
 
+  it("takes one from the query string too, which is just as ordinary", () => {
+    /* `?regNo={id}` is how a great many real endpoints are shaped, and it is filled the
+       same way: replaced in the URL, and not sent again in the query or body. The only
+       part that is off limits is the origin. */
+    expect(withUrl("https://api.partner.test/orders?regNo={orderId}")?.urlParams).toEqual([
+      "orderId",
+    ]);
+  });
+
   it("leaves a plain URL with none", () => {
-    expect(withUrl("https://api.partner.test/orders")?.pathParams).toEqual([]);
+    expect(withUrl("https://api.partner.test/orders")?.urlParams).toEqual([]);
   });
 
   it("refuses a placeholder in the host, which would let an argument pick the server", () => {
     /* The egress allowlist is checked against the configured host. If the host could be
        filled from an argument the check would pass and the request would go somewhere
        else — an SSRF with extra steps, and the argument comes from words a caller said. */
-    expect(() => withUrl("https://{region}.partner.test/orders")).toThrow(/only use \{placeholders\} in the path/);
+    expect(() => withUrl("https://{region}.partner.test/orders")).toThrow(
+      /only use \{placeholders\} after the host/,
+    );
   });
 
   /* The scheme and the port are refused a step earlier, by URL parsing: neither `_://host`

@@ -36,7 +36,11 @@ const queryValue = (value: unknown): string | null => {
 };
 
 /**
- * Fills `{placeholders}` in the path and reports which arguments they used up.
+ * Fills `{placeholders}` in the URL and reports which arguments they used up.
+ *
+ * A plain string replace across the whole URL, so `/policies/{id}` and `?regNo={id}` both
+ * work — which is deliberate, because both are ordinary. The origin cannot contain one:
+ * `parseUrlParams` refuses that at configuration time.
  *
  * Each value goes through `encodeURIComponent`, and that is the whole security of this
  * feature. Without it an argument of `../../admin` climbs out of its segment, and one
@@ -51,15 +55,15 @@ const fillPath = (
   config: HttpToolConfig,
   args: ToolArgs,
 ): { readonly url: string; readonly rest: ToolArgs } => {
-  if (config.pathParams.length === 0) return { url: config.url, rest: args };
+  if (config.urlParams.length === 0) return { url: config.url, rest: args };
 
   const rest: Record<string, unknown> = { ...args };
   let url = config.url;
 
-  for (const name of config.pathParams) {
+  for (const name of config.urlParams) {
     const value = queryValue(args[name]);
     if (value === null || value === "") {
-      throw new Error(`${config.name} needs ${name} for its path and did not get one`);
+      throw new Error(`${config.name} needs ${name} for its URL and did not get one`);
     }
     url = url.split(`{${name}}`).join(encodeURIComponent(value));
     // Consumed. Sending it again in the query string or body would duplicate it, and an

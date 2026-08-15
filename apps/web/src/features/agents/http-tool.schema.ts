@@ -114,13 +114,15 @@ export const hostOf = (url: string): string | null => {
 export const isPlaintext = (url: string): boolean => url.trim().toLowerCase().startsWith("http:");
 
 /**
- * Path parameters, and the reason a placeholder outside the path is not one.
+ * The arguments the URL will consume, and the reason one in the host is not among them.
  *
- * A `{hole}` in the host would let an argument — chosen by the model, from words a caller
- * said — decide which server is called, while the egress allowlist still checked the host
- * that was configured. The connector refuses it; this reports it as a field error.
+ * Anywhere after the origin counts: `/policies/{id}` and `?regNo={id}` are both filled from
+ * an argument and both consumed, so neither is sent again. A `{hole}` in the host would let
+ * an argument — chosen by the model, from words a caller said — decide which server is
+ * called, while the egress allowlist went on checking the configured host. The connector
+ * refuses that; this reports it as a field error.
  */
-export const pathParamsIn = (url: string): readonly string[] => {
+export const urlParamsIn = (url: string): readonly string[] => {
   const names = placeholdersIn(url);
   if (names.length === 0) return [];
   const blanked = url.replace(PLACEHOLDER, "_");
@@ -133,7 +135,7 @@ export const pathParamsIn = (url: string): readonly string[] => {
 };
 
 export const placeholderOutsidePath = (url: string): boolean =>
-  placeholdersIn(url).length > 0 && pathParamsIn(url).length === 0;
+  placeholdersIn(url).length > 0 && urlParamsIn(url).length === 0;
 
 /** The JSON Schema the builder rows describe. */
 export const schemaFromParams = (params: readonly ParamDraft[]): string => {
@@ -241,7 +243,7 @@ export const problemsWith = (
   else if (host === null) out["url"] = "That is not a URL.";
   else if (placeholderOutsidePath(draft.url)) {
     out["url"] =
-      "A {placeholder} may only appear in the path. One in the host would let an argument choose which server is called.";
+      "A {placeholder} may only appear after the host — in the path or the query string. One in the host itself would let an argument choose which server is called.";
   } else if (isPlaintext(draft.url) && !context.allowPlaintextHttp) {
     out["url"] = "This is plain http. Turn on plaintext HTTP in the registry settings, or use https.";
   }
@@ -292,12 +294,12 @@ export const problemsWith = (
     });
   }
 
-  /* A path placeholder with no matching parameter is the quiet one. The tool saves, the
-     model is never told to supply that argument, and every call fails inside the adapter
-     with a missing path parameter — after the caller has already been made to wait. */
-  for (const name of pathParamsIn(draft.url)) {
+  /* A placeholder with no matching parameter is the quiet one. The tool saves, the model is
+     never told to supply that argument, and every call fails inside the adapter for want of
+     it — after the caller has already been made to wait. */
+  for (const name of urlParamsIn(draft.url)) {
     if (!paramNames.has(name)) {
-      out["url"] = `The path uses {${name}}, but no parameter is called ${name}.`;
+      out["url"] = `The URL uses {${name}}, but no parameter is called ${name}.`;
     }
   }
 

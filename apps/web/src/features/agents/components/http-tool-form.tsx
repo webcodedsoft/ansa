@@ -37,7 +37,7 @@ import {
   fieldsIn,
   hostOf,
   isPlaintext,
-  pathParamsIn,
+  urlParamsIn,
   problemsWith,
   schemaFromParams,
   toApiTool,
@@ -124,7 +124,7 @@ export const HttpToolForm = ({
   const problem = (key: string) => (showProblems ? problems[key] : undefined);
 
   const host = hostOf(draft.url);
-  const pathParams = pathParamsIn(draft.url);
+  const urlParams = urlParamsIn(draft.url);
   const declared = new Set(draft.params.map((param) => param.name));
 
   /* A GET cannot carry a body, so the choice is removed rather than left to be refused on
@@ -218,7 +218,7 @@ export const HttpToolForm = ({
                   onChange={(event) => edit({ url: event.target.value })}
                   error={problem("url")}
                   placeholder="https://api.acme.ng/policies/{policyNumber}"
-                  hint="Put {curly braces} around any part of the path that is an argument."
+                  hint="Put {curly braces} around any part of the path or query string that is an argument."
                 />
               </div>
 
@@ -253,10 +253,10 @@ export const HttpToolForm = ({
                 {draft.method !== "GET" && <option value="body">JSON body</option>}
               </SelectField>
 
-              {pathParams.length > 0 && (
+              {urlParams.length > 0 && (
                 <p className="flex flex-wrap items-center gap-1.5 text-[12.5px] text-[var(--ink-3)]">
-                  <span>The path takes</span>
-                  {pathParams.map((name) => (
+                  <span>The URL fills</span>
+                  {urlParams.map((name) => (
                     <Tag key={name} tone={declared.has(name) ? "ok" : "bad"}>
                       <span className="font-mono text-[11px]">{name}</span>
                     </Tag>

@@ -196,7 +196,7 @@ describe("when the organization's endpoint misbehaves", () => {
  * down the wire, which is the half that matters for encoding: a value that escapes its
  * segment is a request to a different path than the one anybody configured.
  */
-describe("a URL with a path parameter", () => {
+describe("a URL with a placeholder", () => {
   const raw = async (over: Record<string, unknown>, args: Record<string, unknown>) => {
     const { dispatcher } = dispatcherFor("/echo/{orderId}", undefined, new Map(), over);
     return dispatcher.dispatch({
@@ -241,7 +241,25 @@ describe("a URL with a path parameter", () => {
     expect(outcome.speech).toContain("%2F");
   });
 
-  it("refuses the call when the path parameter is missing", async () => {
+  it("fills one in the query string, and does not append it a second time", async () => {
+    /* `?regNo={id}` is how a great many real endpoints are shaped. It is substituted like
+       any other placeholder and consumed with it, so the endpoint sees one `regNo` rather
+       than a filled one and an appended one disagreeing with each other. */
+    const { dispatcher } = dispatcherFor("/echo?regNo={orderId}", undefined, new Map(), {
+      speech: { template: "Path was {sawPath}.", fallback: "no" },
+    });
+    const outcome = await dispatcher.dispatch({
+      organizationId: ORGANIZATION,
+      callId: CALL,
+      name: "order_status",
+      args: { orderId: "QT-1" },
+    });
+
+    expect(outcome.speech).toContain("regNo=QT-1");
+    expect(outcome.speech).not.toContain("orderId=");
+  });
+
+  it("refuses the call when the placeholder has no argument", async () => {
     /* Sending `{orderId}` as a literal would produce a 404, and a 404 means "no such
        record" — so the caller would be told their order does not exist when in fact the
        tool was misconfigured. */

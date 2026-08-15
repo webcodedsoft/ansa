@@ -2162,6 +2162,14 @@ MCP servers appear in the list, still run, and round-trip untouched.
       header could be typed, validated, saved and silently absent from the column. One
       `toStoredTool` now serves both `PUT /tools` and `POST /tools/try`, with a round-trip
       test.
+- [x] **A `{placeholder}` in the query string works, and the naming said otherwise.** I told
+      the user a URL like `?regNo={riskId}` would be sent literally. Wrong: `parseUrlParams`
+      allows a placeholder anywhere after the origin, and `fillPath` replaces it across the
+      whole URL, so a query placeholder is filled and consumed exactly like a path one. Only
+      the origin is off limits, which is the SSRF rule and nothing to do with paths.
+      `pathParams` was renamed `urlParams` and every message saying "path" now says what the
+      rule is, because a field named for half of what it holds is how the next reader gets
+      it wrong too. A test now pins query-string substitution end to end.
 - [ ] Not built: the curl/OpenAPI import.
 
 ### The call that is still owed
