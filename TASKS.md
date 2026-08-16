@@ -2578,6 +2578,45 @@ timestamp one now has the assertion the db test was missing.
       publish-form fields it writes straight to the live agent row. Nothing in the console
       calls it that way, but it is the same hole in a different wall.
 
+### The two holes the drafts slice left, closed (2026-08-16)
+
+- [x] **`PATCH /agents/{agentId}` no longer writes what a caller hears.** It still accepted
+      `name`, `persona`, `greeting`, `instructions`, `voiceId` and `speakingRate` and wrote
+      them straight to the live agent row — the same defect the draft closes, in a wall nobody
+      was looking at. Nothing called it with any of them, in the console or in `tools/`, so
+      they are removed rather than deprecated: the schema layer now answers 422 naming the
+      field, which is the right answer because it used to work and "it stopped" needs to be
+      loud. `dialledNumber` stays, deliberately — it is operator-level routing, it has no
+      representation in the published document, and it is how a number reaches an agent at
+      all.
+- [x] **Staging no longer throws away what somebody is typing.** The form was keyed on the
+      draft's timestamp, which every section shares, so flipping a behaviour switch remounted
+      the Voice and Routing panels and lost unsaved text on them. Each panel is now keyed on
+      *its own* content — the configuration document, or the one selection it edits — so a
+      panel resets when what it shows changes and stays put when somebody else's does. Keyed
+      on the value rather than a timestamp, which also means an ordinary save that stores the
+      text unchanged no longer remounts anything.
+- [x] That exposed a second one, which the browser found and the keys could not fix: the
+      behaviour switches are optimistic local state seeded once, so discarding a draft removed
+      the staged flag, the page refreshed with the live value, and the switch carried on
+      showing the flip that had just been thrown away. They now take the server's answer when
+      it differs from the one they were seeded with, adjusted during render rather than in an
+      effect — an effect paints the stale value first, and the answer can arrive after
+      somebody has flipped the switch again.
+
+- [x] `drafts.test.ts` was not idempotent, which is how both of the above were nearly missed.
+      Several of its tests publish, so they change the fixture's greeting and switches;
+      `afterAll` deletes the organisations but a run interrupted before it never gets there,
+      and `on conflict do nothing` then inherited the published values. The file passed alone,
+      failed in a full run, and failed *differently* each time — which reads as database
+      flakiness and is not. `beforeAll` now deletes before it inserts and sets every column a
+      test asserts a starting value for, and two tests that asserted the fixture's starting
+      value now assert the invariant they are actually about.
+
+Verified in the browser: typed unsaved text on the Conversation panel survives a switch flip,
+the switch follows the server back to `false` on discard, and Postgres showed the flag staged
+`true` with the live column still `false` at version 6 throughout.
+
 ### Validation errors that read as instructions (2026-08-16)
 
 Reported from a screenshot of the tool form, which said:

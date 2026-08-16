@@ -935,8 +935,8 @@
         "tags": [
           "agents"
         ],
-        "summary": "Rename an agent, or move which number reaches it",
-        "description": "Only the fields present are written. Send `dialledNumber: null` to unroute the agent, or a number to move it. Refuses with 409 if that number is not available to route.",
+        "summary": "Move which number reaches an agent",
+        "description": "Routing only. Send `dialledNumber: null` to unroute the agent, or a number to move it; refuses with 409 if that number is not available to route. Everything the agent says — its name, greeting, persona, instructions, voice and pace — is published, not patched, so it is not settable here: this endpoint would otherwise be a way to change what a caller hears with no version behind it.",
         "x-ansa-capability": "config:write",
         "parameters": [
           {
@@ -957,38 +957,6 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "name": {
-                    "type": "string",
-                    "maxLength": 200
-                  },
-                  "persona": {
-                    "type": [
-                      "string",
-                      "null"
-                    ],
-                    "maxLength": 2000
-                  },
-                  "greeting": {
-                    "type": [
-                      "string",
-                      "null"
-                    ],
-                    "maxLength": 500
-                  },
-                  "instructions": {
-                    "type": [
-                      "string",
-                      "null"
-                    ],
-                    "maxLength": 2000
-                  },
-                  "voiceId": {
-                    "type": [
-                      "string",
-                      "null"
-                    ],
-                    "maxLength": 120
-                  },
                   "dialledNumber": {
                     "type": [
                       "string",
@@ -996,14 +964,6 @@
                     ],
                     "maxLength": 16,
                     "pattern": "^\\+[1-9][0-9]{6,14}$"
-                  },
-                  "speakingRate": {
-                    "type": [
-                      "number",
-                      "null"
-                    ],
-                    "minimum": 0.7,
-                    "maximum": 1.2
                   }
                 },
                 "required": [],

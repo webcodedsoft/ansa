@@ -90,6 +90,24 @@ const tabLabel = (id: string): string => TAB_LABEL[id] ?? id;
 const sentenceList = (parts: readonly string[]): string =>
   parts.length < 2 ? (parts[0] ?? "") : `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
 
+/**
+ * A key that changes when the values a panel renders change, and not before.
+ *
+ * Nearly every field in this workspace is an uncontrolled input reading `defaultValue`, and
+ * React does not reset those on re-render — so Discard removed the draft, refreshed the page,
+ * and left the discarded text sitting in the boxes. A key fixes that by remounting.
+ *
+ * It used to be one key on the whole form, taken from the draft's timestamp. That was too
+ * blunt in a way only staging exposed: every section shares one `updated_at`, so flipping a
+ * behaviour switch on the Conversation tab remounted the Voice and Routing panels too and
+ * threw away anything typed there but not yet saved. Keying each panel on *its own* content
+ * means a panel resets when what it shows changes and stays put when somebody else's does.
+ *
+ * The value itself, not a timestamp: saving text the server stores unchanged leaves the key
+ * alone, so an ordinary save no longer remounts anything at all.
+ */
+const shownAs = (value: unknown): string => JSON.stringify(value) ?? "none";
+
 interface AgentWorkspaceProps {
   /** The agent record itself — its name, its number, its own version. */
   readonly agent: AgentSummary;
@@ -305,16 +323,8 @@ export const AgentWorkspace = ({
         </Notice>
       )}
 
-      {/* Keyed on which configuration is being shown, so saving or discarding remounts the
-          fields. Nearly everything below is an uncontrolled input reading `defaultValue`, and
-          React does not reset those on re-render — without this, Discard removed the draft,
-          refreshed the page, and left the discarded text sitting in the boxes. */}
-      <form
-        key={draft === null ? `live-${agent.configVersion}` : `draft-${draft.updatedAt}`}
-        id={PUBLISH_FORM}
-        action={save}
-        className="mt-3.5"
-      >
+      {/* No key on the form. Each panel carries its own — see `shownAs`. */}
+      <form id={PUBLISH_FORM} action={save} className="mt-3.5">
         {(state.status === "failed" || state.status === "invalid") && (
           <Notice tone="error" className="mb-3.5">
             {state.message}
@@ -332,16 +342,16 @@ export const AgentWorkspace = ({
               ),
             },
             { id: "flow", label: "Flow", panel: <FlowCanvas /> },
-            { id: "conversation", label: "Conversation", problem: problemTabs.has("conversation"), panel: <ConversationTab agent={staged} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
-            { id: "data", label: "Data captured", panel: <DataCapturedTab agent={staged} /> },
-            { id: "tools", label: "Tools", panel: <ToolsTab agent={staged} tools={tools} /> },
+            { id: "conversation", label: "Conversation", problem: problemTabs.has("conversation"), panel: <ConversationTab key={shownAs(config)} agent={staged} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
+            { id: "data", label: "Data captured", panel: <DataCapturedTab key={shownAs(staged.capturedFields)} agent={staged} /> },
+            { id: "tools", label: "Tools", panel: <ToolsTab key={shownAs(staged.enabledTools)} agent={staged} tools={tools} /> },
             {
               id: "knowledge",
               label: "Knowledge",
-              panel: <KnowledgeTab agent={staged} knowledge={knowledge} />,
+              panel: <KnowledgeTab key={shownAs(staged.knowledgeSources)} agent={staged} knowledge={knowledge} />,
             },
-            { id: "voice", label: "Voice", problem: problemTabs.has("voice"), panel: <VoiceTab config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
-            { id: "routing", label: "Routing & hours", problem: problemTabs.has("routing"), panel: <RoutingTab config={config} operatorManaged={operatorManaged} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
+            { id: "voice", label: "Voice", problem: problemTabs.has("voice"), panel: <VoiceTab key={shownAs(config)} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
+            { id: "routing", label: "Routing & hours", problem: problemTabs.has("routing"), panel: <RoutingTab key={shownAs(config)} config={config} operatorManaged={operatorManaged} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
             { id: "versions", label: "Versions", panel: <VersionsTab versions={versions} liveVersion={agent.configVersion} /> },
           ]}
         />

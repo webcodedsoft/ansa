@@ -69,18 +69,34 @@ beforeAll(async () => {
   ds = createDataSource({ url, poolSize: 4 });
   await ds.initialize();
 
+  /*
+   * Torn down before it is built, not only after.
+   *
+   * `on conflict do nothing` was not enough, and the way it failed is worth keeping: several
+   * tests here publish, so they leave the fixture's greeting and switches changed. `afterAll`
+   * deletes the organisations, but a run that is interrupted — or one whose suite fails at
+   * setup — never reaches it, and the next run's insert then does nothing and inherits the
+   * published values. The symptom was this file passing alone, failing in a full run, and
+   * failing differently each time, which reads exactly like database flakiness and is not.
+   *
+   * A fixture that depends on the last run having finished cleanly is a fixture that lies
+   * eventually. This one starts from nothing every time.
+   */
   for (const [organization, label] of [
     [A, "A"],
     [B, "B"],
   ] as const) {
     await withOrganization(ds, organization, async (scope) => {
+      await scope.query("delete from organizations where id = $1", [organization]);
+      await scope.query("insert into organizations (id, name) values ($1, $2)", [
+        organization,
+        `Draft organization ${label}`,
+      ]);
+      // Every column these tests assert a starting value for is set here rather than left to
+      // the table's default, so the assertion and the fixture cannot drift apart.
       await scope.query(
-        "insert into organizations (id, name) values ($1, $2) on conflict do nothing",
-        [organization, `Draft organization ${label}`],
-      );
-      await scope.query(
-        `insert into agents (id, organization_id, name)
-         values ($1, $1, $2) on conflict do nothing`,
+        `insert into agents (id, organization_id, name, barge_in, answering_machine_detection)
+         values ($1, $1, $2, true, false)`,
         [organization, `Draft organization ${label}`],
       );
     });
@@ -204,6 +220,9 @@ describe("publishing consumes the draft", () => {
 describe("discarding", () => {
   it("throws the work away and says it did", async () => {
     const agent = await agentOf(A);
+    // From nothing, so the assertion is about this save and not about whatever the test
+    // before it happened to leave staged.
+    await withOrganization(ds, A, (scope) => discardAgentDraft(scope, agent));
     await withOrganization(ds, A, (scope) =>
       saveAgentDraft(scope, agent, fields({ greeting: "Second thoughts." }), null, null),
     );
@@ -476,17 +495,21 @@ describe("staging the behaviour flags", () => {
   it("changes nothing the call path reads", async () => {
     const agent = await agentOf(B);
     const before = await liveBehaviour(B);
-    expect(before.bargeIn, "the fixture should start with barge-in on").toBe(true);
 
+    /* Staged as the opposite of whatever is live, rather than a fixed `false` against a
+       fixture asserted to start `true`. Earlier tests in this file publish to B, so the
+       starting value is not this test's to know — and asserting it made the suite pass or
+       fail on what ran before it, which reads as flakiness and is not. What this test is
+       about is the invariant: staging moves nothing a call reads. */
     await withOrganization(ds, B, (scope) =>
-      stageAgentSelection(scope, agent, { bargeIn: false }, null),
+      stageAgentSelection(scope, agent, { bargeIn: !before.bargeIn }, null),
     );
 
     const after = await liveBehaviour(B);
     expect(after).toEqual(before);
     // Named on its own because this is the behaviour a caller would meet: an agent that has
     // stopped letting them interrupt, because somebody flipped a switch and never published.
-    expect(after.bargeIn).toBe(true);
+    expect(after.bargeIn).toBe(before.bargeIn);
   });
 
   it("stages false as a value rather than as an absence", async () => {

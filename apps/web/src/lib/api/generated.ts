@@ -193,21 +193,15 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       }>(options, "GET", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}`, input),
 
     /**
-     * Rename an agent, or move which number reaches it
-     * Only the fields present are written. Send `dialledNumber: null` to unroute the agent, or a number to move it. Refuses with 409 if that number is not available to route.
+     * Move which number reaches an agent
+     * Routing only. Send `dialledNumber: null` to unroute the agent, or a number to move it; refuses with 409 if that number is not available to route. Everything the agent says — its name, greeting, persona, instructions, voice and pace — is published, not patched, so it is not settable here: this endpoint would otherwise be a way to change what a caller hears with no version behind it.
      */
     update: (input: {
         readonly path: {
           readonly agentId: string;
         };
         readonly body: {
-          readonly name?: string;
-          readonly persona?: string | null;
-          readonly greeting?: string | null;
-          readonly instructions?: string | null;
-          readonly voiceId?: string | null;
           readonly dialledNumber?: string | null;
-          readonly speakingRate?: number | null;
         };
       }) =>
       send<{

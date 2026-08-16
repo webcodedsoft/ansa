@@ -237,19 +237,24 @@ export const createAgent = async (scope: OrganizationScope, agent: NewAgent): Pr
   return row;
 };
 
+/**
+ * Routing, and nothing else.
+ *
+ * This carried `name`, `persona`, `greeting`, `instructions`, `voiceId` and `speakingRate`
+ * until the drafts slice finished, which made it a second way to change what a caller hears
+ * with no version, no note and no Publish — the defect the draft exists to close, in a wall
+ * nobody was looking at. The behaviour switches left for the same reason in 0041. Nothing
+ * called it with any of them, in the console or in `tools/`, so they are gone rather than
+ * deprecated.
+ *
+ * Which number reaches an agent stays here on purpose. It is not configuration the agent
+ * speaks — it is operator-level routing, it has no representation in the published document,
+ * and `organization_numbers` is `SELECT`-only to `ansa_app` so the numbers themselves are
+ * still assigned by us.
+ */
 export interface AgentEdit {
-  readonly name?: string;
-  readonly persona?: string | null;
-  readonly greeting?: string | null;
-  readonly instructions?: string | null;
-  readonly voiceId?: string | null;
-  readonly speakingRate?: number | null;
   /** Null unroutes the agent, a number moves it, omitted leaves it alone. */
   readonly dialledNumber?: string | null;
-  /* No `bargeIn` or `answeringMachineDetection`. They are staged into the draft since 0041
-     and applied by the publish path through `applyAgentBehaviour`; a setter here would be a
-     second way to change what a live call does without pressing Publish, which is the whole
-     defect the draft exists to close. */
 }
 
 /**
@@ -273,12 +278,6 @@ export const updateAgent = async (
     sets.push(`${column} = $${values.length}`);
   };
 
-  if (edit.name !== undefined) set("name", edit.name);
-  if (edit.persona !== undefined) set("persona", edit.persona);
-  if (edit.greeting !== undefined) set("greeting", edit.greeting);
-  if (edit.instructions !== undefined) set("instructions", edit.instructions);
-  if (edit.voiceId !== undefined) set("voice_id", edit.voiceId);
-  if (edit.speakingRate !== undefined) set("speaking_rate", edit.speakingRate);
   if (edit.dialledNumber !== undefined) set("dialled_number", edit.dialledNumber);
 
   if (sets.length === 0) return findAgent(scope, agentId);

@@ -72,6 +72,31 @@ export const ConversationTab = ({
      agent, so a flip saved earlier and not yet published still reads as flipped. */
   const [bargeIn, setBargeIn] = useState(agent.bargeIn);
   const [amd, setAmd] = useState(agent.answeringMachineDetection);
+
+  /**
+   * Take the server's answer when it differs from the one this panel was seeded with.
+   *
+   * `useState` seeds once, so the switches held their optimistic value forever: discarding a
+   * draft removed the staged flag, the page refreshed with the live value, and the switch
+   * carried on showing the flip that had just been thrown away. Every other field in the
+   * workspace resets by remounting, but the panel's key is the configuration document — and
+   * it has to be, or flipping a switch would remount the panel and throw away text somebody
+   * had typed beside it and not yet saved. Two kinds of state on one panel, resetting on
+   * different conditions.
+   *
+   * Adjusted during render rather than in an effect, which is the documented way to reset
+   * state when a prop changes: an effect would paint the stale value first, and the answer
+   * can arrive after somebody has already flipped the switch again.
+   */
+  const [seeded, setSeeded] = useState({
+    bargeIn: agent.bargeIn,
+    amd: agent.answeringMachineDetection,
+  });
+  if (seeded.bargeIn !== agent.bargeIn || seeded.amd !== agent.answeringMachineDetection) {
+    setSeeded({ bargeIn: agent.bargeIn, amd: agent.answeringMachineDetection });
+    setBargeIn(agent.bargeIn);
+    setAmd(agent.answeringMachineDetection);
+  }
   const [failure, setFailure] = useState<string | null>(null);
   const [saving, startSaving] = useTransition();
 

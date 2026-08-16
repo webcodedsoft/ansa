@@ -147,14 +147,15 @@ const newAgent = object({
  * make "this agent no longer has a persona" inexpressible, and unrouting an agent —
  * `dialledNumber: null` — is the case where it actually matters.
  */
+/**
+ * Routing, and nothing else. See `AgentEdit` in `@ansa/db` for why the rest left.
+ *
+ * A field removed from here is refused by the schema layer rather than ignored, so a caller
+ * still sending `greeting` gets a 422 naming it instead of a silent no-op. That is the right
+ * answer: it used to work, and "it stopped working" needs to be loud.
+ */
 const agentEdit = object({
-  name: optional(text({ maxLength: NAME_LIMIT })),
-  persona: optional(nullable(text({ maxLength: PERSONA_LIMIT }))),
-  greeting: optional(nullable(text({ maxLength: GREETING_LIMIT }))),
-  instructions: optional(nullable(text({ maxLength: INSTRUCTIONS_LIMIT }))),
-  voiceId: optional(nullable(text({ maxLength: VOICE_LIMIT }))),
   dialledNumber: optional(nullable(phoneNumber())),
-  speakingRate: optional(nullable(number({ minimum: 0.7, maximum: 1.2 }))),
 });
 
 /**
@@ -259,9 +260,9 @@ export class AgentsController {
 
   @Patch(":agentId")
   @Endpoint({
-    summary: "Rename an agent, or move which number reaches it",
+    summary: "Move which number reaches an agent",
     description:
-      "Only the fields present are written. Send `dialledNumber: null` to unroute the agent, or a number to move it. Refuses with 409 if that number is not available to route.",
+      "Routing only. Send `dialledNumber: null` to unroute the agent, or a number to move it; refuses with 409 if that number is not available to route. Everything the agent says — its name, greeting, persona, instructions, voice and pace — is published, not patched, so it is not settable here: this endpoint would otherwise be a way to change what a caller hears with no version behind it.",
     capability: "config:write",
     params: agentPath,
     body: agentEdit,
