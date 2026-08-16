@@ -31,6 +31,16 @@ export interface AgentDraft {
   readonly tools: readonly string[] | null;
   /** Null is not staged; an empty array is an agent with no knowledge base at all. */
   readonly knowledge: readonly string[] | null;
+  /**
+   * The two behaviour flags, staged one at a time.
+   *
+   * Two fields rather than one object because that is how the console saves them: the panel
+   * draws them together, but each toggle sends only the switch that moved. Null is not
+   * staged, and `false` is a staged "off" — the same distinction the empty array carries
+   * above. See migration 0041.
+   */
+  readonly bargeIn: boolean | null;
+  readonly answeringMachineDetection: boolean | null;
   /** Who last saved it. Null when that account is gone but their work is not. */
   readonly updatedBy: string | null;
   /**
@@ -50,6 +60,8 @@ interface DraftRow {
   readonly captured_fields: readonly unknown[] | null;
   readonly enabled_tools: readonly string[] | null;
   readonly knowledge_sources: readonly string[] | null;
+  readonly barge_in: boolean | null;
+  readonly answering_machine_detection: boolean | null;
   readonly updated_by: string | null;
   readonly restored_from: number | null;
   /* A `Date`, not a string: the driver parses `timestamptz` and the API's schema layer
@@ -89,6 +101,7 @@ export const loadAgentDraft = async (
 ): Promise<AgentDraft | null> => {
   const rows = await scope.query<DraftRow>(
     `select config, captured_fields, enabled_tools, knowledge_sources,
+            barge_in, answering_machine_detection,
             updated_by, restored_from, updated_at
        from agent_config_drafts
       where agent_id = $1`,
@@ -102,6 +115,8 @@ export const loadAgentDraft = async (
     capturedFields: row.captured_fields,
     tools: row.enabled_tools,
     knowledge: row.knowledge_sources,
+    bargeIn: row.barge_in,
+    answeringMachineDetection: row.answering_machine_detection,
     updatedBy: row.updated_by,
     restoredFrom: row.restored_from,
     updatedAt: row.updated_at.toISOString(),
@@ -153,11 +168,12 @@ export const discardAgentDraft = async (
 };
 
 /**
- * Stage one of the three selections an agent owns, leaving everything else as it was.
+ * Stage one of the things an agent owns, leaving everything else as it was.
  *
- * One function rather than three because they share every line except which argument is not
- * null, and three would be three places to forget the scope check. Pass null for the sections
- * this caller does not own: the SQL coalesces, so a tool save cannot blank a staged form.
+ * One function rather than five because they share every line except which argument is not
+ * null, and five would be five places to forget the scope check. Pass undefined for the
+ * sections this caller does not own: the SQL coalesces, so a tool save cannot blank a staged
+ * form and flipping barge-in cannot revert answering-machine detection.
  */
 export const stageAgentSelection = async (
   scope: OrganizationScope,
@@ -166,11 +182,16 @@ export const stageAgentSelection = async (
     readonly capturedFields?: readonly unknown[] | undefined;
     readonly tools?: readonly string[] | undefined;
     readonly knowledge?: readonly string[] | undefined;
+    /* Separately optional, because the console sends whichever switch was flipped and not
+       the pair. `false` stages "off"; undefined stages nothing. */
+    readonly bargeIn?: boolean | undefined;
+    readonly answeringMachineDetection?: boolean | undefined;
   },
   author: string | null,
 ): Promise<string | null> => {
   const rows = await scope.query<{ stage_agent_draft_selection: Date | null }>(
-    `select app.stage_agent_draft_selection($1::uuid, $2::uuid, $3::jsonb, $4::text[], $5::uuid[])
+    `select app.stage_agent_draft_selection($1::uuid, $2::uuid, $3::jsonb, $4::text[], $5::uuid[],
+                                            $6::boolean, $7::boolean)
               as stage_agent_draft_selection`,
     [
       agentId,
@@ -178,6 +199,8 @@ export const stageAgentSelection = async (
       staged.capturedFields === undefined ? null : JSON.stringify(staged.capturedFields),
       staged.tools === undefined ? null : [...staged.tools],
       staged.knowledge === undefined ? null : [...staged.knowledge],
+      staged.bargeIn ?? null,
+      staged.answeringMachineDetection ?? null,
     ],
   );
   return rows[0]?.stage_agent_draft_selection?.toISOString() ?? null;
@@ -200,4 +223,28 @@ export const applyCapturedFields = async (
     [agentId, JSON.stringify(fields)],
   );
   return rows[0]?.apply_captured_fields ?? false;
+};
+
+/**
+ * Put the staged behaviour flags on the agent.
+ *
+ * The publish path's, like `applyCapturedFields`, but with no ordering constraint against the
+ * snapshot: `agent_prompt_versions` has no column for either flag, so a version records
+ * nothing about them and this can run after `publish_agent_config` alongside the two
+ * selections. Undefined leaves a flag alone, which is what makes publishing a draft that
+ * staged only one of them safe.
+ */
+export const applyAgentBehaviour = async (
+  scope: OrganizationScope,
+  agentId: string,
+  flags: {
+    readonly bargeIn?: boolean | undefined;
+    readonly answeringMachineDetection?: boolean | undefined;
+  },
+): Promise<boolean> => {
+  const rows = await scope.query<{ apply_agent_behaviour: boolean }>(
+    `select app.apply_agent_behaviour($1::uuid, $2::boolean, $3::boolean) as apply_agent_behaviour`,
+    [agentId, flags.bargeIn ?? null, flags.answeringMachineDetection ?? null],
+  );
+  return rows[0]?.apply_agent_behaviour ?? false;
 };

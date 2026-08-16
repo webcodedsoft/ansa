@@ -246,8 +246,10 @@ export interface AgentEdit {
   readonly speakingRate?: number | null;
   /** Null unroutes the agent, a number moves it, omitted leaves it alone. */
   readonly dialledNumber?: string | null;
-  readonly bargeIn?: boolean;
-  readonly answeringMachineDetection?: boolean;
+  /* No `bargeIn` or `answeringMachineDetection`. They are staged into the draft since 0041
+     and applied by the publish path through `applyAgentBehaviour`; a setter here would be a
+     second way to change what a live call does without pressing Publish, which is the whole
+     defect the draft exists to close. */
 }
 
 /**
@@ -278,10 +280,6 @@ export const updateAgent = async (
   if (edit.voiceId !== undefined) set("voice_id", edit.voiceId);
   if (edit.speakingRate !== undefined) set("speaking_rate", edit.speakingRate);
   if (edit.dialledNumber !== undefined) set("dialled_number", edit.dialledNumber);
-  if (edit.bargeIn !== undefined) set("barge_in", edit.bargeIn);
-  if (edit.answeringMachineDetection !== undefined) {
-    set("answering_machine_detection", edit.answeringMachineDetection);
-  }
 
   if (sets.length === 0) return findAgent(scope, agentId);
 

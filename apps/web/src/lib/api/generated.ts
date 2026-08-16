@@ -207,9 +207,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
           readonly instructions?: string | null;
           readonly voiceId?: string | null;
           readonly dialledNumber?: string | null;
-          readonly bargeIn?: boolean;
           readonly speakingRate?: number | null;
-          readonly answeringMachineDetection?: boolean;
         };
       }) =>
       send<{
@@ -251,6 +249,23 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         };
       }) =>
       send<void>(options, "DELETE", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}`, input),
+
+    /**
+     * Stage this agent's behaviour flags
+     * Saved, not applied: the flags go into the agent's unpublished draft and a call answered a second later behaves exactly as it does today, until somebody publishes. Send only the switch that moved — an omitted flag is left as it was, staged or live, so flipping one cannot revert the other to whatever the page last read. `false` is a value and stages the switch off.
+     */
+    setBehaviour: (input: {
+        readonly path: {
+          readonly agentId: string;
+        };
+        readonly body: {
+          readonly bargeIn?: boolean;
+          readonly answeringMachineDetection?: boolean;
+        };
+      }) =>
+      send<{
+        readonly updatedAt: string;
+      }>(options, "PUT", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}/behaviour`, input),
 
     /**
      * Stage the form this agent conducts
@@ -764,6 +779,8 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       })[] | null;
         readonly tools: readonly (string)[] | null;
         readonly knowledge: readonly (string)[] | null;
+        readonly bargeIn: boolean | null;
+        readonly answeringMachineDetection: boolean | null;
         readonly updatedBy: string | null;
         readonly restoredFrom: number | null;
         readonly updatedAt: string;
@@ -828,6 +845,8 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       })[] | null;
         readonly tools: readonly (string)[] | null;
         readonly knowledge: readonly (string)[] | null;
+        readonly bargeIn: boolean | null;
+        readonly answeringMachineDetection: boolean | null;
         readonly updatedBy: string | null;
         readonly restoredFrom: number | null;
         readonly updatedAt: string;
@@ -1013,6 +1032,8 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       })[] | null;
         readonly tools: readonly (string)[] | null;
         readonly knowledge: readonly (string)[] | null;
+        readonly bargeIn: boolean | null;
+        readonly answeringMachineDetection: boolean | null;
         readonly updatedBy: string | null;
         readonly restoredFrom: number | null;
         readonly updatedAt: string;

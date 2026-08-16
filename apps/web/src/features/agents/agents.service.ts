@@ -38,19 +38,23 @@ export const createAgent = async (body: {
   readonly dialledNumber?: string | null;
 }) => (await api()).agents.create({ body });
 
-export const updateAgent = async (
+/* No wrapper for `PATCH /agents/{agentId}`. The behaviour switches were the last thing the
+   console sent it, and they stage now — every other field it accepts is a publish-form field
+   that reaches the agent by being published. The endpoint still exists and still writes those
+   fields live, which is the same hole in a different wall; `TASKS.md` records it. A wrapper
+   sitting here unused is an invitation to reach for it. */
+
+/**
+ * Stage a behaviour switch. Nothing about a live call changes until somebody publishes.
+ *
+ * Only the switch that moved is sent. An omitted flag is left as it was — staged or live —
+ * so flipping barge-in cannot revert answering-machine detection to whatever this page read
+ * when it rendered.
+ */
+export const stageAgentBehaviour = async (
   agentId: string,
-  body: {
-    readonly name?: string;
-    readonly persona?: string | null;
-    readonly instructions?: string | null;
-    readonly dialledNumber?: string | null;
-    readonly bargeIn?: boolean;
-    readonly answeringMachineDetection?: boolean;
-    /** Null is the voice's own pace, which is not the same as 1.0. */
-    readonly speakingRate?: number | null;
-  },
-) => (await api()).agents.update({ path: { agentId }, body });
+  body: { readonly bargeIn?: boolean; readonly answeringMachineDetection?: boolean },
+) => (await api()).agents.setBehaviour({ path: { agentId }, body });
 
 /** Retires the agent and releases its number. The API archives rather than deletes. */
 export const archiveAgent = async (agentId: string) =>

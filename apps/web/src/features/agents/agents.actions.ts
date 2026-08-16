@@ -36,7 +36,7 @@ import {
   placeTestCall,
   setAgentFields,
   setAgentTools,
-  updateAgent,
+  stageAgentBehaviour,
   publishConfiguration,
   replaceTools,
   rollbackToVersion,
@@ -266,13 +266,17 @@ export const testToolAction = async (_previous: ToolTestState, form: FormData): 
 };
 
 /**
- * Flip one of the agent's behaviour switches.
+ * Stage one of the agent's behaviour switches.
  *
- * Saved the moment it is flipped, and deliberately not through `publish`. A switch is an
- * operational control rather than a script change: it belongs to the agent row, not to the
- * versioned configuration document, so there is no note to write and no version to cut.
- * Making somebody publish to turn barge-in off would also mean they could not turn it off
- * without shipping whatever else they had half-typed into another tab.
+ * Saved the moment it is flipped and live on nothing until Publish, which is the same rule
+ * every other per-agent setting follows since 0041. It used to write the agent row directly,
+ * on the argument that a switch is an operational control rather than a script change — but
+ * a caller cannot hear the difference between "the agent stopped letting me interrupt"
+ * because somebody published and because somebody flipped a switch, and one of those two was
+ * not going to appear in any version history.
+ *
+ * Only the switch that moved is sent. The other is left as it was, staged or live, so two
+ * flips cannot revert each other through a value this page read when it rendered.
  *
  * Returns the failure rather than throwing, so a refused write can put the switch back
  * where it was instead of leaving the UI claiming a state the database does not hold.
@@ -282,7 +286,7 @@ export const setAgentBehaviour = async (
   change: { readonly bargeIn?: boolean; readonly answeringMachineDetection?: boolean },
 ): Promise<{ readonly ok: true } | { readonly ok: false; readonly message: string }> => {
   try {
-    await updateAgent(agentId, change);
+    await stageAgentBehaviour(agentId, change);
     revalidatePath("/agents", "layout");
     return { ok: true };
   } catch (error) {
@@ -391,14 +395,16 @@ export const createAgentFromTemplate = async (input: {
 
   // Only when the template disagrees with what a new agent already gets, so the common case
   // costs no request at all. Barge-in defaults on and detection defaults off — see
-  // migration 0020.
+  // migration 0020. Staged rather than applied since 0041, exactly as the template's form
+  // above is: a new agent from a template opens with unpublished changes, which is the
+  // honest description of a template nobody has published yet.
   const switches = {
     ...(template.bargeIn ? {} : { bargeIn: false }),
     ...(template.answeringMachineDetection ? { answeringMachineDetection: true } : {}),
   };
   if (Object.keys(switches).length > 0) {
     try {
-      await updateAgent(agentId, switches);
+      await stageAgentBehaviour(agentId, switches);
     } catch (error) {
       unfinished.push(`its switches (${failureMessage(error)})`);
     }
@@ -475,6 +481,16 @@ export const saveHttpToolAction = async (
     return failedForm("The form could not be read. Reload the page and try again.");
   }
 
+  /**
+   * Where this tool sits in the registry, for naming a refusal about it.
+   *
+   * `PUT /tools` validates the whole document, so a form editing one tool is told about
+   * `http.1.name` — and the operator is looking at a page headed "Add a tool", not at a
+   * numbered list. Knowing the index lets the message drop it. Declared out here because it
+   * is worked out inside the `try` and needed inside the `catch`.
+   */
+  let savedAt: number | null = null;
+
   try {
     const current = await readTools();
     const replacing = parsed.data.replacing === "" ? null : parsed.data.replacing;
@@ -483,6 +499,7 @@ export const saveHttpToolAction = async (
     const at = replacing === null ? -1 : http.findIndex((entry) => entry["name"] === replacing);
     if (at === -1) http.push(tool);
     else http[at] = tool;
+    savedAt = at === -1 ? http.length - 1 : at;
 
     let host: string | null = null;
     try {
@@ -509,7 +526,9 @@ export const saveHttpToolAction = async (
       `Saved ${String(tool["name"])}.`,
     );
   } catch (error) {
-    return failedForm(failureMessage(error));
+    /* Only this tool's index is dropped. A refusal about a different one keeps its number,
+       because that is the case where the operator has to be told which. */
+    return failedForm(failureMessage(error, savedAt === null ? {} : { within: `http.${savedAt}` }));
   }
 };
 

@@ -1,4 +1,5 @@
 import {
+  applyAgentBehaviour,
   applyCapturedFields,
   discardAgentDraft,
   listAgentConfigVersions,
@@ -11,6 +12,7 @@ import {
   saveAgentDraft,
   setAgentKnowledgeSources,
   setAgentTools,
+  type AgentDraft,
   type ConfigVersion,
   type AgentConfigFields,
 } from "@ansa/db";
@@ -306,6 +308,15 @@ const draft = object({
   capturedFields: nullable(list(capturedField, { maxItems: MAX_CAPTURED_FIELDS })),
   tools: nullable(list(text({ maxLength: 120 }), { maxItems: 200 })),
   knowledge: nullable(list(uuid(), { maxItems: 500 })),
+  /**
+   * The two behaviour flags, each null until it is staged.
+   *
+   * Separately nullable rather than one object, because the console flips one switch at a
+   * time: a shared section would have to carry the other flag's value as the page last read
+   * it, and that stale copy is what reverts it. `false` is a staged "off", not an absence.
+   */
+  bargeIn: nullable(flag()),
+  answeringMachineDetection: nullable(flag()),
   /** Null when the account that saved it is gone but the work is not. */
   updatedBy: nullable(uuid()),
   /** The version this was loaded from, for the publish note to offer. Null when typed. */
@@ -332,6 +343,25 @@ const toConfigBody = (config: AgentConfigFields): Infer<typeof configFields> => 
       ? null
       : { ...config.businessHours, openDays: [...config.businessHours.openDays] },
   escalation: config.escalation,
+});
+
+/**
+ * A stored draft as the wire sees it.
+ *
+ * One mapping rather than the same eight lines in `readDraft`, `saveDraft` and `rollback`.
+ * Three copies is how a section gets staged and then never reported by one of the three, and
+ * the symptom of that is a console showing live values for work somebody saved.
+ */
+const toDraftBody = (found: AgentDraft): Infer<typeof draft> => ({
+  config: found.config === null ? null : toConfigBody(found.config),
+  capturedFields: found.capturedFields as Infer<typeof draft>["capturedFields"],
+  tools: found.tools === null ? null : [...found.tools],
+  knowledge: found.knowledge === null ? null : [...found.knowledge],
+  bargeIn: found.bargeIn,
+  answeringMachineDetection: found.answeringMachineDetection,
+  updatedBy: found.updatedBy,
+  restoredFrom: found.restoredFrom,
+  updatedAt: found.updatedAt,
 });
 
 /** The history row without the snapshot hanging off it, for the two ends of a diff. */
@@ -453,7 +483,9 @@ export class ConfigController {
        *      at would describe an agent that never existed.
        *   2. the configuration, which bumps the version, writes the snapshot, and deletes
        *      the draft.
-       *   3. the two selections, which live in join tables the snapshot does not cover.
+       *   3. the two selections, which live in join tables the snapshot does not cover, and
+       *      the behaviour flags, which `agent_prompt_versions` has no column for — checked
+       *      against the table rather than assumed, so nothing here needs to precede it.
        *
        * Absent sections are left alone rather than cleared. Null means nobody staged one,
        * and a publish that blanked an agent's tools because the operator only edited the
@@ -473,6 +505,14 @@ export class ConfigController {
       }
       if (agentId !== null && staged?.knowledge != null) {
         await setAgentKnowledgeSources(scope, agentId, staged.knowledge);
+      }
+      if (agentId !== null && (staged?.bargeIn != null || staged?.answeringMachineDetection != null)) {
+        await applyAgentBehaviour(scope, agentId, {
+          ...(staged.bargeIn === null ? {} : { bargeIn: staged.bargeIn }),
+          ...(staged.answeringMachineDetection === null
+            ? {}
+            : { answeringMachineDetection: staged.answeringMachineDetection }),
+        });
       }
 
       // Read back inside the same transaction rather than echoing the request. What comes
@@ -560,15 +600,7 @@ export class ConfigController {
     });
 
     if (restored === null) throw new Error("saved a draft that cannot be read back");
-    return {
-      config: restored.config === null ? null : toConfigBody(restored.config),
-      capturedFields: restored.capturedFields as Infer<typeof draft>["capturedFields"],
-      tools: restored.tools === null ? null : [...restored.tools],
-      knowledge: restored.knowledge === null ? null : [...restored.knowledge],
-      updatedBy: restored.updatedBy,
-      restoredFrom: restored.restoredFrom,
-      updatedAt: restored.updatedAt,
-    };
+    return toDraftBody(restored);
   }
 
   /**
@@ -602,17 +634,7 @@ export class ConfigController {
     });
 
     if (found === null) return { draft: null };
-    return {
-      draft: {
-        config: found.config === null ? null : toConfigBody(found.config),
-        capturedFields: found.capturedFields as Infer<typeof draft>["capturedFields"],
-        tools: found.tools === null ? null : [...found.tools],
-        knowledge: found.knowledge === null ? null : [...found.knowledge],
-        updatedBy: found.updatedBy,
-        restoredFrom: found.restoredFrom,
-        updatedAt: found.updatedAt,
-      },
-    };
+    return { draft: toDraftBody(found) };
   }
 
   @Put("draft")
@@ -645,15 +667,7 @@ export class ConfigController {
     });
 
     if (saved === null) throw new NotFoundException();
-    return {
-      config: saved.config === null ? null : toConfigBody(saved.config),
-      capturedFields: saved.capturedFields as Infer<typeof draft>["capturedFields"],
-      tools: saved.tools === null ? null : [...saved.tools],
-      knowledge: saved.knowledge === null ? null : [...saved.knowledge],
-      updatedBy: saved.updatedBy,
-      restoredFrom: saved.restoredFrom,
-      updatedAt: saved.updatedAt,
-    };
+    return toDraftBody(saved);
   }
 
   @Delete("draft")

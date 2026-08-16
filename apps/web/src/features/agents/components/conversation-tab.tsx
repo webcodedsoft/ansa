@@ -30,19 +30,19 @@ interface ConversationTabProps {
 /**
  * Who the agent is, and how it answers.
  *
- * Two kinds of change live on this tab and they save differently, which is deliberate
- * rather than inconsistent:
+ * Two kinds of change live on this tab and they are entered differently, though since 0041
+ * they end in the same place:
  *
- *   The text — name, greeting, persona, instructions — is the script. It is versioned, so
- *   it is published, and each section has its own Save so nobody has to scroll back to the
- *   header to keep what they just wrote. The API's configuration is one atomic document,
- *   so a section Save publishes the whole of it as one version; the fields the section does
- *   not own ride along unchanged.
+ *   The text — name, greeting, persona, instructions — is the script. It is part of the
+ *   configuration document, so it is saved into the draft by this tab's Save and goes live
+ *   when somebody publishes.
  *
- *   The switches are operational. They belong to the agent row rather than to the versioned
- *   document, so they save the moment they are flipped, with no note and no new version.
- *   Requiring a publish to turn barge-in off would also mean you could not turn it off
- *   without shipping whatever was half-typed in another tab.
+ *   The switches are entered one at a time, with no Save button: flipping one stages it by
+ *   itself. They used to write the agent row directly, on the argument that a switch is an
+ *   operational control rather than a script change — but a caller cannot hear the
+ *   difference, and one of the two ways an agent's behaviour changed was leaving no trace in
+ *   any version. They now stage like everything else the agent owns, and the switch shows
+ *   the staged value where there is one.
  */
 
 /**
@@ -68,7 +68,8 @@ export const ConversationTab = ({
 }: ConversationTabProps) => {
   /* Held locally so the switch moves under the finger rather than after the round trip,
      and put back if the write is refused. A switch that waits for the server feels broken
-     at exactly the moment somebody is deciding whether it works. */
+     at exactly the moment somebody is deciding whether it works. Seeded from the staged
+     agent, so a flip saved earlier and not yet published still reads as flipped. */
   const [bargeIn, setBargeIn] = useState(agent.bargeIn);
   const [amd, setAmd] = useState(agent.answeringMachineDetection);
   const [failure, setFailure] = useState<string | null>(null);
@@ -177,8 +178,9 @@ export const ConversationTab = ({
                 }
               />
               <p className="mt-3 text-[12.5px] text-[var(--ink-3)]">
-                Switches save as you flip them and take effect on the next call. The
-                transfer rule is fixed and shown because it is worth knowing.
+                Switches save as you flip them and take effect when you publish, like
+                everything else on this page. The transfer rule is fixed and shown because it
+                is worth knowing.
               </p>
             </div>
 

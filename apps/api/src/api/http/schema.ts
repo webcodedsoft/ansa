@@ -168,6 +168,9 @@ export interface ParseOptions {
 
 const join = (path: string, key: string): string => (path === "" ? key : `${path}.${key}`);
 
+/** "1 character", not "1 characters". The message is read by a person, not by a parser. */
+const characters = (count: number): string => `${count} character${count === 1 ? "" : "s"}`;
+
 const fail = (path: string, message: string): ParseResult<never> => ({
   ok: false,
   errors: [{ path, message }],
@@ -179,10 +182,17 @@ const parseString = (node: Extract<SchemaNode, { type: "string" }>, value: unkno
     return fail(path, `must be one of: ${node.enum.join(", ")}`);
   }
   if (node.minLength !== undefined && value.length < node.minLength) {
-    return fail(path, `must be at least ${node.minLength} characters`);
+    /* "must be at least 1 characters" is two mistakes in one short line, and it is the
+       message a person meets most often, because `minLength: 1` is how every required text
+       field in this API is written. An empty box is not a length problem to whoever left it
+       empty — it is a missing answer, and that is what it should say. */
+    return fail(
+      path,
+      node.minLength === 1 ? "is required" : `must be at least ${characters(node.minLength)}`,
+    );
   }
   if (node.maxLength !== undefined && value.length > node.maxLength) {
-    return fail(path, `must be at most ${node.maxLength} characters`);
+    return fail(path, `must be at most ${characters(node.maxLength)}`);
   }
   if (node.pattern !== undefined && !new RegExp(node.pattern).test(value)) {
     return fail(path, "is not in the expected format");

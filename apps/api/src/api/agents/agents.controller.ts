@@ -154,8 +154,20 @@ const agentEdit = object({
   instructions: optional(nullable(text({ maxLength: INSTRUCTIONS_LIMIT }))),
   voiceId: optional(nullable(text({ maxLength: VOICE_LIMIT }))),
   dialledNumber: optional(nullable(phoneNumber())),
-  bargeIn: optional(flag()),
   speakingRate: optional(nullable(number({ minimum: 0.7, maximum: 1.2 }))),
+});
+
+/**
+ * The behaviour flags, staged rather than applied.
+ *
+ * Both optional and neither required, unlike the three selections above, which are sent
+ * whole. Those are lists where "what is on screen is what gets saved"; these are two switches
+ * flipped one at a time, and requiring both would make every flip carry the other flag's
+ * value as the browser last saw it — which is how one tab reverts the other. Absent means
+ * "not staged" all the way down to the column.
+ */
+const behaviour = object({
+  bargeIn: optional(flag()),
   answeringMachineDetection: optional(flag()),
 });
 
@@ -277,6 +289,37 @@ export class AgentsController {
   async archive(@FromPath() path: Infer<typeof agentPath>): Promise<void> {
     const archived = await this.db.tx((scope) => archiveAgent(scope, path.agentId));
     if (!archived) throw new NotFoundException();
+  }
+
+  @Put(":agentId/behaviour")
+  @Endpoint({
+    summary: "Stage this agent's behaviour flags",
+    description:
+      "Saved, not applied: the flags go into the agent's unpublished draft and a call answered a second later behaves exactly as it does today, until somebody publishes. Send only the switch that moved — an omitted flag is left as it was, staged or live, so flipping one cannot revert the other to whatever the page last read. `false` is a value and stages the switch off.",
+    capability: "config:write",
+    params: agentPath,
+    body: behaviour,
+    response: staged,
+  })
+  async setBehaviour(
+    @FromPath() path: Infer<typeof agentPath>,
+    @FromBody() body: Infer<typeof behaviour>,
+  ): Promise<Infer<typeof staged>> {
+    const at = await this.db.tx((scope) =>
+      stageAgentSelection(
+        scope,
+        path.agentId,
+        {
+          ...(body.bargeIn === undefined ? {} : { bargeIn: body.bargeIn }),
+          ...(body.answeringMachineDetection === undefined
+            ? {}
+            : { answeringMachineDetection: body.answeringMachineDetection }),
+        },
+        null,
+      ),
+    );
+    if (at === null) throw new NotFoundException();
+    return { updatedAt: at };
   }
 
   @Put(":agentId/tools")

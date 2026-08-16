@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { AnsaApiError, createAnsaClient, type AnsaClient } from "./generated";
+import { fieldName, sentences, withoutPrefix } from "./problem-text";
 
 /**
  * The only place this app talks to the Ansa API, and it is server-side without exception.
@@ -126,7 +127,16 @@ export const apiIfSignedIn = async (): Promise<AnsaClient | null> => {
  * Anything that is not an `AnsaApiError` is a bug or an outage here rather than a refusal
  * there, and says so instead of pretending to be a validation message.
  */
-export const failureMessage = (error: unknown): string => {
+export const failureMessage = (
+  error: unknown,
+  /**
+   * A path prefix to drop, for a form editing one item of a collection the API validates
+   * whole. `{ within: "http.1" }` turns "Http #2 name is required" into "Name is required"
+   * — right when the reader is looking at that tool, and wrong for any other, which is why
+   * a path that does not match is left with its index on.
+   */
+  options: { readonly within?: string } = {},
+): string => {
   if (error instanceof AnsaApiError) {
     const { title, detail, errors } = error.problem;
 
@@ -136,7 +146,13 @@ export const failureMessage = (error: unknown): string => {
        The messages are written to follow the field name ("is required", "is not in the
        expected format"), so they join to it directly. */
     if (errors !== undefined && errors.length > 0) {
-      return errors.map((entry) => `${entry.path} ${entry.message}`).join(". ");
+      return sentences(
+        errors.map((entry) => {
+          const path =
+            options.within === undefined ? entry.path : withoutPrefix(entry.path, options.within);
+          return `${fieldName(path)} ${entry.message}`;
+        }),
+      );
     }
 
     return detail === undefined || detail === "" ? title : `${title}: ${detail}`;

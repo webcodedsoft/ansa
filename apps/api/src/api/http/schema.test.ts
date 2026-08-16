@@ -160,3 +160,39 @@ describe("an open map", () => {
     expect(read({ headers: ["X-Tenant", "acme"] })).toMatchObject({ ok: false });
   });
 });
+
+/**
+ * The wording a refusal reaches an operator in.
+ *
+ * `minLength: 1` is how every required text field in this API is written, so its message is
+ * the one people meet most — and it read "must be at least 1 characters", which is wrong
+ * about the grammar and about the problem. An empty box is a missing answer, not a value of
+ * insufficient length, and the console prints these straight onto the screen.
+ */
+describe("what a refusal says", () => {
+  const refusal = (schema: Parameters<typeof parse>[0], value: unknown): string => {
+    const result = parse(schema, value, INPUT);
+    if (result.ok) throw new Error("expected this value to be refused");
+    return result.errors[0]?.message ?? "";
+  };
+
+  it("calls an empty required field missing, not too short", () => {
+    expect(refusal(object({ name: text({ minLength: 1 }) }), { name: "" })).toBe("is required");
+  });
+
+  it("counts characters in the singular when there is one", () => {
+    // Reachable through `maxLength: 1`, and the same helper serves both bounds.
+    expect(refusal(object({ initial: text({ maxLength: 1 }) }), { initial: "ab" })).toBe(
+      "must be at most 1 character",
+    );
+  });
+
+  it("keeps the plural for every other count", () => {
+    expect(refusal(object({ name: text({ minLength: 3 }) }), { name: "ab" })).toBe(
+      "must be at least 3 characters",
+    );
+    expect(refusal(object({ name: text({ maxLength: 4 }) }), { name: "abcde" })).toBe(
+      "must be at most 4 characters",
+    );
+  });
+});

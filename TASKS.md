@@ -2561,9 +2561,53 @@ timestamp one now has the assertion the db test was missing.
       once in the workspace rather than threaded as three props. Data captured, Tools and
       Knowledge already read their selection off `agent`, so they show staged values without
       knowing drafts exist, and a fourth section later is one line here.
-- [ ] The behaviour flags (`setAgentBehaviour` — barge-in, answering-machine detection) are
-      the last thing still writing straight to live. They belong in the draft by the same
-      rule; they were not named in the request that staged the other three.
+- [x] The behaviour flags (`setAgentBehaviour` — barge-in, answering-machine detection) are
+      staged too (0041), so nothing per-agent writes straight to live any more.
+      **Two sections, not one**, though they are drawn on one panel: each toggle sends only
+      the switch that moved, so a single section would have to carry the other flag's value
+      as the page last read it — the stale copy 0040 rules out for `config`, and a second tab
+      or a publish in between would silently put the other switch back. Two nullable booleans
+      reuse the `coalesce` already in `stage_agent_draft_selection`; null is not staged and
+      `false` is a staged "off", exactly as `[]` is a real selection.
+      Applied *after* `publish_agent_config`, with the two selections rather than with the
+      form: `agent_prompt_versions` has no column for either flag and the snapshot does not
+      mention them, checked against the table rather than assumed. `PATCH /agents/{id}` no
+      longer accepts them, and `AgentEdit` no longer carries them, so the publish path is the
+      only way either flag reaches a call. What that PATCH still does accept is worth
+      knowing: `greeting`, `persona`, `instructions`, `voiceId` and `speakingRate` are all
+      publish-form fields it writes straight to the live agent row. Nothing in the console
+      calls it that way, but it is the same hole in a different wall.
+
+### Validation errors that read as instructions (2026-08-16)
+
+Reported from a screenshot of the tool form, which said:
+
+> body.http.1.name must be at least 3 characters. body.http.1.description must be at least 1
+> characters. body.http.1.url must be at least 1 characters. …
+
+Three faults in one line, and it reached every 422 in the console rather than just this form.
+
+- [x] **"1 characters"** was wrong about the grammar and about the problem, and it was the
+      commonest message there is: `minLength: 1` is how every required text field in this API
+      is written. An empty box is a missing answer, not a value of insufficient length, so it
+      says `is required`. Other counts pluralise.
+- [x] **The path is how the API points at a field, not how a person refers to one.** `body.`,
+      `query.` and `path.` are dropped, array indices become 1-based (`http.1` → `Http #2`,
+      because people do not count from zero), and camelCase is spaced. Deliberately not a
+      lookup table of pretty labels: one would read better and rot silently the first time a
+      field was renamed, and this has to work for endpoints added later.
+- [x] **Four fragments run together read as one long fault.** Each is a sentence now.
+- [x] The screen was headed "Add a tool" and said "Http #2", because `PUT /tools` validates
+      the whole registry. `failureMessage` takes `{ within }`, and the tool action passes the
+      index it wrote to — so the index is dropped for *that* tool and kept for any other,
+      which is exactly when somebody needs to be told which one.
+
+Verified in the browser against the same action that produced the screenshot: `Name must be at
+least 3 characters. Description is required. Url is required. Speech template is required.
+Speech fallback is required.`
+
+The helpers live in `apps/web/src/lib/api/problem-text.ts` rather than in `server.ts`, because
+that module reaches for `next/headers` at import time and cannot be loaded in a test.
 
 **Still open on this slice.** `capturedField` moved from `agents.controller.ts` to
 `api/schemas.ts` because two controllers now need it — worth knowing it is shared before

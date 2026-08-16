@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { findAgent, setAgentTools } from "./agents";
 import { createDataSource } from "./data-source";
 import {
+  applyAgentBehaviour,
   applyCapturedFields,
   discardAgentDraft,
   liveAgentId,
@@ -444,5 +445,168 @@ describe("publishing what was staged", () => {
 
     // And the draft is gone, deleted by the publish itself rather than by the API after it.
     expect(await withOrganization(ds, B, (scope) => loadAgentDraft(scope, agent))).toBeNull();
+  });
+});
+
+/**
+ * The behaviour flags, which were the last per-agent setting writing straight to a live call.
+ *
+ * They are two switches on one panel and they are staged as two sections, because that is how
+ * they are saved: each toggle sends only the switch that moved. Every assertion below is
+ * about that independence — between the two flags, between a flag and the other sections, and
+ * between a staged flag and the value a call is reading right now.
+ */
+const liveBehaviour = async (
+  organization: typeof A,
+): Promise<{ readonly bargeIn: boolean; readonly amd: boolean }> => {
+  // Through the function a call actually runs, not through the agents table. A draft that
+  // could move this could move a call.
+  const rows = await withOrganization(ds, organization, (scope) =>
+    scope.query<{ barge_in: boolean; amd_enabled: boolean }>(
+      "select barge_in, amd_enabled from app.agent_config_for_organization($1)",
+      [organization],
+    ),
+  );
+  const row = rows[0];
+  if (row === undefined) throw new Error("the fixture has no live agent configuration");
+  return { bargeIn: row.barge_in, amd: row.amd_enabled };
+};
+
+describe("staging the behaviour flags", () => {
+  it("changes nothing the call path reads", async () => {
+    const agent = await agentOf(B);
+    const before = await liveBehaviour(B);
+    expect(before.bargeIn, "the fixture should start with barge-in on").toBe(true);
+
+    await withOrganization(ds, B, (scope) =>
+      stageAgentSelection(scope, agent, { bargeIn: false }, null),
+    );
+
+    const after = await liveBehaviour(B);
+    expect(after).toEqual(before);
+    // Named on its own because this is the behaviour a caller would meet: an agent that has
+    // stopped letting them interrupt, because somebody flipped a switch and never published.
+    expect(after.bargeIn).toBe(true);
+  });
+
+  it("stages false as a value rather than as an absence", async () => {
+    const agent = await agentOf(B);
+    const draft = await withOrganization(ds, B, (scope) => loadAgentDraft(scope, agent));
+    expect(draft?.bargeIn).toBe(false);
+    // The other switch was never touched, so it is not staged — and the console shows the
+    // live value for it rather than a copy of it.
+    expect(draft?.answeringMachineDetection).toBeNull();
+  });
+
+  it("does not revert the other flag when one is flipped", async () => {
+    // The failure this is written against: a save that carried both flags would send the
+    // value the page read when it rendered, and quietly put the other switch back.
+    const agent = await agentOf(B);
+    await withOrganization(ds, B, (scope) =>
+      stageAgentSelection(scope, agent, { answeringMachineDetection: true }, null),
+    );
+
+    const draft = await withOrganization(ds, B, (scope) => loadAgentDraft(scope, agent));
+    expect(draft?.bargeIn, "staging detection reverted the staged barge-in").toBe(false);
+    expect(draft?.answeringMachineDetection).toBe(true);
+  });
+
+  it("leaves the other sections alone, and they leave it alone", async () => {
+    const agent = await agentOf(B);
+    await withOrganization(ds, B, (scope) =>
+      stageAgentSelection(scope, agent, { tools: ["check_endorsement"] }, null),
+    );
+    await withOrganization(ds, B, (scope) =>
+      saveAgentDraft(scope, agent, fields({ greeting: "Saved after the switches were." }), null, null),
+    );
+
+    const draft = await withOrganization(ds, B, (scope) => loadAgentDraft(scope, agent));
+    expect(draft?.bargeIn, "a tool or configuration save wiped a staged switch").toBe(false);
+    expect(draft?.answeringMachineDetection).toBe(true);
+    expect(draft?.tools).toEqual(["check_endorsement"]);
+    expect(draft?.config?.greeting).toBe("Saved after the switches were.");
+
+    await withOrganization(ds, B, (scope) => discardAgentDraft(scope, agent));
+  });
+
+  it("applies a staged flag without bumping the version", async () => {
+    // Nothing in `agent_prompt_versions` records either flag, so applying one is not a
+    // publication and must not take a version number of its own.
+    const agent = await agentOf(B);
+    const before = await withOrganization(ds, B, (scope) => loadCurrentAgentConfig(scope));
+
+    const applied = await withOrganization(ds, B, (scope) =>
+      applyAgentBehaviour(scope, agent, { bargeIn: true }),
+    );
+    expect(applied).toBe(true);
+
+    const after = await withOrganization(ds, B, (scope) => loadCurrentAgentConfig(scope));
+    expect(after?.version).toBe(before?.version);
+  });
+});
+
+describe("publishing the behaviour flags", () => {
+  it("applies the staged flag and leaves the unstaged one where it was", async () => {
+    const agent = await agentOf(B);
+
+    // A live value nobody is going to stage, and one that differs from the default, so a
+    // publish that passed "not staged" through as false would be visible rather than lucky.
+    await withOrganization(ds, B, (scope) =>
+      scope.query("update agents set answering_machine_detection = true where id = $1", [agent]),
+    );
+    expect(await liveBehaviour(B)).toEqual({ bargeIn: true, amd: true });
+
+    await withOrganization(ds, B, (scope) =>
+      stageAgentSelection(scope, agent, { bargeIn: false }, null),
+    );
+    await withOrganization(ds, B, (scope) =>
+      saveAgentDraft(scope, agent, fields({ greeting: "Published with a staged switch." }), null, null),
+    );
+
+    const draft = await withOrganization(ds, B, (scope) => loadAgentDraft(scope, agent));
+    const stagedConfig = draft?.config;
+    if (draft == null || stagedConfig == null) {
+      throw new Error("the fixture should have staged a configuration");
+    }
+
+    // What the publish endpoint does, in the order it does it. The flags go after
+    // `publish_agent_config` rather than before it, because the snapshot has no column for
+    // either — unlike the captured-field form, which has to be on the row first.
+    await withOrganization(ds, B, async (scope) => {
+      await publishAgentConfig(scope, stagedConfig, "published a staged switch");
+      await applyAgentBehaviour(scope, agent, {
+        ...(draft.bargeIn === null ? {} : { bargeIn: draft.bargeIn }),
+        ...(draft.answeringMachineDetection === null
+          ? {}
+          : { answeringMachineDetection: draft.answeringMachineDetection }),
+      });
+    });
+
+    const live = await liveBehaviour(B);
+    expect(live.bargeIn, "publishing did not apply the staged switch").toBe(false);
+    expect(live.amd, "publishing cleared a flag nobody staged").toBe(true);
+
+    expect(await withOrganization(ds, B, (scope) => loadAgentDraft(scope, agent))).toBeNull();
+  });
+
+  it("leaves both alone when a publish carries no staged switch", async () => {
+    const agent = await agentOf(B);
+    await withOrganization(ds, B, (scope) =>
+      saveAgentDraft(scope, agent, fields({ greeting: "No switches in this one." }), null, null),
+    );
+
+    const draft = await withOrganization(ds, B, (scope) => loadAgentDraft(scope, agent));
+    const stagedConfig = draft?.config;
+    if (draft == null || stagedConfig == null) throw new Error("the fixture should have a draft");
+    expect(draft.bargeIn).toBeNull();
+    expect(draft.answeringMachineDetection).toBeNull();
+
+    await withOrganization(ds, B, (scope) =>
+      publishAgentConfig(scope, stagedConfig, "published without touching the switches"),
+    );
+
+    // Exactly what the previous test left: barge-in off, detection on. A publish that wrote
+    // the flags unconditionally would put both back to their column defaults here.
+    expect(await liveBehaviour(B)).toEqual({ bargeIn: false, amd: true });
   });
 });

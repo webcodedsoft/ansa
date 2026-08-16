@@ -158,7 +158,8 @@ export const AgentWorkspace = ({
    * added later needs one line here rather than an edit to a fourth tab.
    *
    * `??` and not `||`, because an empty array is a staged selection: an agent deliberately
-   * reaching no tools must not fall through to the live list.
+   * reaching no tools must not fall through to the live list. Same for the flags, where the
+   * staged value that `||` would swallow is `false` — a barge-in somebody has turned off.
    */
   const staged =
     draft === null
@@ -168,6 +169,9 @@ export const AgentWorkspace = ({
           capturedFields: draft.capturedFields ?? agent.capturedFields,
           enabledTools: draft.tools ?? agent.enabledTools,
           knowledgeSources: draft.knowledge ?? agent.knowledgeSources,
+          bargeIn: draft.bargeIn ?? agent.bargeIn,
+          answeringMachineDetection:
+            draft.answeringMachineDetection ?? agent.answeringMachineDetection,
         };
 
   useFormToast(state, (data) => `Published version ${data.version}.`);
@@ -328,7 +332,7 @@ export const AgentWorkspace = ({
               ),
             },
             { id: "flow", label: "Flow", panel: <FlowCanvas /> },
-            { id: "conversation", label: "Conversation", problem: problemTabs.has("conversation"), panel: <ConversationTab agent={agent} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
+            { id: "conversation", label: "Conversation", problem: problemTabs.has("conversation"), panel: <ConversationTab agent={staged} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
             { id: "data", label: "Data captured", panel: <DataCapturedTab agent={staged} /> },
             { id: "tools", label: "Tools", panel: <ToolsTab agent={staged} tools={tools} /> },
             {

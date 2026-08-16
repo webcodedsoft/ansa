@@ -997,9 +997,6 @@
                     "maxLength": 16,
                     "pattern": "^\\+[1-9][0-9]{6,14}$"
                   },
-                  "bargeIn": {
-                    "type": "boolean"
-                  },
                   "speakingRate": {
                     "type": [
                       "number",
@@ -1007,9 +1004,6 @@
                     ],
                     "minimum": 0.7,
                     "maximum": 1.2
-                  },
-                  "answeringMachineDetection": {
-                    "type": "boolean"
                   }
                 },
                 "required": [],
@@ -1308,6 +1302,131 @@
         "responses": {
           "204": {
             "description": "No content"
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/behaviour": {
+      "put": {
+        "operationId": "agents.setBehaviour",
+        "tags": [
+          "agents"
+        ],
+        "summary": "Stage this agent's behaviour flags",
+        "description": "Saved, not applied: the flags go into the agent's unpublished draft and a call answered a second later behaves exactly as it does today, until somebody publishes. Send only the switch that moved — an omitted flag is left as it was, staged or live, so flipping one cannot revert the other to whatever the page last read. `false` is a value and stages the switch off.",
+        "x-ansa-capability": "config:write",
+        "parameters": [
+          {
+            "name": "agentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "bargeIn": {
+                    "type": "boolean"
+                  },
+                  "answeringMachineDetection": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "updatedAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           },
           "401": {
             "description": "No session, or a session that is no longer valid",
@@ -4938,6 +5057,18 @@
                           },
                           "maxItems": 500
                         },
+                        "bargeIn": {
+                          "type": [
+                            "boolean",
+                            "null"
+                          ]
+                        },
+                        "answeringMachineDetection": {
+                          "type": [
+                            "boolean",
+                            "null"
+                          ]
+                        },
                         "updatedBy": {
                           "type": [
                             "string",
@@ -4963,6 +5094,8 @@
                         "capturedFields",
                         "tools",
                         "knowledge",
+                        "bargeIn",
+                        "answeringMachineDetection",
                         "updatedBy",
                         "restoredFrom",
                         "updatedAt"
@@ -5421,6 +5554,18 @@
                       },
                       "maxItems": 500
                     },
+                    "bargeIn": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "answeringMachineDetection": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
                     "updatedBy": {
                       "type": [
                         "string",
@@ -5446,6 +5591,8 @@
                     "capturedFields",
                     "tools",
                     "knowledge",
+                    "bargeIn",
+                    "answeringMachineDetection",
                     "updatedBy",
                     "restoredFrom",
                     "updatedAt"
@@ -6770,6 +6917,18 @@
                       },
                       "maxItems": 500
                     },
+                    "bargeIn": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "answeringMachineDetection": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
                     "updatedBy": {
                       "type": [
                         "string",
@@ -6795,6 +6954,8 @@
                     "capturedFields",
                     "tools",
                     "knowledge",
+                    "bargeIn",
+                    "answeringMachineDetection",
                     "updatedBy",
                     "restoredFrom",
                     "updatedAt"
