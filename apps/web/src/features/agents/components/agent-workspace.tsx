@@ -222,7 +222,7 @@ export const AgentWorkspace = ({
               ),
             },
             { id: "flow", label: "Flow", panel: <FlowCanvas /> },
-            { id: "conversation", label: "Conversation", problem: problemTabs.has("conversation"), panel: <ConversationTab agent={agent} config={config} errors={errors} publishForm={PUBLISH_FORM} publishing={pending} /> },
+            { id: "conversation", label: "Conversation", problem: problemTabs.has("conversation"), panel: <ConversationTab agent={agent} config={config} errors={errors} /> },
             { id: "data", label: "Data captured", panel: <DataCapturedTab agent={agent} /> },
             { id: "tools", label: "Tools", panel: <ToolsTab agent={agent} tools={tools} /> },
             {
@@ -230,7 +230,7 @@ export const AgentWorkspace = ({
               label: "Knowledge",
               panel: <KnowledgeTab agent={agent} knowledge={knowledge} />,
             },
-            { id: "voice", label: "Voice", problem: problemTabs.has("voice"), panel: <VoiceTab config={config} agent={agent} errors={errors} publishForm={PUBLISH_FORM} publishing={pending} /> },
+            { id: "voice", label: "Voice", problem: problemTabs.has("voice"), panel: <VoiceTab config={config} agent={agent} errors={errors} publishForm={PUBLISH_FORM} /> },
             { id: "routing", label: "Routing & hours", problem: problemTabs.has("routing"), panel: <RoutingTab config={config} operatorManaged={operatorManaged} errors={errors} /> },
             { id: "versions", label: "Versions", panel: <VersionsTab versions={versions} liveVersion={agent.configVersion} /> },
           ]}
@@ -256,8 +256,6 @@ export const AgentWorkspace = ({
               idle="Publish"
               busy="Publishing…"
               form={PUBLISH_FORM}
-              name="intent"
-              value="publish"
             />
           </>
         }

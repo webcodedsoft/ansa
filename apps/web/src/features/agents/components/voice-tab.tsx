@@ -9,7 +9,6 @@ import {
   CONTROL,
   Notice,
   Stack,
-  SubmitButton,
   Tag,
   TextField,
   type Tone,
@@ -49,7 +48,6 @@ interface VoiceTabProps {
   readonly errors: Readonly<Record<string, string>>;
   /** The id of the page's publish form, which the voice is part of. */
   readonly publishForm: string;
-  readonly publishing: boolean;
 }
 
 type Catalogue =
@@ -407,7 +405,7 @@ const Picker = ({
   );
 };
 
-export const VoiceTab = ({ config, agent, errors, publishForm, publishing }: VoiceTabProps) => {
+export const VoiceTab = ({ config, agent, errors, publishForm }: VoiceTabProps) => {
   const [catalogue, setCatalogue] = useState<Catalogue>({ status: "loading" });
   /* Held here rather than inside the rate card so the sample can be played at it. Trying a
      rate you cannot hear is guessing, and 0.85 versus 1.0 is not a thing anybody knows the
@@ -536,23 +534,13 @@ export const VoiceTab = ({ config, agent, errors, publishForm, publishing }: Voi
                   </span>
                 </div>
 
-                <div className="mt-3 flex flex-wrap items-center gap-3">
-                  {/* `form=` rather than a nested `<form>`: this panel already sits inside the
-                      page's publish form, and the voice is published with the rest of the
-                      configuration. Without a button here the tab showed only "save rate" and
-                      looked as though the voice could not be saved at all. */}
-                  <SubmitButton
-                    form={publishForm}
-                    pending={publishing}
-                    idle="Save voice and rate"
-                    busy="Publishing…"
-                    name="intent"
-                    value="voice"
-                  />
-                  <span className="text-[12.5px] text-[var(--ink-3)]">
-                    Saves the voice and the rate together, as a new configuration version.
-                  </span>
-                </div>
+                {/* No save button here on purpose. There is one endpoint and one
+                    configuration document, so a button on this panel did not save the voice
+                    — it published every tab, live, under a label that said "Save". Publish
+                    in the header is the only thing that makes a change real. */}
+                <p className="mt-3 text-[12.5px] text-[var(--ink-3)]">
+                  The voice and the rate go live with everything else, when you publish.
+                </p>
 
                 {/* A stored id the picker would refuse today. It cannot be reached through
                     this list, so it was typed before there was one — and it is the failure

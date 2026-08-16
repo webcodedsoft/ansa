@@ -42,34 +42,7 @@ const keyterms = z
       .max(100, "That is more than 100 keyterms."),
   );
 
-/**
- * Which button sent the form, and what the version is called if nobody says.
- *
- * Every one of these publishes a version — there is one endpoint and one document, so saving
- * the voice rewrites the whole configuration exactly as Publish does. What differs is what
- * the person was doing. Publish is the deliberate act, aimed at the configuration as a whole,
- * and worth being asked about. Pressing "Save voice and rate" is not: the button already
- * names the change, and demanding a sentence for it is a toll on the common case.
- *
- * So the note stays required and the answer is supplied rather than demanded. A version still
- * explains itself in the history three weeks later, which was the only reason to require one.
- * A typed note always wins — these fill a blank, they never overwrite.
- */
-const INTENT_NOTE = {
-  publish: "",
-  identity: "Name and greeting updated.",
-  instructions: "Persona and instructions updated.",
-  voice: "Voice and speaking rate updated.",
-} as const;
-
-export type PublishIntent = keyof typeof INTENT_NOTE;
-
 const publishForm = z.object({
-  /* Absent — the form was sent by pressing return in a field rather than by any button — is
-     treated as the deliberate act. Erring towards asking is the safe direction: the cost is a
-     sentence, and the alternative is a version labelled by a guess. */
-  intent: z.enum(["publish", "identity", "instructions", "voice"]).catch("publish"),
-
   name: z.string().trim().min(1, "The agent needs a name.").max(120, "That name is too long."),
   voiceId: optionalText(200, "The voice id"),
   /* Empty means the voice's own pace, which is not 1.0 — the slider sends "" at 1.00 for
@@ -92,21 +65,24 @@ const publishForm = z.object({
   fromNumber: z.string().trim(),
   ringSeconds: z.union([z.literal(""), z.coerce.number().int().min(5).max(120)]),
 
-  /* Required only for Publish, and the requirement is in `superRefine` rather than here
-     because it depends on `intent` — a field-level rule cannot see a sibling. */
-  note: z.string().trim().max(500, "That note is too long."),
+  /**
+   * Why this version exists.
+   *
+   * Required, and there is only one control that can send this form: the publish dialog.
+   * Three per-tab "Save" buttons used to submit it too, which is why this briefly depended
+   * on which button was pressed — but a button that publishes every tab under a label
+   * saying "Save" was the actual defect, and removing them removed the exception with it.
+   */
+  note: z
+    .string()
+    .trim()
+    .min(1, "Say what changed. A version with no reason explains nothing later.")
+    .max(500, "That note is too long."),
 });
 
 /** The rules that only apply when a section is switched on. */
 export const publishSchema = publishForm
   .superRefine((value, context) => {
-    if (value.intent === "publish" && value.note === "") {
-      context.addIssue({
-        code: "custom",
-        path: ["note"],
-        message: "Say what changed. A version with no reason explains nothing later.",
-      });
-    }
     if (value.hoursEnabled && value.openDays.length === 0) {
       context.addIssue({
         code: "custom",
@@ -140,16 +116,13 @@ export const publishSchema = publishForm
           ringSeconds: value.ringSeconds === "" ? null : value.ringSeconds,
         }
       : null,
-    note: value.note === "" ? INTENT_NOTE[value.intent] : value.note,
+    note: value.note,
   }));
 
 export type PublishBody = z.infer<typeof publishSchema>;
 
 /** Reads the fields this form needs out of a `FormData`, the shape `publishSchema` expects. */
 export const publishFormInput = (form: FormData) => ({
-  /* The submitting button's own value. `z.enum().catch` handles the null. */
-  intent: form.get("intent"),
-
   name: form.get("name") ?? "",
   voiceId: form.get("voiceId") ?? "",
   speakingRate: form.get("speakingRate") ?? "",

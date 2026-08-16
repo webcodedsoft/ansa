@@ -6,11 +6,9 @@ import {
   Notice,
   Panel,
   PanelBody,
-  Row,
   SectionHead,
   SettingRow,
   Stack,
-  SubmitButton,
   TextAreaField,
   TextField,
   Toggle,
@@ -24,8 +22,6 @@ interface ConversationTabProps {
   readonly config: LiveConfiguration["config"];
   readonly errors: Readonly<Record<string, string>>;
   /** The id of the workspace form these fields belong to, so a Save button can submit it. */
-  readonly publishForm: string;
-  readonly publishing: boolean;
 }
 
 /**
@@ -64,8 +60,6 @@ export const ConversationTab = ({
   agent,
   config,
   errors,
-  publishForm,
-  publishing,
 }: ConversationTabProps) => {
   /* Held locally so the switch moves under the finger rather than after the round trip,
      and put back if the write is refused. A switch that waits for the server feels broken
@@ -112,17 +106,6 @@ export const ConversationTab = ({
               error={errors["greeting"]}
               hint="The first thing a caller hears. Leave empty to use the platform default."
             />
-            <Row>
-              <SubmitButton
-                pending={publishing}
-                idle="Save identity"
-                busy="Publishing…"
-                size="sm"
-                form={publishForm}
-                name="intent"
-                value="identity"
-              />
-            </Row>
           </Stack>
         </PanelBody>
       </Panel>
@@ -148,17 +131,6 @@ export const ConversationTab = ({
               error={errors["instructions"]}
               hint="Number and currency formatting is handled in code before anything is spoken. Asking for it here as well is a rule that holds ninety percent of the time."
             />
-            <Row>
-              <SubmitButton
-                pending={publishing}
-                idle="Save instructions"
-                busy="Publishing…"
-                size="sm"
-                form={publishForm}
-                name="intent"
-                value="instructions"
-              />
-            </Row>
 
             {failure !== null && <Notice tone="error">{failure}</Notice>}
 
