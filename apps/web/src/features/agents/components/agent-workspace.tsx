@@ -1,10 +1,10 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useState } from "react";
 
 import Link from "next/link";
 
-import { Blip, Notice, SubmitButton, Tabs, Tag } from "@/components/ui";
+import { Blip, Button, Modal, Notice, SubmitButton, Tabs, Tag, TextAreaField } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 import { dayLabel, when } from "@/lib/format";
 import { useFormToast } from "@/stores/toast.store";
@@ -37,7 +37,8 @@ const PUBLISH_FORM = "agent-publish";
  * cannot focus, so the button did nothing at all. The server answers instead now, and the
  * answer has to be findable, so the tab holding it is marked and the message names it.
  *
- * `note` is deliberately absent. It sits above the tabs and is always on screen.
+ * `note` is deliberately absent. It belongs to the publish dialog, which shows its own error
+ * and stays open to do it.
  */
 const FIELD_TAB: Readonly<Record<string, string>> = {
   name: "conversation",
@@ -114,6 +115,24 @@ export const AgentWorkspace = ({
       .filter((tab): tab is string => tab !== undefined),
   );
 
+  /* Held here rather than left to the textarea, so closing the dialog and opening it again
+     does not lose a sentence somebody already typed. */
+  const [asking, setAsking] = useState(false);
+  const [note, setNote] = useState("");
+  /**
+   * What the dialog does once the action answers.
+   *
+   * It stays open only when the note itself was rejected, which is the one failure it can do
+   * anything about. Everything else belongs to a field on a tab behind it — the dialog would
+   * be covering the marker and the message pointing at it — so it gets out of the way. On
+   * success the note is cleared, or the next publish opens holding the last one's reason.
+   */
+  useEffect(() => {
+    if (state.status === "idle" || errors["note"] !== undefined) return;
+    setAsking(false);
+    if (state.status === "succeeded") setNote("");
+  }, [state, errors]);
+
   return (
     <>
       {/* An entity header, not a page header: an agent is a thing you opened,
@@ -163,16 +182,18 @@ export const AgentWorkspace = ({
           >
             Test call
           </Link>
-          {/* Submits the form below from up here — `form` is a plain HTML attribute, so
-              this needs no client state and keeps the button where the mock puts it. */}
-          <SubmitButton
-            pending={pending}
-            idle="Publish"
-            busy="Publishing…"
-            form={PUBLISH_FORM}
-            name="intent"
-            value="publish"
-          />
+          {/* Opens the dialog rather than submitting. Publishing is the one action here that
+              needs something from the person first, and asking for it at the moment they ask
+              to publish is the only way to ask without the question standing on the page for
+              the whole visit. The actual submit is the dialog's own button. */}
+          <Button
+            variant="primary"
+            disabled={pending}
+            aria-busy={pending}
+            onClick={() => setAsking(true)}
+          >
+            {pending ? "Publishing…" : "Publish"}
+          </Button>
         </div>
       </header>
 
@@ -189,36 +210,6 @@ export const AgentWorkspace = ({
             {state.message}
             {problemTabs.size > 0 && ` On ${sentenceList([...problemTabs].map(tabLabel))}.`}
           </Notice>
-        )}
-
-        {/* One quiet line rather than a panel. The note is what makes a version explicable
-            three weeks later, but it is not what somebody came to this page to look at, and a
-            bordered card for one input pushed the tabs below the fold. The label rides in the
-            placeholder; the error, when there is one, is the only thing that grows.
-
-            Required for Publish and not for a tab's own save button, which is a rule about
-            two different controls and so cannot be an attribute on this one. `publishSchema`
-            reads the submitter's `intent` and asks only when it is `publish`; the marker
-            below says so in the one case a person is looking at it. */}
-        <div className="mb-3.5 flex flex-wrap items-center gap-2.5">
-          <label
-            htmlFor="publish-note"
-            className="flex-none font-mono text-[10px] font-medium tracking-[0.13em] text-[var(--ink-3)] uppercase"
-          >
-            What changed
-            <span className="ml-1.5 tracking-normal normal-case">required to publish</span>
-          </label>
-          <input
-            id="publish-note"
-            name="note"
-            maxLength={500}
-            placeholder="Shortened the greeting — recorded on the version"
-            aria-invalid={errors["note"] !== undefined}
-            className="h-8 min-w-0 flex-1 rounded-lg border border-[var(--hairline)] bg-[var(--surface-2)] px-3 text-[13px] text-[var(--ink)] placeholder:text-[var(--ink-3)] focus-visible:outline-2 focus-visible:outline-[var(--accent)] aria-[invalid=true]:border-[var(--bad)]"
-          />
-        </div>
-        {errors["note"] !== undefined && (
-          <p className="mb-3.5 text-[12.5px] text-[var(--bad)]">{errors["note"]}</p>
         )}
 
         <Tabs
@@ -245,6 +236,53 @@ export const AgentWorkspace = ({
           ]}
         />
       </form>
+
+      {/* Outside the form on purpose. `form=` binds the field and the button to it by id, so
+          the dialog can collect the last thing the submit needs without the overlay being
+          part of the form's layout — and without the note existing at all when a tab's own
+          save button is the one publishing. */}
+      <Modal
+        open={asking}
+        onClose={() => setAsking(false)}
+        title="Publish this configuration"
+        description="Everything on every tab goes live together, as one version. Say what changed so the entry in the history means something to whoever reads it next."
+        footer={
+          <>
+            <Button onClick={() => setAsking(false)} disabled={pending}>
+              Cancel
+            </Button>
+            <SubmitButton
+              pending={pending}
+              idle="Publish"
+              busy="Publishing…"
+              form={PUBLISH_FORM}
+              name="intent"
+              value="publish"
+            />
+          </>
+        }
+      >
+        <TextAreaField
+          autoFocus
+          required
+          label="What changed"
+          name="note"
+          form={PUBLISH_FORM}
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          maxLength={500}
+          /* The rejection is "you did not say anything", so it stops applying the moment
+             they say something — otherwise it sits under a sentence that answers it, which
+             is what the last version of this did. Keyed on the field being empty rather
+             than on the value that was submitted, because the answer can arrive after
+             somebody has started typing and anything time-based puts the message back
+             underneath their new text. `maxLength` makes the only other note rule
+             unreachable from here; if one a non-empty note can fail is ever added, this has
+             to compare against what was sent instead. */
+          error={note.trim() === "" ? errors["note"] : undefined}
+          placeholder="Shortened the greeting and slowed the voice for the Lagos line."
+        />
+      </Modal>
     </>
   );
 };
