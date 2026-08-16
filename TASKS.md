@@ -2465,6 +2465,60 @@ depends on.
       gives a reason to expose it, because the goal is a conversation that is smooth by
       default rather than one an operator has to tune into being smooth.
 
+### Save and publish are two different acts (2026-08-16) — decided, half built
+
+Reported as "the version changed without publish yet". Changing the voice writes nothing —
+verified in the browser, the server still reported the same version. What cut the version was
+the **"Save voice and rate"** button, and its note in the history said so.
+
+The defect was mine, from earlier the same day. There is one endpoint and one configuration
+document, so that button never saved the voice: it published every tab, live on the next
+call, under a label that said Save. "Save identity" and "Save instructions" did the same.
+My first fix accepted that and gave each button an automatic note, which is a tidy answer to
+a question nobody asked.
+
+- [x] The three buttons are gone. Publish, through its dialog, is the only control that
+      writes, so the note is unconditionally required again and the `intent` machinery that
+      carried the exception is removed with it.
+
+**The model the console should have**, agreed with the operator: a tab's Save writes to the
+database and changes nothing about a live call; Publish makes the saved state take effect;
+Discard throws the unpublished work away. Two reverts, both kept, because they answer
+different questions — *throw away what I have not published* and *put yesterday's published
+version back*.
+
+**Where the line goes: anything belonging to one agent is staged, anything shared across the
+organisation is immediate.** Staged — the publish form (name, voice, rate, greeting, persona,
+instructions, keyterms, hours, escalation), the captured-field form, the agent's tool
+selection, its knowledge selection, and its behaviour flags. Immediate — the tool registry
+itself and the knowledge sources, because both are the organisation's and shared: writing a
+FAQ or correcting an endpoint URL must not require republishing every agent. That is also how
+they behave today, so nothing changes for them.
+
+- [ ] `agent_config_drafts`: one row per agent, the document as `jsonb`, with `organization_id`
+      and RLS. Deliberately not mirrored columns — two copies of a twelve-field shape kept in
+      step by hand is the failure 0031's own comment warns about, and the draft is compared
+      against the live document by `diffConfigurations`, which already exists.
+- [ ] The call path does not change. `agent_config_for_number` keeps reading the live columns,
+      so a half-finished draft cannot reach a phone line by construction rather than by
+      remembering. **An isolation test must prove exactly that** before the console can save
+      into a draft.
+- [ ] `save_agent_draft`, `discard_agent_draft`, and `publish_agent_config` reading the draft
+      rather than its arguments. Publishing deletes the draft in the same transaction.
+- [ ] `PUT`/`DELETE /agents/{id}/draft`, and the agent read returning live and draft together
+      so the console can show which fields differ.
+- [ ] The console: tab saves write the draft, the header says how many unpublished changes
+      there are, and Discard sits beside Publish. Every tab renders draft over live.
+- [ ] Restore an old version loads it **into the draft** rather than publishing it. Anything
+      else re-opens the hole this slice closes — a way to go live without pressing Publish.
+      Flagged because it is a change to a button that exists and works today.
+
+Open question not yet settled: business hours are stored on `organizations` (0027) but are
+edited on the publish form, so they are org-level data inside an agent-level draft. The draft
+covers the publish form as a unit because that is the version boundary; whether hours should
+move to the agent is a separate question, and is the same one behind "Routing & hours edits
+hours as though they were the agent's" further up this file.
+
 ### The call that is still owed
 
 `packages/db/seeds/dev-organization.mjs` had rotted — it wrote `organizations.dialled_number`,
