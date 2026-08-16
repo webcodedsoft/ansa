@@ -211,7 +211,12 @@ const Picker = ({
 }) => {
   const [query, setQuery] = useState("");
   const [accent, setAccent] = useState("all");
-  const [usableOnly, setUsableOnly] = useState(false);
+  /* Starts on. The account holds twenty-two voices and the library carries a hundred more
+     that cannot be picked until somebody adds them in ElevenLabs — so leaving this off meant
+     opening the tab to a wall of things you cannot choose, with the ones you can buried
+     below them. The library is worth reaching, which is why the switch exists; it is not
+     worth being the first thing you see. */
+  const [usableOnly, setUsableOnly] = useState(true);
 
   const accents = useMemo(() => {
     const found = new Set<string>();
@@ -221,13 +226,24 @@ const Picker = ({
 
   const shown = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return voices.filter(
+    const matching = voices.filter(
       (voice) =>
         (accent === "all" || voice.labels.accent === accent) &&
         (!usableOnly || voice.availability === "usable") &&
         (needle === "" || haystack(voice).includes(needle)),
     );
+
+    /* What can be chosen, first. With the library showing, the account's own voices were
+       scattered through a hundred rows that only offer instructions, so the list read as
+       "nothing here is available" until you scrolled. Sorting is stable within each group,
+       so the account's order is whatever ElevenLabs returned. */
+    return [...matching].sort((left, right) => {
+      const pickable = Number(right.availability === "usable") - Number(left.availability === "usable");
+      return pickable !== 0 ? pickable : left.name.localeCompare(right.name, "en");
+    });
   }, [voices, query, accent, usableOnly]);
+
+  const held = voices.filter((voice) => voice.availability === "usable").length;
 
   return (
     <div>
@@ -288,8 +304,18 @@ const Picker = ({
       </div>
 
       <p className="mt-2 text-xs text-[var(--ink-3)]">
-        {shown.length} of {voices.length} shown. Only voices already on the account can be
-        selected; the rest are there so you know what to add.
+        {usableOnly ? (
+          <>
+            {shown.length} of {held} on this account. Untick to browse the {voices.length - held}{" "}
+            in the ElevenLabs library — those have to be added to the account there before
+            they can be picked here.
+          </>
+        ) : (
+          <>
+            {shown.length} of {voices.length} shown, {held} of them on this account. The rest
+            are library voices, listed so you know what is available to add.
+          </>
+        )}
       </p>
     </div>
   );
@@ -323,8 +349,6 @@ export const VoiceTab = ({ config, agent, errors }: VoiceTabProps) => {
 
   return (
     <Stack>
-      <SpeakingRate agent={agent} />
-
       <Card
         title="Voice"
         description="Which of the speech account's voices answers the phone."
@@ -428,6 +452,10 @@ export const VoiceTab = ({ config, agent, errors }: VoiceTabProps) => {
         </Stack>
       </Card>
 
+      {/* After the voice, because it is a property of how that voice reads rather than a
+          thing you choose first. It was above and made the tab open on a text box. */}
+      <SpeakingRate agent={agent} />
+
       <Card
         title="Listening"
         description="How the agent hears a caller. Set for the deployment, not for this agent — the row says where."
@@ -481,7 +509,10 @@ const SpeakingRate = ({ agent }: { readonly agent: AgentSummary }) => {
             <TextField
               label="Rate"
               name="speakingRate"
-              defaultValue={agent.speakingRate === null ? "" : String(agent.speakingRate)}
+              // `?? ""` rather than a null check: an older API build omits the field entirely, and
+              // `String(undefined)` put the word "undefined" in the box as though somebody
+              // had typed it. Blank is the honest rendering of "no rate stored".
+              defaultValue={agent.speakingRate ?? ""}
               placeholder="1.0"
               hint="0.7 to 1.2. Blank leaves the voice at its own pace."
             />
