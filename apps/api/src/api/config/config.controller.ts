@@ -1,4 +1,5 @@
 import {
+  applyCapturedFields,
   discardAgentDraft,
   listAgentConfigVersions,
   liveAgentId,
@@ -8,6 +9,8 @@ import {
   loadAgentConfigVersion,
   publishAgentConfig,
   saveAgentDraft,
+  setAgentKnowledgeSources,
+  setAgentTools,
   type ConfigVersion,
   type AgentConfigFields,
 } from "@ansa/db";
@@ -29,7 +32,13 @@ import {
   text,
   type Infer,
 } from "../http/schema";
-import { phoneNumber, timestamp, uuid } from "../schemas";
+import {
+  capturedField,
+  MAX_CAPTURED_FIELDS,
+  phoneNumber,
+  timestamp,
+  uuid,
+} from "../schemas";
 import { OrganizationContext } from "../tenancy/organization-context";
 
 import { diffConfigurations } from "./diff";
@@ -288,7 +297,15 @@ const guarantees = object({ guarantees: list(guarantee) });
 const draftBody = object({ ...CONFIG_FIELDS });
 
 const draft = object({
-  config: configFields,
+  /**
+   * Each section is null when nothing on it has been staged, and the console renders the live
+   * value in its place. Null is not "empty": an empty tool list is a deliberate choice that an
+   * agent reaches none of them, and publishing it would apply that.
+   */
+  config: nullable(configFields),
+  capturedFields: nullable(list(capturedField, { maxItems: MAX_CAPTURED_FIELDS })),
+  tools: nullable(list(text({ maxLength: 120 }), { maxItems: 200 })),
+  knowledge: nullable(list(uuid(), { maxItems: 500 })),
   /** Null when the account that saved it is gone but the work is not. */
   updatedBy: nullable(uuid()),
   /** The version this was loaded from, for the publish note to offer. Null when typed. */
@@ -426,7 +443,38 @@ export class ConfigController {
 
     const { note, ...fields } = body;
     const version = await this.db.tx(async (scope) => {
+      /*
+       * Publishing is the one act, so everything staged goes live together and in one
+       * transaction. The order is not arbitrary:
+       *
+       *   1. the form, onto the agent row, *before* the snapshot — `publish_agent_config`
+       *      reads `captured_fields` off that row, so applying it afterwards would publish
+       *      the form but record the old one in the history, and the version a call points
+       *      at would describe an agent that never existed.
+       *   2. the configuration, which bumps the version, writes the snapshot, and deletes
+       *      the draft.
+       *   3. the two selections, which live in join tables the snapshot does not cover.
+       *
+       * Absent sections are left alone rather than cleared. Null means nobody staged one,
+       * and a publish that blanked an agent's tools because the operator only edited the
+       * greeting is the whole class of defect this slice exists to end.
+       */
+      const agentId = await liveAgentId(scope);
+      const staged = agentId === null ? null : await loadAgentDraft(scope, agentId);
+
+      if (agentId !== null && staged?.capturedFields != null) {
+        await applyCapturedFields(scope, agentId, staged.capturedFields);
+      }
+
       const version = await publishAgentConfig(scope, fields, note);
+
+      if (agentId !== null && staged?.tools != null) {
+        await setAgentTools(scope, agentId, staged.tools);
+      }
+      if (agentId !== null && staged?.knowledge != null) {
+        await setAgentKnowledgeSources(scope, agentId, staged.knowledge);
+      }
+
       // Read back inside the same transaction rather than echoing the request. What comes
       // out is what was stored, with the author and the timestamp the database assigned, so
       // the response is evidence rather than a restatement of the body.
@@ -513,7 +561,10 @@ export class ConfigController {
 
     if (restored === null) throw new Error("saved a draft that cannot be read back");
     return {
-      config: toConfigBody(restored.config),
+      config: restored.config === null ? null : toConfigBody(restored.config),
+      capturedFields: restored.capturedFields as Infer<typeof draft>["capturedFields"],
+      tools: restored.tools === null ? null : [...restored.tools],
+      knowledge: restored.knowledge === null ? null : [...restored.knowledge],
       updatedBy: restored.updatedBy,
       restoredFrom: restored.restoredFrom,
       updatedAt: restored.updatedAt,
@@ -553,7 +604,10 @@ export class ConfigController {
     if (found === null) return { draft: null };
     return {
       draft: {
-        config: toConfigBody(found.config),
+        config: found.config === null ? null : toConfigBody(found.config),
+        capturedFields: found.capturedFields as Infer<typeof draft>["capturedFields"],
+        tools: found.tools === null ? null : [...found.tools],
+        knowledge: found.knowledge === null ? null : [...found.knowledge],
         updatedBy: found.updatedBy,
         restoredFrom: found.restoredFrom,
         updatedAt: found.updatedAt,
@@ -592,7 +646,10 @@ export class ConfigController {
 
     if (saved === null) throw new NotFoundException();
     return {
-      config: toConfigBody(saved.config),
+      config: saved.config === null ? null : toConfigBody(saved.config),
+      capturedFields: saved.capturedFields as Infer<typeof draft>["capturedFields"],
+      tools: saved.tools === null ? null : [...saved.tools],
+      knowledge: saved.knowledge === null ? null : [...saved.knowledge],
       updatedBy: saved.updatedBy,
       restoredFrom: saved.restoredFrom,
       updatedAt: saved.updatedAt,

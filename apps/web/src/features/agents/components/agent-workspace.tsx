@@ -149,6 +149,27 @@ export const AgentWorkspace = ({
      showing somebody the opposite of what they are about to publish. */
   const config = draft?.config ?? live;
 
+  /**
+   * The agent as the tabs should see it: live, with any staged selection laid over the top.
+   *
+   * Done here rather than by threading three more props through Data captured, Tools and
+   * Knowledge. Each of those already reads its selection off `agent`, so overlaying once
+   * means they show staged values without knowing drafts exist — and a fourth staged section
+   * added later needs one line here rather than an edit to a fourth tab.
+   *
+   * `??` and not `||`, because an empty array is a staged selection: an agent deliberately
+   * reaching no tools must not fall through to the live list.
+   */
+  const staged =
+    draft === null
+      ? agent
+      : {
+          ...agent,
+          capturedFields: draft.capturedFields ?? agent.capturedFields,
+          enabledTools: draft.tools ?? agent.enabledTools,
+          knowledgeSources: draft.knowledge ?? agent.knowledgeSources,
+        };
+
   useFormToast(state, (data) => `Published version ${data.version}.`);
   useFormToast(saveState, () => "Saved. Nothing is live until you publish.");
   useFormToast(discardState, () => "Unpublished changes discarded.");
@@ -308,12 +329,12 @@ export const AgentWorkspace = ({
             },
             { id: "flow", label: "Flow", panel: <FlowCanvas /> },
             { id: "conversation", label: "Conversation", problem: problemTabs.has("conversation"), panel: <ConversationTab agent={agent} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
-            { id: "data", label: "Data captured", panel: <DataCapturedTab agent={agent} /> },
-            { id: "tools", label: "Tools", panel: <ToolsTab agent={agent} tools={tools} /> },
+            { id: "data", label: "Data captured", panel: <DataCapturedTab agent={staged} /> },
+            { id: "tools", label: "Tools", panel: <ToolsTab agent={staged} tools={tools} /> },
             {
               id: "knowledge",
               label: "Knowledge",
-              panel: <KnowledgeTab agent={agent} knowledge={knowledge} />,
+              panel: <KnowledgeTab agent={staged} knowledge={knowledge} />,
             },
             { id: "voice", label: "Voice", problem: problemTabs.has("voice"), panel: <VoiceTab config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
             { id: "routing", label: "Routing & hours", problem: problemTabs.has("routing"), panel: <RoutingTab config={config} operatorManaged={operatorManaged} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },

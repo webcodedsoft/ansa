@@ -253,8 +253,8 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       send<void>(options, "DELETE", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}`, input),
 
     /**
-     * Replace the form this agent conducts
-     * Sent whole rather than patched: the order of the fields is the order the caller is asked, so a partial update would be a reorder protocol nobody asked for. The agent conducts this form on the next call it takes — the order here is the order it asks, and a field with a pattern is re-asked until the value matches or the attempts run out.
+     * Stage the form this agent conducts
+     * Saved, not applied: the form goes into the unpublished draft and the agent keeps asking whatever it asks today until somebody publishes. Sent whole rather than patched, because the order of the fields is the order the caller is asked and a partial update would be a reorder protocol nobody asked for. Once published, a field with a pattern is re-asked until the value matches or the attempts run out.
      */
     setFields: (input: {
         readonly path: {
@@ -275,37 +275,12 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         };
       }) =>
       send<{
-        readonly agentId: string;
-        readonly name: string;
-        readonly persona: string | null;
-        readonly greeting: string | null;
-        readonly instructions: string | null;
-        readonly voiceId: string | null;
-        readonly speakingRate: number | null;
-        readonly dialledNumber: string | null;
-        readonly configVersion: number;
-        readonly enabledTools: readonly (string)[];
-        readonly knowledgeSources: readonly (string)[];
-        readonly bargeIn: boolean;
-        readonly answeringMachineDetection: boolean;
-        readonly capturedFields: readonly ({
-        readonly key: string;
-        readonly type: "name" | "reference" | "phone" | "email" | "address" | "date" | "time" | "amount" | "nin" | "bvn" | "otp" | "quantity" | "choice" | "text";
-        readonly prompt: string;
-        readonly capture: "speech" | "keypad" | "either";
-        readonly confirm: "none" | "readback" | "spellback";
-        readonly pattern: string;
-        readonly attempts: number;
-        readonly required: boolean;
-        readonly options: readonly (string)[];
-      })[];
-        readonly deletedAt: string | null;
-        readonly createdAt: string;
+        readonly updatedAt: string;
       }>(options, "PUT", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}/fields`, input),
 
     /**
-     * Replace which of the organisation's sources this agent may answer from
-     * Sources belong to the organisation; this is one agent's slice, exactly as tools are. An empty list means the agent has no knowledge base at all — `search_knowledge_base` is then not registered and the model is never told it can look anything up, rather than being offered a search that can only come back empty.
+     * Stage which of the organisation's sources this agent may answer from
+     * Saved, not applied: the selection goes into the unpublished draft and retrieval on a live call is unchanged until somebody publishes. Sources belong to the organisation; this is one agent's slice, exactly as tools are. An empty list stages an agent with no knowledge base — `search_knowledge_base` is then not registered and the model is never told it can look anything up, rather than being offered a search that can only come back empty.
      */
     setKnowledge: (input: {
         readonly path: {
@@ -316,37 +291,12 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         };
       }) =>
       send<{
-        readonly agentId: string;
-        readonly name: string;
-        readonly persona: string | null;
-        readonly greeting: string | null;
-        readonly instructions: string | null;
-        readonly voiceId: string | null;
-        readonly speakingRate: number | null;
-        readonly dialledNumber: string | null;
-        readonly configVersion: number;
-        readonly enabledTools: readonly (string)[];
-        readonly knowledgeSources: readonly (string)[];
-        readonly bargeIn: boolean;
-        readonly answeringMachineDetection: boolean;
-        readonly capturedFields: readonly ({
-        readonly key: string;
-        readonly type: "name" | "reference" | "phone" | "email" | "address" | "date" | "time" | "amount" | "nin" | "bvn" | "otp" | "quantity" | "choice" | "text";
-        readonly prompt: string;
-        readonly capture: "speech" | "keypad" | "either";
-        readonly confirm: "none" | "readback" | "spellback";
-        readonly pattern: string;
-        readonly attempts: number;
-        readonly required: boolean;
-        readonly options: readonly (string)[];
-      })[];
-        readonly deletedAt: string | null;
-        readonly createdAt: string;
+        readonly updatedAt: string;
       }>(options, "PUT", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}/knowledge`, input),
 
     /**
-     * Replace which shared tools this agent may call
-     * The registry belongs to the organisation; this is one agent's slice of it. Sent whole rather than patched, so the selection on screen is the selection saved. An empty list means the agent reaches none of the organisation's tools — it keeps the platform's own, so it can still end a call and transfer to a human.
+     * Stage which shared tools this agent may call
+     * Saved, not applied: the selection goes into the agent's unpublished draft and the agent keeps calling whatever it calls today until somebody publishes. The registry belongs to the organisation; this is one agent's slice of it, sent whole rather than patched so the selection on screen is the selection saved. An empty list stages an agent that reaches none of the organisation's tools — it keeps the platform's own, so it can still end a call and transfer to a human.
      */
     setTools: (input: {
         readonly path: {
@@ -357,32 +307,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         };
       }) =>
       send<{
-        readonly agentId: string;
-        readonly name: string;
-        readonly persona: string | null;
-        readonly greeting: string | null;
-        readonly instructions: string | null;
-        readonly voiceId: string | null;
-        readonly speakingRate: number | null;
-        readonly dialledNumber: string | null;
-        readonly configVersion: number;
-        readonly enabledTools: readonly (string)[];
-        readonly knowledgeSources: readonly (string)[];
-        readonly bargeIn: boolean;
-        readonly answeringMachineDetection: boolean;
-        readonly capturedFields: readonly ({
-        readonly key: string;
-        readonly type: "name" | "reference" | "phone" | "email" | "address" | "date" | "time" | "amount" | "nin" | "bvn" | "otp" | "quantity" | "choice" | "text";
-        readonly prompt: string;
-        readonly capture: "speech" | "keypad" | "either";
-        readonly confirm: "none" | "readback" | "spellback";
-        readonly pattern: string;
-        readonly attempts: number;
-        readonly required: boolean;
-        readonly options: readonly (string)[];
-      })[];
-        readonly deletedAt: string | null;
-        readonly createdAt: string;
+        readonly updatedAt: string;
       }>(options, "PUT", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}/tools`, input),
   },
 
@@ -825,7 +750,20 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly fromNumber: string;
         readonly ringSeconds: number | null;
       } | null;
-      };
+      } | null;
+        readonly capturedFields: readonly ({
+        readonly key: string;
+        readonly type: "name" | "reference" | "phone" | "email" | "address" | "date" | "time" | "amount" | "nin" | "bvn" | "otp" | "quantity" | "choice" | "text";
+        readonly prompt: string;
+        readonly capture: "speech" | "keypad" | "either";
+        readonly confirm: "none" | "readback" | "spellback";
+        readonly pattern: string;
+        readonly attempts: number;
+        readonly required: boolean;
+        readonly options: readonly (string)[];
+      })[] | null;
+        readonly tools: readonly (string)[] | null;
+        readonly knowledge: readonly (string)[] | null;
         readonly updatedBy: string | null;
         readonly restoredFrom: number | null;
         readonly updatedAt: string;
@@ -876,7 +814,20 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly fromNumber: string;
         readonly ringSeconds: number | null;
       } | null;
-      };
+      } | null;
+        readonly capturedFields: readonly ({
+        readonly key: string;
+        readonly type: "name" | "reference" | "phone" | "email" | "address" | "date" | "time" | "amount" | "nin" | "bvn" | "otp" | "quantity" | "choice" | "text";
+        readonly prompt: string;
+        readonly capture: "speech" | "keypad" | "either";
+        readonly confirm: "none" | "readback" | "spellback";
+        readonly pattern: string;
+        readonly attempts: number;
+        readonly required: boolean;
+        readonly options: readonly (string)[];
+      })[] | null;
+        readonly tools: readonly (string)[] | null;
+        readonly knowledge: readonly (string)[] | null;
         readonly updatedBy: string | null;
         readonly restoredFrom: number | null;
         readonly updatedAt: string;
@@ -1048,7 +999,20 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly fromNumber: string;
         readonly ringSeconds: number | null;
       } | null;
-      };
+      } | null;
+        readonly capturedFields: readonly ({
+        readonly key: string;
+        readonly type: "name" | "reference" | "phone" | "email" | "address" | "date" | "time" | "amount" | "nin" | "bvn" | "otp" | "quantity" | "choice" | "text";
+        readonly prompt: string;
+        readonly capture: "speech" | "keypad" | "either";
+        readonly confirm: "none" | "readback" | "spellback";
+        readonly pattern: string;
+        readonly attempts: number;
+        readonly required: boolean;
+        readonly options: readonly (string)[];
+      })[] | null;
+        readonly tools: readonly (string)[] | null;
+        readonly knowledge: readonly (string)[] | null;
         readonly updatedBy: string | null;
         readonly restoredFrom: number | null;
         readonly updatedAt: string;

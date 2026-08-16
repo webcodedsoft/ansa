@@ -2545,12 +2545,29 @@ it, and watched the fields reset. Two defects the browser found that the tests h
 successful save, and the uncontrolled fields kept discarded text. Both fixed, and the
 timestamp one now has the assertion the db test was missing.
 
-**Still to do on this slice.** The staged/immediate line is agreed but only half implemented:
-the publish-form document is staged, and the captured-field form, the agent's tool selection,
-its knowledge selection and its behaviour flags still write straight to live through their own
-endpoints. They belong in the draft by the rule already agreed, and until they are there the
-console is "some things wait for Publish and some do not", which is the state this slice
-exists to end.
+- [x] The captured-field form, the tool selection and the knowledge selection are staged too
+      (0040). **Sections are independent, and null means "not staged"** — four editors are
+      saved at four different moments, so a tool save must not republish a half-written
+      greeting and a greeting save must not blank a tool selection nobody touched. An empty
+      array is a real value: an agent deliberately reaching no tools. `config` became nullable
+      for the same reason, because a draft holding only a tool selection is now ordinary and
+      filling the rest from the live row would stage a stale copy.
+- [x] Publishing applies whatever is staged, in one transaction and in an order that matters:
+      the form onto the agent row **before** `publish_agent_config`, because that function
+      snapshots the row — applying it after would publish the form and record the old one, and
+      a call pointing at that version would describe an agent that never existed. The two
+      selections after, since the snapshot does not cover their join tables.
+- [x] The tabs read a `staged` agent — live with the staged sections laid over it — computed
+      once in the workspace rather than threaded as three props. Data captured, Tools and
+      Knowledge already read their selection off `agent`, so they show staged values without
+      knowing drafts exist, and a fourth section later is one line here.
+- [ ] The behaviour flags (`setAgentBehaviour` — barge-in, answering-machine detection) are
+      the last thing still writing straight to live. They belong in the draft by the same
+      rule; they were not named in the request that staged the other three.
+
+**Still open on this slice.** `capturedField` moved from `agents.controller.ts` to
+`api/schemas.ts` because two controllers now need it — worth knowing it is shared before
+editing it.
 
 One more, smaller: `revalidatePath("/agents", "layout")` re-runs every fetch the agent page
 makes, so Save and Discard take several seconds to show. Correct, but slow enough to look

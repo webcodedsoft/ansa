@@ -2,8 +2,16 @@ import { asOrganizationId } from "@ansa/shared";
 import type { DataSource } from "typeorm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { findAgent, setAgentTools } from "./agents";
 import { createDataSource } from "./data-source";
-import { discardAgentDraft, liveAgentId, loadAgentDraft, saveAgentDraft } from "./drafts";
+import {
+  applyCapturedFields,
+  discardAgentDraft,
+  liveAgentId,
+  loadAgentDraft,
+  saveAgentDraft,
+  stageAgentSelection,
+} from "./drafts";
 import {
   loadCurrentAgentConfig,
   publishAgentConfig,
@@ -122,7 +130,7 @@ describe("a draft is not a call", () => {
   it("is still there after the call path was read", async () => {
     const agent = await agentOf(A);
     const draft = await withOrganization(ds, A, (scope) => loadAgentDraft(scope, agent));
-    expect(draft?.config.greeting).toBe("A greeting nobody has published.");
+    expect(draft?.config?.greeting).toBe("A greeting nobody has published.");
   });
 
   it("reports its timestamp as an ISO string, not a Date", async () => {
@@ -155,7 +163,7 @@ describe("one organisation cannot see another's unpublished work", () => {
     expect(saved).toBeNull();
 
     const mine = await withOrganization(ds, A, (scope) => loadAgentDraft(scope, agentA));
-    expect(mine?.config.greeting).toBe("A greeting nobody has published.");
+    expect(mine?.config?.greeting).toBe("A greeting nobody has published.");
   });
 
   it("cannot discard one it cannot see", async () => {
@@ -172,10 +180,13 @@ describe("publishing consumes the draft", () => {
   it("puts the saved work live and leaves nothing unpublished behind", async () => {
     const agent = await agentOf(A);
     const draft = await withOrganization(ds, A, (scope) => loadAgentDraft(scope, agent));
-    if (draft === null) throw new Error("the previous test should have left a draft");
+    // Narrowed rather than asserted: `config` is nullable since 0040, because a draft
+    // holding only a tool selection is an ordinary state.
+    const staged = draft?.config;
+    if (staged == null) throw new Error("the previous test should have left a configuration");
 
     await withOrganization(ds, A, (scope) =>
-      publishAgentConfig(scope, draft.config, "published the draft"),
+      publishAgentConfig(scope, staged, "published the draft"),
     );
 
     const live = await withOrganization(ds, A, (scope) => loadCurrentAgentConfig(scope));
@@ -247,13 +258,15 @@ describe("where a draft came from", () => {
  * is the difference between covering what exists today and covering what somebody adds next
  * year: a new `agent_config_for_*` variant is caught without anybody remembering this file.
  *
- * Three are allowed to know. Two of them are how a draft is written and thrown away. The
- * third is `publish_agent_config`, which deletes it — in the same transaction as the publish,
+ * Four are allowed to know. Three of them are how a draft is written and thrown away — the
+ * configuration, the three selections, and the discard. The fourth is `publish_agent_config`,
+ * which deletes it — in the same transaction as the publish,
  * because a draft that survived its own publication would leave the console reporting
  * unpublished changes that are already live.
  */
 const MAY_TOUCH_DRAFTS = new Set([
   "save_agent_draft",
+  "stage_agent_draft_selection",
   "discard_agent_draft",
   "publish_agent_config",
 ]);
@@ -301,5 +314,135 @@ describe("nothing a call reads knows about drafts", () => {
 
     expect(rows[0]?.greeting).not.toBe("Draft, not for callers.");
     await withOrganization(ds, A, (scope) => discardAgentDraft(scope, agent));
+  });
+});
+
+/**
+ * The three selections an agent owns, staged the same way its configuration is.
+ *
+ * The property worth protecting is that they are staged *independently*. Four editors are
+ * saved at four different moments, and the failure this is written against is a tool save
+ * quietly republishing a half-written greeting, or a greeting save blanking a tool selection
+ * nobody touched. Null means "not staged" and an empty array means "deliberately none", and
+ * the difference between those two is the whole design.
+ */
+describe("staging the rest of an agent", () => {
+  it("saves one section without inventing the others", async () => {
+    const agent = await agentOf(A);
+    await withOrganization(ds, A, (scope) =>
+      stageAgentSelection(scope, agent, { tools: ["check_endorsement"] }, null),
+    );
+
+    const draft = await withOrganization(ds, A, (scope) => loadAgentDraft(scope, agent));
+    expect(draft?.tools).toEqual(["check_endorsement"]);
+    // Not staged, so the console shows the live values for these rather than a stale copy.
+    expect(draft?.config).toBeNull();
+    expect(draft?.capturedFields).toBeNull();
+    expect(draft?.knowledge).toBeNull();
+  });
+
+  it("leaves a section alone when another is saved", async () => {
+    const agent = await agentOf(A);
+    await withOrganization(ds, A, (scope) =>
+      stageAgentSelection(scope, agent, { knowledge: [] }, null),
+    );
+
+    const draft = await withOrganization(ds, A, (scope) => loadAgentDraft(scope, agent));
+    expect(draft?.tools, "a knowledge save wiped the staged tools").toEqual([
+      "check_endorsement",
+    ]);
+    // And the empty array survived as itself: an agent with no knowledge base is a choice.
+    expect(draft?.knowledge).toEqual([]);
+  });
+
+  it("keeps a staged selection when the configuration is saved over it", async () => {
+    const agent = await agentOf(A);
+    await withOrganization(ds, A, (scope) =>
+      saveAgentDraft(scope, agent, fields({ greeting: "Saved after the tools were." }), null, null),
+    );
+
+    const draft = await withOrganization(ds, A, (scope) => loadAgentDraft(scope, agent));
+    expect(draft?.config?.greeting).toBe("Saved after the tools were.");
+    expect(draft?.tools).toEqual(["check_endorsement"]);
+    expect(draft?.knowledge).toEqual([]);
+  });
+
+  it("tells an empty selection apart from an unstaged one", async () => {
+    const agent = await agentOf(B);
+    await withOrganization(ds, B, (scope) =>
+      stageAgentSelection(scope, agent, { tools: [] }, null),
+    );
+
+    const draft = await withOrganization(ds, B, (scope) => loadAgentDraft(scope, agent));
+    expect(draft?.tools).toEqual([]);
+    expect(draft?.tools).not.toBeNull();
+    await withOrganization(ds, B, (scope) => discardAgentDraft(scope, agent));
+  });
+
+  it("applies a staged form without bumping the version", async () => {
+    // The publish path needs the form on the agent row before the snapshot is taken, and it
+    // bumps once for the whole act — a form that took a version of its own would leave two
+    // rows in the history for one publish.
+    const agent = await agentOf(A);
+    const before = await withOrganization(ds, A, (scope) => loadCurrentAgentConfig(scope));
+
+    const applied = await withOrganization(ds, A, (scope) =>
+      applyCapturedFields(scope, agent, []),
+    );
+    expect(applied).toBe(true);
+
+    const after = await withOrganization(ds, A, (scope) => loadCurrentAgentConfig(scope));
+    expect(after?.version).toBe(before?.version);
+
+    await withOrganization(ds, A, (scope) => discardAgentDraft(scope, agent));
+  });
+});
+
+/**
+ * Publishing applies every staged section, and only the staged ones.
+ *
+ * The half that cannot be checked by staging alone. Absent sections must be *left*, not
+ * cleared: a publish that blanked an agent's tools because somebody edited only the greeting
+ * is the exact defect this slice was written to end, and it would be invisible until a caller
+ * asked for something the agent could no longer look up.
+ */
+describe("publishing what was staged", () => {
+  it("applies the selections that were staged and leaves the rest alone", async () => {
+    const agent = await agentOf(B);
+
+    // A live selection nobody is going to stage, so the publish has something to leave alone.
+    await withOrganization(ds, B, (scope) => setAgentTools(scope, agent, []));
+
+    await withOrganization(ds, B, (scope) =>
+      stageAgentSelection(scope, agent, { capturedFields: [] }, null),
+    );
+    await withOrganization(ds, B, (scope) =>
+      saveAgentDraft(scope, agent, fields({ greeting: "Published with a staged form." }), null, null),
+    );
+
+    const draft = await withOrganization(ds, B, (scope) => loadAgentDraft(scope, agent));
+    const stagedConfig = draft?.config;
+    if (draft == null || stagedConfig == null) {
+      throw new Error("the fixture should have staged a configuration");
+    }
+
+    // What the publish endpoint does, in the order it does it: the form onto the agent row
+    // first, because `publish_agent_config` snapshots that row a moment later.
+    await withOrganization(ds, B, async (scope) => {
+      if (draft.capturedFields != null) {
+        await applyCapturedFields(scope, agent, draft.capturedFields);
+      }
+      await publishAgentConfig(scope, stagedConfig, "published the staged sections");
+      if (draft.tools != null) await setAgentTools(scope, agent, draft.tools);
+    });
+
+    const after = await withOrganization(ds, B, (scope) => findAgent(scope, agent));
+    expect(after?.greeting).toBe("Published with a staged form.");
+    expect(after?.capturedFields).toEqual([]);
+    // Never staged, so untouched rather than cleared.
+    expect(after?.enabledTools).toEqual([]);
+
+    // And the draft is gone, deleted by the publish itself rather than by the API after it.
+    expect(await withOrganization(ds, B, (scope) => loadAgentDraft(scope, agent))).toBeNull();
   });
 });

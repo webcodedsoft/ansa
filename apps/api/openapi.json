@@ -1378,8 +1378,8 @@
         "tags": [
           "agents"
         ],
-        "summary": "Replace the form this agent conducts",
-        "description": "Sent whole rather than patched: the order of the fields is the order the caller is asked, so a partial update would be a reorder protocol nobody asked for. The agent conducts this form on the next call it takes — the order here is the order it asks, and a field with a pattern is re-asked until the value matches or the attempts run out.",
+        "summary": "Stage the form this agent conducts",
+        "description": "Saved, not applied: the form goes into the unpublished draft and the agent keeps asking whatever it asks today until somebody publishes. Sent whole rather than patched, because the order of the fields is the order the caller is asked and a partial update would be a reorder protocol nobody asked for. Once published, a field with a pattern is re-asked until the value matches or the attempts run out.",
         "x-ansa-capability": "config:write",
         "parameters": [
           {
@@ -1502,197 +1502,13 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "agentId": {
-                      "type": "string",
-                      "format": "uuid",
-                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-                    },
-                    "name": {
-                      "type": "string",
-                      "maxLength": 200
-                    },
-                    "persona": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "maxLength": 2000
-                    },
-                    "greeting": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "maxLength": 500
-                    },
-                    "instructions": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "maxLength": 2000
-                    },
-                    "voiceId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "maxLength": 120
-                    },
-                    "speakingRate": {
-                      "type": [
-                        "number",
-                        "null"
-                      ],
-                      "minimum": 0.7,
-                      "maximum": 1.2
-                    },
-                    "dialledNumber": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "maxLength": 16,
-                      "pattern": "^\\+[1-9][0-9]{6,14}$"
-                    },
-                    "configVersion": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "enabledTools": {
-                      "type": "array",
-                      "items": {
-                        "type": "string",
-                        "maxLength": 120
-                      }
-                    },
-                    "knowledgeSources": {
-                      "type": "array",
-                      "items": {
-                        "type": "string",
-                        "maxLength": 64
-                      },
-                      "maxItems": 200
-                    },
-                    "bargeIn": {
-                      "type": "boolean"
-                    },
-                    "answeringMachineDetection": {
-                      "type": "boolean"
-                    },
-                    "capturedFields": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "key": {
-                            "type": "string",
-                            "maxLength": 64,
-                            "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
-                          },
-                          "type": {
-                            "type": "string",
-                            "enum": [
-                              "name",
-                              "reference",
-                              "phone",
-                              "email",
-                              "address",
-                              "date",
-                              "time",
-                              "amount",
-                              "nin",
-                              "bvn",
-                              "otp",
-                              "quantity",
-                              "choice",
-                              "text"
-                            ]
-                          },
-                          "prompt": {
-                            "type": "string",
-                            "maxLength": 300
-                          },
-                          "capture": {
-                            "type": "string",
-                            "enum": [
-                              "speech",
-                              "keypad",
-                              "either"
-                            ]
-                          },
-                          "confirm": {
-                            "type": "string",
-                            "enum": [
-                              "none",
-                              "readback",
-                              "spellback"
-                            ]
-                          },
-                          "pattern": {
-                            "type": "string",
-                            "maxLength": 200
-                          },
-                          "attempts": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 10
-                          },
-                          "required": {
-                            "type": "boolean"
-                          },
-                          "options": {
-                            "type": "array",
-                            "items": {
-                              "type": "string",
-                              "maxLength": 120
-                            },
-                            "maxItems": 24
-                          }
-                        },
-                        "required": [
-                          "key",
-                          "type",
-                          "prompt",
-                          "capture",
-                          "confirm",
-                          "pattern",
-                          "attempts",
-                          "required",
-                          "options"
-                        ],
-                        "additionalProperties": false
-                      }
-                    },
-                    "deletedAt": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "format": "date-time"
-                    },
-                    "createdAt": {
+                    "updatedAt": {
                       "type": "string",
                       "format": "date-time"
                     }
                   },
                   "required": [
-                    "agentId",
-                    "name",
-                    "persona",
-                    "greeting",
-                    "instructions",
-                    "voiceId",
-                    "speakingRate",
-                    "dialledNumber",
-                    "configVersion",
-                    "enabledTools",
-                    "knowledgeSources",
-                    "bargeIn",
-                    "answeringMachineDetection",
-                    "capturedFields",
-                    "deletedAt",
-                    "createdAt"
+                    "updatedAt"
                   ],
                   "additionalProperties": false
                 }
@@ -1768,8 +1584,8 @@
         "tags": [
           "agents"
         ],
-        "summary": "Replace which of the organisation's sources this agent may answer from",
-        "description": "Sources belong to the organisation; this is one agent's slice, exactly as tools are. An empty list means the agent has no knowledge base at all — `search_knowledge_base` is then not registered and the model is never told it can look anything up, rather than being offered a search that can only come back empty.",
+        "summary": "Stage which of the organisation's sources this agent may answer from",
+        "description": "Saved, not applied: the selection goes into the unpublished draft and retrieval on a live call is unchanged until somebody publishes. Sources belong to the organisation; this is one agent's slice, exactly as tools are. An empty list stages an agent with no knowledge base — `search_knowledge_base` is then not registered and the model is never told it can look anything up, rather than being offered a search that can only come back empty.",
         "x-ansa-capability": "config:write",
         "parameters": [
           {
@@ -1816,197 +1632,13 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "agentId": {
-                      "type": "string",
-                      "format": "uuid",
-                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-                    },
-                    "name": {
-                      "type": "string",
-                      "maxLength": 200
-                    },
-                    "persona": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "maxLength": 2000
-                    },
-                    "greeting": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "maxLength": 500
-                    },
-                    "instructions": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "maxLength": 2000
-                    },
-                    "voiceId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "maxLength": 120
-                    },
-                    "speakingRate": {
-                      "type": [
-                        "number",
-                        "null"
-                      ],
-                      "minimum": 0.7,
-                      "maximum": 1.2
-                    },
-                    "dialledNumber": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "maxLength": 16,
-                      "pattern": "^\\+[1-9][0-9]{6,14}$"
-                    },
-                    "configVersion": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "enabledTools": {
-                      "type": "array",
-                      "items": {
-                        "type": "string",
-                        "maxLength": 120
-                      }
-                    },
-                    "knowledgeSources": {
-                      "type": "array",
-                      "items": {
-                        "type": "string",
-                        "maxLength": 64
-                      },
-                      "maxItems": 200
-                    },
-                    "bargeIn": {
-                      "type": "boolean"
-                    },
-                    "answeringMachineDetection": {
-                      "type": "boolean"
-                    },
-                    "capturedFields": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "key": {
-                            "type": "string",
-                            "maxLength": 64,
-                            "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
-                          },
-                          "type": {
-                            "type": "string",
-                            "enum": [
-                              "name",
-                              "reference",
-                              "phone",
-                              "email",
-                              "address",
-                              "date",
-                              "time",
-                              "amount",
-                              "nin",
-                              "bvn",
-                              "otp",
-                              "quantity",
-                              "choice",
-                              "text"
-                            ]
-                          },
-                          "prompt": {
-                            "type": "string",
-                            "maxLength": 300
-                          },
-                          "capture": {
-                            "type": "string",
-                            "enum": [
-                              "speech",
-                              "keypad",
-                              "either"
-                            ]
-                          },
-                          "confirm": {
-                            "type": "string",
-                            "enum": [
-                              "none",
-                              "readback",
-                              "spellback"
-                            ]
-                          },
-                          "pattern": {
-                            "type": "string",
-                            "maxLength": 200
-                          },
-                          "attempts": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 10
-                          },
-                          "required": {
-                            "type": "boolean"
-                          },
-                          "options": {
-                            "type": "array",
-                            "items": {
-                              "type": "string",
-                              "maxLength": 120
-                            },
-                            "maxItems": 24
-                          }
-                        },
-                        "required": [
-                          "key",
-                          "type",
-                          "prompt",
-                          "capture",
-                          "confirm",
-                          "pattern",
-                          "attempts",
-                          "required",
-                          "options"
-                        ],
-                        "additionalProperties": false
-                      }
-                    },
-                    "deletedAt": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "format": "date-time"
-                    },
-                    "createdAt": {
+                    "updatedAt": {
                       "type": "string",
                       "format": "date-time"
                     }
                   },
                   "required": [
-                    "agentId",
-                    "name",
-                    "persona",
-                    "greeting",
-                    "instructions",
-                    "voiceId",
-                    "speakingRate",
-                    "dialledNumber",
-                    "configVersion",
-                    "enabledTools",
-                    "knowledgeSources",
-                    "bargeIn",
-                    "answeringMachineDetection",
-                    "capturedFields",
-                    "deletedAt",
-                    "createdAt"
+                    "updatedAt"
                   ],
                   "additionalProperties": false
                 }
@@ -2082,8 +1714,8 @@
         "tags": [
           "agents"
         ],
-        "summary": "Replace which shared tools this agent may call",
-        "description": "The registry belongs to the organisation; this is one agent's slice of it. Sent whole rather than patched, so the selection on screen is the selection saved. An empty list means the agent reaches none of the organisation's tools — it keeps the platform's own, so it can still end a call and transfer to a human.",
+        "summary": "Stage which shared tools this agent may call",
+        "description": "Saved, not applied: the selection goes into the agent's unpublished draft and the agent keeps calling whatever it calls today until somebody publishes. The registry belongs to the organisation; this is one agent's slice of it, sent whole rather than patched so the selection on screen is the selection saved. An empty list stages an agent that reaches none of the organisation's tools — it keeps the platform's own, so it can still end a call and transfer to a human.",
         "x-ansa-capability": "config:write",
         "parameters": [
           {
@@ -2129,197 +1761,13 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "agentId": {
-                      "type": "string",
-                      "format": "uuid",
-                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-                    },
-                    "name": {
-                      "type": "string",
-                      "maxLength": 200
-                    },
-                    "persona": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "maxLength": 2000
-                    },
-                    "greeting": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "maxLength": 500
-                    },
-                    "instructions": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "maxLength": 2000
-                    },
-                    "voiceId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "maxLength": 120
-                    },
-                    "speakingRate": {
-                      "type": [
-                        "number",
-                        "null"
-                      ],
-                      "minimum": 0.7,
-                      "maximum": 1.2
-                    },
-                    "dialledNumber": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "maxLength": 16,
-                      "pattern": "^\\+[1-9][0-9]{6,14}$"
-                    },
-                    "configVersion": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "enabledTools": {
-                      "type": "array",
-                      "items": {
-                        "type": "string",
-                        "maxLength": 120
-                      }
-                    },
-                    "knowledgeSources": {
-                      "type": "array",
-                      "items": {
-                        "type": "string",
-                        "maxLength": 64
-                      },
-                      "maxItems": 200
-                    },
-                    "bargeIn": {
-                      "type": "boolean"
-                    },
-                    "answeringMachineDetection": {
-                      "type": "boolean"
-                    },
-                    "capturedFields": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "key": {
-                            "type": "string",
-                            "maxLength": 64,
-                            "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
-                          },
-                          "type": {
-                            "type": "string",
-                            "enum": [
-                              "name",
-                              "reference",
-                              "phone",
-                              "email",
-                              "address",
-                              "date",
-                              "time",
-                              "amount",
-                              "nin",
-                              "bvn",
-                              "otp",
-                              "quantity",
-                              "choice",
-                              "text"
-                            ]
-                          },
-                          "prompt": {
-                            "type": "string",
-                            "maxLength": 300
-                          },
-                          "capture": {
-                            "type": "string",
-                            "enum": [
-                              "speech",
-                              "keypad",
-                              "either"
-                            ]
-                          },
-                          "confirm": {
-                            "type": "string",
-                            "enum": [
-                              "none",
-                              "readback",
-                              "spellback"
-                            ]
-                          },
-                          "pattern": {
-                            "type": "string",
-                            "maxLength": 200
-                          },
-                          "attempts": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 10
-                          },
-                          "required": {
-                            "type": "boolean"
-                          },
-                          "options": {
-                            "type": "array",
-                            "items": {
-                              "type": "string",
-                              "maxLength": 120
-                            },
-                            "maxItems": 24
-                          }
-                        },
-                        "required": [
-                          "key",
-                          "type",
-                          "prompt",
-                          "capture",
-                          "confirm",
-                          "pattern",
-                          "attempts",
-                          "required",
-                          "options"
-                        ],
-                        "additionalProperties": false
-                      }
-                    },
-                    "deletedAt": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "format": "date-time"
-                    },
-                    "createdAt": {
+                    "updatedAt": {
                       "type": "string",
                       "format": "date-time"
                     }
                   },
                   "required": [
-                    "agentId",
-                    "name",
-                    "persona",
-                    "greeting",
-                    "instructions",
-                    "voiceId",
-                    "speakingRate",
-                    "dialledNumber",
-                    "configVersion",
-                    "enabledTools",
-                    "knowledgeSources",
-                    "bargeIn",
-                    "answeringMachineDetection",
-                    "capturedFields",
-                    "deletedAt",
-                    "createdAt"
+                    "updatedAt"
                   ],
                   "additionalProperties": false
                 }
@@ -5245,7 +4693,10 @@
                       ],
                       "properties": {
                         "config": {
-                          "type": "object",
+                          "type": [
+                            "object",
+                            "null"
+                          ],
                           "properties": {
                             "name": {
                               "type": "string",
@@ -5376,6 +4827,117 @@
                           ],
                           "additionalProperties": false
                         },
+                        "capturedFields": {
+                          "type": [
+                            "array",
+                            "null"
+                          ],
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string",
+                                "maxLength": 64,
+                                "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+                              },
+                              "type": {
+                                "type": "string",
+                                "enum": [
+                                  "name",
+                                  "reference",
+                                  "phone",
+                                  "email",
+                                  "address",
+                                  "date",
+                                  "time",
+                                  "amount",
+                                  "nin",
+                                  "bvn",
+                                  "otp",
+                                  "quantity",
+                                  "choice",
+                                  "text"
+                                ]
+                              },
+                              "prompt": {
+                                "type": "string",
+                                "maxLength": 300
+                              },
+                              "capture": {
+                                "type": "string",
+                                "enum": [
+                                  "speech",
+                                  "keypad",
+                                  "either"
+                                ]
+                              },
+                              "confirm": {
+                                "type": "string",
+                                "enum": [
+                                  "none",
+                                  "readback",
+                                  "spellback"
+                                ]
+                              },
+                              "pattern": {
+                                "type": "string",
+                                "maxLength": 200
+                              },
+                              "attempts": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 10
+                              },
+                              "required": {
+                                "type": "boolean"
+                              },
+                              "options": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "maxLength": 120
+                                },
+                                "maxItems": 24
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "type",
+                              "prompt",
+                              "capture",
+                              "confirm",
+                              "pattern",
+                              "attempts",
+                              "required",
+                              "options"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 40
+                        },
+                        "tools": {
+                          "type": [
+                            "array",
+                            "null"
+                          ],
+                          "items": {
+                            "type": "string",
+                            "maxLength": 120
+                          },
+                          "maxItems": 200
+                        },
+                        "knowledge": {
+                          "type": [
+                            "array",
+                            "null"
+                          ],
+                          "items": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                          },
+                          "maxItems": 500
+                        },
                         "updatedBy": {
                           "type": [
                             "string",
@@ -5398,6 +4960,9 @@
                       },
                       "required": [
                         "config",
+                        "capturedFields",
+                        "tools",
+                        "knowledge",
                         "updatedBy",
                         "restoredFrom",
                         "updatedAt"
@@ -5611,7 +5176,10 @@
                   "type": "object",
                   "properties": {
                     "config": {
-                      "type": "object",
+                      "type": [
+                        "object",
+                        "null"
+                      ],
                       "properties": {
                         "name": {
                           "type": "string",
@@ -5742,6 +5310,117 @@
                       ],
                       "additionalProperties": false
                     },
+                    "capturedFields": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "name",
+                              "reference",
+                              "phone",
+                              "email",
+                              "address",
+                              "date",
+                              "time",
+                              "amount",
+                              "nin",
+                              "bvn",
+                              "otp",
+                              "quantity",
+                              "choice",
+                              "text"
+                            ]
+                          },
+                          "prompt": {
+                            "type": "string",
+                            "maxLength": 300
+                          },
+                          "capture": {
+                            "type": "string",
+                            "enum": [
+                              "speech",
+                              "keypad",
+                              "either"
+                            ]
+                          },
+                          "confirm": {
+                            "type": "string",
+                            "enum": [
+                              "none",
+                              "readback",
+                              "spellback"
+                            ]
+                          },
+                          "pattern": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "attempts": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 10
+                          },
+                          "required": {
+                            "type": "boolean"
+                          },
+                          "options": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "maxLength": 120
+                            },
+                            "maxItems": 24
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "type",
+                          "prompt",
+                          "capture",
+                          "confirm",
+                          "pattern",
+                          "attempts",
+                          "required",
+                          "options"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 40
+                    },
+                    "tools": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      "maxItems": 200
+                    },
+                    "knowledge": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                      },
+                      "maxItems": 500
+                    },
                     "updatedBy": {
                       "type": [
                         "string",
@@ -5764,6 +5443,9 @@
                   },
                   "required": [
                     "config",
+                    "capturedFields",
+                    "tools",
+                    "knowledge",
                     "updatedBy",
                     "restoredFrom",
                     "updatedAt"
@@ -6843,7 +6525,10 @@
                   "type": "object",
                   "properties": {
                     "config": {
-                      "type": "object",
+                      "type": [
+                        "object",
+                        "null"
+                      ],
                       "properties": {
                         "name": {
                           "type": "string",
@@ -6974,6 +6659,117 @@
                       ],
                       "additionalProperties": false
                     },
+                    "capturedFields": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "name",
+                              "reference",
+                              "phone",
+                              "email",
+                              "address",
+                              "date",
+                              "time",
+                              "amount",
+                              "nin",
+                              "bvn",
+                              "otp",
+                              "quantity",
+                              "choice",
+                              "text"
+                            ]
+                          },
+                          "prompt": {
+                            "type": "string",
+                            "maxLength": 300
+                          },
+                          "capture": {
+                            "type": "string",
+                            "enum": [
+                              "speech",
+                              "keypad",
+                              "either"
+                            ]
+                          },
+                          "confirm": {
+                            "type": "string",
+                            "enum": [
+                              "none",
+                              "readback",
+                              "spellback"
+                            ]
+                          },
+                          "pattern": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "attempts": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 10
+                          },
+                          "required": {
+                            "type": "boolean"
+                          },
+                          "options": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "maxLength": 120
+                            },
+                            "maxItems": 24
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "type",
+                          "prompt",
+                          "capture",
+                          "confirm",
+                          "pattern",
+                          "attempts",
+                          "required",
+                          "options"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 40
+                    },
+                    "tools": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      "maxItems": 200
+                    },
+                    "knowledge": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                      },
+                      "maxItems": 500
+                    },
                     "updatedBy": {
                       "type": [
                         "string",
@@ -6996,6 +6792,9 @@
                   },
                   "required": [
                     "config",
+                    "capturedFields",
+                    "tools",
+                    "knowledge",
                     "updatedBy",
                     "restoredFrom",
                     "updatedAt"

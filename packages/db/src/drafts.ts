@@ -15,7 +15,22 @@ import type { OrganizationScope } from "./organization-scope";
  */
 
 export interface AgentDraft {
-  readonly config: AgentConfigFields;
+  /**
+   * The publish form, or null when nothing on it has been staged.
+   *
+   * Every section here is independently null for the same reason: the four editors are four
+   * screens saved at four different moments. A draft holding only a tool selection is
+   * ordinary, and filling the other sections from the live row to avoid the null would stage
+   * a stale copy of configuration nobody touched — which then publishes over whatever
+   * somebody else changed in the meantime.
+   */
+  readonly config: AgentConfigFields | null;
+  /** The staged form. Null is not staged; an empty array is a form with no fields. */
+  readonly capturedFields: readonly unknown[] | null;
+  /** Null is not staged; an empty array is an agent that reaches none of the org's tools. */
+  readonly tools: readonly string[] | null;
+  /** Null is not staged; an empty array is an agent with no knowledge base at all. */
+  readonly knowledge: readonly string[] | null;
   /** Who last saved it. Null when that account is gone but their work is not. */
   readonly updatedBy: string | null;
   /**
@@ -31,7 +46,10 @@ export interface AgentDraft {
 }
 
 interface DraftRow {
-  readonly config: AgentConfigFields;
+  readonly config: AgentConfigFields | null;
+  readonly captured_fields: readonly unknown[] | null;
+  readonly enabled_tools: readonly string[] | null;
+  readonly knowledge_sources: readonly string[] | null;
   readonly updated_by: string | null;
   readonly restored_from: number | null;
   /* A `Date`, not a string: the driver parses `timestamptz` and the API's schema layer
@@ -70,7 +88,8 @@ export const loadAgentDraft = async (
   agentId: string,
 ): Promise<AgentDraft | null> => {
   const rows = await scope.query<DraftRow>(
-    `select config, updated_by, restored_from, updated_at
+    `select config, captured_fields, enabled_tools, knowledge_sources,
+            updated_by, restored_from, updated_at
        from agent_config_drafts
       where agent_id = $1`,
     [agentId],
@@ -80,6 +99,9 @@ export const loadAgentDraft = async (
   if (row === undefined) return null;
   return {
     config: row.config,
+    capturedFields: row.captured_fields,
+    tools: row.enabled_tools,
+    knowledge: row.knowledge_sources,
     updatedBy: row.updated_by,
     restoredFrom: row.restored_from,
     updatedAt: row.updated_at.toISOString(),
@@ -128,4 +150,54 @@ export const discardAgentDraft = async (
     [agentId],
   );
   return rows[0]?.discard_agent_draft ?? false;
+};
+
+/**
+ * Stage one of the three selections an agent owns, leaving everything else as it was.
+ *
+ * One function rather than three because they share every line except which argument is not
+ * null, and three would be three places to forget the scope check. Pass null for the sections
+ * this caller does not own: the SQL coalesces, so a tool save cannot blank a staged form.
+ */
+export const stageAgentSelection = async (
+  scope: OrganizationScope,
+  agentId: string,
+  staged: {
+    readonly capturedFields?: readonly unknown[] | undefined;
+    readonly tools?: readonly string[] | undefined;
+    readonly knowledge?: readonly string[] | undefined;
+  },
+  author: string | null,
+): Promise<string | null> => {
+  const rows = await scope.query<{ stage_agent_draft_selection: Date | null }>(
+    `select app.stage_agent_draft_selection($1::uuid, $2::uuid, $3::jsonb, $4::text[], $5::uuid[])
+              as stage_agent_draft_selection`,
+    [
+      agentId,
+      author,
+      staged.capturedFields === undefined ? null : JSON.stringify(staged.capturedFields),
+      staged.tools === undefined ? null : [...staged.tools],
+      staged.knowledge === undefined ? null : [...staged.knowledge],
+    ],
+  );
+  return rows[0]?.stage_agent_draft_selection?.toISOString() ?? null;
+};
+
+/**
+ * Put a staged form onto the agent without bumping the version.
+ *
+ * Publishing bumps once for the whole act, and the snapshot it writes reads `captured_fields`
+ * off the agent row — so this has to run inside the publish transaction and before it, which
+ * is the only place it is called from.
+ */
+export const applyCapturedFields = async (
+  scope: OrganizationScope,
+  agentId: string,
+  fields: readonly unknown[],
+): Promise<boolean> => {
+  const rows = await scope.query<{ apply_captured_fields: boolean }>(
+    `select app.apply_captured_fields($1::uuid, $2::jsonb) as apply_captured_fields`,
+    [agentId, JSON.stringify(fields)],
+  );
+  return rows[0]?.apply_captured_fields ?? false;
 };
