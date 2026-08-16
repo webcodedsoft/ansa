@@ -34,6 +34,50 @@ describe("two versions of a configuration", () => {
     expect(diff.keyterms).toEqual({ added: [], removed: [] });
   });
 
+  it("reports a change of pace", () => {
+    // The pace an operator sets is one of the few settings whose effect is audible on
+    // every second of every call, and it was absent from the flattened leaves: changing it
+    // published a version whose diff said nothing had changed.
+    const diff = diffConfigurations(base, changed({ speakingRate: 0.85 }));
+    expect(diff.identical).toBe(false);
+    expect(diff.fields).toEqual([{ field: "speakingRate", before: null, after: "0.85" }]);
+  });
+
+  /**
+   * The guarantee `diff.ts` describes, enforced rather than asserted in a comment.
+   *
+   * `leaves()` is written out by hand so nothing is walked generically, and the return type
+   * is keyed by `string` — so a field added to `AgentConfigFields` and forgotten there
+   * compiles, ships, and quietly stops being reported. That is how `speakingRate` came to be
+   * missing. Changing one field at a time and demanding the diff name it is the only check
+   * that scales with the shape.
+   */
+  it("names every field of a configuration, so none can be added and forgotten", () => {
+    // Keyterms are excluded deliberately: they are reported as added/removed terms rather
+    // than as a flattened leaf, which the test below this one pins.
+    const somethingElse: Readonly<Record<string, unknown>> = {
+      name: "Second Organisation",
+      voiceId: "voice-other",
+      speakingRate: 0.85,
+      greeting: "Good afternoon.",
+      persona: "Brisk.",
+      instructions: "Transfer billing questions.",
+      businessHours: { opensAtHour: 8, closesAtHour: 18, openDays: [1, 2] },
+      escalation: { toNumber: "+2348000000000", fromNumber: "+2348000000001", ringSeconds: 20 },
+    };
+
+    for (const field of Object.keys(base)) {
+      if (field === "keyterms") continue;
+      const other = somethingElse[field];
+      expect(other, `the fixture above has no different value for ${field}`).toBeDefined();
+
+      const diff = diffConfigurations(base, changed({ [field]: other } as Partial<AgentConfigFields>));
+      expect(diff.identical, `${field} changed and the diff called the versions identical`).toBe(
+        false,
+      );
+    }
+  });
+
   it("names the field that moved, and only that one", () => {
     const diff = diffConfigurations(base, changed({ greeting: "Good afternoon." }));
     expect(diff.identical).toBe(false);

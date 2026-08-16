@@ -30,7 +30,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import type { AppConfig } from "../config/env";
 import { ACKNOWLEDGEMENTS, ALL_FILLERS, PROGRESS, STILL_WORKING } from "./filler";
 import { forSpeech, GREETING_TEXT } from "./greeting";
-import { createAudioCache, type AudioCache } from "./prerender";
+import { cacheKey, createAudioCache, type AudioCache } from "./prerender";
 import { composeListen } from "./composite-listen";
 import { createHandoff } from "../handoff/handoff";
 import { withHandoffJournal } from "../handoff/journal";
@@ -89,7 +89,7 @@ export class MediaGateway implements OnApplicationShutdown {
   private server: WebSocketServer | null = null;
   /** Built on first use: nothing should synthesise before the server is up. */
   private audio: AudioCache | null = null;
-  /** Rendered phrases per `${voiceId}\n${greeting}`, and the renders in flight. */
+  /** Rendered phrases per voice, pace and greeting, and the renders in flight. */
   private readonly warm = new Map<string, WarmAudio>();
   private readonly warming = new Set<string>();
   /**
@@ -142,7 +142,7 @@ export class MediaGateway implements OnApplicationShutdown {
 
     // Off the critical path: calls that arrive before this finishes fall back to
     // synthesising live, which is slower but never silent.
-    this.warmed(this.platform().voiceId, this.platform().greeting);
+    this.warmed(this.platform().voiceId, this.platform().greeting, undefined);
   }
 
   /** What the platform supplies when an organisation has not. */
@@ -156,10 +156,15 @@ export class MediaGateway implements OnApplicationShutdown {
 
   /**
    * Renders one voice's fixed phrases: the greeting it answers with, and the thinking-gap
-   * acknowledgements. Deterministic given the pair, so paying for it per call is pure
-   * latency — a measured 959ms cold at the moment the caller is listening hardest.
+   * acknowledgements. Deterministic given the voice, the pace and the words, so paying for
+   * it per call is pure latency — a measured 959ms cold at the moment the caller is
+   * listening hardest.
    */
-  private async render(voiceId: string, greeting: string): Promise<WarmAudio> {
+  private async render(
+    voiceId: string,
+    greeting: string,
+    speakingRate: number | undefined,
+  ): Promise<WarmAudio> {
     const cache = (this.audio ??= createAudioCache({
       tts: this.tts,
       format: TELEPHONY_AUDIO,
@@ -167,10 +172,10 @@ export class MediaGateway implements OnApplicationShutdown {
       log: this.log,
     }));
 
-    const greetingAudio = await cache.render(greeting, voiceId);
+    const greetingAudio = await cache.render(greeting, voiceId, speakingRate);
     const fillers = new Map<string, readonly AudioChunk[]>();
     for (const phrase of ALL_FILLERS) {
-      const chunks = await cache.render(phrase, voiceId);
+      const chunks = await cache.render(phrase, voiceId, speakingRate);
       if (chunks !== null) fillers.set(phrase, chunks);
     }
     return { greeting: greetingAudio, fillers };
@@ -186,18 +191,19 @@ export class MediaGateway implements OnApplicationShutdown {
    * which is why `warmForOrganization` runs at ingress: the carrier still has to fetch TwiML and
    * open a socket, and that is usually enough.
    */
-  private warmed(voiceId: string, greeting: string): WarmAudio {
-    const key = `${voiceId}\n${greeting}`;
+  private warmed(voiceId: string, greeting: string, speakingRate: number | undefined): WarmAudio {
+    const key = cacheKey(voiceId, speakingRate, greeting);
     const ready = this.warm.get(key);
     if (ready !== undefined) return ready;
     if (this.warming.has(key)) return NOT_WARM;
 
     this.warming.add(key);
-    void this.render(voiceId, greeting)
+    void this.render(voiceId, greeting, speakingRate)
       .then((rendered) => {
         this.warm.set(key, rendered);
         this.log.info("audio warmed", {
           voiceId,
+          speakingRate: speakingRate ?? null,
           greeting: rendered.greeting !== null,
           fillers: rendered.fillers.size,
         });
@@ -223,7 +229,7 @@ export class MediaGateway implements OnApplicationShutdown {
    */
   warmForOrganization(organization: CallAgent): void {
     const settings = callSettings(organization, this.platform());
-    this.warmed(settings.voiceId, settings.greeting);
+    this.warmed(settings.voiceId, settings.greeting, settings.speakingRate);
   }
 
 
@@ -445,12 +451,14 @@ export class MediaGateway implements OnApplicationShutdown {
       configVersion: settings.configVersion,
       keyterms: keyterms.length,
       voiceId: settings.voiceId,
+      // Null is the voice's own pace, which is the default and is not 1.0.
+      speakingRate: settings.speakingRate ?? null,
       // Whether they answer in their own words, not the words themselves: the greeting is
       // spoken on every call and a log line is not where it needs repeating.
       ownGreeting: settings.greeting !== this.platform().greeting,
       ownEscalation: settings.handoff !== this.platform().handoff,
     });
-    const warm = this.warmed(settings.voiceId, settings.greeting);
+    const warm = this.warmed(settings.voiceId, settings.greeting, settings.speakingRate);
 
     const direction: CallDirection =
       stream.parameters[DIRECTION_PARAM] === "outbound" ? "outbound" : "inbound";
@@ -742,6 +750,7 @@ export class MediaGateway implements OnApplicationShutdown {
       llm: this.llm,
       tts: this.tts,
       voiceId: settings.voiceId,
+      speakingRate: settings.speakingRate,
       log: this.log,
       greeting: settings.greeting,
       // The organization's own persona and instructions, already composed and cached at config

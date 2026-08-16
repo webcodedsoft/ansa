@@ -89,8 +89,17 @@ export interface OrchestratorDeps {
   readonly llm: LlmProvider;
   readonly tts: TtsProvider;
   readonly voiceId: string;
-  /** Undefined leaves the voice at its own pace, which is the default for every agent. */
-  readonly speakingRate?: number | undefined;
+  /**
+   * Undefined leaves the voice at its own pace, which is the default for every agent.
+   *
+   * Required rather than optional, and that distinction is the reason this comment exists.
+   * It was optional and the gateway simply never passed it, so the rate was stored,
+   * versioned, diffed and shown in the console, the adapter had a branch to send it, and no
+   * call ever used one. Nothing failed, because an object missing an optional field is a
+   * valid object. Writing `undefined` here is one word; forgetting the pace of every call
+   * cost this feature entirely.
+   */
+  readonly speakingRate: number | undefined;
   readonly log: Logger;
   readonly greeting: string;
   /**

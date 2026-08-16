@@ -90,6 +90,9 @@ const ROW_A = {
   name: "Arewa Mutual Assurance",
   keyterms: ["Arewa Mutual", "endorsement", "underwriter"],
   voice_id: "voice-arewa",
+  // Different from Riverbend's on purpose: the pace is per agent, and the cache that
+  // renders the greeting is one map for the whole process.
+  speaking_rate: 0.85,
   greeting: "Arewa Mutual, good afternoon. How may I help?",
   persona: "Patient and formal. Let the caller finish.",
   instructions: "Renewals are handled by the branch, not on this line.",
@@ -139,6 +142,7 @@ const ROW_B = {
   name: "Riverbend Veterinary Group",
   keyterms: ["Riverbend", "vaccination", "deworming", "consultation"],
   voice_id: "voice-riverbend",
+  speaking_rate: 1.1,
   greeting: "Riverbend Veterinary, hello. Is it about an appointment?",
   persona: "Gentle and unhurried. Callers are often worried about an animal.",
   instructions: "An emergency is anything bleeding, collapsed or struggling to breathe. Offer the on-call line first.",
@@ -196,6 +200,7 @@ interface ConfiguredRow {
   readonly persona: string;
   readonly instructions: string;
   readonly voice_id: string;
+  readonly speaking_rate: number;
   readonly escalation_to_number: string;
   readonly keyterms: readonly string[];
   readonly tool_config: { readonly http: readonly { readonly name: string }[] };
@@ -545,6 +550,7 @@ describe("a whole call, run twice as two organisations", () => {
       greeting: settings.greeting,
       systemPrompt: settings.systemPrompt,
       voiceId: settings.voiceId,
+      speakingRate: settings.speakingRate,
     });
     call.greetingPlays();
     call.says("I need some help with something please.");
@@ -567,6 +573,22 @@ describe("a whole call, run twice as two organisations", () => {
     // the platform's voice is another organisation audibly appearing mid-turn.
     expect(new Set(voices(a))).toEqual(new Set([ROW_A.voice_id]));
     expect(new Set(voices(b))).toEqual(new Set([ROW_B.voice_id]));
+  });
+
+  it("speaks at the pace each organisation set, on every synthesis of the call", async () => {
+    // The same assertion as the voice above, and it exists for the same reason spelled out
+    // at the top of this block: the pace was stored, versioned, diffed and shown in the
+    // console, and reached no call at all because the gateway never passed it on. Anything
+    // that stops at the settings object is proving the wrong half.
+    const registry = registryFor(twoOrganizationDb());
+    const a = runCall(await settingsFor(registry, NUMBER_A));
+    const b = runCall(await settingsFor(registry, NUMBER_B));
+
+    const paces = (call: ReturnType<typeof runCall>): ReadonlySet<number | undefined> =>
+      new Set(call.tts.syntheses.map((s) => s.request.speakingRate));
+
+    expect(paces(a)).toEqual(new Set([ROW_A.speaking_rate]));
+    expect(paces(b)).toEqual(new Set([ROW_B.speaking_rate]));
   });
 
   it("says nothing of the other organisation, and is told nothing of it", async () => {

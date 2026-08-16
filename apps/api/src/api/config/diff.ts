@@ -66,16 +66,20 @@ const renderDays = (days: readonly number[] | undefined): string | null =>
 /**
  * The leaves of one configuration, flattened to the paths the diff reports.
  *
- * Written out rather than derived by walking the object, so that adding a field to
- * `AgentConfigFields` and forgetting it here is a compile error: the record is keyed by a
- * closed list of paths and the value expressions name every property of the two nested
- * shapes. A generic walker would silently ignore the new field, which is the failure that
- * makes a diff untrustworthy — a change it does not mention reads as a change that did not
- * happen.
+ * Written out rather than derived by walking the object, because a generic walker silently
+ * ignores a field nobody taught it about — and a change the diff does not mention reads as
+ * a change that did not happen.
+ *
+ * This used to claim that forgetting a field here was a compile error. It is not: the
+ * return type is keyed by `string`, so an omission type-checks perfectly, and `speakingRate`
+ * was missing from this list for exactly as long as it took somebody to change a pace and be
+ * told nothing had changed. `diff.test.ts` now walks `AgentConfigFields` and fails on any
+ * key without a path here, which is the guarantee the comment used to describe.
  */
 const leaves = (config: AgentConfigFields): Readonly<Record<string, string | null>> => ({
   name: config.name,
   voiceId: render(config.voiceId),
+  speakingRate: render(config.speakingRate),
   greeting: render(config.greeting),
   persona: render(config.persona),
   instructions: render(config.instructions),

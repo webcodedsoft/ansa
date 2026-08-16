@@ -86,16 +86,17 @@ export interface ScenarioOptions {
   readonly organizationId?: OrganizationId | null;
   readonly makeTools?: OrchestratorDeps["makeTools"];
   /**
-   * The three values a organization's configuration decides about how a call sounds.
+   * The four values a organization's configuration decides about how a call sounds.
    *
    * Overridable because `isolation.test.ts` runs the same conversation twice, once as each
-   * of two organisations, and the whole question it asks is whether any of these three
+   * of two organisations, and the whole question it asks is whether any of these four
    * crosses over. Everything else about a scenario is deliberately fixed: the scenarios in
    * `conversation.test.ts` are about the conversation and would be noisier for varying it.
    */
   readonly greeting?: string;
   readonly systemPrompt?: string;
   readonly voiceId?: string;
+  readonly speakingRate?: number | undefined;
   /**
    * A second recorder, teed alongside the scenario's own.
    *
@@ -190,6 +191,9 @@ export const scenario = (options: ScenarioOptions = {}): Scenario => {
     llm: llm.provider,
     tts: tts.provider,
     voiceId: "voice-ng",
+    // Scenarios are about the conversation, not the pace, so unless one says otherwise the
+    // voice runs at its own.
+    speakingRate: undefined,
     log: silentLog,
     greeting: GREETING,
     systemPrompt: DEFAULT_SYSTEM_PROMPT,

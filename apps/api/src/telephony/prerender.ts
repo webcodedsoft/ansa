@@ -16,7 +16,20 @@ import type { TtsProvider } from "@ansa/tts";
  * byte-identical to synthesising live.
  */
 export interface AudioCache {
-  render(text: string, voiceId: string): Promise<readonly AudioChunk[] | null>;
+  /**
+   * `speakingRate` is part of what is being rendered, not a detail of how.
+   *
+   * Two agents can share a voice and set different paces, and this cache is one map for the
+   * whole process. Keyed on the voice and the words alone, the first agent to warm a phrase
+   * hands its pace to every other agent saying the same phrase in the same voice. Nothing
+   * about the audio looks wrong; the only symptom is a greeting running at somebody else's
+   * speed, on a line nobody is listening to with a stopwatch.
+   */
+  render(
+    text: string,
+    voiceId: string,
+    speakingRate: number | undefined,
+  ): Promise<readonly AudioChunk[] | null>;
 }
 
 export interface AudioCacheDeps {
@@ -27,12 +40,29 @@ export interface AudioCacheDeps {
   readonly log: Logger;
 }
 
-const collect = (deps: AudioCacheDeps, text: string, voiceId: string): Promise<AudioChunk[]> =>
+/**
+ * Everything that changes the bytes, and nothing that does not.
+ *
+ * Exported because the gateway keeps a second map — whole voices it has warmed — and two
+ * cache keys for the same thing that drift apart is how a phrase gets rendered at one pace
+ * and served under another. `own` rather than an empty string so a voice at its own pace and
+ * a voice at a rate that stringifies to nothing cannot collide.
+ */
+export const cacheKey = (voiceId: string, speakingRate: number | undefined, text: string): string =>
+  `${voiceId}\n${speakingRate ?? "own"}\n${text}`;
+
+const collect = (
+  deps: AudioCacheDeps,
+  text: string,
+  voiceId: string,
+  speakingRate: number | undefined,
+): Promise<AudioChunk[]> =>
   new Promise((resolve, reject) => {
     const chunks: AudioChunk[] = [];
     const stream = deps.tts.synthesize({
       text: deps.forSpeech(text),
       voiceId,
+      speakingRate,
       format: deps.format,
     });
     stream.onAudio((chunk) => chunks.push(chunk));
@@ -44,16 +74,17 @@ export const createAudioCache = (deps: AudioCacheDeps): AudioCache => {
   const cache = new Map<string, readonly AudioChunk[]>();
 
   return {
-    async render(text, voiceId) {
-      const key = `${voiceId}\n${text}`;
+    async render(text, voiceId, speakingRate) {
+      const key = cacheKey(voiceId, speakingRate, text);
       const existing = cache.get(key);
       if (existing !== undefined) return existing;
 
       try {
-        const chunks = await collect(deps, text, voiceId);
+        const chunks = await collect(deps, text, voiceId, speakingRate);
         cache.set(key, chunks);
         deps.log.info("pre-rendered phrase", {
           text,
+          speakingRate: speakingRate ?? null,
           chunks: chunks.length,
           bytes: chunks.reduce((n, c) => n + c.data.length, 0),
         });

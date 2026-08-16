@@ -50,6 +50,7 @@ const setup = (
     /** Null is an unregistered number: tool calling is off for the whole call. */
     organizationId?: OrganizationId | null;
     makeTools?: OrchestratorDeps["makeTools"];
+    speakingRate?: number;
   } = {},
 ) => {
   const stream = fakeStream();
@@ -62,6 +63,7 @@ const setup = (
     llm: llm.provider,
     tts: tts.provider,
     voiceId: "voice-ng",
+    speakingRate: undefined,
     log: silentLog,
     greeting: GREETING,
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
@@ -1315,6 +1317,49 @@ describe("the filler must not interrupt the agent itself", () => {
   });
 });
 
+/**
+ * The pace an operator chose, on the audio a caller actually hears.
+ *
+ * This was stored, versioned, diffed and shown in the console for weeks without reaching a
+ * single call: `OrchestratorDeps.speakingRate` was optional and the gateway never passed it,
+ * so every synthesis went out at the voice's default and nothing anywhere failed. The field
+ * is required now, which makes that omission a compile error rather than a silence — and
+ * these pin the behaviour the type can only half express.
+ */
+describe("the speaking rate an agent was configured with", () => {
+  it("is on the greeting, which is the first thing the caller hears", () => {
+    const h = setup({ speakingRate: 0.85 });
+
+    expect(h.tts.last().request.speakingRate).toBe(0.85);
+    assertInvariants(h);
+  });
+
+  it("is on every reply, not only the greeting", () => {
+    const h = setup({ speakingRate: 0.85 });
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("Tell me about my policy.");
+    h.llm.last().emit("It renews in May. ");
+
+    // A caller who heard a slow greeting and then a normal-speed answer would hear two
+    // different people, which is worse than either pace on its own.
+    expect(h.tts.syntheses.map((synthesis) => synthesis.request.speakingRate)).toEqual([
+      0.85, 0.85,
+    ]);
+    assertInvariants(h);
+  });
+
+  it("is absent when nobody chose one, rather than pinned to 1.0", () => {
+    // The default for every agent. A cloned voice keeps its speaker's own pace, and 1.0
+    // would flatten it — the adapter branches on undefined to omit the field entirely.
+    const h = setup();
+
+    expect(h.tts.last().request.speakingRate).toBeUndefined();
+    assertInvariants(h);
+  });
+});
+
 describe("audio that arrived before the listener existed", () => {
   it("replays buffered frames into the listen session", () => {
     const stream = fakeStream();
@@ -1329,6 +1374,7 @@ describe("audio that arrived before the listener existed", () => {
       llm: fakeLlm().provider,
       tts: fakeTts().provider,
       voiceId: "voice-ng",
+      speakingRate: undefined,
       log: silentLog,
       greeting: GREETING,
       systemPrompt: DEFAULT_SYSTEM_PROMPT,
@@ -1353,6 +1399,7 @@ describe("audio that arrived before the listener existed", () => {
       llm: fakeLlm().provider,
       tts: fakeTts().provider,
       voiceId: "voice-ng",
+      speakingRate: undefined,
       log: silentLog,
       greeting: GREETING,
       systemPrompt: DEFAULT_SYSTEM_PROMPT,
