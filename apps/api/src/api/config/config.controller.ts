@@ -1,13 +1,17 @@
 import {
+  discardAgentDraft,
   listAgentConfigVersions,
+  liveAgentId,
+  loadAgentDraft,
   loadConfigVersionForCall,
   loadCurrentAgentConfig,
   loadAgentConfigVersion,
   publishAgentConfig,
+  saveAgentDraft,
   type ConfigVersion,
   type AgentConfigFields,
 } from "@ansa/db";
-import { Controller, Get, Inject, NotFoundException, Post } from "@nestjs/common";
+import { Controller, Delete, Get, Inject, NotFoundException, Post, Put } from "@nestjs/common";
 
 import { LIMITS } from "../../prompts/organization-layer";
 import { BASE_KEYTERMS, MAX_KEYTERMS } from "../../tenancy/defaults";
@@ -22,7 +26,6 @@ import {
   nullable,
   number,
   object,
-  optional,
   text,
   type Infer,
 } from "../http/schema";
@@ -251,21 +254,8 @@ const versionDiff = object({
   }),
 });
 
-/**
- * Shorter than a publish note, because the version this one is restored from is appended to
- * whatever is written here and the whole thing has to stay inside `MAX_NOTE_CHARS` — a note
- * that overflowed would fail the response projection and answer 500 on a successful publish.
- */
-const MAX_ROLLBACK_NOTE = 400;
-
-const rollback = object({
-  /**
-   * Why. Optional here and required on a publish, which is the one difference between them:
-   * "restored from version 4" is already a reason, and the version it names is the rest of
-   * the explanation. Anything written here is kept and the provenance is appended to it.
-   */
-  note: optional(text({ minLength: 1, maxLength: MAX_ROLLBACK_NOTE })),
-});
+/* No body. Restoring fills the draft, and a draft carries no note — the provenance travels
+   as `restoredFrom` and becomes the note when the draft is published. */
 
 const callPath = object({ callId: uuid() });
 
@@ -286,6 +276,30 @@ const guarantee = object({
 });
 
 const guarantees = object({ guarantees: list(guarantee) });
+
+/**
+ * Work saved but not published.
+ *
+ * The same fields a publication carries and no note, because a note explains a version and a
+ * draft is not one. Saving is not an event in the agent's history — it is somebody still
+ * deciding — so nothing here is appended to `agent_prompt_versions` and nothing here is
+ * visible to a call.
+ */
+const draftBody = object({ ...CONFIG_FIELDS });
+
+const draft = object({
+  config: configFields,
+  /** Null when the account that saved it is gone but the work is not. */
+  updatedBy: nullable(uuid()),
+  /** The version this was loaded from, for the publish note to offer. Null when typed. */
+  restoredFrom: nullable(integer({ minimum: 0 })),
+  updatedAt: timestamp(),
+});
+
+/** Null rather than a 404: "nothing unpublished" is the ordinary state, not a missing thing. */
+const draftState = object({ draft: nullable(draft) });
+
+const discarded = object({ discarded: flag() });
 
 /** The response shape shared by everything that returns a stored configuration. */
 const toConfigBody = (config: AgentConfigFields): Infer<typeof configFields> => ({
@@ -310,19 +324,6 @@ const toSummary = (version: ConfigVersion): Infer<typeof versionSummary> => ({
   publishedBy: version.publishedBy,
   publishedAt: version.publishedAt,
 });
-
-/**
- * The note a rollback records.
- *
- * The version it was restored from is always in it, whether or not the caller wrote
- * anything. Without that the history reads as somebody having retyped an old configuration
- * by hand, and the one question the history exists to answer — why does version 9 look like
- * version 4 — has no answer in it.
- */
-const rollbackNote = (from: number, note: string | undefined): string =>
-  note === undefined
-    ? `restored from version ${from}`
-    : `${note} (restored from version ${from})`;
 
 const toVocabulary = (configured: readonly string[]): Infer<typeof vocabulary> => ({
   base: [...BASE_KEYTERMS],
@@ -446,45 +447,47 @@ export class ConfigController {
   /**
    * R7.5's other half: getting back to a configuration that worked.
    *
-   * **It publishes; it does not restore.** The old snapshot's content becomes a new version
-   * with a new number, and every row that was there before is still there and still says
-   * what it said. That is not tidiness — `calls.config_version` points into this table, so
+   * **It loads the old version into the draft. It does not publish.** This used to publish
+   * directly, and that made it a second way to change what a caller hears without pressing
+   * Publish — the exact hole the draft exists to close. Restoring now means "put version 4
+   * back on my screen"; making it answer the phone is still one deliberate act, and the
+   * operator gets to see what they are about to reinstate first.
+   *
+   * Nothing is rewritten either way. `calls.config_version` points into the version table, so
    * a row edited or removed here would make a call from three weeks ago unexplainable, and
-   * the explanation is the only thing that makes a recording of a bad call actionable.
+   * that explanation is the only thing that makes a recording of a bad call actionable.
    *
-   * **Through the same validation as a publish**, which is the part that is easy to skip
-   * and would quietly matter. A guarantee added to `prompts/guarantees.ts` since version 4
-   * was published means version 4's persona now contains a sentence the platform refuses;
-   * restoring it without checking would put the organisation back on a configuration the
-   * publish endpoint would not accept from them today, and the field would be dropped from
-   * the prompt on every call instead — silently, exactly as it would have been before
-   * `publication.ts` existed.
+   * **Through the same validation as a publish**, which is easy to skip and would quietly
+   * matter. A guarantee added to `prompts/guarantees.ts` since version 4 was published means
+   * version 4's persona now contains a sentence the platform refuses. Loading it into the
+   * draft unchecked would hand somebody a draft that cannot be published, and they would find
+   * out at the moment they wanted it live.
    *
-   * Rolling back to the current version is allowed and publishes an identical version. It
-   * is a no-op with a note, which is the honest way to record "we considered it and put it
-   * back where it was".
+   * Restoring the version that is already live is allowed and simply fills the draft with
+   * what is already there, which publishes as a no-op with a note. That is the honest way to
+   * record "we considered it and put it back where it was".
    */
   @Post("versions/:version/rollback")
   @Endpoint({
-    summary: "Publish an earlier version's configuration as a new version",
+    summary: "Load an earlier version's configuration into the draft",
     description:
-      "Never rewrites history: the version being rolled back to stays exactly as it was and " +
-      "a new version number is issued, so a call that recorded an older one can still be " +
+      "Does not publish. The stored version is copied into the unpublished draft so it can be " +
+      "reviewed and then published deliberately — publishing straight from here would be a " +
+      "second way to change a live call without pressing Publish. Never rewrites history: the " +
+      "version being restored stays exactly as it was, so a call that recorded it can still be " +
       "explained. Runs the same guarantee and keyterm checks a publish does and answers 422 " +
-      "with the field named if the stored version would not be accepted today. Tool and " +
-      "event configuration is carried forward from the live document, not from the snapshot — " +
-      "the version table does not hold it.",
+      "with the field named if the stored version would not be accepted today.",
     capability: "config:write",
     params: versionPath,
-    body: rollback,
-    response: published,
-    status: 201,
+    response: draft,
   })
   async rollback(
     @FromPath() path: Infer<typeof versionPath>,
-    @FromBody() body: Infer<typeof rollback>,
-  ): Promise<Infer<typeof published>> {
+  ): Promise<Infer<typeof draft>> {
     const restored = await this.db.tx(async (scope) => {
+      const agentId = await liveAgentId(scope);
+      if (agentId === null) throw new NotFoundException();
+
       const source = await loadAgentConfigVersion(scope, path.version);
       if (source === null) throw new NotFoundException();
 
@@ -502,21 +505,121 @@ export class ConfigController {
         );
       }
 
-      const number = await publishAgentConfig(
-        scope,
-        source.config,
-        rollbackNote(path.version, body.note),
-      );
-      // Read back inside the same transaction, as the publish endpoint does: the response
-      // is the row the database wrote rather than an echo of the row it was copied from.
-      return loadAgentConfigVersion(scope, number);
+      await saveAgentDraft(scope, agentId, source.config, null, path.version);
+      // Read back inside the same transaction, as the publish endpoint does: the response is
+      // the row the database wrote rather than an echo of the row it was copied from.
+      return loadAgentDraft(scope, agentId);
     });
 
-    if (restored === null) throw new Error("published a version that cannot be read back");
+    if (restored === null) throw new Error("saved a draft that cannot be read back");
     return {
-      version: { ...restored, config: toConfigBody(restored.config) },
-      vocabulary: toVocabulary(restored.config.keyterms),
+      config: toConfigBody(restored.config),
+      updatedBy: restored.updatedBy,
+      restoredFrom: restored.restoredFrom,
+      updatedAt: restored.updatedAt,
     };
+  }
+
+  /**
+   * The three endpoints that make Save and Publish different acts.
+   *
+   * Before these, the console had one way to write and it went live immediately, so a button
+   * saying "Save voice and rate" published every tab onto the next call. The fix is not a
+   * better label — it is that saving has somewhere to go that a call cannot read.
+   *
+   * They sit on `config` rather than on `agents` because a draft is a configuration document:
+   * the same fields, the same validation, compared with `diffConfigurations` against the live
+   * one. Which agent it belongs to is resolved exactly as publishing resolves it, through
+   * `app.live_agent_for_organization`, so a publish cannot consume a different agent's draft
+   * than the one it published to.
+   */
+  @Get("draft")
+  @Endpoint({
+    summary: "Configuration saved but not published",
+    description:
+      "Null when there is nothing unpublished, which is the ordinary state rather than a " +
+      "missing resource. Nothing on a call reads this: the live read path takes the agent's " +
+      "own columns and cannot see a draft at all.",
+    capability: "config:read",
+    response: draftState,
+  })
+  async readDraft(): Promise<Infer<typeof draftState>> {
+    const found = await this.db.tx(async (scope) => {
+      const agentId = await liveAgentId(scope);
+      if (agentId === null) return null;
+      return loadAgentDraft(scope, agentId);
+    });
+
+    if (found === null) return { draft: null };
+    return {
+      draft: {
+        config: toConfigBody(found.config),
+        updatedBy: found.updatedBy,
+        restoredFrom: found.restoredFrom,
+        updatedAt: found.updatedAt,
+      },
+    };
+  }
+
+  @Put("draft")
+  @Endpoint({
+    summary: "Save configuration without making it live",
+    description:
+      "Replaces the whole draft, for the same reason a publication is whole: a partial draft " +
+      "would have to be merged against a live document that may have moved since, and the " +
+      "merge is where the wrong greeting goes out. Validated exactly as a publish is, so a " +
+      "draft cannot be saved that could never be published. Changes nothing about a call in " +
+      "progress or a call that arrives a second later.",
+    capability: "config:write",
+    body: draftBody,
+    response: draft,
+  })
+  async saveDraft(@FromBody() body: Infer<typeof draftBody>): Promise<Infer<typeof draft>> {
+    // The same check a publish makes, deliberately. A draft that passes here and fails at
+    // publish is a trap: the operator is told it saved, and finds out it was never publishable
+    // at the moment they wanted it live.
+    const problems = publicationProblems(body);
+    if (problems.length > 0) throw new ValidationFailed(problems);
+
+    const saved = await this.db.tx(async (scope) => {
+      const agentId = await liveAgentId(scope);
+      if (agentId === null) return null;
+      await saveAgentDraft(scope, agentId, body, null, null);
+      // Read back inside the transaction rather than echoing the request, as publish does:
+      // the response carries the timestamp the database assigned.
+      return loadAgentDraft(scope, agentId);
+    });
+
+    if (saved === null) throw new NotFoundException();
+    return {
+      config: toConfigBody(saved.config),
+      updatedBy: saved.updatedBy,
+      restoredFrom: saved.restoredFrom,
+      updatedAt: saved.updatedAt,
+    };
+  }
+
+  @Delete("draft")
+  @Endpoint({
+    summary: "Throw away unpublished work",
+    description:
+      "The first of the two ways back. This one forgets what has been saved since the last " +
+      "publish and leaves no trace, because a draft nobody published never answered a call " +
+      "and is not part of the history. The other way back is rolling a published version " +
+      "into the draft, which does go through the version list. False means there was nothing " +
+      "to discard.",
+    capability: "config:write",
+    response: discarded,
+  })
+  async discardDraft(): Promise<Infer<typeof discarded>> {
+    const gone = await this.db.tx(async (scope) => {
+      const agentId = await liveAgentId(scope);
+      if (agentId === null) return null;
+      return discardAgentDraft(scope, agentId);
+    });
+
+    if (gone === null) throw new NotFoundException();
+    return { discarded: gone };
   }
 
   @Get("versions/:version")

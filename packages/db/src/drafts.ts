@@ -18,14 +18,42 @@ export interface AgentDraft {
   readonly config: AgentConfigFields;
   /** Who last saved it. Null when that account is gone but their work is not. */
   readonly updatedBy: string | null;
+  /**
+   * The published version this was loaded from, or null when somebody typed it.
+   *
+   * Restoring an old version fills the draft rather than publishing it, which is the right
+   * shape but loses what the old rollback wrote by itself: "restored from version 4", so the
+   * history could answer why version 9 looks like version 4. A draft carries no note — a note
+   * explains a version — so it carries this instead, and the publish dialog offers it.
+   */
+  readonly restoredFrom: number | null;
   readonly updatedAt: string;
 }
 
 interface DraftRow {
   readonly config: AgentConfigFields;
   readonly updated_by: string | null;
+  readonly restored_from: number | null;
   readonly updated_at: string;
 }
+
+/**
+ * The agent an organisation-scoped configuration endpoint acts on.
+ *
+ * `config.*` has no agent in its route and resolves one inside the database — the oldest
+ * live agent. The draft endpoints have to resolve the same one, or a publish would consume a
+ * draft belonging to a different agent than it published to, so both call the same function.
+ *
+ * Null means the organisation has no live agent, which the API answers with a 404. That is
+ * also the only case in which publishing raises rather than returning.
+ */
+export const liveAgentId = async (scope: OrganizationScope): Promise<string | null> => {
+  const rows = await scope.query<{ live_agent_for_organization: string | null }>(
+    `select app.live_agent_for_organization($1::uuid) as live_agent_for_organization`,
+    [scope.organizationId],
+  );
+  return rows[0]?.live_agent_for_organization ?? null;
+};
 
 /**
  * The unpublished configuration for one agent, or null when there is none.
@@ -40,7 +68,7 @@ export const loadAgentDraft = async (
   agentId: string,
 ): Promise<AgentDraft | null> => {
   const rows = await scope.query<DraftRow>(
-    `select config, updated_by, updated_at
+    `select config, updated_by, restored_from, updated_at
        from agent_config_drafts
       where agent_id = $1`,
     [agentId],
@@ -48,21 +76,12 @@ export const loadAgentDraft = async (
 
   const row = rows[0];
   if (row === undefined) return null;
-  return { config: row.config, updatedBy: row.updated_by, updatedAt: row.updated_at };
-};
-
-/**
- * Every agent in this organisation holding unpublished work.
- *
- * Needed on the agent list, not only on one agent's page: somebody who saved a greeting on
- * Tuesday and never published it has nothing to remind them otherwise, and "why is the agent
- * still saying the old thing" is the question that follows.
- */
-export const agentsWithDrafts = async (scope: OrganizationScope): Promise<readonly string[]> => {
-  const rows = await scope.query<{ agent_id: string }>(
-    `select agent_id from agent_config_drafts order by updated_at desc`,
-  );
-  return rows.map((row) => row.agent_id);
+  return {
+    config: row.config,
+    updatedBy: row.updated_by,
+    restoredFrom: row.restored_from,
+    updatedAt: row.updated_at,
+  };
 };
 
 /**
@@ -78,10 +97,13 @@ export const saveAgentDraft = async (
   agentId: string,
   config: AgentConfigFields,
   author: string | null,
+  /* Null for an ordinary save. Set only when a published version was loaded in, and cleared
+     again by the next edit — once somebody changes a restored draft it is their work. */
+  restoredFrom: number | null,
 ): Promise<string | null> => {
   const rows = await scope.query<{ save_agent_draft: string | null }>(
-    `select app.save_agent_draft($1::uuid, $2::jsonb, $3::uuid) as save_agent_draft`,
-    [agentId, JSON.stringify(config), author],
+    `select app.save_agent_draft($1::uuid, $2::jsonb, $3::uuid, $4::integer) as save_agent_draft`,
+    [agentId, JSON.stringify(config), author, restoredFrom],
   );
   return rows[0]?.save_agent_draft ?? null;
 };

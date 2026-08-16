@@ -5221,6 +5221,681 @@
         }
       }
     },
+    "/api/v1/config/draft": {
+      "get": {
+        "operationId": "config.readDraft",
+        "tags": [
+          "config"
+        ],
+        "summary": "Configuration saved but not published",
+        "description": "Null when there is nothing unpublished, which is the ordinary state rather than a missing resource. Nothing on a call reads this: the live read path takes the agent's own columns and cannot see a draft at all.",
+        "x-ansa-capability": "config:read",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "draft": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "config": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120
+                            },
+                            "voiceId": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 200
+                            },
+                            "speakingRate": {
+                              "type": [
+                                "number",
+                                "null"
+                              ],
+                              "minimum": 0.7,
+                              "maximum": 1.2
+                            },
+                            "greeting": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 500
+                            },
+                            "persona": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 400
+                            },
+                            "instructions": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 2000
+                            },
+                            "keyterms": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              },
+                              "maxItems": 100
+                            },
+                            "businessHours": {
+                              "type": [
+                                "object",
+                                "null"
+                              ],
+                              "properties": {
+                                "opensAtHour": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 23
+                                },
+                                "closesAtHour": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 24
+                                },
+                                "openDays": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 7
+                                  },
+                                  "maxItems": 7
+                                }
+                              },
+                              "required": [
+                                "opensAtHour",
+                                "closesAtHour",
+                                "openDays"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "escalation": {
+                              "type": [
+                                "object",
+                                "null"
+                              ],
+                              "properties": {
+                                "toNumber": {
+                                  "type": "string",
+                                  "maxLength": 16,
+                                  "pattern": "^\\+[1-9][0-9]{6,14}$"
+                                },
+                                "fromNumber": {
+                                  "type": "string",
+                                  "maxLength": 16,
+                                  "pattern": "^\\+[1-9][0-9]{6,14}$"
+                                },
+                                "ringSeconds": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 5,
+                                  "maximum": 120
+                                }
+                              },
+                              "required": [
+                                "toNumber",
+                                "fromNumber",
+                                "ringSeconds"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "voiceId",
+                            "speakingRate",
+                            "greeting",
+                            "persona",
+                            "instructions",
+                            "keyterms",
+                            "businessHours",
+                            "escalation"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "updatedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid",
+                          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                        },
+                        "restoredFrom": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "config",
+                        "updatedBy",
+                        "restoredFrom",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "draft"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "config.saveDraft",
+        "tags": [
+          "config"
+        ],
+        "summary": "Save configuration without making it live",
+        "description": "Replaces the whole draft, for the same reason a publication is whole: a partial draft would have to be merged against a live document that may have moved since, and the merge is where the wrong greeting goes out. Validated exactly as a publish is, so a draft cannot be saved that could never be published. Changes nothing about a call in progress or a call that arrives a second later.",
+        "x-ansa-capability": "config:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "voiceId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 200
+                  },
+                  "speakingRate": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "minimum": 0.7,
+                    "maximum": 1.2
+                  },
+                  "greeting": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 500
+                  },
+                  "persona": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 400
+                  },
+                  "instructions": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2000
+                  },
+                  "keyterms": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "maxItems": 100
+                  },
+                  "businessHours": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "opensAtHour": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 23
+                      },
+                      "closesAtHour": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 24
+                      },
+                      "openDays": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 7
+                        },
+                        "maxItems": 7
+                      }
+                    },
+                    "required": [
+                      "opensAtHour",
+                      "closesAtHour",
+                      "openDays"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "escalation": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "toNumber": {
+                        "type": "string",
+                        "maxLength": 16,
+                        "pattern": "^\\+[1-9][0-9]{6,14}$"
+                      },
+                      "fromNumber": {
+                        "type": "string",
+                        "maxLength": 16,
+                        "pattern": "^\\+[1-9][0-9]{6,14}$"
+                      },
+                      "ringSeconds": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "minimum": 5,
+                        "maximum": 120
+                      }
+                    },
+                    "required": [
+                      "toNumber",
+                      "fromNumber",
+                      "ringSeconds"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "name",
+                  "voiceId",
+                  "speakingRate",
+                  "greeting",
+                  "persona",
+                  "instructions",
+                  "keyterms",
+                  "businessHours",
+                  "escalation"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "config": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120
+                        },
+                        "voiceId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 200
+                        },
+                        "speakingRate": {
+                          "type": [
+                            "number",
+                            "null"
+                          ],
+                          "minimum": 0.7,
+                          "maximum": 1.2
+                        },
+                        "greeting": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 500
+                        },
+                        "persona": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 400
+                        },
+                        "instructions": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 2000
+                        },
+                        "keyterms": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                          },
+                          "maxItems": 100
+                        },
+                        "businessHours": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "opensAtHour": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 23
+                            },
+                            "closesAtHour": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 24
+                            },
+                            "openDays": {
+                              "type": "array",
+                              "items": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 7
+                              },
+                              "maxItems": 7
+                            }
+                          },
+                          "required": [
+                            "opensAtHour",
+                            "closesAtHour",
+                            "openDays"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "escalation": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "toNumber": {
+                              "type": "string",
+                              "maxLength": 16,
+                              "pattern": "^\\+[1-9][0-9]{6,14}$"
+                            },
+                            "fromNumber": {
+                              "type": "string",
+                              "maxLength": 16,
+                              "pattern": "^\\+[1-9][0-9]{6,14}$"
+                            },
+                            "ringSeconds": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 5,
+                              "maximum": 120
+                            }
+                          },
+                          "required": [
+                            "toNumber",
+                            "fromNumber",
+                            "ringSeconds"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "voiceId",
+                        "speakingRate",
+                        "greeting",
+                        "persona",
+                        "instructions",
+                        "keyterms",
+                        "businessHours",
+                        "escalation"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "updatedBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "restoredFrom": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "config",
+                    "updatedBy",
+                    "restoredFrom",
+                    "updatedAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "config.discardDraft",
+        "tags": [
+          "config"
+        ],
+        "summary": "Throw away unpublished work",
+        "description": "The first of the two ways back. This one forgets what has been saved since the last publish and leaves no trace, because a draft nobody published never answered a call and is not part of the history. The other way back is rolling a published version into the draft, which does go through the version list. False means there was nothing to discard.",
+        "x-ansa-capability": "config:write",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "discarded": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "discarded"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/config/guarantees": {
       "get": {
         "operationId": "config.listGuarantees",
@@ -6145,8 +6820,8 @@
         "tags": [
           "config"
         ],
-        "summary": "Publish an earlier version's configuration as a new version",
-        "description": "Never rewrites history: the version being rolled back to stays exactly as it was and a new version number is issued, so a call that recorded an older one can still be explained. Runs the same guarantee and keyterm checks a publish does and answers 422 with the field named if the stored version would not be accepted today. Tool and event configuration is carried forward from the live document, not from the snapshot — the version table does not hold it.",
+        "summary": "Load an earlier version's configuration into the draft",
+        "description": "Does not publish. The stored version is copied into the unpublished draft so it can be reviewed and then published deliberately — publishing straight from here would be a second way to change a live call without pressing Publish. Never rewrites history: the version being restored stays exactly as it was, so a call that recorded it can still be explained. Runs the same guarantee and keyterm checks a publish does and answers 422 with the field named if the stored version would not be accepted today.",
         "x-ansa-capability": "config:write",
         "parameters": [
           {
@@ -6159,230 +6834,171 @@
             }
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "note": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 400
-                  }
-                },
-                "required": [],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
         "responses": {
-          "201": {
+          "200": {
             "description": "Success",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "version": {
+                    "config": {
                       "type": "object",
                       "properties": {
-                        "version": {
-                          "type": "integer",
-                          "minimum": 0
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120
                         },
-                        "note": {
+                        "voiceId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 200
+                        },
+                        "speakingRate": {
+                          "type": [
+                            "number",
+                            "null"
+                          ],
+                          "minimum": 0.7,
+                          "maximum": 1.2
+                        },
+                        "greeting": {
                           "type": [
                             "string",
                             "null"
                           ],
                           "maxLength": 500
                         },
-                        "publishedBy": {
-                          "type": "string",
-                          "maxLength": 200
+                        "persona": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 400
                         },
-                        "publishedAt": {
-                          "type": "string",
-                          "format": "date-time"
+                        "instructions": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 2000
                         },
-                        "config": {
-                          "type": "object",
+                        "keyterms": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                          },
+                          "maxItems": 100
+                        },
+                        "businessHours": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
                           "properties": {
-                            "name": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 120
+                            "opensAtHour": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 23
                             },
-                            "voiceId": {
-                              "type": [
-                                "string",
-                                "null"
-                              ],
-                              "maxLength": 200
+                            "closesAtHour": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 24
                             },
-                            "speakingRate": {
-                              "type": [
-                                "number",
-                                "null"
-                              ],
-                              "minimum": 0.7,
-                              "maximum": 1.2
-                            },
-                            "greeting": {
-                              "type": [
-                                "string",
-                                "null"
-                              ],
-                              "maxLength": 500
-                            },
-                            "persona": {
-                              "type": [
-                                "string",
-                                "null"
-                              ],
-                              "maxLength": 400
-                            },
-                            "instructions": {
-                              "type": [
-                                "string",
-                                "null"
-                              ],
-                              "maxLength": 2000
-                            },
-                            "keyterms": {
+                            "openDays": {
                               "type": "array",
                               "items": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 100
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 7
                               },
-                              "maxItems": 100
-                            },
-                            "businessHours": {
-                              "type": [
-                                "object",
-                                "null"
-                              ],
-                              "properties": {
-                                "opensAtHour": {
-                                  "type": "integer",
-                                  "minimum": 0,
-                                  "maximum": 23
-                                },
-                                "closesAtHour": {
-                                  "type": "integer",
-                                  "minimum": 1,
-                                  "maximum": 24
-                                },
-                                "openDays": {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "integer",
-                                    "minimum": 1,
-                                    "maximum": 7
-                                  },
-                                  "maxItems": 7
-                                }
-                              },
-                              "required": [
-                                "opensAtHour",
-                                "closesAtHour",
-                                "openDays"
-                              ],
-                              "additionalProperties": false
-                            },
-                            "escalation": {
-                              "type": [
-                                "object",
-                                "null"
-                              ],
-                              "properties": {
-                                "toNumber": {
-                                  "type": "string",
-                                  "maxLength": 16,
-                                  "pattern": "^\\+[1-9][0-9]{6,14}$"
-                                },
-                                "fromNumber": {
-                                  "type": "string",
-                                  "maxLength": 16,
-                                  "pattern": "^\\+[1-9][0-9]{6,14}$"
-                                },
-                                "ringSeconds": {
-                                  "type": [
-                                    "integer",
-                                    "null"
-                                  ],
-                                  "minimum": 5,
-                                  "maximum": 120
-                                }
-                              },
-                              "required": [
-                                "toNumber",
-                                "fromNumber",
-                                "ringSeconds"
-                              ],
-                              "additionalProperties": false
+                              "maxItems": 7
                             }
                           },
                           "required": [
-                            "name",
-                            "voiceId",
-                            "speakingRate",
-                            "greeting",
-                            "persona",
-                            "instructions",
-                            "keyterms",
-                            "businessHours",
-                            "escalation"
+                            "opensAtHour",
+                            "closesAtHour",
+                            "openDays"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "escalation": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "toNumber": {
+                              "type": "string",
+                              "maxLength": 16,
+                              "pattern": "^\\+[1-9][0-9]{6,14}$"
+                            },
+                            "fromNumber": {
+                              "type": "string",
+                              "maxLength": 16,
+                              "pattern": "^\\+[1-9][0-9]{6,14}$"
+                            },
+                            "ringSeconds": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 5,
+                              "maximum": 120
+                            }
+                          },
+                          "required": [
+                            "toNumber",
+                            "fromNumber",
+                            "ringSeconds"
                           ],
                           "additionalProperties": false
                         }
                       },
                       "required": [
-                        "version",
-                        "note",
-                        "publishedBy",
-                        "publishedAt",
-                        "config"
+                        "name",
+                        "voiceId",
+                        "speakingRate",
+                        "greeting",
+                        "persona",
+                        "instructions",
+                        "keyterms",
+                        "businessHours",
+                        "escalation"
                       ],
                       "additionalProperties": false
                     },
-                    "vocabulary": {
-                      "type": "object",
-                      "properties": {
-                        "base": {
-                          "type": "array",
-                          "items": {
-                            "type": "string",
-                            "maxLength": 100
-                          }
-                        },
-                        "effective": {
-                          "type": "array",
-                          "items": {
-                            "type": "string",
-                            "maxLength": 100
-                          }
-                        },
-                        "cap": {
-                          "type": "integer",
-                          "minimum": 1
-                        }
-                      },
-                      "required": [
-                        "base",
-                        "effective",
-                        "cap"
+                    "updatedBy": {
+                      "type": [
+                        "string",
+                        "null"
                       ],
-                      "additionalProperties": false
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "restoredFrom": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
                     }
                   },
                   "required": [
-                    "version",
-                    "vocabulary"
+                    "config",
+                    "updatedBy",
+                    "restoredFrom",
+                    "updatedAt"
                   ],
                   "additionalProperties": false
                 }
