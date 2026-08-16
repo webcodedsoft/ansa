@@ -2262,9 +2262,32 @@ in the one dispatch path, grounded-only answering, ingestion endpoints and the t
       saved. It now touches the parent, and two db tests assert the stamp moves.
 - [x] Saving an empty source is refused with a reason: retrieval matching nothing sounds
       exactly like the source having been deleted, and retiring it says so on purpose.
-- [ ] Retrieval has never run on a real call. Keyword search over English `tsvector` is
-      untested against Nigerian phrasing and Pidgin, which is the whole question the
-      no-embeddings decision was deferring.
+- [x] **Retrieval was broken for spoken questions, and testing it is what found out**
+      (2026-08-16). It matched with `websearch_to_tsquery`, which ANDs every term: "what time
+      does Ikeja close" became `time & ikeja & close` and found nothing, against a passage
+      saying Ikeja closes at 5pm that never uses the word "time". A spoken question always
+      carries words the answer does not, so on a call the agent would have said it had
+      nothing on file for almost everything it held. Two of eight realistic phrasings matched.
+      - Now an OR, which restores recall, paid for by a rule rather than a tuned number: a
+        passage must share **two** of the question's terms, or all of them when a question has
+        fewer, so "renewal" alone still retrieves. A rank threshold would have separated the
+        cases in the sample it was fitted to and meant nothing elsewhere — `ts_rank` is not
+        comparable across corpora, term overlap is.
+      - **Pidgin works when it borrows the English content words**, which is what branch
+        names, product names and times are. "When Ikeja dey close" retrieves.
+      - Ranking is length-normalised. The default tied a six-word passage with a sixty-word
+        one carrying the same fact, so the winner was whichever had been typed first. The
+        passage is read aloud to somebody waiting; the short one is the better answer.
+        `ts_rank_cd` was the other candidate and tied them too.
+      - Seven tests over real phrasings, including the false positive that OR introduced
+        ("can I insure my dog on this policy" matching a renewal passage on "policy" alone).
+- [ ] **Still no real call.** What is now tested is that retrieval finds the right passage for
+      questions people actually ask. What no test can tell us is whether an 8 kHz transcript
+      of those questions still contains the words this depends on.
+- [ ] `abeg how much I go pay` retrieves nothing, and is asserted as such. "Pay" and "premium"
+      share no term, and no query rewriting fixes that — it needs the organisation writing it
+      down as a FAQ pair, or embeddings. The test fails the day that changes, so it has to be
+      a decision.
 - [x] **The query is bounded in Postgres** (2026-08-16). The retrieval agent flagged that
       losing the dispatcher's three-second race abandons the promise while the query carries
       on holding a connection for a turn nobody is listening to — and a full-text scan over a

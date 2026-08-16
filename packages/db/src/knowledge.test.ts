@@ -433,3 +433,121 @@ describe("updated_at, which optimistic concurrency rests on", () => {
     expect(opened).not.toBe(now);
   });
 });
+
+/**
+ * How a real question finds a real answer, and where it still does not.
+ *
+ * Retrieval had never been asked a question anybody would actually say. It was matching with
+ * `websearch_to_tsquery`, which ANDs every term — so "what time does Ikeja close" became
+ * `time & ikeja & close` and found nothing, against a passage that says Ikeja closes at 5pm
+ * and never uses the word "time". On a call that is the agent saying it has nothing on file
+ * about a fact it holds, for almost every question, because a spoken question always carries
+ * words the answer does not.
+ *
+ * These are the phrasings that found it, and the one that still fails.
+ */
+describe("retrieval, against how people actually ask", () => {
+  const BRANCHES = {
+    name: "Branches",
+    kind: "table" as const,
+    units: [
+      { question: "Ikeja", body: "Branch: Ikeja. Address: 14 Allen Avenue. Closes: 5pm." },
+      { question: "Lekki", body: "Branch: Lekki. Address: 3 Admiralty Way. Closes: 4pm." },
+    ],
+  };
+  const POLICY = {
+    name: "Motor policy",
+    kind: "faq" as const,
+    units: [
+      { question: "When does my policy renew?", body: "Renewal opens 30 days before your policy expires." },
+      { question: "What does it cost?", body: "Your premium depends on the vehicle value and your no claims discount." },
+    ],
+  };
+
+  const askable = async (): Promise<void> => {
+    await operator.query("delete from knowledge_sources where organization_id = $1", [ORGANIZATION]);
+    await withOrganization(db, ORGANIZATION, async (scope) => {
+      for (const source of [BRANCHES, POLICY]) {
+        const made = await createKnowledgeSource(scope, source);
+        await setAgentKnowledgeSources(scope, AGENT, [
+          ...(await listAgentKnowledgeSources(scope, AGENT)),
+          made.sourceId,
+        ]);
+      }
+    });
+  };
+
+  const ask = (question: string) =>
+    withOrganization(db, ORGANIZATION, (scope) => searchKnowledge(scope, AGENT, question, 3));
+
+  it("answers a question phrased the way somebody would say it", async () => {
+    await askable();
+    // The case that failed under AND: the passage never says "time".
+    const hits = await ask("what time does Ikeja close");
+    expect(hits[0]?.body).toContain("Ikeja");
+    expect(hits[0]?.body).toContain("5pm");
+  });
+
+  it("answers the same question in Pidgin", async () => {
+    await askable();
+    /* "when Ikeja dey close" shares `ikeja` and `close` with the passage, which is enough.
+       Pidgin is not a separate problem when it borrows the English content words — and
+       branch names, product names and times are exactly the words it borrows. */
+    const hits = await ask("when Ikeja dey close");
+    expect(hits[0]?.body).toContain("5pm");
+  });
+
+  it("says nothing rather than reaching for one shared word", async () => {
+    await askable();
+    /* "policy" appears in the renewal passage, and under a plain OR this returned it. An
+       agent quoting renewal terms at somebody asking about their dog is worse than an agent
+       saying it does not know — that is the whole of grounded-only. */
+    expect(await ask("can I insure my dog on this policy")).toEqual([]);
+  });
+
+  it("says nothing about what it was never given", async () => {
+    await askable();
+    expect(await ask("do you cover flood damage")).toEqual([]);
+  });
+
+  it("still answers a one-word question", async () => {
+    await askable();
+    // The floor is two shared terms *or all of them*, so a single word is not shut out.
+    expect((await ask("renewal")).length).toBeGreaterThan(0);
+  });
+
+  it("puts the short passage first when two carry the same fact", async () => {
+    await operator.query("delete from knowledge_sources where organization_id = $1", [ORGANIZATION]);
+    await withOrganization(db, ORGANIZATION, async (scope) => {
+      const made = await createKnowledgeSource(scope, {
+        name: "Branches",
+        kind: "document",
+        units: [
+          {
+            question: null,
+            body: "Our branches are open across Lagos. The Ikeja branch, which is one of our busiest, serves the whole of the mainland and has done for many years, and it closes at 5pm each weekday, though hours may vary during public holidays.",
+          },
+          { question: null, body: "Ikeja branch closes at 5pm." },
+        ],
+      });
+      await setAgentKnowledgeSources(scope, AGENT, [made.sourceId]);
+    });
+
+    /* Both carry the fact and under the default ranking both scored identically, so the
+       winner was whichever was stored first — which is the long one here, deliberately. The
+       passage is read aloud to somebody waiting, so the short one is the better answer and
+       not merely the tidier one. */
+    const hits = await ask("what time does Ikeja close");
+    expect(hits[0]?.body).toBe("Ikeja branch closes at 5pm.");
+  });
+
+  it("does not yet answer Pidgin that shares no word with the answer", async () => {
+    await askable();
+    /* The known limitation, asserted rather than described. "How much I go pay" and
+       "premium depends on the vehicle value" have no term in common, and no amount of
+       query rewriting fixes that — it needs either the organisation writing the question
+       down as a FAQ pair, or embeddings. Recorded here so the day it changes, this fails
+       and somebody has to decide it was on purpose. */
+    expect(await ask("abeg how much I go pay")).toEqual([]);
+  });
+});

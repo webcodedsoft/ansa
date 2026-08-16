@@ -381,6 +381,43 @@ export const listAgentKnowledgeSources = async (
  * A turn is two sentences. Twenty units is already far more context than the model will spend
  * on one answer, and a caller who asked for five hundred has a bug, not a requirement.
  */
+/**
+ * How much of a question a passage has to answer before it counts as an answer.
+ *
+ * A rule, not a tuned number, and the difference matters. The query below is an OR — see the
+ * note on `searchKnowledge` — which finds the right passage and also finds any passage
+ * sharing a single common word. "Can I insure my dog on this policy" matched a renewal
+ * passage on "policy" alone.
+ *
+ * A rank threshold would have separated those two cases on the sample they were found in and
+ * meant nothing on anybody else's corpus: `ts_rank` is not comparable across collections of
+ * different sizes. Counting shared terms is comparable, because it is a property of the
+ * question and the passage rather than of the corpus around them.
+ *
+ * Two, or all of them when a question has fewer — so "renewal" on its own still retrieves,
+ * while three-word questions have to agree on more than one word.
+ */
+const MIN_SHARED_TERMS = 2;
+
+/**
+ * Rank shorter passages above longer ones that say the same thing.
+ *
+ * `ts_rank`'s default ignores document length, and on real passages that is not a tie-break
+ * problem, it is a tie: "Ikeja branch closes at 5pm" and a sixty-word paragraph that also
+ * mentions Ikeja closing at 5pm both scored 0.0405, so the winner was decided by whichever
+ * had been typed first.
+ *
+ * That matters more here than it would in a search box. The passage is read aloud, the model
+ * has two sentences to answer in, and a caller is waiting — so between two passages carrying
+ * the same fact, the short one is not merely tidier, it is the better answer. Flag 1 divides
+ * by the logarithm of the length, which separated those two 2:1 without punishing a genuinely
+ * detailed passage the way a linear divisor would.
+ *
+ * `ts_rank_cd` was the other candidate and tied them too: term proximity does not distinguish
+ * a padded passage from a terse one.
+ */
+const LENGTH_NORMALISED = 1;
+
 const MAX_HITS = 20;
 
 /**
@@ -390,10 +427,15 @@ const MAX_HITS = 20;
  * `where` clause the caller passes — it is the reason an agent cannot answer out of a source
  * it was never given, and it is written here so that no retrieval path exists without it.
  *
- * `websearch_to_tsquery` rather than `plainto_tsquery` because it understands quotes and `or`,
- * and — the part that matters on this path — it never raises on malformed input. A caller's
- * question arrives from speech recognition and can contain anything at all; `to_tsquery` would
- * throw on a stray operator and turn a bad transcription into a failed turn.
+ * `plainto_tsquery` with its `&` rewritten to `|`, which is an odd-looking way to build an
+ * OR and is deliberate on both counts. `plainto_tsquery` never raises on malformed input —
+ * a caller's question arrives from speech recognition and can contain anything, and
+ * `to_tsquery` would throw on a stray operator and turn a bad transcription into a failed
+ * turn. Rewriting its output keeps that safety while changing the connective, because the
+ * text it produces is already sanitised lexemes.
+ *
+ * OR rather than AND because AND does not survive a spoken question, and the recall that
+ * buys is paid for by `MIN_SHARED_TERMS` rather than by a rank threshold.
  *
  * 'english' must match the config the generated `search` column was built with. A query parsed
  * under a different one silently matches nothing, which reads as an empty knowledge base.
@@ -428,15 +470,24 @@ export const searchKnowledge = async (
 
   const rows = await scope.query<HitRow>(
     `select u.source_id, s.name as source_name, u.question, u.body,
-            ts_rank(u.search, q.query) as rank
+            ts_rank(u.search, q.query, ${LENGTH_NORMALISED}) as rank
        from knowledge_units u
        join knowledge_sources s on s.id = u.source_id
        join agent_knowledge_sources a on a.source_id = u.source_id and a.agent_id = $1
-      cross join websearch_to_tsquery('english', $2) as q(query)
-      where s.deleted_at is null and u.search @@ q.query
+      cross join lateral (
+        select replace(plainto_tsquery('english', $2)::text, '&', '|')::tsquery as query,
+               tsvector_to_array(to_tsvector('english', $2)) as terms
+      ) q
+      where s.deleted_at is null
+        and u.search @@ q.query
+        and cardinality(array(
+              select unnest(tsvector_to_array(u.search))
+              intersect
+              select unnest(q.terms)
+            )) >= least($4::int, cardinality(q.terms))
       order by rank desc, u.position, u.id
       limit $3`,
-    [agentId, query, wanted],
+    [agentId, query, wanted, MIN_SHARED_TERMS],
   );
   return rows.map(toHit);
 };
