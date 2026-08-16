@@ -1,15 +1,22 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Pause, Play, Search } from "lucide-react";
 
-import { Button, Card, CONTROL, Notice, Stack, Tag, TextField, type Tone } from "@/components/ui";
-import { idleForm } from "@/lib/form-state";
-import { useFormToast } from "@/stores/toast.store";
+import {
+  Card,
+  CONTROL,
+  Notice,
+  Stack,
+  SubmitButton,
+  Tag,
+  TextField,
+  type Tone,
+} from "@/components/ui";
 import { cn } from "@/lib/cn";
 
-import { loadVoiceCatalogue, saveSpeakingRateAction, type SpeakingRateState } from "../agents.actions";
+import { loadVoiceCatalogue } from "../agents.actions";
 import type { AgentSummary, LiveConfiguration, VoiceChoice } from "../agents.service";
 
 /**
@@ -40,6 +47,9 @@ interface VoiceTabProps {
   readonly config: LiveConfiguration["config"];
   readonly agent: AgentSummary;
   readonly errors: Readonly<Record<string, string>>;
+  /** The id of the page's publish form, which the voice is part of. */
+  readonly publishForm: string;
+  readonly publishing: boolean;
 }
 
 type Catalogue =
@@ -397,7 +407,7 @@ const Picker = ({
   );
 };
 
-export const VoiceTab = ({ config, agent, errors }: VoiceTabProps) => {
+export const VoiceTab = ({ config, agent, errors, publishForm, publishing }: VoiceTabProps) => {
   const [catalogue, setCatalogue] = useState<Catalogue>({ status: "loading" });
   /* Held here rather than inside the rate card so the sample can be played at it. Trying a
      rate you cannot hear is guessing, and 0.85 versus 1.0 is not a thing anybody knows the
@@ -494,6 +504,54 @@ export const VoiceTab = ({ config, agent, errors }: VoiceTabProps) => {
                   )}
                 </div>
 
+                {/* Part of the publish, not a second save. The rate belongs to the voice it
+                    describes: one button, one version, and "what did this call sound like"
+                    answerable from it — which a `PATCH`-only rate never was. */}
+                <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-[var(--surface-line)] pt-3">
+                  <label className="text-[12.5px] text-[var(--ink-3)]" htmlFor="speaking-rate">
+                    Speaking rate
+                  </label>
+                  <input
+                    id="speaking-rate"
+                    type="range"
+                    min={0.7}
+                    max={1.2}
+                    step={0.05}
+                    value={rate}
+                    onChange={(event) => setRate(Number(event.target.value))}
+                    className="h-9 w-48 accent-[var(--accent)]"
+                  />
+                  <span className="font-mono text-[13px] tabular-nums">{rate.toFixed(2)}&times;</span>
+                  {/* Blank at 1.00: a slider cannot express "unset", and unset is the default
+                      and the common case — it leaves a cloned voice at its speaker's own pace,
+                      which pinning it to 1.0 would flatten. */}
+                  <input
+                    type="hidden"
+                    form={publishForm}
+                    name="speakingRate"
+                    value={rate === 1 ? "" : String(rate)}
+                  />
+                  <span className="text-[12.5px] text-[var(--ink-3)]">
+                    Play the sample to hear it. Slower is easier to follow on a poor line.
+                  </span>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  {/* `form=` rather than a nested `<form>`: this panel already sits inside the
+                      page's publish form, and the voice is published with the rest of the
+                      configuration. Without a button here the tab showed only "save rate" and
+                      looked as though the voice could not be saved at all. */}
+                  <SubmitButton
+                    form={publishForm}
+                    pending={publishing}
+                    idle="Save voice and rate"
+                    busy="Publishing…"
+                  />
+                  <span className="text-[12.5px] text-[var(--ink-3)]">
+                    Saves the voice and the rate together, as a new configuration version.
+                  </span>
+                </div>
+
                 {/* A stored id the picker would refuse today. It cannot be reached through
                     this list, so it was typed before there was one — and it is the failure
                     the list exists to prevent, sitting in the field rather than ahead of it. */}
@@ -532,76 +590,6 @@ export const VoiceTab = ({ config, agent, errors }: VoiceTabProps) => {
 
       {/* After the voice, because it is a property of how that voice reads rather than a
           thing you choose first. It was above and made the tab open on a text box. */}
-      <SpeakingRate agent={agent} rate={rate} onRate={setRate} />
-
     </Stack>
-  );
-};
-
-/**
- * How fast this agent reads.
- *
- * Saved on the agent by `PATCH`, not published — the same path `bargeIn` takes, and for the
- * same reason: which voice answers is part of the configuration a version captures, while
- * the pace it reads at is a dial somebody turns while listening to a call. It takes effect
- * on the next call either way.
- *
- * Blank is the default and is not 1.0. Sending nothing lets a voice cloned at its speaker's
- * own pace keep it; pinning it to 1.0 flattens that, and on an 8 kHz line the difference is
- * audible.
- */
-const SpeakingRate = ({
-  agent,
-  rate,
-  onRate,
-}: {
-  readonly agent: AgentSummary;
-  readonly rate: number;
-  readonly onRate: (rate: number) => void;
-}) => {
-  const [state, action, pending] = useActionState(
-    saveSpeakingRateAction,
-    idleForm() as SpeakingRateState,
-  );
-  useFormToast(state, () => "Saved.");
-
-  return (
-    <Card title="Speaking rate" description="Slower is easier to follow on a poor line; too slow sounds broken.">
-      <form action={action}>
-        <input type="hidden" name="agentId" value={agent.agentId} />
-        <Stack>
-          <div className="flex flex-wrap items-center gap-3">
-            <input
-              type="range"
-              min={0.7}
-              max={1.2}
-              step={0.05}
-              value={rate}
-              onChange={(event) => onRate(Number(event.target.value))}
-              aria-label="Speaking rate"
-              className="h-9 w-56 accent-[var(--accent)]"
-            />
-            <span className="font-mono text-[13px] tabular-nums">{rate.toFixed(2)}&times;</span>
-            {/* The value the form actually submits. A slider cannot express "unset", and
-                unset is the default and the common case, so the reset below is how you get
-                back to it rather than a number that happens to be 1.00. */}
-            <input type="hidden" name="speakingRate" value={rate === 1 ? "" : String(rate)} />
-            <span className="text-[12.5px] text-[var(--ink-3)]">
-              Play the sample above to hear it. {agent.speakingRate === null
-                ? "Nothing is stored, so the voice reads at its own pace."
-                : `Stored: ${agent.speakingRate}\u00d7.`}
-            </span>
-          </div>
-          {(state.status === "failed" || state.status === "invalid") && (
-            <Notice tone="error">{state.message}</Notice>
-          )}
-          <div>
-            <Button type="submit" disabled={pending}>
-              {pending ? "Saving…" : "Save rate"}
-            </Button>
-          </div>
-        </Stack>
-      </form>
-    </Card>
   );
 };

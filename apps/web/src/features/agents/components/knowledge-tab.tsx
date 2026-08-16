@@ -151,13 +151,18 @@ const Selection = ({
       return next;
     });
 
-  return (
-    <form action={action}>
-      <input type="hidden" name="agentId" value={agent.agentId} />
-      {[...chosen].map((sourceId) => (
-        <input key={sourceId} type="hidden" name="sources" value={sourceId} />
-      ))}
+  /* Dispatched, not submitted. Every tab panel renders inside the page's publish form, and a
+     nested `<form>` is invalid HTML — the parser drops the inner tag, so its submit button
+     posts the outer form and this saved a configuration version instead of a selection. */
+  const save = () => {
+    const form = new FormData();
+    form.set("agentId", agent.agentId);
+    for (const sourceId of chosen) form.append("sources", sourceId);
+    action(form);
+  };
 
+  return (
+    <div>
       <Stack>
         {(state.status === "failed" || state.status === "invalid") && (
           <Notice tone="error">{state.message}</Notice>
@@ -208,7 +213,7 @@ const Selection = ({
         </Panel>
 
         <div className="flex flex-wrap items-center gap-3">
-          <Button type="submit" disabled={pending}>
+          <Button type="button" onClick={save} disabled={pending}>
             {pending ? "Saving…" : "Save selection"}
           </Button>
           {chosen.size === 0 && (
@@ -219,7 +224,7 @@ const Selection = ({
           )}
         </div>
       </Stack>
-    </form>
+    </div>
   );
 };
 
@@ -227,13 +232,16 @@ const RetireSource = ({ sourceId, name }: { readonly sourceId: string; readonly 
   const [state, action, pending] = useActionState(removeKnowledgeSourceAction, START);
   useFormToast(state, () => `Retired ${name}.`);
 
+  const retire = () => {
+    const form = new FormData();
+    form.set("sourceId", sourceId);
+    action(form);
+  };
+
   return (
-    <form action={action}>
-      <input type="hidden" name="sourceId" value={sourceId} />
-      <Button type="submit" variant="secondary" disabled={pending}>
-        {pending ? "Retiring…" : "Retire"}
-      </Button>
-    </form>
+    <Button type="button" variant="secondary" onClick={retire} disabled={pending}>
+      {pending ? "Retiring…" : "Retire"}
+    </Button>
   );
 };
 
@@ -260,13 +268,17 @@ const AddSource = ({ onDone }: { readonly onDone: () => void }) => {
   const problems = problemsWith(name, units);
   const problem = (key: string) => (showProblems ? problems[key] : undefined);
 
+  const store = () => {
+    setShowProblems(true);
+    const form = new FormData();
+    form.set("name", name);
+    form.set("kind", kind);
+    form.set("unitsJson", JSON.stringify(units));
+    action(form);
+  };
+
   return (
-    <form
-      action={(form) => {
-        form.set("unitsJson", JSON.stringify(units));
-        action(form);
-      }}
-    >
+    <div>
       <Stack>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-[17px] font-semibold tracking-[-0.018em]">Add a source</h2>
@@ -358,7 +370,7 @@ const AddSource = ({ onDone }: { readonly onDone: () => void }) => {
         )}
 
         <div className="flex flex-wrap items-center gap-3">
-          <Button type="submit" disabled={pending} onClick={() => setShowProblems(true)}>
+          <Button type="button" onClick={store} disabled={pending}>
             {pending ? "Storing…" : "Store source"}
           </Button>
           <span className="text-[12.5px] text-[var(--ink-3)]">
@@ -366,7 +378,7 @@ const AddSource = ({ onDone }: { readonly onDone: () => void }) => {
           </span>
         </div>
       </Stack>
-    </form>
+    </div>
   );
 };
 
@@ -477,26 +489,26 @@ const EditSource = ({
 
   const empty = units.every((unit) => unit.body.trim() === "");
 
-  return (
-    <form
-      action={(form) => {
-        form.set(
-          "unitsJson",
-          JSON.stringify(
-            units
-              .filter((unit) => unit.body.trim() !== "")
-              .map((unit) => ({
-                question: unit.question.trim() === "" ? null : unit.question.trim(),
-                body: unit.body.trim(),
-              })),
-          ),
-        );
-        action(form);
-      }}
-    >
-      <input type="hidden" name="sourceId" value={sourceId} />
-      <input type="hidden" name="expectedUpdatedAt" value={loaded.updatedAt} />
+  const save = () => {
+    const form = new FormData();
+    form.set("sourceId", sourceId);
+    form.set("expectedUpdatedAt", loaded.updatedAt);
+    form.set(
+      "unitsJson",
+      JSON.stringify(
+        units
+          .filter((unit) => unit.body.trim() !== "")
+          .map((unit) => ({
+            question: unit.question.trim() === "" ? null : unit.question.trim(),
+            body: unit.body.trim(),
+          })),
+      ),
+    );
+    action(form);
+  };
 
+  return (
+    <div>
       <Stack>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -572,7 +584,7 @@ const EditSource = ({
         </Card>
 
         <div className="flex flex-wrap items-center gap-3">
-          <Button type="submit" disabled={pending || empty}>
+          <Button type="button" onClick={save} disabled={pending || empty}>
             {pending ? "Saving…" : "Save changes"}
           </Button>
           {empty && (
@@ -583,6 +595,6 @@ const EditSource = ({
           )}
         </div>
       </Stack>
-    </form>
+    </div>
   );
 };

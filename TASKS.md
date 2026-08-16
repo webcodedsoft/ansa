@@ -2320,9 +2320,29 @@ turns while listening. The Voice tab's "not stored" row is now a control.
 fractional. Separate rather than a flag on `integer`, because the two refuse different
 things and a reader should be able to tell which a field is at a glance.
 
-- [ ] Not versioned. `barge_in` and `answering_machine_detection` are not either, so there
-      is precedent — but it means "what did this call sound like" is not answerable from a
-      version, which is the same gap 0029 closed for captured fields.
+- [x] **Versioned after all, and it fixed the screen at the same time** (0037). Leaving it on
+      `PATCH` gave the Voice tab a "save rate" button and no way to save the voice beside it,
+      because the voice is published — one panel, two save paths, and the more obvious button
+      saved the thing nobody came to change. Moving the rate into the publish gives one button
+      and puts it in `agent_prompt_versions`, so "what did this call sound like" is answerable
+      from the version the call recorded. `PATCH` still accepts it, the way it accepts
+      `voiceId`.
+
+### Nested forms, which never worked (2026-08-16)
+
+Every tab panel renders inside `<form id="agent-publish">`, and `agent-workspace.tsx` says
+why nothing inside a panel may be a `<form>`: nesting one is invalid HTML, the parser drops
+the inner tag, and its submit button posts the outer form instead. Overview and Versions
+follow that rule by dispatching their Server Action directly.
+
+The panels added this session did not. Voice had one nested form, Knowledge four, the tool
+form three — so "save rate", "save selection", "retire", "store source", "save changes" and
+the rest were publishing the agent configuration rather than doing what they said.
+
+- [x] All of them dispatch now, building their own `FormData` and calling the action, which
+      is the pattern the file already described.
+- [x] The voice has a save button, attached to the publish form by `form=` rather than by
+      nesting — the failure the user actually hit, and the visible half of the same bug.
 
 **Per-agent endpointing is deliberately not built.** The voice agent flagged
 wait-before-answering as "arguably genuinely per-agent", and it is arguable — a form-heavy

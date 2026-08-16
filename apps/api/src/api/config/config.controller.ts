@@ -15,7 +15,17 @@ import { Endpoint } from "../http/endpoint";
 import { pageQuery, pageResponse, toPageBody, toPageRequest } from "../http/pagination";
 import { ValidationFailed } from "../http/problem";
 import { apiRoute, FromBody, FromPath, FromQuery } from "../http/request";
-import { flag, integer, list, nullable, object, optional, text, type Infer } from "../http/schema";
+import {
+  flag,
+  integer,
+  list,
+  nullable,
+  number,
+  object,
+  optional,
+  text,
+  type Infer,
+} from "../http/schema";
 import { phoneNumber, timestamp, uuid } from "../schemas";
 import { OrganizationContext } from "../tenancy/organization-context";
 
@@ -109,6 +119,8 @@ const escalation = object({
 const CONFIG_FIELDS = {
   name: text({ minLength: 1, maxLength: LIMITS.name.chars }),
   voiceId: nullable(text({ maxLength: MAX_VOICE_ID_CHARS })),
+  /** Null is the voice's own pace. 0.7 to 1.2, the range ElevenLabs renders cleanly. */
+  speakingRate: nullable(number({ minimum: 0.7, maximum: 1.2 })),
   greeting: nullable(text({ maxLength: MAX_GREETING_CHARS })),
   persona: nullable(text({ maxLength: LIMITS.persona.chars })),
   instructions: nullable(text({ maxLength: LIMITS.instructions.chars })),
@@ -279,6 +291,7 @@ const guarantees = object({ guarantees: list(guarantee) });
 const toConfigBody = (config: AgentConfigFields): Infer<typeof configFields> => ({
   name: config.name,
   voiceId: config.voiceId,
+  speakingRate: config.speakingRate,
   greeting: config.greeting,
   persona: config.persona,
   instructions: config.instructions,
@@ -412,11 +425,11 @@ export class ConfigController {
 
     const { note, ...fields } = body;
     const version = await this.db.tx(async (scope) => {
-      const number = await publishAgentConfig(scope, fields, note);
+      const version = await publishAgentConfig(scope, fields, note);
       // Read back inside the same transaction rather than echoing the request. What comes
       // out is what was stored, with the author and the timestamp the database assigned, so
       // the response is evidence rather than a restatement of the body.
-      return loadAgentConfigVersion(scope, number);
+      return loadAgentConfigVersion(scope, version);
     });
 
     if (version === null) {

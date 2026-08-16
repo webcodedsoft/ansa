@@ -45,6 +45,11 @@ const keyterms = z
 const publishForm = z.object({
   name: z.string().trim().min(1, "The agent needs a name.").max(120, "That name is too long."),
   voiceId: optionalText(200, "The voice id"),
+  /* Empty means the voice's own pace, which is not 1.0 — the slider sends "" at 1.00 for
+     exactly that reason, and coercing "" to a number would turn it into 0. */
+  speakingRate: z
+    .union([z.literal(""), z.coerce.number().min(0.7).max(1.2)])
+    .transform((value) => (value === "" ? null : value)),
   greeting: optionalText(500, "The greeting"),
   persona: optionalText(400, "The persona"),
   instructions: optionalText(2000, "The instructions"),
@@ -88,6 +93,7 @@ export const publishSchema = publishForm
   .transform((value) => ({
     name: value.name,
     voiceId: value.voiceId,
+    speakingRate: value.speakingRate,
     greeting: value.greeting,
     persona: value.persona,
     instructions: value.instructions,
@@ -111,6 +117,7 @@ export type PublishBody = z.infer<typeof publishSchema>;
 export const publishFormInput = (form: FormData) => ({
   name: form.get("name") ?? "",
   voiceId: form.get("voiceId") ?? "",
+  speakingRate: form.get("speakingRate") ?? "",
   greeting: form.get("greeting") ?? "",
   persona: form.get("persona") ?? "",
   instructions: form.get("instructions") ?? "",

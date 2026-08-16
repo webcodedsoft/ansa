@@ -687,6 +687,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly config: {
         readonly name: string;
         readonly voiceId: string | null;
+        readonly speakingRate: number | null;
         readonly greeting: string | null;
         readonly persona: string | null;
         readonly instructions: string | null;
@@ -745,6 +746,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly config: {
         readonly name: string;
         readonly voiceId: string | null;
+        readonly speakingRate: number | null;
         readonly greeting: string | null;
         readonly persona: string | null;
         readonly instructions: string | null;
@@ -841,6 +843,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly body: {
           readonly name: string;
           readonly voiceId: string | null;
+          readonly speakingRate: number | null;
           readonly greeting: string | null;
           readonly persona: string | null;
           readonly instructions: string | null;
@@ -867,6 +870,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly config: {
         readonly name: string;
         readonly voiceId: string | null;
+        readonly speakingRate: number | null;
         readonly greeting: string | null;
         readonly persona: string | null;
         readonly instructions: string | null;
@@ -907,6 +911,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly config: {
         readonly name: string;
         readonly voiceId: string | null;
+        readonly speakingRate: number | null;
         readonly greeting: string | null;
         readonly persona: string | null;
         readonly instructions: string | null;
@@ -945,6 +950,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly config: {
         readonly name: string;
         readonly voiceId: string | null;
+        readonly speakingRate: number | null;
         readonly greeting: string | null;
         readonly persona: string | null;
         readonly instructions: string | null;

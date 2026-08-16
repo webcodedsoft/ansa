@@ -57,6 +57,8 @@ import type { OrganizationScope } from "./organization-scope";
 export interface StoredConfiguration {
   readonly name: string;
   readonly voiceId: string | null;
+  /** Null is the voice's own pace, which is not the same as 1.0. */
+  readonly speakingRate: number | null;
   readonly greeting: string | null;
   readonly persona: string | null;
   readonly instructions: string | null;
@@ -75,6 +77,7 @@ export interface StoredConfiguration {
 }
 
 interface StoredConfigurationRow {
+  speaking_rate: number | null;
   name: string;
   voice_id: string | null;
   greeting: string | null;
@@ -143,6 +146,7 @@ export const readStoredConfiguration = async (
   return {
     name: row.name,
     voiceId: row.voice_id,
+    speakingRate: row.speaking_rate ?? null,
     greeting: row.greeting,
     persona: row.persona,
     instructions: row.instructions,
@@ -190,12 +194,13 @@ export const publishConfiguration = async (
   const next = { ...current, ...patch };
   const rows = await scope.query<{ version: number }>(
     `select app.publish_agent_config(
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
      ) as version`,
     [
       scope.organizationId,
       next.name,
       next.voiceId,
+      next.speakingRate,
       next.greeting,
       next.persona,
       next.instructions,
@@ -237,6 +242,8 @@ export interface EscalationConfig {
 export interface AgentConfigFields {
   readonly name: string;
   readonly voiceId: string | null;
+  /** Null is the voice's own pace, which is not the same as 1.0. */
+  readonly speakingRate: number | null;
   readonly greeting: string | null;
   readonly persona: string | null;
   readonly instructions: string | null;
@@ -324,6 +331,7 @@ const configColumns = (alias: string): string =>
 interface ConfigColumns {
   readonly name: string;
   readonly voice_id: string | null;
+  readonly speaking_rate: number | null;
   readonly greeting: string | null;
   readonly persona: string | null;
   readonly instructions: string | null;
@@ -361,6 +369,7 @@ const toEscalation = (row: ConfigColumns): EscalationConfig | null => {
 const toFields = (row: ConfigColumns): AgentConfigFields => ({
   name: row.name,
   voiceId: row.voice_id,
+  speakingRate: row.speaking_rate ?? null,
   greeting: row.greeting,
   persona: row.persona,
   instructions: row.instructions,

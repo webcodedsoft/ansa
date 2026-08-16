@@ -15,6 +15,7 @@ import { diffConfigurations } from "./diff";
 const base: AgentConfigFields = {
   name: "First Organisation",
   voiceId: null,
+  speakingRate: null,
   greeting: null,
   persona: null,
   instructions: null,

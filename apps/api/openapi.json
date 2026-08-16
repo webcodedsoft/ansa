@@ -4420,6 +4420,14 @@
                           ],
                           "maxLength": 200
                         },
+                        "speakingRate": {
+                          "type": [
+                            "number",
+                            "null"
+                          ],
+                          "minimum": 0.7,
+                          "maximum": 1.2
+                        },
                         "greeting": {
                           "type": [
                             "string",
@@ -4519,6 +4527,7 @@
                       "required": [
                         "name",
                         "voiceId",
+                        "speakingRate",
                         "greeting",
                         "persona",
                         "instructions",
@@ -4789,6 +4798,14 @@
                               ],
                               "maxLength": 200
                             },
+                            "speakingRate": {
+                              "type": [
+                                "number",
+                                "null"
+                              ],
+                              "minimum": 0.7,
+                              "maximum": 1.2
+                            },
                             "greeting": {
                               "type": [
                                 "string",
@@ -4888,6 +4905,7 @@
                           "required": [
                             "name",
                             "voiceId",
+                            "speakingRate",
                             "greeting",
                             "persona",
                             "instructions",
@@ -5476,6 +5494,14 @@
                     ],
                     "maxLength": 200
                   },
+                  "speakingRate": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "minimum": 0.7,
+                    "maximum": 1.2
+                  },
                   "greeting": {
                     "type": [
                       "string",
@@ -5580,6 +5606,7 @@
                 "required": [
                   "name",
                   "voiceId",
+                  "speakingRate",
                   "greeting",
                   "persona",
                   "instructions",
@@ -5637,6 +5664,14 @@
                                 "null"
                               ],
                               "maxLength": 200
+                            },
+                            "speakingRate": {
+                              "type": [
+                                "number",
+                                "null"
+                              ],
+                              "minimum": 0.7,
+                              "maximum": 1.2
                             },
                             "greeting": {
                               "type": [
@@ -5737,6 +5772,7 @@
                           "required": [
                             "name",
                             "voiceId",
+                            "speakingRate",
                             "greeting",
                             "persona",
                             "instructions",
@@ -5910,6 +5946,14 @@
                           ],
                           "maxLength": 200
                         },
+                        "speakingRate": {
+                          "type": [
+                            "number",
+                            "null"
+                          ],
+                          "minimum": 0.7,
+                          "maximum": 1.2
+                        },
                         "greeting": {
                           "type": [
                             "string",
@@ -6009,6 +6053,7 @@
                       "required": [
                         "name",
                         "voiceId",
+                        "speakingRate",
                         "greeting",
                         "persona",
                         "instructions",
@@ -6178,6 +6223,14 @@
                               ],
                               "maxLength": 200
                             },
+                            "speakingRate": {
+                              "type": [
+                                "number",
+                                "null"
+                              ],
+                              "minimum": 0.7,
+                              "maximum": 1.2
+                            },
                             "greeting": {
                               "type": [
                                 "string",
@@ -6277,6 +6330,7 @@
                           "required": [
                             "name",
                             "voiceId",
+                            "speakingRate",
                             "greeting",
                             "persona",
                             "instructions",

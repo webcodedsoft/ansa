@@ -50,6 +50,7 @@ let ds: DataSource;
 const fields = (overrides: Partial<AgentConfigFields> = {}): AgentConfigFields => ({
   name: "Test Organisation",
   voiceId: null,
+  speakingRate: null,
   greeting: null,
   persona: null,
   instructions: null,
