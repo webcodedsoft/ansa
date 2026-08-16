@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { emailAddress } from "@/lib/patterns";
+
 /**
  * What this app is allowed to submit for organisation membership and invitations.
  *
@@ -24,7 +26,7 @@ export const removeMemberSchema = z.object({
 export type RemoveMemberInput = z.infer<typeof removeMemberSchema>;
 
 export const inviteSchema = z.object({
-  email: z.string().trim().pipe(z.email("That does not look like an email address.")),
+  email: emailAddress,
   role: roleSchema,
 });
 export type InviteInput = z.infer<typeof inviteSchema>;

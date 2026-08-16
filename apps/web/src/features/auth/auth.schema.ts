@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { emailAddress } from "@/lib/patterns";
+
 /**
  * What the sign-in form is allowed to submit.
  *
@@ -10,7 +12,7 @@ import { z } from "zod";
  * attach them to the field that caused them so the form can point at it.
  */
 export const credentialsSchema = z.object({
-  email: z.string().trim().pipe(z.email("That does not look like an email address.")),
+  email: emailAddress,
 
   // Not trimmed, unlike everything else on this form. A leading or trailing space is a
   // legitimate character in a passphrase, and quietly removing it produces a password that
@@ -54,7 +56,7 @@ export const signUpSchema = z
       .trim()
       .min(1, "What should your colleagues call you?")
       .max(200, "That name is too long."),
-    email: z.string().trim().pipe(z.email("That does not look like an email address.")),
+    email: emailAddress,
     password: newPassword,
     confirmPassword: z.string(),
   })

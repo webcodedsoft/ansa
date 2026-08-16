@@ -6,9 +6,11 @@ import { cn } from "@/lib/cn";
  * Form controls.
  *
  * Each takes the native element's own props and spreads them, so `maxLength`,
- * `required`, `min` and the rest behave exactly as they do in HTML. These
- * supply the label, the hint, the error and the styling — they do not reinvent
- * the input, and they do not stop the browser doing validation it is good at.
+ * `min` and the rest behave exactly as they do in HTML. These supply the label,
+ * the hint, the error and the styling — they do not reinvent the input.
+ *
+ * `required` is the exception, and is handled rather than passed through. See
+ * `FieldShell.required` for why.
  */
 
 export const CONTROL =
@@ -20,6 +22,21 @@ const INVALID = "border-[var(--bad)] hover:border-[var(--bad)]";
 
 export interface FieldShell {
   readonly label: ReactNode;
+  /**
+   * Marks the field, and deliberately does not switch on the browser's own validation.
+   *
+   * A native `required` blocks the submit and shows a bubble, which is the wrong shape twice
+   * over here. Its message is the browser's rather than ours, and — the part that actually
+   * broke — a form on this app can span tabs, where panels are hidden with `hidden` rather
+   * than unmounted. Chrome will not submit a form holding an invalid control it cannot
+   * focus, so an empty required field on a tab somebody is not looking at made the button do
+   * nothing at all: no bubble, no error, no save.
+   *
+   * The server validates every one of these anyway and returns a message per field, which is
+   * rendered underneath. This marks the field for a person and for assistive technology and
+   * leaves the checking where it already was.
+   */
+  readonly required?: boolean;
   /** Under the control. For the reason behind a setting, not a restatement of it. */
   readonly hint?: ReactNode;
   readonly error?: string | undefined;
@@ -37,11 +54,17 @@ export const Field = ({
   label,
   hint,
   error,
+  required,
   className,
   children,
 }: FieldShell & { readonly className?: string; readonly children: ReactNode }) => (
   <label className={cn("block", className)}>
-    <span className="mb-1.5 block text-[12.5px] font-medium">{label}</span>
+    <span className="mb-1.5 block text-[12.5px] font-medium">
+      {label}
+      {required === true && (
+        <span className="ml-1.5 text-[11px] font-normal text-[var(--ink-3)]">required</span>
+      )}
+    </span>
     {children}
     {error !== undefined && <FieldError>{error}</FieldError>}
     {hint !== undefined && <Hint>{hint}</Hint>}
@@ -52,15 +75,40 @@ type InputProps = Omit<ComponentPropsWithoutRef<"input">, "className">;
 type TextAreaProps = Omit<ComponentPropsWithoutRef<"textarea">, "className">;
 type SelectProps = Omit<ComponentPropsWithoutRef<"select">, "className">;
 
-export const TextField = ({ label, hint, error, className, ...input }: FieldShell & InputProps & { readonly className?: string }) => (
-  <Field label={label} hint={hint} error={error} className={className}>
-    <input aria-invalid={error !== undefined} className={cn(CONTROL, error !== undefined && INVALID)} {...input} />
+export const TextField = ({
+  label,
+  hint,
+  error,
+  required,
+  className,
+  ...input
+}: FieldShell & InputProps & { readonly className?: string }) => (
+  <Field label={label} hint={hint} error={error} required={required} className={className}>
+    <input
+      aria-invalid={error !== undefined}
+      aria-required={required}
+      className={cn(CONTROL, error !== undefined && INVALID)}
+      {...input}
+    />
   </Field>
 );
 
-export const NumberField = ({ label, hint, error, className, ...input }: FieldShell & InputProps & { readonly className?: string }) => (
-  <Field label={label} hint={hint} error={error} className={className}>
-    <input type="number" aria-invalid={error !== undefined} className={cn(CONTROL, error !== undefined && INVALID)} {...input} />
+export const NumberField = ({
+  label,
+  hint,
+  error,
+  required,
+  className,
+  ...input
+}: FieldShell & InputProps & { readonly className?: string }) => (
+  <Field label={label} hint={hint} error={error} required={required} className={className}>
+    <input
+      type="number"
+      aria-invalid={error !== undefined}
+      aria-required={required}
+      className={cn(CONTROL, error !== undefined && INVALID)}
+      {...input}
+    />
   </Field>
 );
 
@@ -68,22 +116,37 @@ export const TextAreaField = ({
   label,
   hint,
   error,
+  required,
   className,
   tall,
   ...textarea
 }: FieldShell & TextAreaProps & { readonly className?: string; readonly tall?: boolean }) => (
-  <Field label={label} hint={hint} error={error} className={className}>
+  <Field label={label} hint={hint} error={error} required={required} className={className}>
     <textarea
       aria-invalid={error !== undefined}
+      aria-required={required}
       className={cn(CONTROL, "resize-y leading-relaxed", tall === true ? "min-h-36" : "min-h-20", error !== undefined && INVALID)}
       {...textarea}
     />
   </Field>
 );
 
-export const SelectField = ({ label, hint, error, className, children, ...select }: FieldShell & SelectProps & { readonly className?: string }) => (
-  <Field label={label} hint={hint} error={error} className={className}>
-    <select aria-invalid={error !== undefined} className={cn(CONTROL, error !== undefined && INVALID)} {...select}>
+export const SelectField = ({
+  label,
+  hint,
+  error,
+  required,
+  className,
+  children,
+  ...select
+}: FieldShell & SelectProps & { readonly className?: string }) => (
+  <Field label={label} hint={hint} error={error} required={required} className={className}>
+    <select
+      aria-invalid={error !== undefined}
+      aria-required={required}
+      className={cn(CONTROL, error !== undefined && INVALID)}
+      {...select}
+    >
       {children}
     </select>
   </Field>

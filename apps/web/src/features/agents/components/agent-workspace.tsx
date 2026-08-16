@@ -28,6 +28,45 @@ const START: PublishState = idleForm();
 /** The header's Publish button submits this form from outside it. */
 const PUBLISH_FORM = "agent-publish";
 
+/**
+ * Which tab each publishable field lives on.
+ *
+ * One form spans nine tabs and eight are hidden at any moment, so a rejected field is usually
+ * somewhere nobody is looking. Until now the browser refused the submit instead, which at
+ * least stopped it — but silently: it will not show a validation bubble for a control it
+ * cannot focus, so the button did nothing at all. The server answers instead now, and the
+ * answer has to be findable, so the tab holding it is marked and the message names it.
+ *
+ * `note` is deliberately absent. It sits above the tabs and is always on screen.
+ */
+const FIELD_TAB: Readonly<Record<string, string>> = {
+  name: "conversation",
+  greeting: "conversation",
+  persona: "conversation",
+  instructions: "conversation",
+  keyterms: "conversation",
+  voiceId: "voice",
+  speakingRate: "voice",
+  opensAtHour: "routing",
+  closesAtHour: "routing",
+  openDays: "routing",
+  toNumber: "routing",
+  fromNumber: "routing",
+  ringSeconds: "routing",
+};
+
+const TAB_LABEL: Readonly<Record<string, string>> = {
+  conversation: "Conversation",
+  voice: "Voice",
+  routing: "Routing & hours",
+};
+
+const tabLabel = (id: string): string => TAB_LABEL[id] ?? id;
+
+/** "Voice" · "Voice and Routing & hours" · "Conversation, Voice and Routing & hours". */
+const sentenceList = (parts: readonly string[]): string =>
+  parts.length < 2 ? (parts[0] ?? "") : `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
+
 interface AgentWorkspaceProps {
   /** The agent record itself — its name, its number, its own version. */
   readonly agent: AgentSummary;
@@ -68,6 +107,12 @@ export const AgentWorkspace = ({
   const errors = state.fieldErrors;
 
   useFormToast(state, (data) => `Published version ${data.version}.`);
+
+  const problemTabs = new Set(
+    Object.keys(errors)
+      .map((field) => FIELD_TAB[field])
+      .filter((tab): tab is string => tab !== undefined),
+  );
 
   return (
     <>
@@ -125,6 +170,8 @@ export const AgentWorkspace = ({
             idle="Publish"
             busy="Publishing…"
             form={PUBLISH_FORM}
+            name="intent"
+            value="publish"
           />
         </div>
       </header>
@@ -140,26 +187,31 @@ export const AgentWorkspace = ({
         {(state.status === "failed" || state.status === "invalid") && (
           <Notice tone="error" className="mb-3.5">
             {state.message}
+            {problemTabs.size > 0 && ` On ${sentenceList([...problemTabs].map(tabLabel))}.`}
           </Notice>
         )}
 
-        {/* One quiet line rather than a panel. The note is required — it is what makes a
-            version explicable three weeks later — but it is not what somebody came to this
-            page to look at, and a bordered card for one input pushed the tabs below the
-            fold. The label rides in the placeholder; the error, when there is one, is the
-            only thing that grows. */}
+        {/* One quiet line rather than a panel. The note is what makes a version explicable
+            three weeks later, but it is not what somebody came to this page to look at, and a
+            bordered card for one input pushed the tabs below the fold. The label rides in the
+            placeholder; the error, when there is one, is the only thing that grows.
+
+            Required for Publish and not for a tab's own save button, which is a rule about
+            two different controls and so cannot be an attribute on this one. `publishSchema`
+            reads the submitter's `intent` and asks only when it is `publish`; the marker
+            below says so in the one case a person is looking at it. */}
         <div className="mb-3.5 flex flex-wrap items-center gap-2.5">
           <label
             htmlFor="publish-note"
             className="flex-none font-mono text-[10px] font-medium tracking-[0.13em] text-[var(--ink-3)] uppercase"
           >
             What changed
+            <span className="ml-1.5 tracking-normal normal-case">required to publish</span>
           </label>
           <input
             id="publish-note"
             name="note"
             maxLength={500}
-            required
             placeholder="Shortened the greeting — recorded on the version"
             aria-invalid={errors["note"] !== undefined}
             className="h-8 min-w-0 flex-1 rounded-lg border border-[var(--hairline)] bg-[var(--surface-2)] px-3 text-[13px] text-[var(--ink)] placeholder:text-[var(--ink-3)] focus-visible:outline-2 focus-visible:outline-[var(--accent)] aria-[invalid=true]:border-[var(--bad)]"
@@ -179,7 +231,7 @@ export const AgentWorkspace = ({
               ),
             },
             { id: "flow", label: "Flow", panel: <FlowCanvas /> },
-            { id: "conversation", label: "Conversation", panel: <ConversationTab agent={agent} config={config} errors={errors} publishForm={PUBLISH_FORM} publishing={pending} /> },
+            { id: "conversation", label: "Conversation", problem: problemTabs.has("conversation"), panel: <ConversationTab agent={agent} config={config} errors={errors} publishForm={PUBLISH_FORM} publishing={pending} /> },
             { id: "data", label: "Data captured", panel: <DataCapturedTab agent={agent} /> },
             { id: "tools", label: "Tools", panel: <ToolsTab agent={agent} tools={tools} /> },
             {
@@ -187,8 +239,8 @@ export const AgentWorkspace = ({
               label: "Knowledge",
               panel: <KnowledgeTab agent={agent} knowledge={knowledge} />,
             },
-            { id: "voice", label: "Voice", panel: <VoiceTab config={config} agent={agent} errors={errors} publishForm={PUBLISH_FORM} publishing={pending} /> },
-            { id: "routing", label: "Routing & hours", panel: <RoutingTab config={config} operatorManaged={operatorManaged} errors={errors} /> },
+            { id: "voice", label: "Voice", problem: problemTabs.has("voice"), panel: <VoiceTab config={config} agent={agent} errors={errors} publishForm={PUBLISH_FORM} publishing={pending} /> },
+            { id: "routing", label: "Routing & hours", problem: problemTabs.has("routing"), panel: <RoutingTab config={config} operatorManaged={operatorManaged} errors={errors} /> },
             { id: "versions", label: "Versions", panel: <VersionsTab versions={versions} liveVersion={agent.configVersion} /> },
           ]}
         />

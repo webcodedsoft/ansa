@@ -546,6 +546,8 @@ export const VoiceTab = ({ config, agent, errors, publishForm, publishing }: Voi
                     pending={publishing}
                     idle="Save voice and rate"
                     busy="Publishing…"
+                    name="intent"
+                    value="voice"
                   />
                   <span className="text-[12.5px] text-[var(--ink-3)]">
                     Saves the voice and the rate together, as a new configuration version.

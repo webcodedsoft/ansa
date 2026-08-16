@@ -19,6 +19,15 @@ export interface TabDef {
   readonly id: string;
   readonly label: ReactNode;
   readonly panel: ReactNode;
+  /**
+   * Something in this panel was rejected, and the panel may not be the open one.
+   *
+   * A form can span these tabs — the agent workspace has one across nine — so a field error
+   * can land somewhere nobody is looking. Without a mark on the tab the only evidence is a
+   * line at the top of the page saying some field somewhere is wrong, which is barely better
+   * than the silence it replaced.
+   */
+  readonly problem?: boolean;
 }
 
 export const Tabs = ({ tabs, initial }: { readonly tabs: readonly TabDef[]; readonly initial?: string }) => {
@@ -47,6 +56,15 @@ export const Tabs = ({ tabs, initial }: { readonly tabs: readonly TabDef[]; read
               )}
             >
               {tab.label}
+              {tab.problem === true && (
+                <span
+                  className="ml-1.5 inline-block size-[7px] rounded-full bg-[var(--bad)] align-middle"
+                  /* Colour alone would be the whole signal for anyone who cannot see it, and
+                     the panel it points at is hidden. The name carries it instead. */
+                  role="img"
+                  aria-label="has a problem"
+                />
+              )}
             </button>
           );
         })}

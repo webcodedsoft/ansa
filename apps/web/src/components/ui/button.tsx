@@ -64,6 +64,8 @@ export const SubmitButton = ({
   size = "md",
   className,
   form,
+  name,
+  value,
 }: {
   readonly pending: boolean;
   readonly idle: ReactNode;
@@ -78,10 +80,22 @@ export const SubmitButton = ({
    * further down the page with no client state and no second copy of the control.
    */
   readonly form?: string;
+  /**
+   * Named so the action can tell which button sent the form.
+   *
+   * A submitter's own name and value are part of the submitted data, and nothing else in a
+   * `FormData` says which control caused the submit. Where several buttons drive one form and
+   * mean different things — save this section, publish the lot — that is the only signal
+   * there is.
+   */
+  readonly name?: string;
+  readonly value?: string;
 }) => (
   <button
     type="submit"
     form={form}
+    name={name}
+    value={value}
     disabled={pending}
     aria-busy={pending}
     className={cn(BASE, SIZES[size], VARIANTS[variant], className)}

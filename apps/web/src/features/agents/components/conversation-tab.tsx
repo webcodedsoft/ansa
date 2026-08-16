@@ -119,6 +119,8 @@ export const ConversationTab = ({
                 busy="Publishing…"
                 size="sm"
                 form={publishForm}
+                name="intent"
+                value="identity"
               />
             </Row>
           </Stack>
@@ -153,6 +155,8 @@ export const ConversationTab = ({
                 busy="Publishing…"
                 size="sm"
                 form={publishForm}
+                name="intent"
+                value="instructions"
               />
             </Row>
 
