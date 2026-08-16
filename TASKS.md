@@ -2420,6 +2420,31 @@ would ask, and the recording is proved against the ids a call actually carries. 
 proves is whether an 8 kHz transcript of those questions still contains the words retrieval
 depends on.
 
+### The Voice tab, finished (2026-08-16)
+
+- [x] The picker holds only the account's voices. The "only what this account holds" switch
+      was the wrong question to ask anybody: every other voice must be added inside
+      ElevenLabs first, so listing them meant a hundred rows that answer a click with
+      instructions and twenty-two real choices scattered among them. The library is one line
+      under the list saying how many it holds and where to add them.
+- [x] Selection is a radio mark, not a background tint — the row read as "chosen" only if you
+      already knew which highlight meant what.
+- [x] The rate is a slider beside the voice and the sample plays at it, live while dragging.
+      A text box asking for 0.7–1.2 asks for a judgement nobody can make from digits.
+      It uses `playbackRate`, not re-synthesis, and says so: ElevenLabs' `speed` changes how
+      audio is generated, this changes how it is played. Enough for "too slow to bear", not
+      for timbre. A synthesis endpoint would put the speech key and its per-character bill
+      behind a button anyone with `config:read` can hold down.
+- [x] A skeleton while the account is read. Two ElevenLabs calls and a plan lookup take a
+      second or two cold, and one line of text for that long reads as a page that failed. The
+      blocks mirror what replaces them so nothing jumps, with `aria-busy` and a live region
+      because a shimmering rectangle is not an announcement.
+- [x] The Listening panel is gone from the screen. Every row said "set elsewhere", which is
+      furniture on the page somebody opens to change the voice. **The settings are untouched**
+      — deliberately, and they stay deployment-level: turn-taking is tuned by us until a call
+      gives a reason to expose it, because the goal is a conversation that is smooth by
+      default rather than one an operator has to tune into being smooth.
+
 ### The call that is still owed
 
 `packages/db/seeds/dev-organization.mjs` had rotted — it wrote `organizations.dialled_number`,

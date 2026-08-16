@@ -108,6 +108,66 @@ const SAMPLE_FALLBACK = "Good afternoon, thank you for calling. How may I help y
  * bill behind a button anybody with `config:read` can hold down. The label under the player
  * says which one this is rather than letting somebody assume.
  */
+/**
+ * The shape of the picker, before the picker.
+ *
+ * Reading the speech account takes a second or two cold — two calls to ElevenLabs and a
+ * plan lookup — and a single line of text for that long reads as a page that failed rather
+ * than one that is working. The blocks mirror what replaces them, so nothing jumps when the
+ * voices land and nobody loses their place.
+ *
+ * `aria-busy` with a live region because none of the above reaches a screen reader: a
+ * shimmering rectangle is not an announcement, and "reading the speech account" is.
+ */
+const LoadingVoices = () => (
+  <div aria-busy="true" aria-live="polite">
+    <span className="sr-only">Reading the speech account.</span>
+
+    <div className="rounded-lg border border-[var(--hairline)] bg-[var(--surface-2)] p-3.5">
+      <div className="flex items-center gap-2.5">
+        <span className="min-w-0 flex-1">
+          <Bar className="h-3.5 w-40" />
+          <Bar className="mt-2 h-3 w-64" />
+        </span>
+        <Bar className="h-8 w-28 rounded-lg" />
+      </div>
+    </div>
+
+    <div className="mt-3.5 flex gap-2">
+      <Bar className="h-9 flex-1 rounded-lg" />
+      <Bar className="h-9 w-36 rounded-lg" />
+    </div>
+
+    <div className="mt-2.5 overflow-hidden rounded-lg border border-[var(--hairline)]">
+      {[0, 1, 2, 3, 4].map((row) => (
+        <div
+          key={row}
+          className="flex items-center gap-3 border-b border-[var(--surface-line)] px-3 py-2.5 last:border-b-0"
+        >
+          <Bar className="size-4 rounded-full" />
+          <span className="min-w-0 flex-1">
+            <Bar className="h-3.5 w-44" />
+            <Bar className="mt-1.5 h-3 w-56" />
+          </span>
+        </div>
+      ))}
+    </div>
+
+    <p className="mt-2 text-xs text-[var(--ink-3)]">Reading the speech account&hellip;</p>
+  </div>
+);
+
+/** One shimmering block. `motion-reduce` because a pulsing page is a real complaint. */
+const Bar = ({ className }: { readonly className: string }) => (
+  <span
+    aria-hidden
+    className={cn(
+      "block animate-pulse rounded bg-[var(--hairline)] motion-reduce:animate-none",
+      className,
+    )}
+  />
+);
+
 const Sample = ({
   url,
   name,
@@ -383,9 +443,7 @@ export const VoiceTab = ({ config, agent, errors }: VoiceTabProps) => {
             <input type="hidden" name="voiceId" value={voiceId} />
           )}
 
-          {catalogue.status === "loading" && (
-            <p className="text-[13px] text-[var(--ink-3)]">Reading the speech account…</p>
-          )}
+          {catalogue.status === "loading" && <LoadingVoices />}
 
           {/* The picker is gone, so the field it filled in comes back. Losing the list must
               not mean losing the ability to fix a voice id during an incident — and the
