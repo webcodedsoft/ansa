@@ -4,7 +4,7 @@ import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 
 import { Pause, Play, Search } from "lucide-react";
 
-import { Button, Card, CONTROL, Notice, Stack, Tag, Td, TextField, type Tone } from "@/components/ui";
+import { Button, Card, CONTROL, Notice, Stack, Tag, TextField, type Tone } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 import { useFormToast } from "@/stores/toast.store";
 import { cn } from "@/lib/cn";
@@ -13,19 +13,22 @@ import { loadVoiceCatalogue, saveSpeakingRateAction, type SpeakingRateState } fr
 import type { AgentSummary, LiveConfiguration, VoiceChoice } from "../agents.service";
 
 /**
- * How the agent sounds, and what it does with what it hears.
+ * How the agent sounds.
  *
- * Two sections, and the split is not cosmetic — it is the line between what an organisation
- * decides and what the deployment decides. **Voice** is theirs: which of the speech
- * account's voices answers the phone. **Listening** is not, and every row in it is
- * read-only for a reason written beside it.
+ * Two things an organisation decides: which of the speech account's voices answers, and how
+ * fast it reads. They sit together because a rate is meaningless without hearing it — the
+ * slider changes the sample's playback so 0.85 is something you listen to rather than a
+ * number you guess at.
  *
- * That second half used to be a single warning paragraph. It is a table now because "you
- * cannot set this here" is only half an answer; the other half is where it *is* set, and
- * without it the next step is a support ticket. What has not changed is the rule behind it:
- * nothing on this page is a control over a value the API has nowhere to put. A speaking-rate
- * slider that submitted into the void would demonstrate a feature that does not survive a
- * call, which is the one thing this console will not do.
+ * A read-only table of listening settings used to sit below, naming the transcriber, the
+ * turn detector and the silence threshold with the environment variable each comes from.
+ * It was removed: they are deployment-level, an operator cannot act on any of them from
+ * here, and a panel whose every row says "not here" is furniture on the screen somebody
+ * opens to change the voice. Nothing about those settings changed with it.
+ *
+ * The rule that shaped this page still holds: nothing here is a control over a value the API
+ * has nowhere to put. The rate slider exists because migration 0035 gave it a column — until
+ * then it was a sentence saying so, not a slider submitting into the void.
  *
  * The picker is the point of the rest. A voice id is the only configuration field with no
  * shape to check and no forgiving failure — `docs/ONBOARDING_RUNBOOK.md` records a wrong one
@@ -94,36 +97,34 @@ const haystack = (voice: VoiceChoice): string =>
 const SAMPLE_FALLBACK = "Good afternoon, thank you for calling. How may I help you today?";
 
 /** Set once for the deployment, in `apps/api/src/config/env.ts`, and not per agent. */
-const LISTENING: readonly {
-  readonly setting: string;
-  readonly where: string;
-  readonly why: string;
-}[] = [
-  {
-    setting: "Transcriber",
-    where: "LISTEN_WORDS",
-    why: "Which provider turns the caller's audio into words. Chosen once against measured accuracy on Nigerian speech — see docs/STACK_DECISION.md.",
-  },
-  {
-    setting: "Turn detection",
-    where: "LISTEN_TURNS",
-    why: "Which provider decides the caller has finished speaking. A separate choice from the transcriber on purpose: words and turn boundaries have different best providers.",
-  },
-  {
-    setting: "Wait before answering",
-    where: "VAD_SILENCE_MS · DEEPGRAM_EOT_TIMEOUT_MS",
-    why: "How much silence counts as the end of a turn, in milliseconds. It trades interrupting the caller against sounding slow, and it is tuned against the line rather than against an agent.",
-  },
-  {
-    setting: "Hold the line with speech",
-    where: "always on",
-    why: "Any gap over two seconds produces sound. This is guarantee R6.2, enforced in the holding-speech scheduler, and there is deliberately no switch for it — a silent line reads as a dropped call.",
-  },
-];
 
-const Sample = ({ url, name }: { readonly url: string | null; readonly name: string }) => {
+/**
+ * The voice's own clip, played at the rate this agent is set to.
+ *
+ * `playbackRate` on the element, not a re-synthesis. ElevenLabs' `speed` changes how the
+ * audio is generated and this only changes how it is played, so the two are close but not
+ * the same thing — enough to judge "is 0.9 too slow to bear", not enough to judge the timbre.
+ * The alternative was a synthesis endpoint, which puts the speech key and its per-character
+ * bill behind a button anybody with `config:read` can hold down. The label under the player
+ * says which one this is rather than letting somebody assume.
+ */
+const Sample = ({
+  url,
+  name,
+  rate,
+}: {
+  readonly url: string | null;
+  readonly name: string;
+  readonly rate: number;
+}) => {
   const audio = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
+
+  // Applied on every change, not only at play: somebody dragging the rate while it plays
+  // should hear the difference, which is the whole reason the two controls sit together.
+  useEffect(() => {
+    if (audio.current !== null) audio.current.playbackRate = rate;
+  }, [rate]);
 
   // The clip belongs to whichever voice is selected, so switching voices mid-play has to
   // stop the old one — otherwise the button says "play" while the previous voice talks.
@@ -144,7 +145,10 @@ const Sample = ({ url, name }: { readonly url: string | null; readonly name: str
           const element = audio.current;
           if (element === null) return;
           if (playing) element.pause();
-          else void element.play();
+          else {
+            element.playbackRate = rate;
+            void element.play();
+          }
         }}
         className="inline-flex h-8 flex-none items-center gap-1.5 rounded-lg border border-[var(--hairline)] bg-[var(--glass-hi)] px-3 text-[13px] font-medium shadow-[var(--spec)]"
       >
@@ -187,6 +191,18 @@ const VoiceRow = ({
         selected && "bg-[var(--accent-soft)]",
       )}
     >
+      {/* A visible control rather than a background tint. The row was selectable and looked
+          like a list item, so which voice was chosen read as "whichever is highlighted" —
+          fine once you know, invisible the first time. */}
+      <span
+        aria-hidden
+        className={cn(
+          "mt-0.5 grid size-4 flex-none place-items-center rounded-full border",
+          selected ? "border-[var(--accent)] bg-[var(--accent)]" : "border-[var(--hairline)]",
+        )}
+      >
+        {selected && <span className="size-1.5 rounded-full bg-[var(--surface)]" />}
+      </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[13.5px] font-medium">{voice.name}</span>
         <span className="mt-0.5 block truncate text-[12px] text-[var(--ink-3)]">
@@ -323,6 +339,10 @@ const Picker = ({
 
 export const VoiceTab = ({ config, agent, errors }: VoiceTabProps) => {
   const [catalogue, setCatalogue] = useState<Catalogue>({ status: "loading" });
+  /* Held here rather than inside the rate card so the sample can be played at it. Trying a
+     rate you cannot hear is guessing, and 0.85 versus 1.0 is not a thing anybody knows the
+     sound of from the number. */
+  const [rate, setRate] = useState(agent.speakingRate ?? 1);
   const [voiceId, setVoiceId] = useState(config.voiceId ?? "");
 
   useEffect(() => {
@@ -412,7 +432,7 @@ export const VoiceTab = ({ config, agent, errors }: VoiceTabProps) => {
                     </span>
                   </span>
                   {selected !== null && (
-                    <Sample url={selected.previewUrl} name={selected.name} />
+                    <Sample url={selected.previewUrl} name={selected.name} rate={rate} />
                   )}
                 </div>
 
@@ -454,29 +474,8 @@ export const VoiceTab = ({ config, agent, errors }: VoiceTabProps) => {
 
       {/* After the voice, because it is a property of how that voice reads rather than a
           thing you choose first. It was above and made the tab open on a text box. */}
-      <SpeakingRate agent={agent} />
+      <SpeakingRate agent={agent} rate={rate} onRate={setRate} />
 
-      <Card
-        title="Listening"
-        description="How the agent hears a caller. Set for the deployment, not for this agent — the row says where."
-      >
-        <table className="w-full border-collapse text-sm">
-          <tbody>
-            {LISTENING.map((row) => (
-              <tr key={row.setting}>
-                <Td className="align-top whitespace-nowrap text-[var(--ink-3)]">{row.setting}</Td>
-                <Td className="align-top">
-                  <span className="font-mono text-[12.5px]">{row.where}</span>
-                  <span className="mt-0.5 block max-w-[62ch] text-[12.5px] text-[var(--ink-3)]">
-                    {row.why}
-                  </span>
-                </Td>
-              </tr>
-            ))}
-
-          </tbody>
-        </table>
-      </Card>
     </Stack>
   );
 };
@@ -493,7 +492,15 @@ export const VoiceTab = ({ config, agent, errors }: VoiceTabProps) => {
  * own pace keep it; pinning it to 1.0 flattens that, and on an 8 kHz line the difference is
  * audible.
  */
-const SpeakingRate = ({ agent }: { readonly agent: AgentSummary }) => {
+const SpeakingRate = ({
+  agent,
+  rate,
+  onRate,
+}: {
+  readonly agent: AgentSummary;
+  readonly rate: number;
+  readonly onRate: (rate: number) => void;
+}) => {
   const [state, action, pending] = useActionState(
     saveSpeakingRateAction,
     idleForm() as SpeakingRateState,
@@ -505,17 +512,27 @@ const SpeakingRate = ({ agent }: { readonly agent: AgentSummary }) => {
       <form action={action}>
         <input type="hidden" name="agentId" value={agent.agentId} />
         <Stack>
-          <div className="max-w-[220px]">
-            <TextField
-              label="Rate"
-              name="speakingRate"
-              // `?? ""` rather than a null check: an older API build omits the field entirely, and
-              // `String(undefined)` put the word "undefined" in the box as though somebody
-              // had typed it. Blank is the honest rendering of "no rate stored".
-              defaultValue={agent.speakingRate ?? ""}
-              placeholder="1.0"
-              hint="0.7 to 1.2. Blank leaves the voice at its own pace."
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              type="range"
+              min={0.7}
+              max={1.2}
+              step={0.05}
+              value={rate}
+              onChange={(event) => onRate(Number(event.target.value))}
+              aria-label="Speaking rate"
+              className="h-9 w-56 accent-[var(--accent)]"
             />
+            <span className="font-mono text-[13px] tabular-nums">{rate.toFixed(2)}&times;</span>
+            {/* The value the form actually submits. A slider cannot express "unset", and
+                unset is the default and the common case, so the reset below is how you get
+                back to it rather than a number that happens to be 1.00. */}
+            <input type="hidden" name="speakingRate" value={rate === 1 ? "" : String(rate)} />
+            <span className="text-[12.5px] text-[var(--ink-3)]">
+              Play the sample above to hear it. {agent.speakingRate === null
+                ? "Nothing is stored, so the voice reads at its own pace."
+                : `Stored: ${agent.speakingRate}\u00d7.`}
+            </span>
           </div>
           {(state.status === "failed" || state.status === "invalid") && (
             <Notice tone="error">{state.message}</Notice>
