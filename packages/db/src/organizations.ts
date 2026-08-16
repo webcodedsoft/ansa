@@ -97,8 +97,12 @@ export const renameOrganization = async (
   scope: OrganizationScope,
   name: string,
 ): Promise<Organization | null> => {
-  const updated = await scope.query<{ id: string }>(
-    `update organizations set name = $1 returning id`,
+  /* `mutate`, not `query`: an update with `returning` comes back as `[rows, affectedCount]`,
+     so the check below was always false and a rename of a deleted organisation — where RLS
+     and the soft-delete filter match nothing — reported success. The third instance of this
+     exact mistake in this package, which is why there is now a test that refuses it. */
+  const updated = await scope.mutate<{ id: string }>(
+    `update organizations set name = $1 where deleted_at is null returning id`,
     [name],
   );
   if (updated.length === 0) return null;

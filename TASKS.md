@@ -2317,6 +2317,35 @@ anyway:
 Worth revisiting when a real call gives a reason. Recorded here so it is a decision rather
 than an omission.
 
+### `query` where `mutate` was required — swept, and now guarded (2026-08-16)
+
+Fixing `updateAgent` and `archiveAgent` treated one instance of a mistake that had already
+been made twice. `organization-scope.ts` warns about it in its own doc comment and names the
+shape — "a handler that reports success for a row it did not touch" — because the
+adversarial API test caught it once already, in a member update that answered 200 while
+changing nothing.
+
+A sweep of `packages/db/src` for `scope.query` holding an `update`/`delete … returning`
+found one more:
+
+- [x] `renameOrganization` — the length check was always false, so renaming reported success
+      whatever it touched. Now `mutate`, and it filters `deleted_at` while it is there, since
+      the organizations policy does not.
+
+- [x] **A test now refuses the pattern.** It scans the package's own source for
+      `scope.query` calls whose SQL updates or deletes with a `returning` clause. Twice is a
+      mistake; three times is a missing test.
+      - Verified by planting a file that offends and watching it fail by name, then removing
+        it. A guard nobody has seen fail is a guess.
+      - It asserts how many files it read, because a scan that finds nothing passes forever.
+      - The two methods share a signature on purpose — `mutate` just unwraps the pair — so
+        nothing in the type system can tell them apart. The difference lives in the SQL
+        string, which is why this is a source scan and not a type.
+
+Also checked: the two `from agents` reads with no `deleted_at` filter are `listAgents` and
+`findAgent`, and both are deliberate. A call log needs a retired agent's name, and the API
+says so where somebody choosing an agent would read it.
+
 ### The call that is still owed
 
 `packages/db/seeds/dev-organization.mjs` had rotted — it wrote `organizations.dialled_number`,
