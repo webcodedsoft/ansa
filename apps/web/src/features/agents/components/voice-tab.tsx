@@ -16,6 +16,7 @@ import {
 import { cn } from "@/lib/cn";
 
 import { loadVoiceCatalogue } from "../agents.actions";
+import { SaveBar } from "./save-bar";
 import type { LiveConfiguration, VoiceChoice } from "../agents.service";
 
 /**
@@ -47,6 +48,7 @@ interface VoiceTabProps {
   readonly errors: Readonly<Record<string, string>>;
   /** The id of the page's publish form, which the voice is part of. */
   readonly publishForm: string;
+  readonly savingDraft: boolean;
 }
 
 type Catalogue =
@@ -404,7 +406,7 @@ const Picker = ({
   );
 };
 
-export const VoiceTab = ({ config, errors, publishForm }: VoiceTabProps) => {
+export const VoiceTab = ({ config, errors, publishForm, savingDraft }: VoiceTabProps) => {
   const [catalogue, setCatalogue] = useState<Catalogue>({ status: "loading" });
   /* Held here rather than inside the rate card so the sample can be played at it. Trying a
      rate you cannot hear is guessing, and 0.85 versus 1.0 is not a thing anybody knows the
@@ -541,9 +543,9 @@ export const VoiceTab = ({ config, errors, publishForm }: VoiceTabProps) => {
                     configuration document, so a button on this panel did not save the voice
                     — it published every tab, live, under a label that said "Save". Publish
                     in the header is the only thing that makes a change real. */}
-                <p className="mt-3 text-[12.5px] text-[var(--ink-3)]">
-                  The voice and the rate go live with everything else, when you publish.
-                </p>
+                <div className="mt-3">
+                  <SaveBar pending={savingDraft} form={publishForm} />
+                </div>
 
                 {/* A stored id the picker would refuse today. It cannot be reached through
                     this list, so it was typed before there was one — and it is the failure

@@ -16,11 +16,14 @@ import {
 
 import { setAgentBehaviour } from "../agents.actions";
 import type { AgentSummary, LiveConfiguration } from "../agents.service";
+import { SaveBar } from "./save-bar";
 
 interface ConversationTabProps {
   readonly agent: AgentSummary;
   readonly config: LiveConfiguration["config"];
   readonly errors: Readonly<Record<string, string>>;
+  readonly publishForm: string;
+  readonly savingDraft: boolean;
   /** The id of the workspace form these fields belong to, so a Save button can submit it. */
 }
 
@@ -60,6 +63,8 @@ export const ConversationTab = ({
   agent,
   config,
   errors,
+  publishForm,
+  savingDraft,
 }: ConversationTabProps) => {
   /* Held locally so the switch moves under the finger rather than after the round trip,
      and put back if the write is refused. A switch that waits for the server feels broken
@@ -106,6 +111,7 @@ export const ConversationTab = ({
               error={errors["greeting"]}
               hint="The first thing a caller hears. Leave empty to use the platform default."
             />
+            <SaveBar pending={savingDraft} form={publishForm} />
           </Stack>
         </PanelBody>
       </Panel>
@@ -181,6 +187,7 @@ export const ConversationTab = ({
                 would send an empty list and wipe the transcriber's vocabulary on the next
                 publish — silently, surfacing later only as words it stopped recognising. */}
             <input type="hidden" name="keyterms" value={config.keyterms.join("\n")} />
+            <SaveBar pending={savingDraft} form={publishForm} />
           </Stack>
         </PanelBody>
       </Panel>

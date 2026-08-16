@@ -25,12 +25,21 @@ if (url === undefined) throw new Error("DIRECT_URL must be set: this test needs 
  * assertion that matters is not that saving works, it is that saving changes nothing a call
  * reads. Everything else here is detail around that one.
  *
- * One organization id range per file, as the other suites record: `1…`/`2…` in `rls.test.ts`,
- * `3…`/`4…` in `review.test.ts`, `5…`/`6…` in `organization-scope.test.ts`, `7…`/`8…` in
- * `organization-config.test.ts`. These are `9…` and `a…`.
+ * One organization id range per file, because these suites share one database and run in
+ * parallel. The list, from the files rather than from another file's comment about them:
+ *
+ *   rls                  1…, 2…        review               3…, 4…
+ *   organization-scope   5…, 6…        organization-config  7…, 8…
+ *   onboarding           9…, 9a…       knowledge            b0…, b1…
+ *   drafts (this file)   c0…, c1…
+ *
+ * Written out because the partial version of this list is what went wrong: this file started
+ * on `9…`, which `onboarding.test.ts` already owned and deletes the agents of in its
+ * `afterAll`. Alone the suite passed; in the full run seven tests failed with "the fixture
+ * has no live agent", which is a fixture being deleted underneath them by a neighbour.
  */
-const A = asOrganizationId("99999999-9999-4999-8999-999999999999");
-const B = asOrganizationId("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+const A = asOrganizationId("c0c0c0c0-c0c0-4c0c-8c0c-c0c0c0c0c0c0");
+const B = asOrganizationId("c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1");
 
 let ds: DataSource;
 
@@ -225,6 +234,72 @@ describe("where a draft came from", () => {
     const draft = await withOrganization(ds, A, (scope) => loadAgentDraft(scope, agent));
     expect(draft?.restoredFrom).toBeNull();
 
+    await withOrganization(ds, A, (scope) => discardAgentDraft(scope, agent));
+  });
+});
+
+/**
+ * The guarantee this whole slice rests on, asserted against the database rather than trusted.
+ *
+ * Everything a call reads is read through an `app.*` function, so "a draft cannot reach a
+ * caller" is exactly the statement that no function except the draft API itself mentions the
+ * table. Asserting the property this way rather than testing the three read paths one by one
+ * is the difference between covering what exists today and covering what somebody adds next
+ * year: a new `agent_config_for_*` variant is caught without anybody remembering this file.
+ *
+ * Three are allowed to know. Two of them are how a draft is written and thrown away. The
+ * third is `publish_agent_config`, which deletes it — in the same transaction as the publish,
+ * because a draft that survived its own publication would leave the console reporting
+ * unpublished changes that are already live.
+ */
+const MAY_TOUCH_DRAFTS = new Set([
+  "save_agent_draft",
+  "discard_agent_draft",
+  "publish_agent_config",
+]);
+
+describe("nothing a call reads knows about drafts", () => {
+  it("keeps the drafts table out of every function except the three that manage it", async () => {
+    const rows = await withOrganization(ds, A, (scope) =>
+      scope.query<{ proname: string; touches: boolean }>(
+        `select p.proname, (p.prosrc like '%agent_config_drafts%') as touches
+           from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'app'`,
+      ),
+    );
+
+    // A guard that silently inspects nothing reports success forever.
+    expect(rows.length).toBeGreaterThan(15);
+
+    const unexpected = rows
+      .filter((row) => row.touches && !MAY_TOUCH_DRAFTS.has(row.proname))
+      .map((row) => row.proname);
+    expect(unexpected, `these read or write drafts and should not: ${unexpected.join(", ")}`)
+      .toEqual([]);
+
+    // And the converse, so the allow-list cannot rot into a list of names that no longer
+    // exist while the real writers slip past it.
+    const touching = new Set(rows.filter((row) => row.touches).map((row) => row.proname));
+    expect([...MAY_TOUCH_DRAFTS].filter((name) => !touching.has(name))).toEqual([]);
+  });
+
+  it("reads the live columns for a call even while a draft exists", async () => {
+    // The same property from the other side, through the function the carrier webhook
+    // actually calls. `agent_config_for_organization` is the outbound sibling of
+    // `agent_config_for_number`; both read `agents`, and neither joins this table.
+    const agent = await agentOf(A);
+    await withOrganization(ds, A, (scope) =>
+      saveAgentDraft(scope, agent, fields({ greeting: "Draft, not for callers." }), null, null),
+    );
+
+    const rows = await withOrganization(ds, A, (scope) =>
+      scope.query<{ greeting: string | null }>(
+        "select greeting from app.agent_config_for_organization($1)",
+        [A],
+      ),
+    );
+
+    expect(rows[0]?.greeting).not.toBe("Draft, not for callers.");
     await withOrganization(ds, A, (scope) => discardAgentDraft(scope, agent));
   });
 });

@@ -15,7 +15,7 @@ Read this at the start of every session, after `TASKS.md`.
 
 ---
 
-## The four rules that override everything
+## The five rules that override everything
 
 **0. The product is TypeScript. `eval/` is Python and is not the product.**
 `apps/` and `packages/` are NestJS/TypeScript — that is Ansa. `eval/` is standalone
@@ -40,6 +40,23 @@ swapping STT is a one-file change.
 label, every event. Isolation is enforced by Postgres RLS, not by remembering to add a
 `where` clause. A query that could return another organization's row is a security bug even if
 no one has hit it.
+
+**4. A call reads published configuration. Never a draft.** Saving in the console writes
+`agent_config_drafts`; publishing copies that onto the agent and deletes the row. Everything a
+call reads — `app.agent_config_for_number` and its siblings — reads the agent's own columns and
+does not know the drafts table exists. That is the design rather than an accident of the
+current queries: a `published` flag on `agents` would have put unpublished text one forgotten
+`where` clause away from a caller, and a separate table cannot be read by mistake.
+
+Two guards hold it, and both fail loudly rather than drifting. `packages/db/src/drafts.test.ts`
+asserts that no `app.*` function except `save_agent_draft`, `discard_agent_draft` and
+`publish_agent_config` mentions the table. `apps/api/src/tenancy/call-path.test.ts` scans
+`telephony`, `orchestrator`, `tenancy`, `outbound` and `conversation` and fails on any
+reference to the draft helpers or to the table name in raw SQL.
+
+If you are adding something a call needs, it belongs in the published document and reaches the
+call by being published. Reading a draft "just to preview it on a test call" is the shape of
+the mistake — a test call is a call.
 
 ---
 

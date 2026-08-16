@@ -2509,10 +2509,12 @@ they behave today, so nothing changes for them.
       a configuration document. Which agent it belongs to is resolved by
       `app.live_agent_for_organization`, the same pick publishing makes, so a publish cannot
       consume a draft belonging to a different agent than it published to.
-- [x] The console. Save, Publish and Discard sit in the header together, and Save is **not**
-      per tab: there is one endpoint and one document, so a button on the Voice panel would
-      save the greeting and the routing too — the same lie in a smaller font. The header is
-      already where the controls that act on the whole agent live.
+- [x] The console. Save, Publish and Discard sit in the header, and Save is **also** on each
+      tab that has fields, because otherwise you scroll back up to save what you just typed.
+      The per-tab ones say "Save changes", not "Save voice" — there is one endpoint and one
+      document, so no button can save the voice without the greeting, and naming a section
+      would be the old lie in a smaller font. A sentence beside each says what it does. What
+      made the removed buttons a defect was never where they sat: it was that they published.
 - [x] The form's own `action` is save, and Publish overrides it with `formAction` from inside
       the dialog. Pressing return in a text field submits through the form's action, so the
       default had to be the harmless one.
@@ -2523,6 +2525,18 @@ they behave today, so nothing changes for them.
 - [x] Restore loads into the draft rather than publishing. It returns the draft, not a
       version, and the confirmation says so. The provenance the old rollback used to write
       into the note travels as `restored_from` and the publish dialog offers it.
+
+**A call reads published configuration and nothing else, and two guards now say so rather
+than the design implying it.** `packages/db/src/drafts.test.ts` asks Postgres which `app.*`
+functions mention `agent_config_drafts` and fails on any except the three that manage it —
+which covers the `agent_config_for_*` a call runs today *and* whichever one somebody adds next
+year, without them having to remember this file. `apps/api/src/tenancy/call-path.test.ts` scans
+`telephony`, `orchestrator`, `tenancy`, `outbound` and `conversation` for the draft helpers or
+the raw table name, because `scope.query` takes SQL and a hand-written join would be invisible
+to a scan that only knew function names. Both were checked by breaking them on purpose: the
+first named `publish_agent_config` when it was dropped from the allow-list, the second named
+`agent-registry.ts` when a draft import was planted in it. Rule 4 in `CLAUDE.md` now states
+the property, so a future session inherits it instead of rediscovering it.
 
 **Verified against the running app**, not only in tests: saved a draft, watched the live
 greeting stay `NULL` at version 6 in Postgres while the console showed the draft, discarded

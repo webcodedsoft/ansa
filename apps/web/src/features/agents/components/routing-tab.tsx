@@ -1,6 +1,7 @@
 import { Card, CheckboxField, CheckboxGroup, FieldError, NumberField, Notice, Stack, Td, TextField } from "@/components/ui";
 
 import type { LiveConfiguration } from "../agents.service";
+import { SaveBar } from "./save-bar";
 
 const DAYS = [
   { value: 1, label: "Mon" },
@@ -18,10 +19,12 @@ interface RoutingTabProps {
   readonly config: LiveConfiguration["config"];
   readonly operatorManaged: LiveConfiguration["operatorManaged"];
   readonly errors: Readonly<Record<string, string>>;
+  readonly publishForm: string;
+  readonly savingDraft: boolean;
 }
 
 /** When the agent answers as open, where it hands over, and what the operator controls. */
-export const RoutingTab = ({ config, operatorManaged, errors }: RoutingTabProps) => {
+export const RoutingTab = ({ config, operatorManaged, errors, publishForm, savingDraft }: RoutingTabProps) => {
   const hours = config.businessHours;
   const escalation = config.escalation;
   const openDays = hours?.openDays ?? DEFAULT_OPEN_DAYS;
@@ -74,6 +77,10 @@ export const RoutingTab = ({ config, operatorManaged, errors }: RoutingTabProps)
           />
 
           <Notice tone="warn">Irreversible tools never execute. They transfer here instead, and no configuration changes that.</Notice>
+
+          {/* On the last editable card rather than on each: the two above it are one setting
+              apiece, and a save bar under every one of them would outnumber the fields. */}
+          <SaveBar pending={savingDraft} form={publishForm} />
         </Stack>
       </Card>
 
