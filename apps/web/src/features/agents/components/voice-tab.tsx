@@ -193,8 +193,10 @@ const VoiceRow = ({
           {describe(voice).join(" · ") || "no labels"}
         </span>
       </span>
+      {/* Every row in the picker is on the account, so a tag saying so on all of them is
+          noise. What is worth marking is which one answers the phone. */}
       <span className="flex-none pt-0.5">
-        <Tag tone={state.tone}>{state.tag}</Tag>
+        {selected ? <Tag tone="ok">answering</Tag> : !pickable && <Tag tone={state.tone}>{state.tag}</Tag>}
       </span>
     </button>
   );
@@ -211,39 +213,41 @@ const Picker = ({
 }) => {
   const [query, setQuery] = useState("");
   const [accent, setAccent] = useState("all");
-  /* Starts on. The account holds twenty-two voices and the library carries a hundred more
-     that cannot be picked until somebody adds them in ElevenLabs — so leaving this off meant
-     opening the tab to a wall of things you cannot choose, with the ones you can buried
-     below them. The library is worth reaching, which is why the switch exists; it is not
-     worth being the first thing you see. */
-  const [usableOnly, setUsableOnly] = useState(true);
+
+  /**
+   * The account's own voices, and only those.
+   *
+   * There was a switch for this and it was the wrong shape of question. Every other voice in
+   * the catalogue has to be added inside ElevenLabs before it can be used, so offering them
+   * here means offering a hundred rows that answer a click with instructions — and the
+   * twenty-two real choices were scattered among them. A picker should contain things you
+   * can pick.
+   *
+   * The rest are not hidden so much as moved: the line under the list says how many the
+   * library holds and where to add them, which is the only thing anybody needed from
+   * seeing them.
+   */
+  const held = useMemo(
+    () => voices.filter((voice) => voice.availability === "usable"),
+    [voices],
+  );
 
   const accents = useMemo(() => {
     const found = new Set<string>();
-    for (const voice of voices) if (voice.labels.accent !== null) found.add(voice.labels.accent);
+    for (const voice of held) if (voice.labels.accent !== null) found.add(voice.labels.accent);
     return [...found].sort((left, right) => left.localeCompare(right, "en"));
-  }, [voices]);
+  }, [held]);
 
   const shown = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    const matching = voices.filter(
-      (voice) =>
-        (accent === "all" || voice.labels.accent === accent) &&
-        (!usableOnly || voice.availability === "usable") &&
-        (needle === "" || haystack(voice).includes(needle)),
-    );
-
-    /* What can be chosen, first. With the library showing, the account's own voices were
-       scattered through a hundred rows that only offer instructions, so the list read as
-       "nothing here is available" until you scrolled. Sorting is stable within each group,
-       so the account's order is whatever ElevenLabs returned. */
-    return [...matching].sort((left, right) => {
-      const pickable = Number(right.availability === "usable") - Number(left.availability === "usable");
-      return pickable !== 0 ? pickable : left.name.localeCompare(right.name, "en");
-    });
-  }, [voices, query, accent, usableOnly]);
-
-  const held = voices.filter((voice) => voice.availability === "usable").length;
+    return held
+      .filter(
+        (voice) =>
+          (accent === "all" || voice.labels.accent === accent) &&
+          (needle === "" || haystack(voice).includes(needle)),
+      )
+      .sort((left, right) => left.name.localeCompare(right.name, "en"));
+  }, [held, query, accent]);
 
   return (
     <div>
@@ -275,21 +279,19 @@ const Picker = ({
             </option>
           ))}
         </select>
-        <label className="flex flex-none cursor-pointer items-center gap-2 text-[12.5px]">
-          <input
-            type="checkbox"
-            checked={usableOnly}
-            onChange={(event) => setUsableOnly(event.target.checked)}
-            className="size-4 rounded border-[var(--hairline)] accent-[var(--accent)]"
-          />
-          Only what this account holds
-        </label>
       </div>
 
       <div className="mt-2.5 max-h-80 overflow-y-auto rounded-lg border border-[var(--hairline)]">
-        {shown.length === 0 ? (
+        {held.length === 0 ? (
+          /* Not "no match" — there is nothing to match against. An account with no voices is
+             a different problem from a search with no hits, and saying so is the difference
+             between somebody adjusting a filter and somebody going to add a voice. */
           <p className="px-3 py-6 text-center text-[12.5px] text-[var(--ink-3)]">
-            No voice matches that.
+            This ElevenLabs account holds no voices yet. Add one there and it appears here.
+          </p>
+        ) : shown.length === 0 ? (
+          <p className="px-3 py-6 text-center text-[12.5px] text-[var(--ink-3)]">
+            No voice on this account matches that.
           </p>
         ) : (
           shown.map((voice) => (
@@ -304,16 +306,14 @@ const Picker = ({
       </div>
 
       <p className="mt-2 text-xs text-[var(--ink-3)]">
-        {usableOnly ? (
+        {shown.length === held.length
+          ? `${held.length} voice${held.length === 1 ? "" : "s"} on this account.`
+          : `${shown.length} of ${held.length} on this account.`}
+        {voices.length > held.length && (
           <>
-            {shown.length} of {held} on this account. Untick to browse the {voices.length - held}{" "}
-            in the ElevenLabs library — those have to be added to the account there before
-            they can be picked here.
-          </>
-        ) : (
-          <>
-            {shown.length} of {voices.length} shown, {held} of them on this account. The rest
-            are library voices, listed so you know what is available to add.
+            {" "}
+            The ElevenLabs library holds {voices.length - held.length} more — add one to the
+            account there and it appears here.
           </>
         )}
       </p>
