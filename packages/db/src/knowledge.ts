@@ -506,16 +506,17 @@ export const searchKnowledge = async (
 export const recordKnowledgeRetrieval = async (
   scope: OrganizationScope,
   sourceIds: readonly string[],
-  callId: string | null,
+  /** The carrier's id, joinable to `calls.carrier_call_id`. Not `calls.id` — see 0036. */
+  carrierCallId: string | null,
 ): Promise<void> => {
   const unique = [...new Set(sourceIds)];
   if (unique.length === 0) return;
 
   await scope.query(
-    `insert into knowledge_retrievals (organization_id, source_id, call_id)
+    `insert into knowledge_retrievals (organization_id, source_id, carrier_call_id)
      select app.current_organization(), s.id, $2
        from knowledge_sources s
       where s.id = any($1::uuid[]) and s.deleted_at is null`,
-    [unique, callId],
+    [unique, carrierCallId],
   );
 };

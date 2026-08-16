@@ -13,7 +13,7 @@ import {
 } from "@ansa/shared";
 import type { CallDirection, CallMediaStream, TelephonyProvider } from "@ansa/telephony";
 import type { LlmProvider } from "@ansa/llm";
-import { searchKnowledge, withOrganization } from "@ansa/db";
+import { recordKnowledgeRetrieval, searchKnowledge, withOrganization } from "@ansa/db";
 import { buildUrl, openDeepgramSession } from "@ansa/deepgram-listen";
 import { openListenSession } from "@ansa/openai-listen";
 import type { TtsProvider } from "@ansa/tts";
@@ -38,7 +38,7 @@ import { withEventPublisher } from "../events/publisher";
 import { HANDOFF_DESTINATION, WHISPER_REGISTRY } from "../handoff/tokens";
 import type { WhisperRegistry } from "../handoff/whisper";
 import { confirmedFact, createCallFacts } from "../conversation/call-facts";
-import { knowledgeTools } from "../orchestrator/knowledge";
+import { KNOWLEDGE_TOOL_NAME, knowledgeTools, type Retrieval } from "../orchestrator/knowledge";
 import { createCallRecorder } from "./event-log";
 import type { Db } from "@ansa/db";
 import { callSettings, type PlatformDefaults } from "../tenancy/call-settings";
@@ -620,6 +620,37 @@ export class MediaGateway implements OnApplicationShutdown {
              * number) nothing is ever confirmed, which is the right answer for a call
              * that has no organization to look anything up in anyway.
              */
+            /**
+             * Which sources answered, written down after the fact.
+             *
+             * This is what the Knowledge tab's "used, 7d" column counts, and without it that
+             * column reads zero for everything — a number that looks like measurement and is
+             * really "nothing ever recorded it". Knowing which sources earn their place is
+             * the only way an organisation can tell a FAQ that answers callers from one
+             * nobody has ever matched.
+             *
+             * Deliberately not awaited. `onResult` runs on the turn the caller is waiting
+             * through, and a bookkeeping row must never cost them a second or fail their
+             * question — so it is fired, and a failure is logged and dropped.
+             */
+            onResult: (call, result) => {
+              if (call.name !== KNOWLEDGE_TOOL_NAME || dataSource === null) return;
+              const organizationId = settings.organizationId;
+              if (organizationId === null) return;
+
+              const passages = (result as Retrieval | undefined)?.passages ?? [];
+              const sourceIds = [...new Set(passages.map((passage) => passage.sourceId))];
+              if (sourceIds.length === 0) return;
+
+              void withOrganization(dataSource, organizationId, (scope) =>
+                recordKnowledgeRetrieval(scope, sourceIds, stream.callId),
+              ).catch((error: unknown) => {
+                log.warn("could not record which knowledge sources answered", {
+                  organizationId,
+                  error: error instanceof Error ? error.message : String(error),
+                });
+              });
+            },
             identity: {
               confirmed: (fact) => {
                 const snapshot = facts?.facts;

@@ -551,3 +551,60 @@ describe("retrieval, against how people actually ask", () => {
     expect(await ask("abeg how much I go pay")).toEqual([]);
   });
 });
+
+/**
+ * Which sources answered, and the count the console shows for it.
+ *
+ * `retrievalsLast7Days` is the only signal an organisation gets about whether a source earns
+ * its place. It comes from rows written on the call path, and the first version of that write
+ * could never have succeeded: the column was a `uuid` and the gateway holds the carrier's
+ * `CallSid`. The insert would have raised, been swallowed by the catch that keeps bookkeeping
+ * off a caller's turn, and left every count at zero for good — measurement that was really
+ * an empty table.
+ */
+describe("recording which sources answered", () => {
+  it("counts a retrieval against the source, with the carrier id a call actually has", async () => {
+    const sourceId = await freshSource();
+
+    await withOrganization(db, ORGANIZATION, (scope) =>
+      // Twilio's shape, not a uuid. This is the value the media gateway holds.
+      recordKnowledgeRetrieval(scope, [sourceId], "CA9f3b2c1d4e5f60718293a4b5c6d7e8f9"),
+    );
+
+    const listed = await withOrganization(db, ORGANIZATION, (scope) => listKnowledgeSources(scope));
+    expect(listed.find((row) => row.sourceId === sourceId)?.retrievalsLast7Days).toBe(1);
+  });
+
+  it("records without a call, because the sandbox has none", async () => {
+    const sourceId = await freshSource();
+    await withOrganization(db, ORGANIZATION, (scope) =>
+      recordKnowledgeRetrieval(scope, [sourceId], null),
+    );
+
+    const listed = await withOrganization(db, ORGANIZATION, (scope) => listKnowledgeSources(scope));
+    expect(listed.find((row) => row.sourceId === sourceId)?.retrievalsLast7Days).toBe(1);
+  });
+
+  it("counts each source once per retrieval, not once per passage", async () => {
+    const sourceId = await freshSource();
+    // Three passages from one source answered one question. That is one use of the source.
+    await withOrganization(db, ORGANIZATION, (scope) =>
+      recordKnowledgeRetrieval(scope, [sourceId, sourceId, sourceId], "CA-dup"),
+    );
+
+    const listed = await withOrganization(db, ORGANIZATION, (scope) => listKnowledgeSources(scope));
+    expect(listed.find((row) => row.sourceId === sourceId)?.retrievalsLast7Days).toBe(1);
+  });
+
+  it("ignores a source this organisation does not hold", async () => {
+    const sourceId = await freshSource();
+    // The insert selects from `knowledge_sources`, so an id from elsewhere writes nothing
+    // rather than a row pointing at a source the organisation cannot see.
+    await withOrganization(db, ORGANIZATION, (scope) =>
+      recordKnowledgeRetrieval(scope, ["b2b2b2b2-2222-4222-8222-222222222222"], "CA-other"),
+    );
+
+    const listed = await withOrganization(db, ORGANIZATION, (scope) => listKnowledgeSources(scope));
+    expect(listed.find((row) => row.sourceId === sourceId)?.retrievalsLast7Days).toBe(0);
+  });
+});

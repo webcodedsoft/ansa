@@ -2392,6 +2392,34 @@ did not work was being able to tell:
 
 Nothing was wrong with the connection handling, and nothing about it changed.
 
+### Knowledge on the call path, finished (2026-08-16)
+
+The tool was registered and the grounding instruction composed, but the loop was not closed:
+nothing recorded which sources answered. `recordKnowledgeRetrieval` existed and had no
+caller, so `knowledge_retrievals` was empty and the Knowledge tab's "used, 7d" read zero for
+every source — a number that looks like measurement and is really "nothing wrote it". That
+count is the only signal an organisation gets about whether a FAQ earns its place.
+
+- [x] Wired through the dispatcher's `onResult`, deliberately not awaited: it runs on the
+      turn a caller is waiting through, and a bookkeeping row must never cost them a second
+      or fail their question. A failure logs and is dropped.
+- [x] Counted once per source per retrieval, not once per passage — three passages from one
+      source answering one question is one use of that source.
+- [x] **The column was a `uuid` nothing on the call path could supply** (0036).
+      `CallId` here is the carrier's `CallSid`, a string like `CA9f3…`; the internal uuid is
+      generated inside the recorder and never handed back. The first write would have raised
+      `invalid input syntax for type uuid`, been swallowed by the catch that keeps bookkeeping
+      off a caller's turn, and left the column empty for good. Typecheck passed throughout —
+      both are strings. Renamed to `carrier_call_id` as well as retyped, because `call_id`
+      sitting beside a uuid `calls.id` is what caused the mistake; it now joins to
+      `calls.carrier_call_id`.
+- [x] Four tests on the counting, using Twilio's actual id shape rather than a uuid.
+
+**Still open, and unchanged: no real call.** Retrieval is proved against questions people
+would ask, and the recording is proved against the ids a call actually carries. What neither
+proves is whether an 8 kHz transcript of those questions still contains the words retrieval
+depends on.
+
 ### The call that is still owed
 
 `packages/db/seeds/dev-organization.mjs` had rotted — it wrote `organizations.dialled_number`,
