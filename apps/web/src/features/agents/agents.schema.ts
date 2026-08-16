@@ -42,7 +42,7 @@ const keyterms = z
       .max(100, "That is more than 100 keyterms."),
   );
 
-const publishForm = z.object({
+const CONFIG_SHAPE = {
   name: z.string().trim().min(1, "The agent needs a name.").max(120, "That name is too long."),
   voiceId: optionalText(200, "The voice id"),
   /* Empty means the voice's own pace, which is not 1.0 — the slider sends "" at 1.00 for
@@ -65,59 +65,79 @@ const publishForm = z.object({
   fromNumber: z.string().trim(),
   ringSeconds: z.union([z.literal(""), z.coerce.number().int().min(5).max(120)]),
 
-  /**
-   * Why this version exists.
-   *
-   * Required, and there is only one control that can send this form: the publish dialog.
-   * Three per-tab "Save" buttons used to submit it too, which is why this briefly depended
-   * on which button was pressed — but a button that publishes every tab under a label
-   * saying "Save" was the actual defect, and removing them removed the exception with it.
-   */
-  note: z
-    .string()
-    .trim()
-    .min(1, "Say what changed. A version with no reason explains nothing later.")
-    .max(500, "That note is too long."),
+} as const;
+
+/**
+ * Why a version exists.
+ *
+ * On the publish schema and not on the draft one, which is the whole distinction between
+ * them: a note explains a version, and a draft is not a version. Saving asks for nothing.
+ */
+const note = z
+  .string()
+  .trim()
+  .min(1, "Say what changed. A version with no reason explains nothing later.")
+  .max(500, "That note is too long.");
+
+const publishForm = z.object({ ...CONFIG_SHAPE, note });
+const draftForm = z.object({ ...CONFIG_SHAPE });
+
+/**
+ * The rules that only apply when a section is switched on.
+ *
+ * Shared by both schemas rather than written twice. A draft that validated more loosely than
+ * a publish would be a trap — the operator is told it saved and finds out it was never
+ * publishable at the moment they wanted it live — and one that validated differently would
+ * be worse, because the difference would only appear on the fields nobody tests.
+ */
+type ConfigShape = z.infer<z.ZodObject<typeof CONFIG_SHAPE>>;
+
+const checkSections = (value: ConfigShape, context: z.RefinementCtx): void => {
+  if (value.hoursEnabled && value.openDays.length === 0) {
+    context.addIssue({
+      code: "custom",
+      path: ["openDays"],
+      message: "Pick at least one day, or turn off the hours restriction.",
+    });
+  }
+  if (!value.escalationEnabled) return;
+  if (!E164.test(value.toNumber)) {
+    context.addIssue({ code: "custom", path: ["toNumber"], message: E164_MESSAGE });
+  }
+  if (!E164.test(value.fromNumber)) {
+    context.addIssue({ code: "custom", path: ["fromNumber"], message: E164_MESSAGE });
+  }
+};
+
+/** The body both endpoints take, from the flat fields the form submits. */
+const toDocument = (value: ConfigShape) => ({
+  name: value.name,
+  voiceId: value.voiceId,
+  speakingRate: value.speakingRate,
+  greeting: value.greeting,
+  persona: value.persona,
+  instructions: value.instructions,
+  keyterms: value.keyterms,
+  businessHours: value.hoursEnabled
+    ? { opensAtHour: value.opensAtHour, closesAtHour: value.closesAtHour, openDays: value.openDays }
+    : null,
+  escalation: value.escalationEnabled
+    ? {
+        toNumber: value.toNumber,
+        fromNumber: value.fromNumber,
+        ringSeconds: value.ringSeconds === "" ? null : value.ringSeconds,
+      }
+    : null,
 });
 
-/** The rules that only apply when a section is switched on. */
 export const publishSchema = publishForm
-  .superRefine((value, context) => {
-    if (value.hoursEnabled && value.openDays.length === 0) {
-      context.addIssue({
-        code: "custom",
-        path: ["openDays"],
-        message: "Pick at least one day, or turn off the hours restriction.",
-      });
-    }
-    if (!value.escalationEnabled) return;
-    if (!E164.test(value.toNumber)) {
-      context.addIssue({ code: "custom", path: ["toNumber"], message: E164_MESSAGE });
-    }
-    if (!E164.test(value.fromNumber)) {
-      context.addIssue({ code: "custom", path: ["fromNumber"], message: E164_MESSAGE });
-    }
-  })
-  .transform((value) => ({
-    name: value.name,
-    voiceId: value.voiceId,
-    speakingRate: value.speakingRate,
-    greeting: value.greeting,
-    persona: value.persona,
-    instructions: value.instructions,
-    keyterms: value.keyterms,
-    businessHours: value.hoursEnabled
-      ? { opensAtHour: value.opensAtHour, closesAtHour: value.closesAtHour, openDays: value.openDays }
-      : null,
-    escalation: value.escalationEnabled
-      ? {
-          toNumber: value.toNumber,
-          fromNumber: value.fromNumber,
-          ringSeconds: value.ringSeconds === "" ? null : value.ringSeconds,
-        }
-      : null,
-    note: value.note,
-  }));
+  .superRefine(checkSections)
+  .transform((value) => ({ ...toDocument(value), note: value.note }));
+
+/** Identical, minus the note. Saving is not a version and has nothing to explain. */
+export const draftSchema = draftForm.superRefine(checkSections).transform(toDocument);
+
+export type DraftBody = z.infer<typeof draftSchema>;
 
 export type PublishBody = z.infer<typeof publishSchema>;
 

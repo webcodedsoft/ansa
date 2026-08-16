@@ -20,10 +20,12 @@ export interface VersionRow {
 type Diff = Extract<DiffResult, { readonly ok: true }>["diff"];
 
 /**
- * One publish is one snapshot. Restoring an old one publishes a *new* version with that
- * snapshot's content — the API never rewrites history — so "Restore" here is really
- * "publish this again", which is why it goes through the same `rollback` action rather
- * than editing anything in place.
+ * One publish is one snapshot, and the API never rewrites history.
+ *
+ * Restore loads the old snapshot into the unpublished draft. It used to publish it outright,
+ * which made this list a second way to change what a caller hears without pressing Publish —
+ * the exact thing drafts were added to stop. So "Restore" here means "put version 4 back on
+ * my screen", and it is still one deliberate act that makes it real.
  *
  * No `<form>` here either, for the same reason as `TestCallCard`: this panel lives inside
  * the workspace's one publish `<form>`, and a nested `<form>` is invalid HTML. Restoring and
@@ -60,7 +62,15 @@ export const VersionsTab = ({ versions, liveVersion }: { readonly versions: read
       {(state.status === "failed" || state.status === "invalid") && state.message !== null && (
         <Notice tone="error">{state.message}</Notice>
       )}
-      {state.status === "succeeded" && <Notice tone="ok">Restored as version {state.data?.version}.</Notice>}
+      {/* Not "restored as version N". Nothing was published: the old configuration is now
+          sitting in the draft, and it answers a call only when somebody publishes it. Saying
+          otherwise would be the same lie the Save buttons used to tell. */}
+      {state.status === "succeeded" && (
+        <Notice tone="ok">
+          Version {state.data?.restoredFrom} is loaded into your unpublished changes. Nothing
+          has changed for callers yet — review it and publish when you are ready.
+        </Notice>
+      )}
 
       <Panel>
         <Table>

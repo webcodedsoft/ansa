@@ -2465,7 +2465,7 @@ depends on.
       gives a reason to expose it, because the goal is a conversation that is smooth by
       default rather than one an operator has to tune into being smooth.
 
-### Save and publish are two different acts (2026-08-16) — decided, half built
+### Save and publish are two different acts (2026-08-16)
 
 Reported as "the version changed without publish yet". Changing the voice writes nothing —
 verified in the browser, the server still reported the same version. What cut the version was
@@ -2495,23 +2495,52 @@ itself and the knowledge sources, because both are the organisation's and shared
 FAQ or correcting an endpoint URL must not require republishing every agent. That is also how
 they behave today, so nothing changes for them.
 
-- [ ] `agent_config_drafts`: one row per agent, the document as `jsonb`, with `organization_id`
+- [x] `agent_config_drafts`: one row per agent, the document as `jsonb`, with `organization_id`
       and RLS. Deliberately not mirrored columns — two copies of a twelve-field shape kept in
       step by hand is the failure 0031's own comment warns about, and the draft is compared
       against the live document by `diffConfigurations`, which already exists.
-- [ ] The call path does not change. `agent_config_for_number` keeps reading the live columns,
+- [x] The call path does not change. `agent_config_for_number` keeps reading the live columns,
       so a half-finished draft cannot reach a phone line by construction rather than by
       remembering. **An isolation test must prove exactly that** before the console can save
       into a draft.
-- [ ] `save_agent_draft`, `discard_agent_draft`, and `publish_agent_config` reading the draft
+- [x] `save_agent_draft`, `discard_agent_draft`, and publishing deleting the draft
       rather than its arguments. Publishing deletes the draft in the same transaction.
-- [ ] `PUT`/`DELETE /agents/{id}/draft`, and the agent read returning live and draft together
-      so the console can show which fields differ.
-- [ ] The console: tab saves write the draft, the header says how many unpublished changes
-      there are, and Discard sits beside Publish. Every tab renders draft over live.
-- [ ] Restore an old version loads it **into the draft** rather than publishing it. Anything
-      else re-opens the hole this slice closes — a way to go live without pressing Publish.
-      Flagged because it is a change to a button that exists and works today.
+- [x] `GET`/`PUT`/`DELETE /config/draft`, on `config` rather than `agents` because a draft is
+      a configuration document. Which agent it belongs to is resolved by
+      `app.live_agent_for_organization`, the same pick publishing makes, so a publish cannot
+      consume a draft belonging to a different agent than it published to.
+- [x] The console. Save, Publish and Discard sit in the header together, and Save is **not**
+      per tab: there is one endpoint and one document, so a button on the Voice panel would
+      save the greeting and the routing too — the same lie in a smaller font. The header is
+      already where the controls that act on the whole agent live.
+- [x] The form's own `action` is save, and Publish overrides it with `formAction` from inside
+      the dialog. Pressing return in a text field submits through the form's action, so the
+      default had to be the harmless one.
+- [x] The form is keyed on which configuration it is showing. Nearly every field is an
+      uncontrolled input reading `defaultValue`, and React does not reset those on re-render:
+      without the key, Discard removed the draft, refreshed the page, and left the discarded
+      text sitting in the boxes.
+- [x] Restore loads into the draft rather than publishing. It returns the draft, not a
+      version, and the confirmation says so. The provenance the old rollback used to write
+      into the note travels as `restored_from` and the publish dialog offers it.
+
+**Verified against the running app**, not only in tests: saved a draft, watched the live
+greeting stay `NULL` at version 6 in Postgres while the console showed the draft, discarded
+it, and watched the fields reset. Two defects the browser found that the tests had not:
+`updated_at` came back as a `Date` and the API's schema layer answered 500 on an otherwise
+successful save, and the uncontrolled fields kept discarded text. Both fixed, and the
+timestamp one now has the assertion the db test was missing.
+
+**Still to do on this slice.** The staged/immediate line is agreed but only half implemented:
+the publish-form document is staged, and the captured-field form, the agent's tool selection,
+its knowledge selection and its behaviour flags still write straight to live through their own
+endpoints. They belong in the draft by the rule already agreed, and until they are there the
+console is "some things wait for Publish and some do not", which is the state this slice
+exists to end.
+
+One more, smaller: `revalidatePath("/agents", "layout")` re-runs every fetch the agent page
+makes, so Save and Discard take several seconds to show. Correct, but slow enough to look
+broken; the toast is the only immediate feedback.
 
 Open question not yet settled: business hours are stored on `organizations` (0027) but are
 edited on the publish form, so they are org-level data inside an agent-level draft. The draft

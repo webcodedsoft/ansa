@@ -12,6 +12,7 @@ import {
 import { knowledgeFormSchema } from "./knowledge.schema";
 import {
   capturedFieldsSchema,
+  draftSchema,
   publishFormInput,
   publishSchema,
   testCallSchema,
@@ -21,6 +22,8 @@ import {
 import {
   createAgent,
   diffVersions,
+  discardDraft,
+  saveDraft,
   listVoices,
   readTools,
   createKnowledgeSource,
@@ -71,17 +74,83 @@ export const publish = async (_previous: PublishState, form: FormData): Promise<
   }
 };
 
-export type RollbackState = FormState<Published>;
+/**
+ * Saving, which is not publishing.
+ *
+ * The same form and the same validation as a publish, minus the note and minus the effect.
+ * Nothing a caller hears moves: the draft is a table no live read path consults, so a save
+ * during a call changes nothing about that call or the next one.
+ *
+ * The whole document goes, not the fields somebody touched. `POST /config/versions` rewrites
+ * rather than patches, so a partial draft would have to be merged against a live copy that
+ * may have moved since — and the merge is where the wrong greeting goes out.
+ */
+export interface Saved {
+  readonly updatedAt: string;
+}
 
+export type SaveDraftState = FormState<Saved>;
+
+export const saveDraftAction = async (
+  _previous: SaveDraftState,
+  form: FormData,
+): Promise<SaveDraftState> => {
+  const parsed = draftSchema.safeParse(publishFormInput(form));
+  if (!parsed.success) return invalidForm(parsed.error);
+
+  try {
+    const result = await saveDraft(parsed.data);
+    revalidatePath("/agents", "layout");
+    return succeededForm({ updatedAt: result.updatedAt });
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+};
+
+/**
+ * Throwing the unpublished work away.
+ *
+ * The first of the two ways back, and the one that leaves no trace: a draft nobody published
+ * never answered a call, so recording it as a version would make the version list mean two
+ * different things.
+ */
+export type DiscardDraftState = FormState<{ readonly discarded: boolean }>;
+
+export const discardDraftAction = async (
+  _previous: DiscardDraftState,
+): Promise<DiscardDraftState> => {
+  try {
+    const result = await discardDraft();
+    revalidatePath("/agents", "layout");
+    return succeededForm({ discarded: result.discarded });
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+};
+
+/** Restoring produces a draft, not a version, so it reports where the draft came from. */
+export interface Restored {
+  readonly restoredFrom: number;
+  readonly updatedAt: string;
+}
+
+export type RollbackState = FormState<Restored>;
+
+/**
+ * Puts an old version back on screen, unpublished.
+ *
+ * It used to publish, which made the version list a second way to change a live call without
+ * pressing Publish — the thing drafts exist to stop. What comes back is the draft, so the
+ * page can say "loaded, review it and publish" rather than "done".
+ */
 export const rollback = async (_previous: RollbackState, form: FormData): Promise<RollbackState> => {
   const version = Number(form.get("version"));
-  const note = form.get("note");
   if (!Number.isInteger(version)) return failedForm("That is not a version number.");
 
   try {
-    const result = await rollbackToVersion(version, typeof note === "string" && note !== "" ? note : undefined);
+    const restored = await rollbackToVersion(version);
     revalidatePath("/agents", "layout");
-    return succeededForm({ version: result.version.version, publishedAt: result.version.publishedAt });
+    return succeededForm({ restoredFrom: version, updatedAt: restored.updatedAt });
   } catch (error) {
     return failedForm(failureMessage(error));
   }

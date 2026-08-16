@@ -64,6 +64,7 @@ export const SubmitButton = ({
   size = "md",
   className,
   form,
+  formAction,
 }: {
   readonly pending: boolean;
   readonly idle: ReactNode;
@@ -78,10 +79,20 @@ export const SubmitButton = ({
    * further down the page with no client state and no second copy of the control.
    */
   readonly form?: string;
+  /**
+   * Submit the form through a different action than its own.
+   *
+   * For a form with two meanings — the agent workspace saves a draft or publishes it — where
+   * one of them has to be what the Enter key does. The form's own `action` is the harmless
+   * one and this overrides it on the deliberate button, rather than both buttons sharing an
+   * action that then has to work out which was pressed.
+   */
+  readonly formAction?: (payload: FormData) => void;
 }) => (
   <button
     type="submit"
     form={form}
+    formAction={formAction}
     disabled={pending}
     aria-busy={pending}
     className={cn(BASE, SIZES[size], VARIANTS[variant], className)}

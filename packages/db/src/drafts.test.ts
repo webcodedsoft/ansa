@@ -115,6 +115,17 @@ describe("a draft is not a call", () => {
     const draft = await withOrganization(ds, A, (scope) => loadAgentDraft(scope, agent));
     expect(draft?.config.greeting).toBe("A greeting nobody has published.");
   });
+
+  it("reports its timestamp as an ISO string, not a Date", async () => {
+    // The driver parses `timestamptz` into a `Date`, and the API's schema layer refuses
+    // anything that is not a string — so a row typed as `string` type-checks, saves
+    // correctly, and answers 500 on the way back out. This file missed it; the browser
+    // found it. Asserted here so the next timestamp cannot repeat it.
+    const agent = await agentOf(A);
+    const draft = await withOrganization(ds, A, (scope) => loadAgentDraft(scope, agent));
+    expect(typeof draft?.updatedAt).toBe("string");
+    expect(draft?.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/);
+  });
 });
 
 describe("one organisation cannot see another's unpublished work", () => {

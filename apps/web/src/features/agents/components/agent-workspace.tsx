@@ -11,8 +11,21 @@ import { useFormToast } from "@/stores/toast.store";
 
 import type { CallSummary } from "@/features/calls/calls.service";
 
-import { publish, type PublishState } from "../agents.actions";
-import type { AgentSummary, KnowledgeDocument, LiveConfiguration, readTools } from "../agents.service";
+import {
+  discardDraftAction,
+  publish,
+  saveDraftAction,
+  type DiscardDraftState,
+  type PublishState,
+  type SaveDraftState,
+} from "../agents.actions";
+import type {
+  AgentDraft,
+  AgentSummary,
+  KnowledgeDocument,
+  LiveConfiguration,
+  readTools,
+} from "../agents.service";
 import { ConversationTab } from "./conversation-tab";
 import { DataCapturedTab } from "./data-captured-tab";
 import { FlowCanvas } from "./flow-canvas";
@@ -24,8 +37,17 @@ import { VersionsTab, type VersionRow } from "./versions-tab";
 import { VoiceTab } from "./voice-tab";
 
 const START: PublishState = idleForm();
+const START_SAVE: SaveDraftState = idleForm();
+const START_DISCARD: DiscardDraftState = idleForm();
 
-/** The header's Publish button submits this form from outside it. */
+/**
+ * The one form every tab writes into, and the two things that can be done with it.
+ *
+ * Its own `action` is **save**, not publish. That is deliberate beyond tidiness: pressing
+ * return in any text field submits a form through its default action, and the default here
+ * has to be the harmless one. Publish overrides it with `formAction` from inside the dialog,
+ * which is the only place it can be reached from.
+ */
 const PUBLISH_FORM = "agent-publish";
 
 /**
@@ -72,6 +94,15 @@ interface AgentWorkspaceProps {
   /** The agent record itself — its name, its number, its own version. */
   readonly agent: AgentSummary;
   readonly liveConfiguration: LiveConfiguration;
+  /**
+   * Saved but not published, or null when there is nothing unpublished.
+   *
+   * Every tab renders this over the live configuration where it exists — otherwise somebody
+   * saves a greeting, comes back tomorrow, and is shown the old one with no sign their work
+   * survived. The live values stay reachable through the version list, which is where
+   * "what is actually answering the phone" belongs.
+   */
+  readonly draft: AgentDraft | null;
   readonly tools: Awaited<ReturnType<typeof readTools>>;
   readonly knowledge: KnowledgeDocument;
   readonly versions: readonly VersionRow[];
@@ -96,6 +127,7 @@ interface AgentWorkspaceProps {
 export const AgentWorkspace = ({
   agent,
   liveConfiguration,
+  draft,
   tools,
   knowledge,
   versions,
@@ -103,11 +135,23 @@ export const AgentWorkspace = ({
   attention,
   recentCalls,
 }: AgentWorkspaceProps) => {
-  const { config, published, operatorManaged } = liveConfiguration;
+  const { config: live, published, operatorManaged } = liveConfiguration;
   const [state, action, pending] = useActionState(publish, START);
-  const errors = state.fieldErrors;
+  const [saveState, save, saving] = useActionState(saveDraftAction, START_SAVE);
+  const [discardState, discard, discarding] = useActionState(discardDraftAction, START_DISCARD);
+
+  /* Whichever attempt answered last owns the field errors. Both schemas validate the same
+     fields, so a name rejected by a save is the same name a publish would reject. */
+  const errors = state.status === "idle" ? saveState.fieldErrors : state.fieldErrors;
+
+  /* What the tabs render. The draft where there is one, because that is the work in progress
+     — showing the live values under a header that says "unpublished changes" would be
+     showing somebody the opposite of what they are about to publish. */
+  const config = draft?.config ?? live;
 
   useFormToast(state, (data) => `Published version ${data.version}.`);
+  useFormToast(saveState, () => "Saved. Nothing is live until you publish.");
+  useFormToast(discardState, () => "Unpublished changes discarded.");
 
   const problemTabs = new Set(
     Object.keys(errors)
@@ -118,7 +162,13 @@ export const AgentWorkspace = ({
   /* Held here rather than left to the textarea, so closing the dialog and opening it again
      does not lose a sentence somebody already typed. */
   const [asking, setAsking] = useState(false);
-  const [note, setNote] = useState("");
+  /* Offered rather than imposed: when the draft was loaded from a version, that is the most
+     likely honest note, and it is the provenance the old rollback used to write by itself. */
+  const [note, setNote] = useState(
+    draft?.restoredFrom === undefined || draft.restoredFrom === null
+      ? ""
+      : `Restored version ${draft.restoredFrom}.`,
+  );
   /**
    * What the dialog does once the action answers.
    *
@@ -165,6 +215,12 @@ export const AgentWorkspace = ({
                 ? `· version ${agent.configVersion}, never published`
                 : `· version ${agent.configVersion}, published ${dayLabel(published.publishedAt).toLowerCase() === "today" ? "today" : when(published.publishedAt)} by ${published.publishedBy}`}
             </span>
+            {/* The whole point of the slice, said on the page: there is work here that is
+                not answering the phone. Without this line a saved draft is invisible, and
+                "why is the agent still saying the old thing" has no answer on screen. */}
+            {draft !== null && (
+              <Tag tone="warn">unpublished changes · saved {when(draft.updatedAt)}</Tag>
+            )}
           </div>
         </div>
         <div className="flex flex-none flex-wrap items-center gap-2">
@@ -182,13 +238,33 @@ export const AgentWorkspace = ({
           >
             Test call
           </Link>
-          {/* Opens the dialog rather than submitting. Publishing is the one action here that
-              needs something from the person first, and asking for it at the moment they ask
-              to publish is the only way to ask without the question standing on the page for
-              the whole visit. The actual submit is the dialog's own button. */}
+          {/* Discard first, and only when there is something to discard. A button offering to
+              throw away work that does not exist is furniture, and one sitting there
+              permanently beside Publish invites the click it should not get. */}
+          {draft !== null && (
+            <Button
+              onClick={() => discard()}
+              disabled={discarding || saving || pending}
+              aria-busy={discarding}
+            >
+              {discarding ? "Discarding…" : "Discard changes"}
+            </Button>
+          )}
+
+          {/* Save is a submit, so it carries every field on every tab. Publish is not: it
+              opens the dialog, because publishing is the one action here that needs something
+              from the person first, and asking at the moment they ask to publish is the only
+              way to ask without the question standing on the page all visit. */}
+          <SubmitButton
+            variant="secondary"
+            pending={saving}
+            idle="Save"
+            busy="Saving…"
+            form={PUBLISH_FORM}
+          />
           <Button
             variant="primary"
-            disabled={pending}
+            disabled={pending || saving || discarding}
             aria-busy={pending}
             onClick={() => setAsking(true)}
           >
@@ -204,7 +280,16 @@ export const AgentWorkspace = ({
         </Notice>
       )}
 
-      <form id={PUBLISH_FORM} action={action} className="mt-3.5">
+      {/* Keyed on which configuration is being shown, so saving or discarding remounts the
+          fields. Nearly everything below is an uncontrolled input reading `defaultValue`, and
+          React does not reset those on re-render — without this, Discard removed the draft,
+          refreshed the page, and left the discarded text sitting in the boxes. */}
+      <form
+        key={draft === null ? `live-${agent.configVersion}` : `draft-${draft.updatedAt}`}
+        id={PUBLISH_FORM}
+        action={save}
+        className="mt-3.5"
+      >
         {(state.status === "failed" || state.status === "invalid") && (
           <Notice tone="error" className="mb-3.5">
             {state.message}
@@ -230,7 +315,7 @@ export const AgentWorkspace = ({
               label: "Knowledge",
               panel: <KnowledgeTab agent={agent} knowledge={knowledge} />,
             },
-            { id: "voice", label: "Voice", problem: problemTabs.has("voice"), panel: <VoiceTab config={config} agent={agent} errors={errors} publishForm={PUBLISH_FORM} /> },
+            { id: "voice", label: "Voice", problem: problemTabs.has("voice"), panel: <VoiceTab config={config} errors={errors} publishForm={PUBLISH_FORM} /> },
             { id: "routing", label: "Routing & hours", problem: problemTabs.has("routing"), panel: <RoutingTab config={config} operatorManaged={operatorManaged} errors={errors} /> },
             { id: "versions", label: "Versions", panel: <VersionsTab versions={versions} liveVersion={agent.configVersion} /> },
           ]}
@@ -256,6 +341,7 @@ export const AgentWorkspace = ({
               idle="Publish"
               busy="Publishing…"
               form={PUBLISH_FORM}
+              formAction={action}
             />
           </>
         }

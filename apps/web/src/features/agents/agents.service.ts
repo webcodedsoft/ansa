@@ -1,6 +1,6 @@
 import { api } from "@/lib/api/server";
 
-import type { PublishBody, TestCallInput } from "./agents.schema";
+import type { DraftBody, PublishBody, TestCallInput } from "./agents.schema";
 
 /**
  * Everything this app does with the agent's configuration.
@@ -85,8 +85,26 @@ export const getVersion = async (version: number) => (await api()).config.versio
 export const diffVersions = async (from: number, to: number) =>
   (await api()).config.diff({ query: { from, to } });
 
-export const rollbackToVersion = async (version: number, note?: string) =>
-  (await api()).config.rollback({ path: { version }, body: note === undefined ? {} : { note } });
+/**
+ * Puts a published version back on screen. It does not publish it.
+ *
+ * Named `rollbackToVersion` still, because the route is still `rollback` and renaming the
+ * wrapper without renaming the route would be one more name for the same thing. What changed
+ * is where it lands: the draft, so somebody sees what they are reinstating before it answers
+ * a call.
+ */
+export const rollbackToVersion = async (version: number) =>
+  (await api()).config.rollback({ path: { version } });
+
+/** Unpublished work, or null. Read alongside the live configuration on every tab. */
+export const readDraft = async () => (await api()).config.readDraft();
+
+export type AgentDraft = NonNullable<Awaited<ReturnType<typeof readDraft>>["draft"]>;
+
+/** Saves without making anything live. The whole document, as a publish is. */
+export const saveDraft = async (body: DraftBody) => (await api()).config.saveDraft({ body });
+
+export const discardDraft = async () => (await api()).config.discardDraft();
 
 export const listGuarantees = async () => (await api()).config.listGuarantees();
 

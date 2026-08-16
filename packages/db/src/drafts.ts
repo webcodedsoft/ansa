@@ -34,7 +34,9 @@ interface DraftRow {
   readonly config: AgentConfigFields;
   readonly updated_by: string | null;
   readonly restored_from: number | null;
-  readonly updated_at: string;
+  /* A `Date`, not a string: the driver parses `timestamptz` and the API's schema layer
+     rejects anything that is not an ISO string, which is how this was caught. */
+  readonly updated_at: Date;
 }
 
 /**
@@ -80,7 +82,7 @@ export const loadAgentDraft = async (
     config: row.config,
     updatedBy: row.updated_by,
     restoredFrom: row.restored_from,
-    updatedAt: row.updated_at,
+    updatedAt: row.updated_at.toISOString(),
   };
 };
 
@@ -101,11 +103,11 @@ export const saveAgentDraft = async (
      again by the next edit — once somebody changes a restored draft it is their work. */
   restoredFrom: number | null,
 ): Promise<string | null> => {
-  const rows = await scope.query<{ save_agent_draft: string | null }>(
+  const rows = await scope.query<{ save_agent_draft: Date | null }>(
     `select app.save_agent_draft($1::uuid, $2::jsonb, $3::uuid, $4::integer) as save_agent_draft`,
     [agentId, JSON.stringify(config), author, restoredFrom],
   );
-  return rows[0]?.save_agent_draft ?? null;
+  return rows[0]?.save_agent_draft?.toISOString() ?? null;
 };
 
 /**

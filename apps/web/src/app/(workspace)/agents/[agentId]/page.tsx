@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import {
   currentConfiguration,
+  readDraft,
   findAgent,
   listVersions,
   readinessReport,
@@ -105,8 +106,11 @@ const AgentWorkspacePage = async ({
   const since = new Date(now - WINDOW_DAYS * DAY_MS).toISOString();
   const previousStart = new Date(now - 2 * WINDOW_DAYS * DAY_MS).toISOString();
 
-  const [liveConfiguration, tools, knowledge, readiness, versionPage] = await Promise.all([
+  const [liveConfiguration, unpublished, tools, knowledge, readiness, versionPage] = await Promise.all([
     currentConfiguration(),
+    // Read beside the live configuration rather than instead of it. Every tab shows the
+    // draft where there is one, and the header needs both to say what is unpublished.
+    readDraft(),
     readTools(),
     readKnowledge(),
     readinessReport(),
@@ -202,6 +206,7 @@ const AgentWorkspacePage = async ({
     <AgentWorkspace
       agent={agent}
       liveConfiguration={liveConfiguration}
+      draft={unpublished.draft}
       tools={tools}
       knowledge={knowledge}
       versions={versionPage.items}

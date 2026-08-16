@@ -16,7 +16,7 @@ import {
 import { cn } from "@/lib/cn";
 
 import { loadVoiceCatalogue } from "../agents.actions";
-import type { AgentSummary, LiveConfiguration, VoiceChoice } from "../agents.service";
+import type { LiveConfiguration, VoiceChoice } from "../agents.service";
 
 /**
  * How the agent sounds.
@@ -44,7 +44,6 @@ import type { AgentSummary, LiveConfiguration, VoiceChoice } from "../agents.ser
 
 interface VoiceTabProps {
   readonly config: LiveConfiguration["config"];
-  readonly agent: AgentSummary;
   readonly errors: Readonly<Record<string, string>>;
   /** The id of the page's publish form, which the voice is part of. */
   readonly publishForm: string;
@@ -405,12 +404,16 @@ const Picker = ({
   );
 };
 
-export const VoiceTab = ({ config, agent, errors, publishForm }: VoiceTabProps) => {
+export const VoiceTab = ({ config, errors, publishForm }: VoiceTabProps) => {
   const [catalogue, setCatalogue] = useState<Catalogue>({ status: "loading" });
   /* Held here rather than inside the rate card so the sample can be played at it. Trying a
      rate you cannot hear is guessing, and 0.85 versus 1.0 is not a thing anybody knows the
      sound of from the number. */
-  const [rate, setRate] = useState(agent.speakingRate ?? 1);
+  /* From the configuration, not from the agent row. 0037 moved the rate into the published
+     document, and with a draft in play the agent row holds what is live while the document
+     holds what is being edited — reading the row would show somebody the pace they had
+     before they changed it. */
+  const [rate, setRate] = useState(config.speakingRate ?? 1);
   const [voiceId, setVoiceId] = useState(config.voiceId ?? "");
 
   useEffect(() => {

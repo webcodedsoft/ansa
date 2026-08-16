@@ -801,6 +801,97 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       }>(options, "GET", `/api/v1/config/diff`, input),
 
     /**
+     * Configuration saved but not published
+     * Null when there is nothing unpublished, which is the ordinary state rather than a missing resource. Nothing on a call reads this: the live read path takes the agent's own columns and cannot see a draft at all.
+     */
+    readDraft: () =>
+      send<{
+        readonly draft: {
+        readonly config: {
+        readonly name: string;
+        readonly voiceId: string | null;
+        readonly speakingRate: number | null;
+        readonly greeting: string | null;
+        readonly persona: string | null;
+        readonly instructions: string | null;
+        readonly keyterms: readonly (string)[];
+        readonly businessHours: {
+        readonly opensAtHour: number;
+        readonly closesAtHour: number;
+        readonly openDays: readonly (number)[];
+      } | null;
+        readonly escalation: {
+        readonly toNumber: string;
+        readonly fromNumber: string;
+        readonly ringSeconds: number | null;
+      } | null;
+      };
+        readonly updatedBy: string | null;
+        readonly restoredFrom: number | null;
+        readonly updatedAt: string;
+      } | null;
+      }>(options, "GET", `/api/v1/config/draft`, {}),
+
+    /**
+     * Save configuration without making it live
+     * Replaces the whole draft, for the same reason a publication is whole: a partial draft would have to be merged against a live document that may have moved since, and the merge is where the wrong greeting goes out. Validated exactly as a publish is, so a draft cannot be saved that could never be published. Changes nothing about a call in progress or a call that arrives a second later.
+     */
+    saveDraft: (input: {
+        readonly body: {
+          readonly name: string;
+          readonly voiceId: string | null;
+          readonly speakingRate: number | null;
+          readonly greeting: string | null;
+          readonly persona: string | null;
+          readonly instructions: string | null;
+          readonly keyterms: readonly (string)[];
+          readonly businessHours: {
+          readonly opensAtHour: number;
+          readonly closesAtHour: number;
+          readonly openDays: readonly (number)[];
+        } | null;
+          readonly escalation: {
+          readonly toNumber: string;
+          readonly fromNumber: string;
+          readonly ringSeconds: number | null;
+        } | null;
+        };
+      }) =>
+      send<{
+        readonly config: {
+        readonly name: string;
+        readonly voiceId: string | null;
+        readonly speakingRate: number | null;
+        readonly greeting: string | null;
+        readonly persona: string | null;
+        readonly instructions: string | null;
+        readonly keyterms: readonly (string)[];
+        readonly businessHours: {
+        readonly opensAtHour: number;
+        readonly closesAtHour: number;
+        readonly openDays: readonly (number)[];
+      } | null;
+        readonly escalation: {
+        readonly toNumber: string;
+        readonly fromNumber: string;
+        readonly ringSeconds: number | null;
+      } | null;
+      };
+        readonly updatedBy: string | null;
+        readonly restoredFrom: number | null;
+        readonly updatedAt: string;
+      }>(options, "PUT", `/api/v1/config/draft`, input),
+
+    /**
+     * Throw away unpublished work
+     * The first of the two ways back. This one forgets what has been saved since the last publish and leaves no trace, because a draft nobody published never answered a call and is not part of the history. The other way back is rolling a published version into the draft, which does go through the version list. False means there was nothing to discard.
+     */
+    discardDraft: () =>
+      send<{
+        readonly discarded: boolean;
+      }>(options, "DELETE", `/api/v1/config/draft`, {}),
+
+    /**
      * What this organisation cannot configure, and where each rule is enforced
      * Generated from the list the platform actually enforces, so it cannot describe a rule that stopped being enforced. A publication tripping one of these is refused with 422 naming the id — and the rule would have held anyway, because none of them is held up by the prompt.
      */
@@ -930,23 +1021,15 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       }>(options, "GET", `/api/v1/config/versions/${encodeURIComponent(input.path.version)}`, input),
 
     /**
-     * Publish an earlier version's configuration as a new version
-     * Never rewrites history: the version being rolled back to stays exactly as it was and a new version number is issued, so a call that recorded an older one can still be explained. Runs the same guarantee and keyterm checks a publish does and answers 422 with the field named if the stored version would not be accepted today. Tool and event configuration is carried forward from the live document, not from the snapshot — the version table does not hold it.
+     * Load an earlier version's configuration into the draft
+     * Does not publish. The stored version is copied into the unpublished draft so it can be reviewed and then published deliberately — publishing straight from here would be a second way to change a live call without pressing Publish. Never rewrites history: the version being restored stays exactly as it was, so a call that recorded it can still be explained. Runs the same guarantee and keyterm checks a publish does and answers 422 with the field named if the stored version would not be accepted today.
      */
     rollback: (input: {
         readonly path: {
           readonly version: number;
         };
-        readonly body: {
-          readonly note?: string;
-        };
       }) =>
       send<{
-        readonly version: {
-        readonly version: number;
-        readonly note: string | null;
-        readonly publishedBy: string;
-        readonly publishedAt: string;
         readonly config: {
         readonly name: string;
         readonly voiceId: string | null;
@@ -966,12 +1049,9 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly ringSeconds: number | null;
       } | null;
       };
-      };
-        readonly vocabulary: {
-        readonly base: readonly (string)[];
-        readonly effective: readonly (string)[];
-        readonly cap: number;
-      };
+        readonly updatedBy: string | null;
+        readonly restoredFrom: number | null;
+        readonly updatedAt: string;
       }>(options, "POST", `/api/v1/config/versions/${encodeURIComponent(input.path.version)}/rollback`, input),
   },
 
