@@ -5,6 +5,7 @@ export * from "./accounts";
 export * from "./call-page";
 export * from "./agents";
 export * from "./call-config";
+export * from "./drafts";
 export * from "./organization-config";
 export * from "./organizations";
 export * from "./onboarding";
