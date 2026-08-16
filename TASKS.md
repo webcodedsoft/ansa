@@ -2346,6 +2346,29 @@ Also checked: the two `from agents` reads with no `deleted_at` filter are `listA
 `findAgent`, and both are deliberate. A call log needs a retired agent's name, and the API
 says so where somebody choosing an agent would read it.
 
+### The event sweeper's DNS failures (2026-08-16)
+
+Diagnosed rather than fixed, because there was nothing wrong with the resolution. All four
+database URLs share one hostname, `MIGRATION_DIRECT_URL` was working throughout, and the
+host resolves consistently now — the laptop lost its network for four minutes. The eighteen
+`getaddrinfo ENOTFOUND` lines stopped on their own at 07:25 and nothing has failed since.
+
+The sweep is inside a `catch` precisely so an outage is not a restart, and that worked. What
+did not work was being able to tell:
+
+- [x] **It now says when it comes back.** The log ended on an error and stayed there, so "is
+      it still broken" could only be answered by comparing the last timestamp against the
+      clock — which is how this was actually diagnosed, and is not a thing anyone should have
+      to do. Recovery logs once, with how many sweeps it was out for.
+- [x] **Repeats are collapsed.** Eighteen identical lines in four minutes; an hour would be
+      two hundred and forty, with the next real failure somewhere in the middle. The first
+      is logged in full and repeats of the same reason are counted. A *different* reason logs
+      again, because a second failure arriving during the first is news rather than a repeat.
+- [x] Five tests, including that a healthy sweeper stays silent — recovery is only news
+      after a failure. Verified against a running API: twenty seconds, zero sweep lines.
+
+Nothing was wrong with the connection handling, and nothing about it changed.
+
 ### The call that is still owed
 
 `packages/db/seeds/dev-organization.mjs` had rotted — it wrote `organizations.dialled_number`,

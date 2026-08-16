@@ -52,6 +52,8 @@ export class EventDeliverySweeper implements OnApplicationBootstrap, OnApplicati
   private timer: NodeJS.Timeout | null = null;
   private running = false;
   private sweeps = 0;
+  private lastFailure: string | null = null;
+  private consecutiveFailures = 0;
   private readonly breaker: CircuitBreaker = createCircuitBreaker();
 
   constructor(
@@ -85,6 +87,43 @@ export class EventDeliverySweeper implements OnApplicationBootstrap, OnApplicati
    * Never throws and never lets one delivery's problem become another's: this runs beside
    * live calls and a failure at 4am is not worth a restart.
    */
+  /**
+   * One line for an outage, not one line every fifteen seconds.
+   *
+   * A laptop losing its network produced eighteen identical `getaddrinfo ENOTFOUND` lines in
+   * four minutes; an hour of it would produce two hundred and forty, and the next real
+   * failure would be somewhere in the middle of them. The first is logged in full, and
+   * repeats of the *same* reason are counted instead. A different reason logs again, because
+   * a new failure during an outage is news.
+   */
+  private failing(reason: string): void {
+    if (reason === this.lastFailure) {
+      this.consecutiveFailures += 1;
+      return;
+    }
+    this.lastFailure = reason;
+    this.consecutiveFailures = 1;
+    this.log.error("event delivery sweep failed", { error: reason });
+  }
+
+  /**
+   * Says so when it comes back.
+   *
+   * Without this the log ends on an error and stays that way, so "is it still broken" can
+   * only be answered by comparing the last timestamp against the clock — which is how this
+   * outage was diagnosed, and is not a thing anyone should have to do. Deliveries queued
+   * during the outage are still due, so recovery means they go out.
+   */
+  private recovered(): void {
+    if (this.lastFailure === null) return;
+    this.log.info("event delivery sweep recovered", {
+      after: this.consecutiveFailures,
+      wasFailing: this.lastFailure,
+    });
+    this.lastFailure = null;
+    this.consecutiveFailures = 0;
+  }
+
   async sweep(): Promise<{ readonly delivered: number; readonly failed: number; readonly retrying: number }> {
     const db = this.dataSource;
     if (db === null || this.running) return { delivered: 0, failed: 0, retrying: 0 };
@@ -111,10 +150,9 @@ export class EventDeliverySweeper implements OnApplicationBootstrap, OnApplicati
         const removed = await purgeSettledEventDeliveries(db, KEEP_SETTLED_DAYS);
         if (removed > 0) this.log.info("purged settled event deliveries", { removed });
       }
+      this.recovered();
     } catch (error) {
-      this.log.error("event delivery sweep failed", {
-        error: error instanceof Error ? error.message : String(error),
-      });
+      this.failing(error instanceof Error ? error.message : String(error));
     } finally {
       this.running = false;
     }
