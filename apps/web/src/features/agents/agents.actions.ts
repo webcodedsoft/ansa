@@ -24,7 +24,9 @@ import {
   listVoices,
   readTools,
   createKnowledgeSource,
+  readKnowledgeSource,
   removeKnowledgeSource,
+  replaceKnowledgeUnits,
   setAgentKnowledge,
   sampleEndpoint,
   tryTool,
@@ -705,6 +707,75 @@ export const saveSpeakingRateAction = async (
     return succeededForm(
       { speakingRate: saved.speakingRate },
       speakingRate === null ? "Back to the voice's own pace." : `Speaking rate ${speakingRate}×.`,
+    );
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+};
+
+
+export type SourceUnits =
+  | { readonly ok: true; readonly detail: Awaited<ReturnType<typeof readKnowledgeSource>> }
+  | { readonly ok: false; readonly message: string };
+
+/**
+ * The pieces a source holds, loaded when somebody opens it.
+ *
+ * Not fetched with the list: a source can hold two thousand units, and the tab exists mostly
+ * to tick which sources an agent uses. Loading every unit of every source to render a count
+ * would make the common case pay for the rare one.
+ */
+export const loadKnowledgeUnits = async (sourceId: string): Promise<SourceUnits> => {
+  try {
+    return { ok: true, detail: await readKnowledgeSource(sourceId) };
+  } catch (error) {
+    return { ok: false, message: failureMessage(error) };
+  }
+};
+
+/**
+ * Replace what a source holds.
+ *
+ * `expectedUpdatedAt` is the source as it was when the editor opened. Two people with the
+ * same page open is ordinary, and a source is shared by every agent using it — so the loser
+ * of that race is told to re-read rather than silently overwriting what a colleague just
+ * published to several live lines.
+ */
+export const saveKnowledgeUnitsAction = async (
+  _previous: KnowledgeState,
+  form: FormData,
+): Promise<KnowledgeState> => {
+  const sourceId = String(form.get("sourceId") ?? "");
+  const expectedUpdatedAt = String(form.get("expectedUpdatedAt") ?? "");
+  if (sourceId === "" || expectedUpdatedAt === "") {
+    return failedForm("The form could not be read. Reload the page and try again.");
+  }
+
+  let units: { question: string | null; body: string }[];
+  try {
+    units = JSON.parse(String(form.get("unitsJson") ?? "[]")) as {
+      question: string | null;
+      body: string;
+    }[];
+  } catch {
+    return failedForm("The form could not be read. Reload the page and try again.");
+  }
+
+  /* An empty source is not an error the API refuses, and it is almost never what somebody
+     meant — retrieval would match nothing and the agent would say it does not know, which
+     looks identical to the source having been deleted. Retiring it says that on purpose. */
+  if (units.length === 0) {
+    return failedForm(
+      "A source with nothing in it retrieves nothing. Retire it instead, which says so plainly.",
+    );
+  }
+
+  try {
+    const saved = await replaceKnowledgeUnits(sourceId, expectedUpdatedAt, units);
+    revalidatePath("/agents", "layout");
+    return succeededForm(
+      { sourceId },
+      `Saved ${saved.unitCount} piece${saved.unitCount === 1 ? "" : "s"}.`,
     );
   } catch (error) {
     return failedForm(failureMessage(error));

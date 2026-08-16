@@ -1237,6 +1237,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
           readonly sourceId: string;
         };
         readonly body: {
+          readonly expectedUpdatedAt: string;
           readonly units: readonly ({
           readonly question?: string | null;
           readonly body: string;

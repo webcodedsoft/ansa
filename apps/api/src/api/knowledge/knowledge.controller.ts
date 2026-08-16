@@ -7,7 +7,16 @@ import {
   setKnowledgeUnits,
   type KnowledgeSourceSummary,
 } from "@ansa/db";
-import { Controller, Delete, Get, Inject, NotFoundException, Post, Put } from "@nestjs/common";
+import {
+  ConflictException,
+  Controller,
+  Delete,
+  Get,
+  Inject,
+  NotFoundException,
+  Post,
+  Put,
+} from "@nestjs/common";
 
 import { Endpoint } from "../http/endpoint";
 import { apiRoute, FromBody, FromPath } from "../http/request";
@@ -80,7 +89,17 @@ const newSource = object({
   units: list(unit, { maxItems: MAX_UNITS }),
 });
 
-const replacementUnits = object({ units: list(unit, { maxItems: MAX_UNITS }) });
+const replacementUnits = object({
+  /**
+   * The source's `updatedAt` as the edit was made against.
+   *
+   * Two people with the same page open is the ordinary case, and a source is shared by every
+   * agent using it — so a silent last-write-wins here rewrites what a colleague just
+   * published to several live lines. The loser of the race hears about it instead.
+   */
+  expectedUpdatedAt: timestamp(),
+  units: list(unit, { maxItems: MAX_UNITS }),
+});
 const sourcePath = object({ sourceId: text({ maxLength: 64 }) });
 const removed = object({ deleted: flag() });
 
@@ -170,14 +189,26 @@ export class KnowledgeController {
     @FromPath() path: Infer<typeof sourcePath>,
     @FromBody() body: Infer<typeof replacementUnits>,
   ): Promise<Infer<typeof source>> {
-    const saved = await this.db.tx((scope) =>
-      setKnowledgeUnits(
+    const saved = await this.db.tx(async (scope) => {
+      // Read and compare inside the same transaction as the write, so the check cannot pass
+      // and then be overtaken between the two statements.
+      const current = await findKnowledgeSource(scope, path.sourceId);
+      if (current === null) return null;
+      if (current.updatedAt !== body.expectedUpdatedAt) return "conflict" as const;
+
+      return setKnowledgeUnits(
         scope,
         path.sourceId,
         body.units.map((entry) => ({ question: entry.question ?? null, body: entry.body })),
-      ),
-    );
+      );
+    });
+
     if (saved === null) throw new NotFoundException();
+    if (saved === "conflict") {
+      throw new ConflictException(
+        "this source changed since you opened it; re-read it and make the edit again",
+      );
+    }
     return toResponse(saved);
   }
 

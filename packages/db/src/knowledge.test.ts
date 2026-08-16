@@ -381,3 +381,55 @@ describe("organization isolation", () => {
     ).rejects.toThrow(/row-level security/i);
   });
 });
+
+/**
+ * The stamp an edit is made against.
+ *
+ * `PUT /knowledge/{id}/units` refuses a save whose `expectedUpdatedAt` no longer matches, and
+ * that check is only worth anything if the column actually moves when the units change. It
+ * moves by trigger (0031), which is exactly the kind of thing that works until somebody adds
+ * a write path that bypasses it.
+ */
+describe("updated_at, which optimistic concurrency rests on", () => {
+  it("moves when the units are replaced", async () => {
+    const sourceId = await freshSource();
+    const before = await withOrganization(db, ORGANIZATION, async (scope) =>
+      (await findKnowledgeSource(scope, sourceId))?.updatedAt,
+    );
+
+    // The trigger uses `now()`, which is the transaction's clock — two writes inside one
+    // transaction would carry one stamp, so this waits for a new one.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await withOrganization(db, ORGANIZATION, (scope) =>
+      setKnowledgeUnits(scope, sourceId, [{ question: null, body: "Something else entirely." }]),
+    );
+
+    const after = await withOrganization(db, ORGANIZATION, async (scope) =>
+      (await findKnowledgeSource(scope, sourceId))?.updatedAt,
+    );
+
+    expect(before).toBeDefined();
+    expect(after).not.toBe(before);
+  });
+
+  it("is what a second editor would have been holding", async () => {
+    /* The race the guard exists for: two people open the same source, both save. The second
+       save carries the stamp from before the first, so the API can tell it apart from an
+       edit made against what is actually stored. */
+    const sourceId = await freshSource();
+    const opened = await withOrganization(db, ORGANIZATION, async (scope) =>
+      (await findKnowledgeSource(scope, sourceId))?.updatedAt,
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await withOrganization(db, ORGANIZATION, (scope) =>
+      setKnowledgeUnits(scope, sourceId, [{ question: null, body: "First writer wins." }]),
+    );
+
+    const now = await withOrganization(db, ORGANIZATION, async (scope) =>
+      (await findKnowledgeSource(scope, sourceId))?.updatedAt,
+    );
+
+    expect(opened).not.toBe(now);
+  });
+});

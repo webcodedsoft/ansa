@@ -122,6 +122,21 @@ export const createKnowledgeSource = async (body: {
   units: readonly { question: string | null; body: string }[];
 }) => (await api()).knowledge.create({ body: body as never });
 
+export const readKnowledgeSource = async (sourceId: string) =>
+  (await api()).knowledge.read({ path: { sourceId } });
+
+export type KnowledgeSourceDetail = Awaited<ReturnType<typeof readKnowledgeSource>>;
+
+export const replaceKnowledgeUnits = async (
+  sourceId: string,
+  expectedUpdatedAt: string,
+  units: readonly { question: string | null; body: string }[],
+) =>
+  (await api()).knowledge.replaceUnits({
+    path: { sourceId },
+    body: { expectedUpdatedAt, units } as never,
+  });
+
 export const removeKnowledgeSource = async (sourceId: string) =>
   (await api()).knowledge.remove({ path: { sourceId } });
 

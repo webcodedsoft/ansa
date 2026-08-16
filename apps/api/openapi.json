@@ -8249,6 +8249,10 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "expectedUpdatedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
                   "units": {
                     "type": "array",
                     "items": {
@@ -8276,6 +8280,7 @@
                   }
                 },
                 "required": [
+                  "expectedUpdatedAt",
                   "units"
                 ],
                 "additionalProperties": false

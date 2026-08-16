@@ -2247,8 +2247,21 @@ in the one dispatch path, grounded-only answering, ingestion endpoints and the t
 
 **Still open.**
 
-- [ ] No editing of an existing source's units in the console — `PUT /knowledge/{id}/units`
-      exists and nothing calls it. Retire and re-add is the only path.
+- [x] **Editing a source's units, in the console** (2026-08-16). Units are edited directly
+      rather than round-tripped back to pasted text: what is stored is units, and re-deriving
+      text so it could be re-split would let the splitter reshape pieces nobody touched — a
+      document whose passages were adjusted by hand would revert on the next save. Add,
+      remove and reorder, because position is the tie-break and the reading order.
+- [x] The replace is guarded by `expectedUpdatedAt`, compared inside the same transaction as
+      the write. Two people with the same page open is ordinary, and a source is shared by
+      every agent using it, so a silent last-write-wins rewrites what a colleague just
+      published to several live lines.
+- [x] **The guard was decorative and a test caught it.** `setKnowledgeUnits` writes child
+      rows and the 0031 trigger fires on `knowledge_sources`, so the parent stamp never
+      moved — `expectedUpdatedAt` would have matched forever and both editors would have
+      saved. It now touches the parent, and two db tests assert the stamp moves.
+- [x] Saving an empty source is refused with a reason: retrieval matching nothing sounds
+      exactly like the source having been deleted, and retiring it says so on purpose.
 - [ ] Retrieval has never run on a real call. Keyword search over English `tsvector` is
       untested against Nigerian phrasing and Pidgin, which is the whole question the
       no-embeddings decision was deferring.

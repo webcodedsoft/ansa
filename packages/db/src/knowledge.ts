@@ -277,6 +277,19 @@ export const setKnowledgeUnits = async (
   if (live.length === 0) return null;
 
   await replaceUnits(scope, sourceId, units);
+
+  /* Touch the parent so its `updated_at` moves.
+     The 0031 trigger fires on `knowledge_sources`, and replacing units writes only child
+     rows — so without this the source's stamp stays at whatever it was when it was created.
+     That is not cosmetic: `PUT /knowledge/{id}/units` refuses a save whose
+     `expectedUpdatedAt` no longer matches, and a stamp that never moves makes that check
+     pass for every stale editor. Two people would both save and the second would silently
+     win. Found by a test asserting the stamp changes, which it did not. */
+  await scope.mutate(
+    `update knowledge_sources set updated_at = now() where id = $1 returning id`,
+    [sourceId],
+  );
+
   return findKnowledgeSource(scope, sourceId);
 };
 

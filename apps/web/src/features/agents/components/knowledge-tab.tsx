@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
 
 import {
   Button,
@@ -25,9 +25,11 @@ import { when } from "@/lib/format";
 import { useFormToast } from "@/stores/toast.store";
 
 import {
+  loadKnowledgeUnits,
   removeKnowledgeSourceAction,
   saveAgentKnowledgeAction,
   saveKnowledgeSourceAction,
+  saveKnowledgeUnitsAction,
   type KnowledgeState,
 } from "../agents.actions";
 import type { AgentSummary, KnowledgeDocument } from "../agents.service";
@@ -78,9 +80,13 @@ export const KnowledgeTab = ({
   readonly knowledge: KnowledgeDocument;
 }) => {
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
   const sources = knowledge.items;
 
   if (adding) return <AddSource onDone={() => setAdding(false)} />;
+  if (editing !== null) {
+    return <EditSource sourceId={editing} onDone={() => setEditing(null)} />;
+  }
 
   return (
     <Stack>
@@ -104,7 +110,7 @@ export const KnowledgeTab = ({
           </EmptyState>
         </Panel>
       ) : (
-        <Selection agent={agent} sources={sources} />
+        <Selection agent={agent} sources={sources} onEdit={setEditing} />
       )}
 
       <Notice tone="warn">
@@ -124,9 +130,11 @@ export const KnowledgeTab = ({
 const Selection = ({
   agent,
   sources,
+  onEdit,
 }: {
   readonly agent: AgentSummary;
   readonly sources: KnowledgeDocument["items"];
+  readonly onEdit: (sourceId: string) => void;
 }) => {
   const [state, action, pending] = useActionState(saveAgentKnowledgeAction, START);
   const [chosen, setChosen] = useState<ReadonlySet<string>>(
@@ -186,7 +194,10 @@ const Selection = ({
                     {when(source.updatedAt)}
                   </Td>
                   <Td>
-                    <div className="flex justify-end">
+                    <div className="flex justify-end gap-2">
+                      <Button variant="secondary" onClick={() => onEdit(source.sourceId)}>
+                        Edit
+                      </Button>
                       <RetireSource sourceId={source.sourceId} name={source.name} />
                     </div>
                   </Td>
@@ -353,6 +364,223 @@ const AddSource = ({ onDone }: { readonly onDone: () => void }) => {
           <span className="text-[12.5px] text-[var(--ink-3)]">
             Storing does not give it to any agent. Tick it on the list afterwards.
           </span>
+        </div>
+      </Stack>
+    </form>
+  );
+};
+
+
+interface EditableUnit {
+  readonly question: string;
+  readonly body: string;
+}
+
+/**
+ * Edit what a source already holds, piece by piece.
+ *
+ * Not by round-tripping back to pasted text. What is stored is units, and re-deriving text
+ * from them so it could be re-split would let the splitter reshape pieces nobody touched —
+ * a document whose passages were adjusted by hand would silently revert on the next save.
+ * These are the things retrieval returns, so these are the things being edited.
+ *
+ * Order is position, which is why the moves are here. It decides nothing about ranking —
+ * the store sorts by relevance — but it is the tie-break, and it is how somebody reads the
+ * list back.
+ */
+const EditSource = ({
+  sourceId,
+  onDone,
+}: {
+  readonly sourceId: string;
+  readonly onDone: () => void;
+}) => {
+  const [loaded, setLoaded] = useState<
+    | { readonly status: "loading" }
+    | { readonly status: "failed"; readonly message: string }
+    | {
+        readonly status: "ready";
+        readonly name: string;
+        readonly kind: Kind;
+        readonly updatedAt: string;
+      }
+  >({ status: "loading" });
+  const [units, setUnits] = useState<readonly EditableUnit[]>([]);
+  const [state, action, pending] = useActionState(saveKnowledgeUnitsAction, START);
+
+  useFormToast(state, () => {
+    onDone();
+    return "Saved.";
+  });
+
+  useEffect(() => {
+    let live = true;
+    void loadKnowledgeUnits(sourceId).then((result) => {
+      if (!live) return;
+      if (!result.ok) {
+        setLoaded({ status: "failed", message: result.message });
+        return;
+      }
+      setLoaded({
+        status: "ready",
+        name: result.detail.source.name,
+        kind: result.detail.source.kind as Kind,
+        // Carried so the save can be refused if somebody else changed the source while this
+        // was open. A shared source rewritten silently is a live line rewritten silently.
+        updatedAt: result.detail.source.updatedAt,
+      });
+      setUnits(
+        result.detail.units.map((unit) => ({ question: unit.question ?? "", body: unit.body })),
+      );
+    });
+    return () => {
+      live = false;
+    };
+  }, [sourceId]);
+
+  const edit = (index: number, over: Partial<EditableUnit>) =>
+    setUnits((current) =>
+      current.map((unit, at) => (at === index ? { ...unit, ...over } : unit)),
+    );
+
+  const move = (index: number, by: number) =>
+    setUnits((current) => {
+      const to = index + by;
+      if (to < 0 || to >= current.length) return current;
+      const next = [...current];
+      const [taken] = next.splice(index, 1);
+      if (taken === undefined) return current;
+      next.splice(to, 0, taken);
+      return next;
+    });
+
+  if (loaded.status === "loading") {
+    return (
+      <Card title="Loading" description="Fetching what this source holds.">
+        <p className="text-[13px] text-[var(--ink-2)]">One moment.</p>
+      </Card>
+    );
+  }
+
+  if (loaded.status === "failed") {
+    return (
+      <Stack>
+        <Notice tone="error">{loaded.message}</Notice>
+        <div>
+          <Button variant="secondary" onClick={onDone}>
+            Back
+          </Button>
+        </div>
+      </Stack>
+    );
+  }
+
+  const empty = units.every((unit) => unit.body.trim() === "");
+
+  return (
+    <form
+      action={(form) => {
+        form.set(
+          "unitsJson",
+          JSON.stringify(
+            units
+              .filter((unit) => unit.body.trim() !== "")
+              .map((unit) => ({
+                question: unit.question.trim() === "" ? null : unit.question.trim(),
+                body: unit.body.trim(),
+              })),
+          ),
+        );
+        action(form);
+      }}
+    >
+      <input type="hidden" name="sourceId" value={sourceId} />
+      <input type="hidden" name="expectedUpdatedAt" value={loaded.updatedAt} />
+
+      <Stack>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-[17px] font-semibold tracking-[-0.018em]">{loaded.name}</h2>
+            <p className="mt-0.5 text-[12.5px] text-[var(--ink-3)]">
+              {units.length} {KIND_TAG[loaded.kind]} · every agent using this source sees the
+              change on its next call.
+            </p>
+          </div>
+          <Button type="button" variant="secondary" onClick={onDone}>
+            Back
+          </Button>
+        </div>
+
+        {(state.status === "failed" || state.status === "invalid") && (
+          <Notice tone="error">{state.message}</Notice>
+        )}
+
+        <Card
+          title="What it holds"
+          description="Each piece is retrieved on its own and read out on its own. If one would not answer a question by itself, split it."
+        >
+          <div className="flex flex-col gap-3">
+            {units.map((unit, index) => (
+              <div
+                key={index}
+                className="rounded-lg border border-[var(--surface-line)] bg-[var(--surface-2)] p-3"
+              >
+                <div className="mb-2 flex items-center gap-2">
+                  <Tag>{index + 1}</Tag>
+                  <span className="flex-1" />
+                  <Button type="button" variant="secondary" onClick={() => move(index, -1)}>
+                    Up
+                  </Button>
+                  <Button type="button" variant="secondary" onClick={() => move(index, 1)}>
+                    Down
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setUnits(units.filter((_, at) => at !== index))}
+                  >
+                    Remove
+                  </Button>
+                </div>
+                <Stack gap="sm">
+                  <TextField
+                    label="Question it answers"
+                    value={unit.question}
+                    onChange={(event) => edit(index, { question: event.target.value })}
+                    placeholder="Optional — blank is fine for a passage or a row"
+                  />
+                  <TextAreaField
+                    label="What the agent says"
+                    value={unit.body}
+                    onChange={(event) => edit(index, { body: event.target.value })}
+                    rows={3}
+                  />
+                </Stack>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-3">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setUnits([...units, { question: "", body: "" }])}
+            >
+              Add a piece
+            </Button>
+          </div>
+        </Card>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="submit" disabled={pending || empty}>
+            {pending ? "Saving…" : "Save changes"}
+          </Button>
+          {empty && (
+            <span className="max-w-[58ch] text-[12.5px] text-[var(--ink-3)]">
+              A source with nothing in it retrieves nothing, which sounds exactly like it
+              having been deleted. Retire it instead — that says so.
+            </span>
+          )}
         </div>
       </Stack>
     </form>
