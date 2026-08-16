@@ -10,6 +10,14 @@
 -- one statement and cannot pick a different agent than the publish did. The body below is
 -- 0037's, unchanged except for that statement and this comment.
 
+-- The sixteen-argument form, left behind when 0037 added `p_speaking_rate` and created a new
+-- signature beside the old one rather than replacing it. Nothing calls it — the one caller
+-- passes seventeen — but it is still resolvable, and what it would do if resolved is publish a
+-- version that silently drops the speaking rate, skips it in the snapshot, and now also leaves
+-- the draft in place. An overload that differs from the real one only in what it forgets is
+-- worth deleting rather than documenting.
+drop function if exists app.publish_agent_config(uuid, text, text, text, text, text, text[], integer, integer, integer[], jsonb, jsonb, text, text, integer, text);
+
 CREATE OR REPLACE FUNCTION app.publish_agent_config(organization uuid, p_name text, p_voice_id text, p_speaking_rate real, p_greeting text, p_persona text, p_instructions text, p_keyterms text[], p_open_hour integer, p_close_hour integer, p_business_days integer[], p_tool_config jsonb, p_event_config jsonb, p_escalation_to text, p_escalation_from text, p_escalation_ring integer, p_note text)
  RETURNS integer
  LANGUAGE plpgsql
