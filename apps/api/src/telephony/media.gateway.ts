@@ -13,7 +13,12 @@ import {
 } from "@ansa/shared";
 import type { CallDirection, CallMediaStream, TelephonyProvider } from "@ansa/telephony";
 import type { LlmProvider } from "@ansa/llm";
-import { recordKnowledgeRetrieval, searchKnowledge, withOrganization } from "@ansa/db";
+import {
+  readCallerHistory,
+  recordKnowledgeRetrieval,
+  searchKnowledge,
+  withOrganization,
+} from "@ansa/db";
 import { buildUrl, openDeepgramSession } from "@ansa/deepgram-listen";
 import { openListenSession } from "@ansa/openai-listen";
 import type { TtsProvider } from "@ansa/tts";
@@ -40,7 +45,7 @@ import type { WhisperRegistry } from "../handoff/whisper";
 import { confirmedFact, createCallFacts } from "../conversation/call-facts";
 import { KNOWLEDGE_TOOL_NAME, knowledgeTools, type Retrieval } from "../orchestrator/knowledge";
 import { createCallRecorder } from "./event-log";
-import type { Db } from "@ansa/db";
+import type { CallerHistory, Db } from "@ansa/db";
 import { callSettings, type PlatformDefaults } from "../tenancy/call-settings";
 import type { CallAgent, AgentRegistry } from "../tenancy/agent-registry";
 import { runConversation, type ListenSession } from "../orchestrator/orchestrator";
@@ -559,6 +564,42 @@ export class MediaGateway implements OnApplicationShutdown {
       });
     }
 
+    /**
+     * Who this caller is to us, fetched while the greeting plays.
+     *
+     * Deliberately not awaited. The greeting is roughly two seconds of audio and this is
+     * one indexed read, so on a healthy deployment it lands long before the caller
+     * finishes their first sentence — but "usually" is not "always", and a call must never
+     * be held open waiting for a nicety. The orchestrator reads whatever is here and
+     * renders nothing when that is nothing.
+     *
+     * Failure is swallowed for the same reason the recorder swallows its own: the caller
+     * is mid-conversation and a slow query is not their problem. The cost of losing this
+     * is an agent that greets a returning caller as a new one, which is exactly how it
+     * behaved before this existed.
+     */
+    let callerHistory: CallerHistory | null = null;
+    const callerNumber = stream.parameters[CALLER_PARAM] ?? null;
+    if (this.dataSource !== null && settings.organizationId !== null && callerNumber !== null) {
+      const dataSource = this.dataSource;
+      const organizationId = settings.organizationId;
+      void withOrganization(dataSource, organizationId, (scope) =>
+        readCallerHistory(scope, {
+          caller: callerNumber,
+          carrierCallId: stream.callId,
+          now: new Date(),
+        }),
+      )
+        .then((history) => {
+          callerHistory = history;
+        })
+        .catch((error: unknown) => {
+          log.warn("could not read this caller's history, treating them as new", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+    }
+
     const listen = this.openListen(stream.format, keyterms);
 
     runConversation(stream, {
@@ -574,6 +615,7 @@ export class MediaGateway implements OnApplicationShutdown {
          senses about the hour and what it answers when asked cannot disagree — two reads
          of the same config would be two places for one of them to go stale. */
       businessHours: settings.businessHours,
+      callerHistory: () => callerHistory,
       // Null for an unregistered number, and the orchestrator reads that as "no tools on
       // this call at all". Such a caller may hold a conversation and must not reach
       // anybody's systems (CLAUDE.md rule 3).

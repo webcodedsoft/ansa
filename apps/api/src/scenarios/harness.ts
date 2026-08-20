@@ -202,6 +202,7 @@ export const scenario = (options: ScenarioOptions = {}): Scenario => {
        clock into every prompt it asserts against. Null keeps these deterministic; a
        scenario that wants to be near closing can override it. */
     businessHours: null,
+    callerHistory: () => null,
     voiceId: "voice-ng",
     // Scenarios are about the conversation, not the pace, so unless one says otherwise the
     // voice runs at its own.

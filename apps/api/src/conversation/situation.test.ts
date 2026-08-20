@@ -30,6 +30,7 @@ const at = (over: Partial<SituationInput> = {}): SituationInput => {
     businessHours: OFFICE,
     failedTurns: 0,
     escalationOffered: false,
+    history: null,
     ...over,
   };
 };
@@ -159,5 +160,72 @@ describe("the block the model reads", () => {
     // The other lines are meaningless without it — "closes in 40 minutes" from when?
     const closing = renderSituation(describeSituation(at({ now: wat("2026-03-10T16:20:00") })));
     expect(closing).toContain("It is 16:20 on Tuesday in the afternoon");
+  });
+});
+
+describe("what we already know about this caller", () => {
+  const rang = (over: Partial<{
+    lastContactDaysAgo: number | null;
+    contactsThisWeek: number;
+    lastCallHandedOver: boolean;
+  }> = {}) => ({
+    lastContactDaysAgo: 1,
+    contactsThisWeek: 1,
+    lastCallHandedOver: false,
+    ...over,
+  });
+
+  it("says nothing at all when the history has not arrived", () => {
+    /* Null covers a withheld number, no database, a read still in flight and a read that
+       failed. The agent's correct behaviour is identical in all four: treat them as new. */
+    expect(renderSituation(describeSituation(at({ history: null })))).toBe("");
+  });
+
+  it("says nothing for a caller with no calls in the window", () => {
+    const s = describeSituation(
+      at({ history: rang({ lastContactDaysAgo: null, contactsThisWeek: 0 }) }),
+    );
+    expect(renderSituation(s)).toBe("");
+  });
+
+  it("tells the agent not to make a returning caller start over", () => {
+    // The complaint people actually make about these systems.
+    const block = renderSituation(describeSituation(at({ history: rang() })));
+    expect(block).toContain("They called before, yesterday");
+    expect(block).toContain("do not make them explain it again");
+  });
+
+  it("says when they rang in words rather than a date", () => {
+    const said = (days: number): string =>
+      renderSituation(describeSituation(at({ history: rang({ lastContactDaysAgo: days }) })));
+
+    expect(said(0)).toContain("earlier today");
+    expect(said(1)).toContain("yesterday");
+    expect(said(4)).toContain("4 days ago");
+    // Past a week the exact figure stops mattering and starts sounding like surveillance.
+    expect(said(40)).toContain("a while back");
+  });
+
+  it("reports a handover as a handover, never as an unresolved issue", () => {
+    /* Nothing on disk knows what the last call was about. An agent told "their issue is
+       unresolved" will invent the issue; told "a person took over", it can only say that. */
+    const block = renderSituation(
+      describeSituation(at({ history: rang({ lastCallHandedOver: true }) })),
+    );
+    expect(block).toContain("a person taking over");
+    expect(block).not.toContain("unresolved");
+  });
+
+  it("stops trying after three calls in a week and asks for a person", () => {
+    // Three contacts means the process failed, not the caller.
+    const twice = renderSituation(describeSituation(at({ history: rang({ contactsThisWeek: 2 }) })));
+    expect(twice).not.toContain("call this week");
+
+    const thrice = renderSituation(
+      describeSituation(at({ history: rang({ contactsThisWeek: 3 }) })),
+    );
+    // Their fourth: three before this one.
+    expect(thrice).toContain("their 4th call this week");
+    expect(thrice).toContain("get them to a person now");
   });
 });

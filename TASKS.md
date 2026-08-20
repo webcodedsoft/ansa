@@ -2831,11 +2831,27 @@ caller confirmation, a system of record.
 puts every tool result into the conversation verbatim, so a block copy would be a second
 source of truth for the same fact.
 
-- [ ] **Phase 4b — who this caller is to us.** `lastContactDaysAgo`, `contactsThisWeek`,
-      `priorIssueUnresolved`. A `calls`-by-caller query, so it belongs at call setup
-      alongside the LLM warm-up and never on a turn — that constraint is what makes it a
-      separate commit rather than three more fields. Also needs a definition of
-      "unresolved" that is not just `end_reason`.
+- [x] **Phase 4b — who this caller is to us**. `readCallerHistory` runs once as the call
+      connects, while the greeting plays, and is **never awaited**. The orchestrator holds
+      a getter rather than a promise — a promise invites an `await`, and an `await` there
+      puts a database round trip on the turn the caller is waiting through. Null covers a
+      withheld number, no database, a read still running and a read that failed; the
+      correct behaviour is identical in all four, so the block simply says nothing.
+      - Migration 0043 indexes `calls (organization_id, caller, created_at desc)` where the
+        caller is not null. Nulls are excluded because a withheld number is not an identity
+        — without the partial predicate, a caller with no CLI would be told they had rung
+        eleven times this week because ten strangers had.
+      - **`priorIssueUnresolved` is `lastCallHandedOver`, and the rename is the point.**
+        Nothing in the schema knows whether an issue was resolved: `end_reason` on an
+        inbound call is the media stream's close reason, written whether or not a transfer
+        happened. What is recorded is the `escalated to a human` event. A handover is a
+        fact; "unresolved" is a guess, and an agent told an issue is unresolved will invent
+        the issue.
+      - Three calls in a week routes to a person without trying again. Three contacts means
+        the process failed, not the caller.
+      - `packages/db/src/caller-history.test.ts` drives it against the real database,
+        including the same number calling two organisations — the row that would surface if
+        RLS were not doing its job.
 - [ ] Phase 5 — emotional read appended after the spoken text, zero latency cost
 - [ ] Phase 6 — pools instead of fixed artifacts (greetings, fillers, backchannels)
 - [ ] Phase 7 — outbound: AMD, DNC as a dial-time gate, consent basis, calling windows

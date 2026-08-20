@@ -23,6 +23,8 @@ import {
   type CaptureState,
   type EntityKind,
 } from "./capture";
+import type { CallerHistory } from "@ansa/db";
+
 import type { CallFactsStore, IdentifierField } from "../conversation/call-facts";
 import type { CollectedField } from "../tenancy/captured-fields";
 import { createForm } from "./form";
@@ -213,6 +215,19 @@ export interface OrchestratorDeps {
    * deployment with no hours has to say so.
    */
   readonly businessHours: BusinessHours | null;
+  /**
+   * What this number has done before, or null when it is not known.
+   *
+   * A getter and not a value, because the read is started as the call connects and this is
+   * read on every turn — the greeting is playing while it is in flight, so turn one may
+   * find it and may not. Null covers a withheld number, no database, a read still running
+   * and a read that failed, and the agent's correct behaviour is identical in all four.
+   *
+   * A function rather than a promise on purpose. A promise invites an `await`, and an
+   * `await` here would put a database round trip on the turn the caller is waiting
+   * through. Nothing may wait for this.
+   */
+  readonly callerHistory: () => CallerHistory | null;
   /**
    * Builds the thing that hands the call to a person. Absent means escalation only logs,
    * as it did before there was anywhere to transfer to.
@@ -1642,6 +1657,10 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         businessHours: deps.businessHours ?? null,
         failedTurns: watch.failedTurns(),
         escalationOffered: watch.handedOver(),
+        /* Whatever has arrived. A read started as the call connected, so on turn one it is
+           usually there and occasionally not — and "not" renders nothing rather than
+           waiting, because a turn that waits on a query is the two-loop rule broken. */
+        history: deps.callerHistory(),
       }),
     );
     /* Order is deliberate. Standing instructions, then what is known about this call, then

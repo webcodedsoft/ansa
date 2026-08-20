@@ -274,3 +274,124 @@ export const readStageLatencies = async (
     truncated,
   };
 };
+
+// ---------------------------------------------------------------------------
+// Who this caller is to us
+// ---------------------------------------------------------------------------
+
+/**
+ * What this number has done before, as three facts and no inference.
+ *
+ * The point is the prompt line "I can see this has come up before — let me get you
+ * straight to someone rather than going through it again." A caller re-explaining an issue
+ * to a system that already holds the answer is the most infuriating experience in customer
+ * service, and it is entirely avoidable from data already on disk.
+ */
+export interface CallerHistory {
+  /**
+   * Whole days since their previous call, or null when there is none inside the window.
+   *
+   * Null is "we have not spoken recently", not "never" — the window below is finite, and a
+   * caller last seen eighteen months ago is a first-time caller for every purpose the
+   * agent has.
+   */
+  readonly lastContactDaysAgo: number | null;
+  /** Calls from this number in the seven days before this one. Excludes this one. */
+  readonly contactsThisWeek: number;
+  /**
+   * Their last call ended with a person taking over.
+   *
+   * Named for what it is rather than for what the brief asked for. The brief wanted
+   * `priorIssueUnresolved`, and nothing in the schema knows whether an issue was resolved:
+   * `end_reason` on an inbound call is the media stream's close reason — "carrier sent
+   * stop", "caller hung up" — written whether or not a transfer happened, so it cannot
+   * answer the question. What is recorded, and what this reads, is the
+   * `escalated to a human` event. A handover is a fact; "unresolved" would be a guess
+   * dressed as one, and the agent would act on it.
+   */
+  readonly lastCallHandedOver: boolean;
+}
+
+export interface CallerHistoryRequest {
+  /** E.164, as the carrier gave it. Withheld numbers must not reach here — see below. */
+  readonly caller: string;
+  /**
+   * This call's own carrier id, excluded from its own history.
+   *
+   * The row already exists by the time this runs: `recordCallStarted` fires at ingress and
+   * this fires beside it. Without the exclusion every caller is told they have rung once
+   * already today, and the one they rang is this one.
+   */
+  readonly carrierCallId: string;
+  readonly now: Date;
+}
+
+/** Beyond this nothing is read. See `lastContactDaysAgo`. */
+const HISTORY_WINDOW_DAYS = 90;
+/**
+ * A caller who has rung more than this in the window is well past every threshold the
+ * agent reasons about, so counting further buys nothing and bounds the scan.
+ */
+const HISTORY_ROW_CAP = 50;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Read it once, as the call connects.
+ *
+ * Two statements in one organisation-scoped transaction, for the same reason
+ * `readCallRecords` uses three: the second only ever concerns one row, and an `exists`
+ * correlated across the whole window would run the subquery fifty times to answer a
+ * question about the newest.
+ *
+ * **This is not on the real-time path and must never move onto it.** It is a database read
+ * with a caller mid-greeting; the orchestrator holds whatever has arrived and renders
+ * nothing when that is nothing. A turn must never wait for it.
+ */
+export const readCallerHistory = async (
+  scope: OrganizationScope,
+  request: CallerHistoryRequest,
+): Promise<CallerHistory> => {
+  const since = new Date(request.now.getTime() - HISTORY_WINDOW_DAYS * DAY_MS);
+
+  const prior = await scope.query<Record<string, unknown>>(
+    /* No `organization_id` predicate: `calls` is behind the same row-level policy as
+       everything else here, so the scope already applies and adding one would suggest the
+       isolation came from the predicate. The partial index this uses excludes null
+       callers, which is also why a withheld number never gets this far. */
+    `select c.id, c.created_at
+       from calls c
+      where c.caller = $1
+        and c.carrier_call_id <> $2
+        and c.created_at >= $3
+      order by c.created_at desc
+      limit $4`,
+    [request.caller, request.carrierCallId, since.toISOString(), HISTORY_ROW_CAP],
+  );
+
+  const newest = prior[0];
+  if (newest === undefined) {
+    return { lastContactDaysAgo: null, contactsThisWeek: 0, lastCallHandedOver: false };
+  }
+
+  const handover = await scope.query<{ handed_over: boolean }>(
+    `select exists (
+              select 1 from call_events e
+               where e.call_id = $1 and e.kind = 'escalated to a human'
+            ) as handed_over`,
+    [String(newest["id"])],
+  );
+
+  const weekAgo = request.now.getTime() - 7 * DAY_MS;
+  return {
+    /* Floored, so a call twenty hours ago is "today" rather than "yesterday". The agent
+       says this out loud, and rounding the wrong way makes it sound like it is guessing. */
+    lastContactDaysAgo: Math.max(
+      0,
+      Math.floor((request.now.getTime() - (newest["created_at"] as Date).getTime()) / DAY_MS),
+    ),
+    contactsThisWeek: prior.filter((row) => (row["created_at"] as Date).getTime() >= weekAgo)
+      .length,
+    lastCallHandedOver: handover[0]?.handed_over ?? false,
+  };
+};

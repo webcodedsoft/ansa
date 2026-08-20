@@ -1,3 +1,4 @@
+import type { CallerHistory } from "@ansa/db";
 import { watMoment, type BusinessHours } from "@ansa/shared";
 
 /**
@@ -16,11 +17,11 @@ import { watMoment, type BusinessHours } from "@ansa/shared";
  * Pure. `now` is a parameter rather than `Date.now()`, so a test can stand at four o'clock
  * on a Friday without waiting for one.
  *
- * What is deliberately *not* here: how long since this caller last rang, and how many
- * times this week. Those are the two worth having — a caller re-explaining an issue to a
- * system that should already know it is the most infuriating thing in customer service —
- * and they are a database read. A read belongs at call setup, once, never per turn, which
- * makes them Phase 4b rather than a field with a TODO on it.
+ * The one thing here that did not come free is `history`, which is a database read. It is
+ * taken once as the call connects, while the greeting plays, and arrives as a value rather
+ * than a promise: null means it has not landed yet or there was nothing to land, and the
+ * block simply says nothing. **No turn ever waits for it.** That is the two-loop rule, and
+ * it is why this stays a pure function over whatever happens to be in hand.
  */
 
 export type PartOfDay = "morning" | "afternoon" | "evening" | "night";
@@ -41,6 +42,14 @@ export interface SituationInput {
   readonly failedTurns: number;
   /** True once a transfer has been triggered. Nothing should offer a person twice. */
   readonly escalationOffered: boolean;
+  /**
+   * What this number has done before, or null when it is not known.
+   *
+   * Null covers three cases the block treats identically — a withheld number, a deployment
+   * with no database, and a read that has not come back yet — because the agent's correct
+   * behaviour is the same in all three: say nothing and treat them as new.
+   */
+  readonly history: CallerHistory | null;
 }
 
 export interface Situation {
@@ -55,6 +64,7 @@ export interface Situation {
   readonly minutesElapsed: number;
   readonly failedTurns: number;
   readonly escalationOffered: boolean;
+  readonly history: CallerHistory | null;
 }
 
 /** ISO weekday, 1 is Monday. Indexed from 1, so slot 0 is never read. */
@@ -112,6 +122,7 @@ export const describeSituation = (input: SituationInput): Situation => {
     minutesElapsed: Math.max(0, Math.floor((input.now.getTime() - input.callStartedAtMs) / 60_000)),
     failedTurns: input.failedTurns,
     escalationOffered: input.escalationOffered,
+    history: input.history,
   };
 };
 
@@ -166,6 +177,54 @@ const escalationLines = (situation: Situation): readonly string[] => {
 };
 
 /**
+ * A caller who has rung this many times in a week is not going to be helped by a fourth
+ * attempt at the same thing. Three contacts means the process failed, not the caller.
+ */
+const TOO_MANY_CONTACTS = 3;
+
+const whenTheyLastRang = (days: number): string => {
+  if (days === 0) return "earlier today";
+  if (days === 1) return "yesterday";
+  if (days <= 7) return `${days} days ago`;
+  return "a while back";
+};
+
+/**
+ * What we already know about them, and what to do about it.
+ *
+ * The strongest line in the block, and the one worth getting right: opening as though a
+ * caller is new when they rang yesterday about the same thing is the complaint people
+ * actually make about these systems. Every line here is a fact from the call log with an
+ * instruction attached — never a guess about what the previous call was about, because
+ * nothing on disk knows that.
+ */
+const historyLines = (situation: Situation): readonly string[] => {
+  const history = situation.history;
+  // Not known, not known yet, or a withheld number. Treat them as new; say nothing.
+  if (history === null || history.lastContactDaysAgo === null) return [];
+
+  const lines = [
+    `- They called before, ${whenTheyLastRang(history.lastContactDaysAgo)}. Do not greet them as a new caller and do not make them explain it again from the start.`,
+  ];
+
+  if (history.lastCallHandedOver) {
+    /* A handover is a fact; what it was about is not, so the line says only what is known.
+       An agent told "their last issue is unresolved" will invent the issue. */
+    lines.push(
+      "- That call ended with a person taking over. Whatever it was, this line could not finish it.",
+    );
+  }
+
+  if (history.contactsThisWeek >= TOO_MANY_CONTACTS) {
+    lines.push(
+      `- This is their ${history.contactsThisWeek + 1}th call this week. Do not try to solve it yourself — get them to a person now.`,
+    );
+  }
+
+  return lines;
+};
+
+/**
  * The block, or an empty string when there is nothing worth saying.
  *
  * Empty is a real answer and the common one two turns into a call in office hours: the
@@ -178,6 +237,7 @@ export const renderSituation = (situation: Situation): string => {
       situation.partOfDay === "night" ? "at night" : `in the ${situation.partOfDay}`
     }, where they are.`,
     ...hoursLines(situation),
+    ...historyLines(situation),
     ...lengthLines(situation),
     ...escalationLines(situation),
   ];

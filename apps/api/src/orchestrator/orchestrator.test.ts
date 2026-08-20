@@ -52,6 +52,7 @@ const setup = (
     makeTools?: OrchestratorDeps["makeTools"];
     speakingRate?: number;
     businessHours?: OrchestratorDeps["businessHours"];
+    callerHistory?: OrchestratorDeps["callerHistory"];
   } = {},
 ) => {
   const stream = fakeStream();
@@ -72,6 +73,8 @@ const setup = (
     // No hours by default, so the situation block stays silent about them and every test
     // written before it existed asserts on the same prompt it always did.
     businessHours: null,
+    // No history by default: every test written before this existed sees the same prompt.
+    callerHistory: () => null,
     forSpeech: (t) => t.replace(/\bAnsa\b/g, "An-Sah"),
     // These tests drive transcripts directly to exercise turn logic and never fan in
     // audio, so the no-speech filter would discard every one of them. The filter has its
@@ -1141,6 +1144,40 @@ describe("the prompt the call was configured with", () => {
     assertInvariants(h);
   });
 
+  it("opens knowing a returning caller, without being told what they called about", () => {
+    /* The read is started as the call connects and this stands in for it having landed.
+       What matters is that it reaches the prompt at all: a getter that nothing calls is
+       the shape of thing that ships unreachable. */
+    const h = setup({
+      callerHistory: () => ({
+        lastContactDaysAgo: 1,
+        contactsThisWeek: 2,
+        lastCallHandedOver: true,
+      }),
+    });
+
+    h.listen.final("What are your opening hours?");
+
+    const system = h.llm.last().request.system;
+    expect(system).toContain("They called before, yesterday");
+    expect(system).toContain("do not make them explain it again");
+    expect(system).toContain("a person taking over");
+    /* Nothing on disk knows what the last call was about, so nothing here may imply it.
+       An agent told an issue is unresolved will invent the issue. */
+    expect(system).not.toContain("unresolved");
+    assertInvariants(h);
+  });
+
+  it("says nothing about history the read has not returned", () => {
+    // A withheld number, no database, or a read still in flight. Treat them as new.
+    const h = setup({ callerHistory: () => null });
+
+    h.listen.final("What are your opening hours?");
+
+    expect(h.llm.last().request.system).not.toContain("They called before");
+    assertInvariants(h);
+  });
+
   it("says nothing about hours on an ordinary in-hours turn", () => {
     /* Open is the default the prompt is written against. A block that fires every turn
        costs prompt budget for something the model was going to assume anyway. */
@@ -1644,6 +1681,7 @@ describe("audio that arrived before the listener existed", () => {
       greeting: GREETING,
       systemPrompt: DEFAULT_SYSTEM_PROMPT,
       businessHours: null,
+      callerHistory: () => null,
       organizationId: ORGANIZATION,
       forSpeech: (t) => t,
       minSpeechMs: 0,
@@ -1670,6 +1708,7 @@ describe("audio that arrived before the listener existed", () => {
       greeting: GREETING,
       systemPrompt: DEFAULT_SYSTEM_PROMPT,
       businessHours: null,
+      callerHistory: () => null,
       organizationId: ORGANIZATION,
       forSpeech: (t) => t,
       minSpeechMs: 0,
