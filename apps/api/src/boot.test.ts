@@ -39,6 +39,11 @@ const REQUIRED_ENV: Readonly<Record<string, string>> = {
   ELEVENLABS_API_KEY: "boot-test-key",
   ELEVENLABS_VOICE_ID: "boot-test-voice",
   OPENAI_API_KEY: "boot-test-key",
+  /* Required unconditionally since Flux became the only turn detector. A deployment
+     without it cannot hear the caller stop talking, so booting without it and finding
+     out on the first call is the wrong failure — this key is now as load-bearing as the
+     carrier's. */
+  DEEPGRAM_API_KEY: "boot-test-key",
 };
 
 /**

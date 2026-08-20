@@ -31,7 +31,7 @@ import type { AppConfig } from "../config/env";
 import { ACKNOWLEDGEMENTS, ALL_FILLERS, PROGRESS, STILL_WORKING } from "./filler";
 import { forSpeech, GREETING_TEXT } from "./greeting";
 import { cacheKey, createAudioCache, type AudioCache } from "./prerender";
-import { composeListen } from "./composite-listen";
+import { composeListen, type TranscriptSource } from "./composite-listen";
 import { createHandoff } from "../handoff/handoff";
 import { withHandoffJournal } from "../handoff/journal";
 import { withEventPublisher } from "../events/publisher";
@@ -234,38 +234,52 @@ export class MediaGateway implements OnApplicationShutdown {
 
 
   /**
-   * One provider's session. Composition happens above this, so a vendor is named in
-   * exactly one place per vendor and nowhere else.
+   * The turn detector. Always Deepgram Flux — there is no other option by design.
+   *
+   * It used to be selectable, and the selection was the defect: the deployment ran
+   * OpenAI's `semantic_vad` for turn-taking while a complete, live-verified Flux adapter
+   * sat unused behind a config value. A silence-or-semantics VAD decides the caller has
+   * finished from a gap; Flux reads the words and the prosody and predicts turn
+   * completion, which is the difference between waiting out someone reading a phone
+   * number and cutting them off at the area code.
+   *
+   * Making it unselectable rather than defaulted is deliberate. A default is a thing that
+   * gets overridden in an env file at three in the morning and never put back.
    */
-  private openOne(
-    provider: string,
-    format: AudioFormat,
-    keyterms: readonly string[],
-  ): ListenSession {
-    if (provider === "deepgram") {
-      const url = buildUrl({
-        format,
-        model: this.config.deepgramModel,
-        keyterms,
-        eotThreshold: this.config.deepgramEotThreshold,
-        eotTimeoutMs: this.config.deepgramEotTimeoutMs,
-        host: this.config.deepgramHost,
-      });
-      this.log.info("listening via deepgram", {
-        model: this.config.deepgramModel,
-        host: this.config.deepgramHost,
-        keyterms: keyterms.length,
-      });
-      return openDeepgramSession(openDeepgramSocket(url, this.config.deepgramApiKey));
-    }
+  private openTurns(format: AudioFormat, keyterms: readonly string[]): ListenSession {
+    const url = buildUrl({
+      format,
+      model: this.config.deepgramModel,
+      keyterms,
+      eotThreshold: this.config.deepgramEotThreshold,
+      eotTimeoutMs: this.config.deepgramEotTimeoutMs,
+      host: this.config.deepgramHost,
+    });
+    this.log.info("turn detection via deepgram flux", {
+      model: this.config.deepgramModel,
+      host: this.config.deepgramHost,
+      eotThreshold: this.config.deepgramEotThreshold,
+      eotTimeoutMs: this.config.deepgramEotTimeoutMs,
+      keyterms: keyterms.length,
+    });
+    // A factory, not a socket: the session redials on a mid-call drop, and a closed
+    // WebSocket cannot be reopened, only replaced.
+    return openDeepgramSession(() => openDeepgramSocket(url, this.config.deepgramApiKey));
+  }
 
-    this.log.info("listening via openai", {
+  /** The transcriber, when it is not Flux itself. Swappable for an accent-tuned vendor. */
+  private openWords(format: AudioFormat, keyterms: readonly string[]): TranscriptSource {
+    this.log.info("transcription via openai", {
       model: this.config.transcriptionModel,
       sendAsPcm: this.config.openAiSendPcm,
     });
     return openListenSession(openListenSocket(this.config.openAiApiKey), {
       format,
       model: this.config.transcriptionModel,
+      /* Still configured, and not dead config now that Flux owns turn-taking: this
+         provider's `turn_detection` is also what makes it commit a buffer and emit a
+         final transcript. Its turn events are simply never reachable — see
+         `TranscriptSource`. */
       turnDetection:
         this.config.turnDetectionMode === "server_vad"
           ? { type: "server_vad", silenceMs: this.config.vadSilenceMs }
@@ -280,17 +294,20 @@ export class MediaGateway implements OnApplicationShutdown {
   }
 
   private openListen(format: AudioFormat, keyterms: readonly string[]): ListenSession {
-    if (this.config.listenProvider !== "composite") {
-      return this.openOne(this.config.listenProvider, format, keyterms);
-    }
+    const turns = this.openTurns(format, keyterms);
 
-    // Two connections, two bills. Gate A decides whether the result earns it.
+    // Flux carries the transcript in the same frame as the turn event, so when it is also
+    // the transcriber there is one connection and one bill (R4.1.9).
+    if (this.config.listenWords === "deepgram") return turns;
+
+    // Two connections, two bills. Worth it only while a separate transcriber hears
+    // Nigerian speech better than Flux does — which is a measurement, not an assumption.
     return composeListen({
-      words: this.openOne(this.config.listenWords, format, keyterms),
-      turns: this.openOne(this.config.listenTurns, format, keyterms),
+      words: this.openWords(format, keyterms),
+      turns,
       log: this.log,
       wordsName: this.config.listenWords,
-      turnsName: this.config.listenTurns,
+      turnsName: "deepgram",
     });
   }
 
@@ -721,26 +738,22 @@ export class MediaGateway implements OnApplicationShutdown {
       // The teed recorder, not the bare one: everything the orchestrator records has to
       // reach both the table and the summary the person answering will hear.
       recorder: record,
-      listenProvider: this.config.listenProvider,
+      // Which connections this call actually opened. `deepgram` alone means one socket
+      // serving words and turns; `openai` means two sockets and two bills, which is the
+      // number R4.1.9 exists to let somebody weigh against the transcript quality.
+      listenProvider: this.config.listenWords === "deepgram" ? "deepgram" : "composite",
       transcriptionConfig: {
-        // R4.1.9. Which vendors this call actually opened a connection to, recorded
-        // whenever the two are not the same one. Composite runs two sessions and two
-        // bills, and "composite" alone in the log cannot be attributed to either of them —
-        // the whole point of tracking listen cost per provider is deciding whether the
-        // second connection earns what it costs.
-        ...(this.config.listenProvider === "composite"
-          ? { listenWords: this.config.listenWords, listenTurns: this.config.listenTurns }
-          : {}),
-        ...(this.config.listenProvider === "deepgram"
-          ? {
-              model: this.config.deepgramModel,
-              host: this.config.deepgramHost,
-              eotThreshold: this.config.deepgramEotThreshold,
-              eotTimeoutMs: this.config.deepgramEotTimeoutMs,
-              keyterms: keyterms.length,
-            }
+        // Flux is always here, because it is always the turn detector now.
+        model: this.config.deepgramModel,
+        host: this.config.deepgramHost,
+        eotThreshold: this.config.deepgramEotThreshold,
+        eotTimeoutMs: this.config.deepgramEotTimeoutMs,
+        keyterms: keyterms.length,
+        ...(this.config.listenWords === "deepgram"
+          ? {}
           : {
-              model: this.config.transcriptionModel,
+              listenWords: this.config.listenWords,
+              wordsModel: this.config.transcriptionModel,
               language: "en",
               turnDetection: this.config.turnDetectionMode,
               eagerness: this.config.vadEagerness,

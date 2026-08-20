@@ -38,23 +38,24 @@ export interface AppConfig {
   readonly vadSilenceMs: number;
 
   /**
-   * "openai" or "deepgram". Both stay available so they can be compared on real calls;
-   * Gate A decides. Deepgram is the only one of the two that offers keyterm boosting
-   * (R4.1.3) or per-word confidence (R4.1.5).
-   */
-  readonly listenProvider: string;
-  /**
-   * With listenProvider = "composite", which vendor supplies words and which supplies
-   * turn boundaries. They are different problems with different winners, which is why
-   * Transcriber and TurnDetector were separate interfaces from the start.
-   */
-  /**
    * Send OpenAI 24kHz PCM instead of the carrier's mu-law. Their docs specify PCM;
    * mu-law is accepted but undocumented. A hypothesis under measurement, not a default.
    */
   readonly openAiSendPcm: boolean;
+  /**
+   * Who supplies the words: `deepgram` or `openai`.
+   *
+   * There is no matching setting for who supplies the *turns*. Flux always does, and
+   * `LISTEN_PROVIDER` and `LISTEN_TURNS` are gone rather than defaulted, because the
+   * defect this replaced was a deployment quietly running OpenAI's VAD for turn-taking
+   * while the Flux adapter sat unused behind a config value.
+   *
+   * `deepgram` here means one connection serving both — Flux carries the transcript in
+   * the same frame as the turn event. `openai` means two connections and two bills,
+   * which is worth paying only while a separate transcriber measurably hears Nigerian
+   * speech better than Flux does.
+   */
   readonly listenWords: string;
-  readonly listenTurns: string;
   readonly deepgramApiKey: string;
   readonly deepgramModel: string;
   /** `api.deepgram.com`, or `api.eu.deepgram.com` — nearer to Lagos, and worth measuring. */
@@ -126,15 +127,6 @@ const optional = (env: NodeJS.ProcessEnv, key: string): string | undefined => {
   return value === undefined || value.trim().length === 0 ? undefined : value.trim();
 };
 
-/** Whether this configuration will actually open a Deepgram connection. */
-const usesDeepgram = (env: NodeJS.ProcessEnv): boolean => {
-  const provider = env["LISTEN_PROVIDER"]?.trim() ?? "openai";
-  if (provider === "deepgram") return true;
-  if (provider !== "composite") return false;
-  return (env["LISTEN_WORDS"]?.trim() ?? "openai") === "deepgram"
-    || (env["LISTEN_TURNS"]?.trim() ?? "deepgram") === "deepgram";
-};
-
 export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
   const verifySignatures = env["TWILIO_VERIFY_SIGNATURES"] !== "false";
 
@@ -161,16 +153,17 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
     vadEagerness: optional(env, "VAD_EAGERNESS") ?? "auto",
     vadSilenceMs: Number(env["VAD_SILENCE_MS"] ?? 900),
 
-    listenProvider: optional(env, "LISTEN_PROVIDER") ?? "openai",
     openAiSendPcm: env["OPENAI_SEND_PCM"] === "true",
     listenWords: optional(env, "LISTEN_WORDS") ?? "openai",
-    listenTurns: optional(env, "LISTEN_TURNS") ?? "deepgram",
     // Only required when actually selected, so an OpenAI-only deployment needs no key.
-    deepgramApiKey: usesDeepgram(env) ? required(env, "DEEPGRAM_API_KEY") : (optional(env, "DEEPGRAM_API_KEY") ?? ""),
+    /* Required now, not conditional. Flux is the only turn detector, so a deployment
+       without this key cannot hear the caller stop talking — it should fail at boot
+       rather than answer a call and never reply. */
+    deepgramApiKey: required(env, "DEEPGRAM_API_KEY"),
     deepgramModel: optional(env, "DEEPGRAM_MODEL") ?? "flux-general-en",
     deepgramHost: optional(env, "DEEPGRAM_HOST") ?? "api.deepgram.com",
     deepgramEotThreshold: Number(env["DEEPGRAM_EOT_THRESHOLD"] ?? 0.8),
-    deepgramEotTimeoutMs: Number(env["DEEPGRAM_EOT_TIMEOUT_MS"] ?? 3000),
+    deepgramEotTimeoutMs: Number(env["DEEPGRAM_EOT_TIMEOUT_MS"] ?? 4000),
 
     databaseUrl: optional(env, "DATABASE_URL"),
     viewerToken: optional(env, "VIEWER_TOKEN"),

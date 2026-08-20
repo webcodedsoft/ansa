@@ -21,9 +21,26 @@ import type { ListenSession } from "../orchestrator/orchestrator";
  * are now two connections that can fail independently — either one failing makes the
  * agent deaf in a way it cannot work around, so both are surfaced as a session failure.
  */
+/**
+ * What a transcriber has to offer, and nothing more.
+ *
+ * Narrower than `ListenSession` on purpose. When both halves were full sessions, "its
+ * own turn events are ignored" was a convention held up by one line inside this function
+ * — and the deployment spent weeks taking turn events from the wrong provider because
+ * selecting one was a config value away. A words provider now has no turn events to
+ * ignore, so the mistake cannot be made from a config file.
+ */
+export interface TranscriptSource {
+  readonly transcripts: ListenSession["transcripts"];
+  write(chunk: AudioChunk): void;
+  onFailure(listener: (reason: string) => void): void;
+  onVendorError(listener: (message: string) => void): void;
+  close(): void;
+}
+
 export const composeListen = (parts: {
-  /** Supplies transcripts. Its own turn events are ignored. */
-  readonly words: ListenSession;
+  /** Supplies transcripts. It has no turn events — that is the point of the type. */
+  readonly words: TranscriptSource;
   /** Supplies turn events. Its own transcripts are ignored. */
   readonly turns: ListenSession;
   readonly log: Logger;
