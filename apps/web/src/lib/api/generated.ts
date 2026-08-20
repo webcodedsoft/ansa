@@ -525,6 +525,28 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       }>(options, "POST", `/api/v1/calls/${encodeURIComponent(input.path.callId)}/transcripts/${encodeURIComponent(input.path.transcriptId)}/corrections`, input),
 
     /**
+     * Response time per pipeline stage, as percentiles
+     * Percentiles, never averages: a mean hides the calls that make somebody hang up. `from` is inclusive and `to` exclusive; both default to the last seven days, and a range longer than 31 days is refused rather than clamped. `stages` is keyed by whatever the orchestrator measured — typically `stt_final`, `llm_first_token`, `tts_first_byte` and `turn_to_audio`.
+     */
+    latency: (input: {
+        readonly query?: {
+          readonly from?: string;
+          readonly to?: string;
+        };
+      }) =>
+      send<{
+        readonly from: string;
+        readonly to: string;
+        readonly truncated: boolean;
+        readonly stages: Readonly<Record<string, {
+        readonly p50: number | null;
+        readonly p90: number | null;
+        readonly p95: number | null;
+        readonly samples: number;
+      }>>;
+      }>(options, "GET", `/api/v1/calls/latency`, input),
+
+    /**
      * Quality metrics over this organisation's recent calls
      * Computed over the last 200 calls, from the same event log and the same arithmetic the internal viewer uses. Rates are strings so their precision is not rounded away, and null where the denominator was zero — no calls yet and no transfers are different readings.
      */
@@ -543,6 +565,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly bargeInRate: string | null;
         readonly responseLatencyMs: {
         readonly p50: number | null;
+        readonly p90: number | null;
         readonly p95: number | null;
         readonly samples: number;
       };

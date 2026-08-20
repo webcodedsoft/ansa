@@ -68,6 +68,12 @@ export const withHandoffJournal = (inner: CallRecorder): HandoffJournal => {
         const index = kept.findIndex((e) => e.kind === "caller said");
         kept.splice(index === -1 ? 0 : index, 1);
       },
+      /* Forwarded and not kept. A handoff summary is what the caller said and what was
+         done about it; how many milliseconds a stage took is not something a human picking
+         up the call can act on. */
+      latency: (l) => {
+        inner.latency(l);
+      },
       transcript: (t) => {
         inner.transcript(t);
       },

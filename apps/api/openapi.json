@@ -3323,6 +3323,157 @@
         }
       }
     },
+    "/api/v1/calls/latency": {
+      "get": {
+        "operationId": "calls.latency",
+        "tags": [
+          "calls"
+        ],
+        "summary": "Response time per pipeline stage, as percentiles",
+        "description": "Percentiles, never averages: a mean hides the calls that make somebody hang up. `from` is inclusive and `to` exclusive; both default to the last seven days, and a range longer than 31 days is refused rather than clamped. `stages` is keyed by whatever the orchestrator measured — typically `stt_final`, `llm_first_token`, `tts_first_byte` and `turn_to_audio`.",
+        "x-ansa-capability": "calls:read",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "from": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "to": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    },
+                    "stages": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "p50": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          },
+                          "p90": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          },
+                          "p95": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          },
+                          "samples": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "p50",
+                          "p90",
+                          "p95",
+                          "samples"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxProperties": 64
+                    }
+                  },
+                  "required": [
+                    "from",
+                    "to",
+                    "truncated",
+                    "stages"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold calls:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/calls/metrics": {
       "get": {
         "operationId": "calls.metrics",
@@ -3414,6 +3565,12 @@
                             "null"
                           ]
                         },
+                        "p90": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
                         "p95": {
                           "type": [
                             "integer",
@@ -3427,6 +3584,7 @@
                       },
                       "required": [
                         "p50",
+                        "p90",
                         "p95",
                         "samples"
                       ],

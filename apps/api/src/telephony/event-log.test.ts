@@ -178,6 +178,45 @@ describe("call recorder", () => {
     expect(db.seen.some((s) => s.includes("insert into transcripts"))).toBe(true);
   });
 
+  it("writes stage timings to their own table as well as to the event log", async () => {
+    /* Both, deliberately. The event log keeps this call's story; `latencies` keeps the bare
+       number where a range across a week can index it. The recorder is the join: two writes
+       off one `measure()` cannot drift, two measurements would. */
+    const db = fakeDb((sql) => (sql.includes("insert into calls") ? [{ id: "row-1" }] : []));
+    const r = createCallRecorder({ dataSource: db.ds as never, log: silentLog() as never });
+    r.started(started);
+    await settle();
+
+    r.event("latency", { stage: "turn_to_audio", ms: 740, seq: 2 });
+    r.latency({ stage: "turn_to_audio", ms: 740, provider: null });
+    r.ended("carrier sent stop");
+    await settle();
+
+    expect(db.seen.some((q) => q.includes("insert into latencies"))).toBe(true);
+    expect(db.seen.some((q) => q.includes("insert into call_events"))).toBe(true);
+  });
+
+  it("survives a latency write failing", async () => {
+    // Same rule as every other write here: the caller is mid-conversation and a broken
+    // metrics table is not their problem.
+    const log = silentLog();
+    const db = fakeDb((sql) => {
+      if (sql.includes("insert into calls")) return [{ id: "row-1" }];
+      if (sql.includes("insert into latencies")) throw new Error("relation gone");
+      return [];
+    });
+    const r = createCallRecorder({ dataSource: db.ds as never, log: log as never });
+    r.started(started);
+    await settle();
+
+    expect(() => {
+      r.latency({ stage: "llm_first_token", ms: 310, provider: null });
+      r.ended("done");
+    }).not.toThrow();
+    await settle();
+    expect(log.error).toHaveBeenCalled();
+  });
+
   it("survives a transcript write failing", async () => {
     const log = silentLog();
     const db = fakeDb((sql) => {

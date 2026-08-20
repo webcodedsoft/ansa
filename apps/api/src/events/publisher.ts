@@ -186,6 +186,10 @@ export const withEventPublisher = (
       }
     },
 
+    latency: (l) => {
+      inner.latency(l);
+    },
+
     transcript: (t) => {
       inner.transcript(t);
       // The caller's side. The agent's own words arrive as `agent said` above, because the

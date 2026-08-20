@@ -151,7 +151,7 @@ export const createOpenAiLlm = (options: OpenAiLlmOptions): LlmProvider => {
   const model = options.model ?? DEFAULT_MODEL;
   const doFetch = options.fetchImpl ?? fetch;
 
-  return {
+  const provider: LlmProvider = {
     name: "openai",
 
     complete(request: CompletionRequest): CompletionStream {
@@ -297,5 +297,25 @@ export const createOpenAiLlm = (options: OpenAiLlmOptions): LlmProvider => {
 
       return stream;
     },
+
+    warmUp(system: string): void {
+      /* An ordinary completion, deliberately: a hand-rolled request here would be a second
+         copy of the URL, the headers and the body shape, and the day the model or the base
+         URL changes is the day the warm-up quietly starts warming the wrong thing. */
+      const stream = provider.complete({
+        system,
+        messages: [{ role: "user", content: "hello" }],
+        maxTokens: 1,
+      });
+      /* Nothing reads the reply, and a failure is swallowed on purpose — the contract is
+         that this cannot break a call. It is not a silent failure of anything that matters:
+         whatever stopped the warm-up will stop the first real turn a second later, loudly,
+         through the same code path. */
+      stream.onDelta(() => undefined);
+      stream.onDone(() => undefined);
+      stream.onError(() => undefined);
+    },
   };
+
+  return provider;
 };

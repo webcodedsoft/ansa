@@ -187,6 +187,52 @@ export const recordTurns = async (
   });
 };
 
+/**
+ * One stage of one turn, timed.
+ *
+ * `turn_id` is left null and there is no `seq` column to put one in. The question this
+ * table exists to answer is "what is the p90 of `llm_first_token` this week", which is
+ * per-stage and not per-turn; reconstructing a single turn's four stages is a
+ * one-call question and the event log already carries `seq` in the detail. A column
+ * nothing queries would be a column nothing maintains.
+ */
+export interface RecordedLatency {
+  readonly stage: string;
+  readonly ms: number;
+  readonly provider: string | null;
+}
+
+/**
+ * Write a batch of stage timings.
+ *
+ * Duplicated against `call_events`, deliberately and in one direction only. The event log
+ * keeps the per-call story and the calls that predate this write; this keeps the same
+ * numbers in a shape a range query can index (migration 0042). Neither is derived from
+ * the other, so the one rule is that both are written from the same `measure()` and never
+ * from two places that could drift.
+ */
+export const recordLatencies = async (
+  dataSource: Db,
+  organizationId: OrganizationId,
+  callRowId: string,
+  latencies: readonly RecordedLatency[],
+): Promise<void> => {
+  if (latencies.length === 0) return;
+  await withOrganization(dataSource, organizationId, async (scope) => {
+    const values: unknown[] = [];
+    const tuples = latencies.map((l, i) => {
+      const b = i * 5;
+      values.push(organizationId, callRowId, l.stage, Math.round(l.ms), l.provider);
+      return `($${b + 1}, $${b + 2}, $${b + 3}, $${b + 4}, $${b + 5})`;
+    });
+    await scope.query(
+      `insert into latencies (organization_id, call_id, stage, ms, provider)
+       values ${tuples.join(", ")}`,
+      values,
+    );
+  });
+};
+
 // ---------------------------------------------------------------------------
 // Reading calls back — the viewer's half (R8.1)
 // ---------------------------------------------------------------------------

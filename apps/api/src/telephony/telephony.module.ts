@@ -55,6 +55,25 @@ import { VoiceController } from "./voice.controller";
           ...(config.elevenLabsBaseUrl === undefined
             ? {}
             : { baseUrl: config.elevenLabsBaseUrl }),
+          ...(config.elevenLabsModelId === undefined
+            ? {}
+            : { modelId: config.elevenLabsModelId }),
+          /* Spread one key at a time so an unset knob stays absent from the object. A
+             `stability: undefined` would be a key ElevenLabs sees, and it merges what it
+             is sent over the voice's own settings. */
+          voiceSettings: {
+            ...(config.elevenLabsStability === undefined
+              ? {}
+              : { stability: config.elevenLabsStability }),
+            ...(config.elevenLabsSimilarityBoost === undefined
+              ? {}
+              : { similarityBoost: config.elevenLabsSimilarityBoost }),
+            ...(config.elevenLabsStyle === undefined ? {} : { style: config.elevenLabsStyle }),
+            ...(config.elevenLabsSpeakerBoost === undefined
+              ? {}
+              : { useSpeakerBoost: config.elevenLabsSpeakerBoost }),
+            ...(config.elevenLabsSpeed === undefined ? {} : { speed: config.elevenLabsSpeed }),
+          },
         }),
     },
     {

@@ -201,3 +201,76 @@ export const loadCallRecords = async (
   limit = 200,
 ): Promise<readonly CallRecord[]> =>
   withOrganization(dataSource, organizationId, async (scope) => readCallRecords(scope, limit));
+
+// ---------------------------------------------------------------------------
+// Stage timings over a range
+// ---------------------------------------------------------------------------
+
+/** One stage of one turn, timed. Nothing identifies the turn — see `RecordedLatency`. */
+export interface StageLatency {
+  readonly stage: string;
+  readonly ms: number;
+}
+
+export interface LatencyRange {
+  /** Inclusive, ISO 8601, compared against `created_at`. */
+  readonly from: string;
+  /** Exclusive, so two consecutive ranges do not both contain the same turn. */
+  readonly to: string;
+}
+
+/**
+ * How many rows one range may return.
+ *
+ * The cap exists because the range is caller-supplied and the row count is traffic, so
+ * there is no argument that bounds it. It is not silent: the reader reports whether it
+ * bit, and the endpoint passes that on, because a percentile computed over a truncated
+ * sample and one computed over the whole range are different numbers with the same name.
+ */
+const LATENCY_ROW_CAP = 200_000;
+
+export interface StageLatencies {
+  readonly rows: readonly StageLatency[];
+  /**
+   * True when the cap bit, meaning these are the most recent `LATENCY_ROW_CAP` timings in
+   * the range rather than all of them. The percentiles are still percentiles — of a
+   * recency-biased sample.
+   */
+  readonly truncated: boolean;
+}
+
+/**
+ * Raw timings, not percentiles.
+ *
+ * The arithmetic stays in `apps/api/src/viewer/metrics.ts` with every other metric
+ * definition, for the reason at the top of this file: a percentile computed once in SQL
+ * for the dashboard and once in TypeScript for the scenario harness is two metrics with
+ * one name. What SQL is doing here is the part SQL is actually better at — an index-only
+ * scan over a date range (migration 0042) instead of dragging a week of `call_events`
+ * through the driver to filter it in Node.
+ */
+export const readStageLatencies = async (
+  scope: OrganizationScope,
+  range: LatencyRange,
+): Promise<StageLatencies> => {
+  const rows = await scope.query<Record<string, unknown>>(
+    /* No `organization_id` predicate. `latencies` is behind the same row-level policy as
+       `calls`, so the scope already applies, and adding one would suggest the isolation
+       came from the predicate rather than from the policy. */
+    `select stage, ms
+       from latencies
+      where created_at >= $1 and created_at < $2
+      order by created_at desc
+      limit $3`,
+    [range.from, range.to, LATENCY_ROW_CAP + 1],
+  );
+
+  const truncated = rows.length > LATENCY_ROW_CAP;
+  return {
+    rows: (truncated ? rows.slice(0, LATENCY_ROW_CAP) : rows).map((r) => ({
+      stage: String(r["stage"]),
+      ms: Number(r["ms"]),
+    })),
+    truncated,
+  };
+};

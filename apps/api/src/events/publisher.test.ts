@@ -52,6 +52,7 @@ const countingRecorder = () => {
     event: (kind) => calls.push(`event:${kind}`),
     transcript: () => calls.push("transcript"),
     turn: () => calls.push("turn"),
+    latency: () => calls.push("latency"),
     ended: () => calls.push("ended"),
   };
   return { calls, recorder };

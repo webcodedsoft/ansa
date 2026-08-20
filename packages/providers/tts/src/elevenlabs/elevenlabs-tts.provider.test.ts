@@ -127,6 +127,97 @@ describe("createElevenLabsTts", () => {
     expect(error.message).toMatch(/no native output/);
   });
 
+  /**
+   * Which model, and what gets sent about the voice.
+   *
+   * The model is a latency decision: Flash is ~75ms of inference against Turbo's 250-300,
+   * on a budget where the whole turn should land under a second. The voice settings are a
+   * different kind of decision — ElevenLabs merges what it is sent over the voice's own
+   * stored settings, so sending a default is not neutral, it is an override.
+   */
+  const bodyOf = async (
+    options: Parameters<typeof createElevenLabsTts>[0],
+    request: Partial<Parameters<ReturnType<typeof createElevenLabsTts>["synthesize"]>[0]> = {},
+  ): Promise<Record<string, unknown>> => {
+    const fetchImpl = vi.fn().mockResolvedValue(streamingResponse([new Uint8Array([1])]));
+    const tts = createElevenLabsTts({ ...options, fetchImpl: fetchImpl as typeof fetch });
+    const stream = tts.synthesize({
+      text: GREETING,
+      voiceId: "voice-abc",
+      format: TELEPHONY_AUDIO,
+      ...request,
+    });
+    await new Promise<void>((resolve) => stream.onDone(resolve));
+    const [, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    return JSON.parse(init.body as string) as Record<string, unknown>;
+  };
+
+  describe("the model", () => {
+    it("defaults to the flash model, not the deprecated turbo one", async () => {
+      expect(await bodyOf({ apiKey: "k" })).toMatchObject({ model_id: "eleven_flash_v2_5" });
+    });
+
+    it("can be overridden without a deploy", async () => {
+      expect(await bodyOf({ apiKey: "k", modelId: "eleven_turbo_v2_5" })).toMatchObject({
+        model_id: "eleven_turbo_v2_5",
+      });
+    });
+
+    // Deprecated on the streaming endpoint with no replacement. Sending it dates the code
+    // and buys nothing; the brief asks for it and the brief is out of date here.
+    it("does not send the deprecated latency parameter", async () => {
+      const fetchImpl = vi.fn().mockResolvedValue(streamingResponse([new Uint8Array([1])]));
+      const tts = createElevenLabsTts({ apiKey: "k", fetchImpl: fetchImpl as typeof fetch });
+      const stream = tts.synthesize({
+        text: GREETING,
+        voiceId: "v",
+        format: TELEPHONY_AUDIO,
+      });
+      await new Promise<void>((resolve) => stream.onDone(resolve));
+      const [url] = fetchImpl.mock.calls[0] as [string];
+      expect(url).not.toContain("optimize_streaming_latency");
+    });
+  });
+
+  describe("voice settings", () => {
+    it("sends none at all when none were configured", async () => {
+      // The important one. An empty object would still be merged over the voice's stored
+      // settings; absence is what leaves a cloned voice as its owner tuned it.
+      expect(await bodyOf({ apiKey: "k" })).not.toHaveProperty("voice_settings");
+    });
+
+    it("sends only the knobs that were set", async () => {
+      const body = await bodyOf({ apiKey: "k", voiceSettings: { stability: 0.45 } });
+      expect(body["voice_settings"]).toEqual({ stability: 0.45 });
+    });
+
+    it("uses the vendor's snake case", async () => {
+      const body = await bodyOf({
+        apiKey: "k",
+        voiceSettings: { similarityBoost: 0.75, useSpeakerBoost: true, style: 0.35 },
+      });
+      expect(body["voice_settings"]).toEqual({
+        similarity_boost: 0.75,
+        use_speaker_boost: true,
+        style: 0.35,
+      });
+    });
+
+    it("lets the agent's own rate beat the deployment default", async () => {
+      // The deployment fallback is for agents that published no rate. An agent that did
+      // has made a choice, and it is per-agent configuration reaching a call.
+      const body = await bodyOf({ apiKey: "k", voiceSettings: { speed: 0.95 } }, {
+        speakingRate: 1.1,
+      });
+      expect(body["voice_settings"]).toEqual({ speed: 1.1 });
+    });
+
+    it("falls back to the deployment rate when the agent published none", async () => {
+      const body = await bodyOf({ apiKey: "k", voiceSettings: { speed: 0.95 } });
+      expect(body["voice_settings"]).toEqual({ speed: 0.95 });
+    });
+  });
+
   describe("cancel", () => {
     it("aborts the in-flight request so the vendor stops producing audio", async () => {
       let seenSignal: AbortSignal | undefined;

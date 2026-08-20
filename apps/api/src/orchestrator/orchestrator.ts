@@ -755,10 +755,21 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       return;
     }
     stageStart.delete(stage);
-    // Slice 2's `latencies` table is where these land once the event log is wired.
     const ms = Date.now() - started;
     log.info("latency", { stage, ms, ...extra });
+    /* Both, from one place. The event log keeps this turn's story with its `seq` and its
+       character counts; `latencies` keeps the bare number where a range across a week can
+       index it. Two writes off one measurement cannot drift; two measurements would. */
     record.event("latency", { stage, ms, ...extra });
+    /* `provider` when the stage belongs to one, which is what makes an A/B between two
+       vendors readable: "tts_first_byte p90" across a week of mixed traffic is one number
+       for two products. `turn_to_audio` stays null on purpose — it is the end-to-end
+       figure and no single vendor owns it. */
+    record.latency({
+      stage,
+      ms,
+      provider: typeof extra["provider"] === "string" ? extra["provider"] : null,
+    });
   };
 
   // ---- audio in: the single fan-out point ---------------------------------
@@ -981,7 +992,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         // The agent is speaking for real now; no acknowledgement should land on top.
         cancelFiller();
         cancelWatchdog();
-        measure("tts_first_byte", { seq: current.seq });
+        measure("tts_first_byte", { seq: current.seq, provider: deps.tts.name });
         // Once per turn: the first byte of the first sentence is when the caller stops
         // waiting. Later sentences are already covered by the earlier audio.
         if (startByte === 0) measure("turn_to_audio", { seq: current.seq });
@@ -1643,7 +1654,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       if (turn?.seq !== seq) return;
       if (firstToken) {
         firstToken = false;
-        measure("llm_first_token", { seq });
+        measure("llm_first_token", { seq, provider: deps.llm.name });
       }
       for (const sentence of sentences.push(token)) {
         // Words, not tokens, and not sentences alone: one long sentence is still too
@@ -2414,6 +2425,12 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
      and directed parsing is exactly what turns that run of digits into a reference rather
      than a number heard in passing. Costs nothing on an agent with no form. */
   armNextField();
+
+  /* Pay the model's setup cost now, against the greeting rather than against the caller's
+     first question. The real system prompt goes with it so the vendor's prompt cache is
+     primed with the prefix every turn of this call will resend. Returns nothing and cannot
+     throw — see `LlmProvider.warmUp`. */
+  deps.llm.warmUp(deps.systemPrompt);
 
   const cached = deps.greetingAudio ?? null;
   if (cached !== null && cached.length > 0) {

@@ -2,9 +2,11 @@ import {
   recordCallEnded,
   recordCallEvents,
   recordCallStarted,
+  recordLatencies,
   recordTranscripts,
   recordTurns,
   type Db,
+  type RecordedLatency,
   type RecordedTranscript,
   type RecordedTurn,
   type StartedCall,
@@ -46,6 +48,15 @@ export interface CallRecorder {
    * is known when it begins.
    */
   turn(turn: RecordedTurn): void;
+  /**
+   * One stage of one turn, timed.
+   *
+   * The same number also goes to the event log as a `latency` event, and that is not an
+   * oversight. The event log keeps the per-call story and every call recorded before this
+   * table was written to; this keeps it in a shape a range across a week can index. Both
+   * come off one `measure()` call, so they cannot disagree.
+   */
+  latency(latency: RecordedLatency): void;
   ended(reason: string, carrierStatus?: string | null, durationSeconds?: number | null): void;
 }
 
@@ -55,6 +66,7 @@ export const nullRecorder: CallRecorder = {
   event: () => undefined,
   transcript: () => undefined,
   turn: () => undefined,
+  latency: () => undefined,
   ended: () => undefined,
 };
 
@@ -77,6 +89,7 @@ export const createCallRecorder = (deps: {
   let buffer: { kind: string; offsetMs?: number | null; detail?: Readonly<Record<string, unknown>> }[] = [];
   let transcripts: RecordedTranscript[] = [];
   let turns: RecordedTurn[] = [];
+  let latencies: RecordedLatency[] = [];
   let timer: NodeJS.Timeout | null = null;
   let closed = false;
   /**
@@ -127,6 +140,17 @@ export const createCallRecorder = (deps: {
       turns = [];
       void recordTurns(dataSource, organizationId, callRowId, batch).catch((error: unknown) => {
         log.error("could not write turns", {
+          dropped: batch.length,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
+
+    if (latencies.length > 0) {
+      const batch = latencies;
+      latencies = [];
+      void recordLatencies(dataSource, organizationId, callRowId, batch).catch((error: unknown) => {
+        log.error("could not write latencies", {
           dropped: batch.length,
           error: error instanceof Error ? error.message : String(error),
         });
@@ -198,6 +222,14 @@ export const createCallRecorder = (deps: {
       turns.push(t);
       if (turns.length > FLUSH_AT * 4) turns = turns.slice(-FLUSH_AT * 4);
       if (turns.length >= FLUSH_AT) flush();
+      else arm();
+    },
+
+    latency: (l) => {
+      if (closed) return;
+      latencies.push(l);
+      if (latencies.length > FLUSH_AT * 4) latencies = latencies.slice(-FLUSH_AT * 4);
+      if (latencies.length >= FLUSH_AT) flush();
       else arm();
     },
 

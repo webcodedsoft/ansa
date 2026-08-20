@@ -16,6 +16,26 @@ export interface AppConfig {
   readonly elevenLabsVoiceId: string;
   /** Overridden in local testing to point at a stub. Defaults to the real API. */
   readonly elevenLabsBaseUrl: string | undefined;
+  /**
+   * The speech model. `eleven_flash_v2_5` unless overridden — see the adapter for why.
+   *
+   * Configurable so a slow-sounding call can be tested against another model without a
+   * deploy, not so a deployment can quietly end up on `eleven_v3`.
+   */
+  readonly elevenLabsModelId: string | undefined;
+  /**
+   * Voice settings, each sent only if set.
+   *
+   * Unset means "leave the voice as it was tuned in ElevenLabs", which is the right
+   * default for a cloned brand voice: the vendor merges this object over the voice's
+   * stored settings, so a default here silently replaces somebody's choice.
+   */
+  readonly elevenLabsStability: number | undefined;
+  readonly elevenLabsSimilarityBoost: number | undefined;
+  readonly elevenLabsStyle: number | undefined;
+  readonly elevenLabsSpeakerBoost: boolean | undefined;
+  /** Fallback pace for agents that publish none. The agent's own always wins. */
+  readonly elevenLabsSpeed: number | undefined;
   readonly openAiApiKey: string;
   readonly transcriptionModel: string;
   /**
@@ -127,6 +147,28 @@ const optional = (env: NodeJS.ProcessEnv, key: string): string | undefined => {
   return value === undefined || value.trim().length === 0 ? undefined : value.trim();
 };
 
+/**
+ * Absent stays absent.
+ *
+ * These read voice settings, where an unset knob must not become a default: ElevenLabs
+ * merges what is sent over the voice's own stored settings, so a default here silently
+ * replaces what somebody tuned on a cloned voice.
+ */
+const optionalNumber = (env: NodeJS.ProcessEnv, key: string): number | undefined => {
+  const raw = optional(env, key);
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    throw new Error(`${key} must be a number, got ${JSON.stringify(raw)}`);
+  }
+  return value;
+};
+
+const optionalFlag = (env: NodeJS.ProcessEnv, key: string): boolean | undefined => {
+  const raw = optional(env, key);
+  return raw === undefined ? undefined : raw === "true";
+};
+
 export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
   const verifySignatures = env["TWILIO_VERIFY_SIGNATURES"] !== "false";
 
@@ -142,6 +184,12 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
     elevenLabsApiKey: required(env, "ELEVENLABS_API_KEY"),
     elevenLabsVoiceId: required(env, "ELEVENLABS_VOICE_ID"),
     elevenLabsBaseUrl: optional(env, "ELEVENLABS_BASE_URL"),
+    elevenLabsModelId: optional(env, "ELEVENLABS_MODEL_ID"),
+    elevenLabsStability: optionalNumber(env, "ELEVENLABS_STABILITY"),
+    elevenLabsSimilarityBoost: optionalNumber(env, "ELEVENLABS_SIMILARITY_BOOST"),
+    elevenLabsStyle: optionalNumber(env, "ELEVENLABS_STYLE"),
+    elevenLabsSpeakerBoost: optionalFlag(env, "ELEVENLABS_SPEAKER_BOOST"),
+    elevenLabsSpeed: optionalNumber(env, "ELEVENLABS_SPEED"),
     openAiApiKey: required(env, "OPENAI_API_KEY"),
     // gpt-4o-transcribe rather than the mini variant. Measured A/B on the same voice and
     // line: mini rendered "policy" as apology, penalty and course, which is close to

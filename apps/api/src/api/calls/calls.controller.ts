@@ -3,11 +3,20 @@ import {
   listCallPage,
   loadCallDetail,
   readCallRecords,
+  readStageLatencies,
   type CallFilters,
+  type LatencyRange,
 } from "@ansa/db";
-import { Controller, Get, Inject, NotFoundException, Post } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  Inject,
+  NotFoundException,
+  Post,
+  UnprocessableEntityException,
+} from "@nestjs/common";
 
-import { scoreCalls } from "../../viewer/metrics";
+import { scoreCalls, stagePercentiles } from "../../viewer/metrics";
 // Aliased: the handler below is also called `reviewQueue`, and a reader should not have to
 // work out that a bare call inside a method resolves to the module import and not to `this`.
 import { reviewQueue as rankForReview } from "../../viewer/review";
@@ -19,6 +28,7 @@ import {
   flag,
   integer,
   list,
+  map,
   nullable,
   object,
   optional,
@@ -218,6 +228,8 @@ const verdict = object({
 
 const percentiles = object({
   p50: nullable(integer()),
+  /** Where a latency problem shows first while still having enough samples to mean something. */
+  p90: nullable(integer()),
   p95: nullable(integer()),
   samples: integer({ minimum: 0 }),
 });
@@ -367,6 +379,77 @@ const configTrend = object({
 
 const trendsResponse = object({ versions: list(configTrend) });
 
+// ---------------------------------------------------------------------------
+// Latency over a range
+// ---------------------------------------------------------------------------
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** A week, because that is the window somebody looks at after changing a provider. */
+const DEFAULT_LATENCY_DAYS = 7;
+/**
+ * The longest range one request may ask for.
+ *
+ * Not arbitrary caution: the range is caller-supplied and the row count is traffic, so
+ * nothing else bounds the query. A month is long enough to see a regression and short
+ * enough that the answer arrives.
+ */
+const MAX_LATENCY_DAYS = 31;
+
+const latencyQuery = object({
+  /** Inclusive. Defaults to seven days before `to`. */
+  from: optional(timestamp()),
+  /** Exclusive, so two consecutive ranges do not both contain the same turn. Defaults to now. */
+  to: optional(timestamp()),
+});
+
+const latencyResponse = object({
+  /** Echoed back resolved, so a caller who sent neither knows what was measured. */
+  from: timestamp(),
+  to: timestamp(),
+  /**
+   * True when the range held more timings than one request returns.
+   *
+   * Reported rather than swallowed. These are still percentiles, but of the most recent
+   * slice of the range instead of all of it, and a truncated sample presented as a whole
+   * one is how a dashboard comes to disagree with the database.
+   */
+  truncated: flag(),
+  /**
+   * Keyed by stage — `stt_final`, `llm_first_token`, `tts_first_byte`, `turn_to_audio`.
+   *
+   * A map rather than a fixed set of fields, because the stages are whatever the
+   * orchestrator measured. Adding a `mark()` should make a stage appear here without a
+   * schema change, and a stage that stops being recorded should disappear rather than
+   * report zeros forever.
+   */
+  stages: map(percentiles, { maxProperties: 64 }),
+});
+
+/**
+ * Resolve the range, or refuse it.
+ *
+ * Refusing loudly rather than clamping quietly: a caller who asks for a year and receives
+ * a month has no way to tell, and would read the answer as a year's percentiles.
+ */
+const toLatencyRange = (query: Infer<typeof latencyQuery>): LatencyRange => {
+  const to = query.to === undefined ? new Date() : new Date(query.to);
+  const from =
+    query.from === undefined ? new Date(to.getTime() - DEFAULT_LATENCY_DAYS * DAY_MS) : new Date(query.from);
+
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+    throw new UnprocessableEntityException("from and to must be timestamps");
+  }
+  if (from.getTime() >= to.getTime()) {
+    throw new UnprocessableEntityException("from must be before to");
+  }
+  if (to.getTime() - from.getTime() > MAX_LATENCY_DAYS * DAY_MS) {
+    throw new UnprocessableEntityException(
+      `the range must be ${MAX_LATENCY_DAYS} days or less, ask for a shorter one`,
+    );
+  }
+  return { from: from.toISOString(), to: to.toISOString() };
+};
+
 const toFilters = (query: Infer<typeof callQuery>): CallFilters => ({
   from: query.from ?? null,
   to: query.to ?? null,
@@ -428,6 +511,7 @@ export class CallsController {
         // Rounded because the schema says integer and a stage measured in fractions of a
         // millisecond would otherwise fail the projection and 500 the whole page.
         p50: round(scored.responseLatencyMs.p50),
+        p90: round(scored.responseLatencyMs.p90),
         p95: round(scored.responseLatencyMs.p95),
         samples: scored.responseLatencyMs.samples,
       },
@@ -457,6 +541,38 @@ export class CallsController {
    *
    * Declared before `:callId` or Nest reads the path as a call id and answers 422.
    */
+  /**
+   * Per-stage response times over a date range.
+   *
+   * Separate from `/metrics` and not folded into it, because the two answer different
+   * questions from different sources. `/metrics` scores the last two hundred calls from
+   * the event log and reports one number — caller stopped, agent started. This reports
+   * every stage over a range the caller chooses, from the `latencies` table, which is the
+   * only one indexed for that. A regression lives in a stage; the single number only tells
+   * you there is one.
+   *
+   * Declared before `:callId` for the reason at the top of this file.
+   */
+  @Get("latency")
+  @Endpoint({
+    summary: "Response time per pipeline stage, as percentiles",
+    description:
+      "Percentiles, never averages: a mean hides the calls that make somebody hang up. `from` is inclusive and `to` exclusive; both default to the last seven days, and a range longer than 31 days is refused rather than clamped. `stages` is keyed by whatever the orchestrator measured — typically `stt_final`, `llm_first_token`, `tts_first_byte` and `turn_to_audio`.",
+    capability: "calls:read",
+    query: latencyQuery,
+    response: latencyResponse,
+  })
+  async latency(@FromQuery() query: Infer<typeof latencyQuery>): Promise<Infer<typeof latencyResponse>> {
+    const range = toLatencyRange(query);
+    const measured = await this.db.tx((scope) => readStageLatencies(scope, range));
+    const stages: Record<string, Infer<typeof percentiles>> = {};
+    for (const [stage, p] of Object.entries(stagePercentiles(measured.rows))) {
+      // Rounded for the same reason `/metrics` rounds: the schema says integer.
+      stages[stage] = { p50: round(p.p50), p90: round(p.p90), p95: round(p.p95), samples: p.samples };
+    }
+    return { from: range.from, to: range.to, truncated: measured.truncated, stages };
+  }
+
   @Get("review-queue")
   @Endpoint({
     summary: "Calls worth reviewing first, worst rated highest",

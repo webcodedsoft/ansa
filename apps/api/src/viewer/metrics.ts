@@ -17,6 +17,14 @@ import type { CallRecord, MetricEvent, ReviewedTranscript } from "@ansa/db";
 /** Nearest-rank, and honest about how many samples it had. */
 export interface Percentiles {
   readonly p50: number | null;
+  /**
+   * The one an alert should be written against.
+   *
+   * p50 says the median call was fine and p95 is thin enough at low volume to swing on a
+   * single bad turn. p90 is where a latency problem shows up first while still having
+   * enough samples behind it to mean something.
+   */
+  readonly p90: number | null;
   readonly p95: number | null;
   readonly samples: number;
 }
@@ -103,13 +111,42 @@ const detailOf = (event: MetricEvent): Record<string, unknown> =>
     : {};
 
 const percentiles = (values: readonly number[]): Percentiles => {
-  if (values.length === 0) return { p50: null, p95: null, samples: 0 };
+  if (values.length === 0) return { p50: null, p90: null, p95: null, samples: 0 };
   const sorted = [...values].sort((a, b) => a - b);
   const at = (q: number): number => {
     const rank = Math.ceil(q * sorted.length) - 1;
     return sorted[Math.min(Math.max(rank, 0), sorted.length - 1)] ?? 0;
   };
-  return { p50: at(0.5), p95: at(0.95), samples: sorted.length };
+  return { p50: at(0.5), p90: at(0.9), p95: at(0.95), samples: sorted.length };
+};
+
+/**
+ * The same arithmetic, per stage, for a range rather than for a window of calls.
+ *
+ * Deliberately here and not in SQL. `readStageLatencies` fetches the timings because a
+ * date range over an indexed table is what a database is for; the percentile itself is
+ * defined once, in this file, alongside every other metric — so the number an alert fires
+ * on and the number a scenario test asserts are produced by the same three lines.
+ *
+ * Averages are not offered. A mean response time hides exactly the calls that make
+ * somebody hang up, which is the only reason to look at this at all.
+ */
+export const stagePercentiles = (
+  rows: readonly { readonly stage: string; readonly ms: number }[],
+): Readonly<Record<string, Percentiles>> => {
+  const byStage = new Map<string, number[]>();
+  for (const row of rows) {
+    const held = byStage.get(row.stage);
+    if (held === undefined) byStage.set(row.stage, [row.ms]);
+    else held.push(row.ms);
+  }
+  const out: Record<string, Percentiles> = {};
+  // Sorted so the response is stable between calls — a map iterated in insertion order
+  // would reorder itself the day one stage stops being recorded.
+  for (const stage of [...byStage.keys()].sort()) {
+    out[stage] = percentiles(byStage.get(stage) ?? []);
+  }
+  return out;
 };
 
 /**

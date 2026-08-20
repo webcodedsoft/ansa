@@ -75,4 +75,21 @@ export interface LlmProvider {
   readonly name: string;
   /** Must stream. A voice turn cannot wait for a complete response. */
   complete(request: CompletionRequest): CompletionStream;
+  /**
+   * Pay the first request's setup cost now, while nobody is waiting for it.
+   *
+   * Called once as a call connects and the greeting starts playing. The first real turn
+   * otherwise pays for DNS, TLS and the vendor's cold start at the one moment the caller
+   * is listening hardest, and that is several hundred milliseconds of the gap this whole
+   * layer exists to close.
+   *
+   * `system` is the call's real system prompt rather than a stub, because the connection
+   * is only half of it: sending the actual prefix also puts it in whatever prompt cache
+   * the vendor keeps, and every turn of the call resends that same prefix.
+   *
+   * Returns nothing and must never throw or reject. There is no result to wait for — the
+   * reply is discarded — and a warm-up that could fail a call would be a worse trade than
+   * the cold start it avoids.
+   */
+  warmUp(system: string): void;
 }

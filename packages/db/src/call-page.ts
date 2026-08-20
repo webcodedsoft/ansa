@@ -171,9 +171,14 @@ export const listCallPage = async (
     /*
      * The latency column is a lateral rather than a join-and-group, so adding
      * it cannot change how many rows come back — a call with no latency events
-     * still appears, with null. `latencies` is not the source: nothing writes
-     * to that table, and the number the viewer reports comes from the event
-     * log, so this reads the same rows by the same rule.
+     * still appears, with null.
+     *
+     * The event log and not `latencies`, which is written to as of migration
+     * 0042 and would serve this faster. Deliberate: every call recorded before
+     * that migration has its timings only here, and a call list where the older
+     * half of the page reads null would look like a regression rather than like
+     * history. `/calls/latency` reads the table, because a range across a week
+     * is the query the event log cannot serve.
      *
      * No `organization_id` predicate inside the lateral. `call_events` is behind the
      * same row-level policy as `calls`, so the scope already applies; adding

@@ -145,6 +145,21 @@ const seed = async (label: string): Promise<Organisation> => {
     [organizationId, otherCallId],
   );
 
+  /* Stage timings, in the table `/calls/latency` reads. Written here as well as to the
+     event log because that is what the recorder does on a real call: both, off one
+     measurement. `created_at` is stamped explicitly so the range filter has something
+     deterministic to include and exclude. */
+  await owner.query(
+    `insert into latencies (organization_id, call_id, stage, ms, created_at)
+     values ($1, $2, 'turn_to_audio',    700, timestamptz '2026-03-10 09:00:00+00'),
+            ($1, $2, 'turn_to_audio',    900, timestamptz '2026-03-10 09:01:00+00'),
+            ($1, $2, 'llm_first_token',  300, timestamptz '2026-03-10 09:00:00+00'),
+            ($1, $2, 'tts_first_byte',    60, timestamptz '2026-03-10 09:00:00+00'),
+            -- Outside every range the tests ask for, so a range that leaked would show it.
+            ($1, $2, 'turn_to_audio',  99999, timestamptz '2025-01-01 00:00:00+00')`,
+    [organizationId, callId],
+  );
+
   const first = await owner.query<{ id: string }[]>(
     `insert into transcripts (organization_id, call_id, kind, text, confidence, offset_ms, provider)
      values ($1, $2, 'final', 'my policy number is AB1234', 0.62, 900, 'openai')
@@ -471,6 +486,83 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("the call histor
       expect(Number(theirs.body["reviewed"])).toBe(0);
       // Nothing reviewed is not the same reading as nothing wrong, so it is null.
       expect(theirs.body["sttExactMatch"]).toBeNull();
+    });
+  });
+
+  /**
+   * Response time per stage, over the range the caller asks for (Phase 3).
+   *
+   * Over HTTP against the real table rather than as a unit test of `stagePercentiles`,
+   * because the two things that can go wrong here are both outside the arithmetic: that
+   * the range filter includes and excludes the right rows, and that one organisation's
+   * timings are not in another's percentile. The second is a fact about RLS and a fake
+   * scope would agree with whatever the query did.
+   */
+  describe("response time per stage", () => {
+    const RANGE = { from: "2026-03-01T00:00:00.000Z", to: "2026-04-01T00:00:00.000Z" };
+    const query = `?from=${encodeURIComponent(RANGE.from)}&to=${encodeURIComponent(RANGE.to)}`;
+
+    const stages = (reply: Reply): Record<string, Record<string, unknown>> =>
+      reply.body["stages"] as Record<string, Record<string, unknown>>;
+
+    it("is read as a page of its own and not as a call id", async () => {
+      const reply = await request("GET", `/api/v1/calls/latency${query}`, {
+        token: alpha.owner.token,
+      });
+      expect(reply.status).toBe(200);
+    });
+
+    it("reports each stage separately, over the range asked for", async () => {
+      const reply = await request("GET", `/api/v1/calls/latency${query}`, {
+        token: alpha.owner.token,
+      });
+
+      // The 99999ms sample sits in 2025 and must not be in any of these.
+      expect(stages(reply)["turn_to_audio"]).toEqual({ p50: 700, p90: 900, p95: 900, samples: 2 });
+      expect(stages(reply)["llm_first_token"]?.["p50"]).toBe(300);
+      expect(stages(reply)["tts_first_byte"]?.["p50"]).toBe(60);
+      expect(reply.body["truncated"]).toBe(false);
+      // Echoed back resolved, so a caller who sent neither knows what was measured.
+      expect(reply.body["from"]).toBe(RANGE.from);
+    });
+
+    it("holds no other organisation's turns", async () => {
+      /* Beta seeded its own timings with the same stage names and the same values, so an
+         answer that leaked would still look plausible — what proves the boundary is the
+         sample count, which must be beta's two and not all four. */
+      const theirs = await request("GET", `/api/v1/calls/latency${query}`, {
+        token: beta.owner.token,
+      });
+      expect(stages(theirs)["turn_to_audio"]?.["samples"]).toBe(2);
+    });
+
+    it("says nothing rather than zeroes for a range with no turns in it", async () => {
+      const reply = await request(
+        "GET",
+        "/api/v1/calls/latency?from=2024-01-01T00:00:00.000Z&to=2024-01-08T00:00:00.000Z",
+        { token: alpha.owner.token },
+      );
+      expect(reply.status).toBe(200);
+      expect(reply.body["stages"]).toEqual({});
+    });
+
+    it("refuses a range longer than a month rather than quietly shortening it", async () => {
+      // Clamping would answer a year's question with a month's number and say nothing.
+      const reply = await request(
+        "GET",
+        "/api/v1/calls/latency?from=2025-01-01T00:00:00.000Z&to=2026-01-01T00:00:00.000Z",
+        { token: alpha.owner.token },
+      );
+      expect(reply.status).toBe(422);
+    });
+
+    it("refuses a range that runs backwards", async () => {
+      const reply = await request(
+        "GET",
+        "/api/v1/calls/latency?from=2026-03-10T00:00:00.000Z&to=2026-03-01T00:00:00.000Z",
+        { token: alpha.owner.token },
+      );
+      expect(reply.status).toBe(422);
     });
   });
 

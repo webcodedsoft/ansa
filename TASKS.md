@@ -2730,6 +2730,61 @@ What to listen for, in order of what is actually in doubt:
 - [ ] Readiness is organisation-wide, so a failing check pauses every agent. Honest today
       (none of them can answer) and wrong once checks become per agent.
 
+## Voice remediation (2026-08-20)
+
+Following `docs/ansa-conversational-fixes.md` and `docs/ansa-agent-prompt.md`. Eight
+phases, one commit each, and a real phone call between every one. The audit that precedes
+them is in the Phase 1 commit message.
+
+- [x] **Phase 1 — Flux is the turn detector** (`35708e5`). Silence-threshold endpointing is
+      gone rather than flagged off. `LISTEN_PROVIDER` and `LISTEN_TURNS` were deleted, so a
+      deployment can no longer configure its way back to the bug; `LISTEN_WORDS` still
+      chooses who transcribes, which is the axis that has a real answer either way. The
+      session reconnects with backoff and buffers audio across the gap. `eot_timeout_ms`
+      went 3000 -> 4000 because Nigerian callers read reference numbers aloud.
+      *Correction to the audit: `TURN_DETECTION` and `VAD_*` are not dead config — they
+      still drive the OpenAI transcriber's buffer commits.*
+- [x] **Phase 2 — barge-in settles after the stop** (`4b072c4`). The backchannel guard
+      could never fire, because `stopSpeaking` nulls the turn before the transcript that
+      would clear it arrives. The torn-down turn is now held for a second with what was
+      heard and what was not; a backchannel, a bare particle or our own echo resumes the
+      remainder, anything with content commits the interruption and marks it with an
+      em-dash. Interim transcripts cancel the recovery clock — without that, a caller who
+      cuts in and talks for three seconds gets talked over by the recovery itself.
+- [x] **Phase 3a — the fast model, the warm connection, and the numbers**. Split from
+      Phase 3: sentence-boundary chunking already existed, and Cartesia is 3b.
+      - `eleven_flash_v2_5` (~75ms) replaces `eleven_turbo_v2_5` (~250-300ms). Flash reads
+        numbers less gracefully, which costs nothing here because `@ansa/normalizer` runs
+        first and TTS never sees a digit.
+      - Voice settings — stability, similarity boost, style, speaker boost, speed — are
+        deployment configuration, merged over the voice's own stored settings. An unset
+        knob is absent from the request rather than sent as a default.
+      - **The brief is wrong about `optimize_streaming_latency`.** ElevenLabs deprecated
+        it; it is deliberately not sent. Verified against the current docs, not recalled.
+      - Warm-up: `LlmProvider.warmUp(system)` fires as the greeting starts. The real system
+        prompt and not a stub, because the connection is only half of it — the prefix every
+        turn resends goes into the vendor's prompt cache too.
+      - Stage timings now reach the `latencies` table, which has existed since migration
+        0001 with nothing writing to it. `GET /api/v1/calls/latency` returns p50/p90/p95
+        per stage over a range, never an average, and refuses a range over 31 days rather
+        than clamping it. `tts_first_byte` and `llm_first_token` carry the vendor's name,
+        which is what makes the Phase 3b A/B readable.
+- [ ] **Phase 3b — Cartesia Sonic behind `TtsProvider`**, to A/B against ElevenLabs on real
+      calls. ~40-90ms and a tighter spread under load; consistency is what a caller
+      notices.
+- [ ] Phase 4 — dialogue state and the state block
+- [ ] Phase 5 — emotional read appended after the spoken text, zero latency cost
+- [ ] Phase 6 — pools instead of fixed artifacts (greetings, fillers, backchannels)
+- [ ] Phase 7 — outbound: AMD, DNC as a dial-time gate, consent basis, calling windows
+- [ ] Phase 8 — dialogue policy layer and the output guard
+
+**Awaiting a real phone call:** phases 1, 2 and 3a. None of them is done until one is made.
+
+**Left deliberately for later.** `TRANSCRIPTION_MODEL` is set three ways —
+`env.ts` defaults to `gpt-4o-transcribe`, `.env` agrees, and `.env.example` says
+`gpt-4o-mini-transcribe` and claims ~120ms faster. One of those is wrong and it is worth
+measuring rather than guessing.
+
 ## Session discipline
 
 - Update this file before you stop working. Check boxes, note what broke.

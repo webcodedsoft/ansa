@@ -1099,6 +1099,32 @@ describe("the prompt the call was configured with", () => {
     expect(system.length).toBeGreaterThan(organizationPrompt.length);
     assertInvariants(h);
   });
+
+  it("warms the model with that same prompt as the call connects", () => {
+    /* The first turn otherwise pays for the connection and a cold prompt cache at the one
+       moment the caller is listening hardest. Sending the real prefix is the point: a stub
+       string would open the socket and prime nothing, and the prefix is what every turn of
+       this call resends. */
+    const organizationPrompt = "You are answering for a organization whose own layer is in this text.";
+    const h = setup({ systemPrompt: organizationPrompt });
+
+    expect(h.llm.warmUps).toEqual([organizationPrompt]);
+    // And it is not a turn. Everything that counts completions would be off by one.
+    expect(h.llm.completions).toHaveLength(0);
+    assertInvariants(h);
+  });
+
+  it("warms once per call, not once per turn", () => {
+    const h = setup();
+
+    h.listen.final("What are your opening hours?");
+    h.llm.last().emit("We open at nine.");
+    h.llm.last().finish();
+    h.listen.final("And on Saturdays?");
+
+    expect(h.llm.warmUps).toHaveLength(1);
+    assertInvariants(h);
+  });
 });
 
 describe("what the agent knows about the call (§10)", () => {
@@ -1605,8 +1631,10 @@ describe("turns are written down", () => {
       startedOffsetMs: number;
       bargedInAtMs: number | null;
     }[] = [];
+    const latencies: { stage: string; ms: number; provider: string | null }[] = [];
     return {
       turns,
+      latencies,
       recorder: {
         started: () => undefined,
         event: () => undefined,
@@ -1617,6 +1645,7 @@ describe("turns are written down", () => {
           startedOffsetMs: number;
           bargedInAtMs: number | null;
         }) => turns.push(t),
+        latency: (l: { stage: string; ms: number; provider: string | null }) => latencies.push(l),
         ended: () => undefined,
       },
     };
@@ -1707,6 +1736,49 @@ describe("turns are written down", () => {
     const r = recording();
     setup({ recorder: r.recorder as unknown as CallRecorder, greetingAudio: null });
     expect(r.turns.filter((t) => t.speaker === "agent")).toHaveLength(0);
+  });
+
+  /**
+   * The stage timings are recorded twice, and this is the half that was inventory for two
+   * slices: `latencies` existed from migration 0001 and nothing ever wrote to it. What
+   * makes the range endpoint work is not the table or the query — it is that a real turn
+   * reaches `record.latency` at all.
+   */
+  it("files each stage of a turn as a timing, not only as an event", () => {
+    const r = recording();
+    const h = setup({ recorder: r.recorder as unknown as CallRecorder });
+
+    // The greeting out of the way, then one complete turn through the whole pipeline.
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    /* End-of-turn first, then the transcript. That is the real order on a Flux call and it
+       is load-bearing here: `stt_final` and `turn_to_audio` are marked when the caller
+       stops, and measured when the words and the audio arrive. */
+    h.listen.endOfTurn(3_000);
+    h.listen.final("What are your opening hours?", 3_000);
+    h.llm.last().emit("We open at nine. ");
+    h.llm.last().finish();
+    h.tts.last().audio(800);
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    const stages = r.latencies.map((l) => l.stage);
+    expect(stages).toContain("stt_final");
+    expect(stages).toContain("llm_first_token");
+    expect(stages).toContain("tts_first_byte");
+    expect(stages).toContain("turn_to_audio");
+    // A duration, not a timestamp. The endpoint takes percentiles of these directly.
+    expect(r.latencies.every((l) => Number.isFinite(l.ms) && l.ms >= 0)).toBe(true);
+
+    /* The vendor is stamped on the stages one vendor owns, which is what makes a
+       side-by-side of two TTS providers readable rather than one blended number. */
+    const byStage = new Map(r.latencies.map((l) => [l.stage, l.provider]));
+    expect(byStage.get("tts_first_byte")).toBe("fake-tts");
+    expect(byStage.get("llm_first_token")).toBe("fake-llm");
+    // End to end, owned by no single vendor.
+    expect(byStage.get("turn_to_audio")).toBeNull();
+    assertInvariants(h);
   });
 });
 

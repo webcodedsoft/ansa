@@ -69,6 +69,10 @@ const recordingRecorder = (): CallLog => {
       event: (kind, detail) => events.push({ kind, detail: { ...(detail ?? {}) } }),
       transcript: (t) => transcripts.push(t),
       turn: (t) => turns.push(t),
+      /* Dropped, not lost: the same measurement reaches `events` as a `latency` event, and
+         that is the one `scoreCalls` reads. A second copy here would be a second thing to
+         keep in step. */
+      latency: () => undefined,
       ended: () => undefined,
     },
   };
@@ -167,6 +171,10 @@ const tee = (first: CallRecorder, second: CallRecorder | undefined): CallRecorde
         transcript: (t) => {
           first.transcript(t);
           second.transcript(t);
+        },
+        latency: (l) => {
+          first.latency(l);
+          second.latency(l);
         },
         turn: (t) => {
           first.turn(t);

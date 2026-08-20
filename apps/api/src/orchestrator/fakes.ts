@@ -177,6 +177,14 @@ export interface FakeLlm {
   readonly provider: LlmProvider;
   /** Every completion requested, in order. `request.messages` is the history assertion surface. */
   readonly completions: FakeCompletion[];
+  /**
+   * The system prompt of each warm-up, in order.
+   *
+   * Kept apart from `completions` because a warm-up is not a turn: every assertion in the
+   * suite that counts completions or reads `last()` means the caller's turns, and folding
+   * the call-start warm-up into that list would have made all of them off by one.
+   */
+  readonly warmUps: string[];
   last(): FakeCompletion;
   /** History as the LLM last saw it — where every conversation bug shows up. */
   lastMessages(): readonly Message[];
@@ -184,6 +192,7 @@ export interface FakeLlm {
 
 export const fakeLlm = (): FakeLlm => {
   const completions: FakeCompletion[] = [];
+  const warmUps: string[] = [];
   const provider: LlmProvider = {
     name: "fake-llm",
     complete: (request) => {
@@ -225,10 +234,14 @@ export const fakeLlm = (): FakeLlm => {
       };
       return stream;
     },
+    warmUp: (system) => {
+      warmUps.push(system);
+    },
   };
   return {
     provider,
     completions,
+    warmUps,
     last: () => {
       const c = completions[completions.length - 1];
       if (c === undefined) throw new Error("no completion was requested");
