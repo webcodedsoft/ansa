@@ -198,6 +198,16 @@ export const createEscalationWatch = (options: EscalationWatchOptions = {}) => {
 
     /** True once a transfer has been triggered, so nothing else tries to start one. */
     handedOver: (): boolean => handedOver,
+
+    /**
+     * Turns that went nowhere and have not been reset by one that worked.
+     *
+     * Read by the situation block so the agent can see the count the hard rule is counting.
+     * The rule stays the rule — three and it transfers, whatever the prompt does with this
+     * — but an agent that can see two failures can offer a person itself, which lands far
+     * better than a transfer arriving mid-sentence on the third.
+     */
+    failedTurns: (): number => misunderstandings,
   };
 };
 

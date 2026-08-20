@@ -1,7 +1,7 @@
 import type { LlmProvider } from "@ansa/llm";
 import type { TranscriberSession } from "@ansa/transcriber";
 import type { TurnSession } from "@ansa/turn-detector";
-import type { AudioChunk, Logger, OrganizationId } from "@ansa/shared";
+import type { AudioChunk, BusinessHours, Logger, OrganizationId } from "@ansa/shared";
 import type { CallMediaStream } from "@ansa/telephony";
 import { durationMs, type SynthesisStream, type TtsProvider } from "@ansa/tts";
 import {
@@ -27,6 +27,7 @@ import type { CallFactsStore, IdentifierField } from "../conversation/call-facts
 import type { CollectedField } from "../tenancy/captured-fields";
 import { createForm } from "./form";
 import { renderFacts } from "../conversation/facts-prompt";
+import { describeSituation, renderSituation } from "../conversation/situation";
 import type { Handoff } from "../handoff/handoff";
 import { createEscalationWatch, type EscalationTrigger } from "../handoff/triggers";
 import { endsMidThought, isBareGreeting } from "./completeness";
@@ -198,6 +199,20 @@ export interface OrchestratorDeps {
    * skipped.
    */
   readonly facts?: CallFactsStore;
+  /**
+   * When this organisation's own line is staffed, in WAT.
+   *
+   * Already resolved for the business-hours tool; the situation block reads the same value,
+   * so the agent's sense of the hour and the answer it gives when asked cannot disagree.
+   * Null means the organisation configured none, and the block then says nothing about
+   * opening hours rather than inventing a nine to five.
+   *
+   * Required and nullable rather than optional, for the same reason `organizationId` below
+   * is: an optional field on this interface is a wire a construction site can forget, and
+   * the symptom is not a compile error but an agent that quietly never knows the time. A
+   * deployment with no hours has to say so.
+   */
+  readonly businessHours: BusinessHours | null;
   /**
    * Builds the thing that hands the call to a person. Absent means escalation only logs,
    * as it did before there was anywhere to transfer to.
@@ -1616,7 +1631,26 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     // how long this particular reply may be — the per-turn instruction sits nearest the
     // generation because it is the one that changes every turn. The instruction is the soft
     // half; the word cap below is the half that holds.
-    const system = [deps.systemPrompt, known, budget.instruction].filter((s) => s !== "").join("\n\n");
+    /* Where the call is, as opposed to what the caller said. Recomputed every turn because
+       every field of it moves: the clock, how long they have been on, how many turns have
+       gone nowhere. Pure arithmetic over values already in hand — no clock lookup beyond
+       `Date.now()`, no query, nothing that could sit on the real-time path. */
+    const situation = renderSituation(
+      describeSituation({
+        now: new Date(),
+        callStartedAtMs: streamStartedAt,
+        businessHours: deps.businessHours ?? null,
+        failedTurns: watch.failedTurns(),
+        escalationOffered: watch.handedOver(),
+      }),
+    );
+    /* Order is deliberate. Standing instructions, then what is known about this call, then
+       where the call is, then how long this particular reply may be — each nearer the
+       generation than the last, in the order they change. The instruction is the soft
+       half; the word cap below is the half that holds. */
+    const system = [deps.systemPrompt, known, situation, budget.instruction]
+      .filter((s) => s !== "")
+      .join("\n\n");
     /**
      * What this turn costs to ask, in characters.
      *

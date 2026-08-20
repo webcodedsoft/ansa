@@ -1,0 +1,191 @@
+import { watMoment, type BusinessHours } from "@ansa/shared";
+
+/**
+ * Where the call is, as opposed to what the caller has said.
+ *
+ * `facts-prompt.ts` renders what the caller told us, and is careful about it — an
+ * unconfirmed name never appears as a value there. Nothing here came from the caller. It
+ * is the clock, the organisation's opening hours, and two counters this process has been
+ * keeping anyway, so none of that discipline applies, and mixing the two would blur it.
+ *
+ * **Every field is computed here and none of it is asked of the model.** An agent left to
+ * work out whether half past four on a Friday is near closing will get it wrong, and will
+ * get it wrong differently each turn. Booleans and formatted strings go into the prompt;
+ * no date arithmetic leaves this file.
+ *
+ * Pure. `now` is a parameter rather than `Date.now()`, so a test can stand at four o'clock
+ * on a Friday without waiting for one.
+ *
+ * What is deliberately *not* here: how long since this caller last rang, and how many
+ * times this week. Those are the two worth having — a caller re-explaining an issue to a
+ * system that should already know it is the most infuriating thing in customer service —
+ * and they are a database read. A read belongs at call setup, once, never per turn, which
+ * makes them Phase 4b rather than a field with a TODO on it.
+ */
+
+export type PartOfDay = "morning" | "afternoon" | "evening" | "night";
+
+export interface SituationInput {
+  readonly now: Date;
+  /** `Date.now()` when the media stream opened. */
+  readonly callStartedAtMs: number;
+  /** Null until the organisation configures them. Null means say nothing, never guess. */
+  readonly businessHours: BusinessHours | null;
+  /**
+   * Turns that went nowhere, from the escalation watch's own counter.
+   *
+   * The same number the hard rule counts to three on. Showing it lets the agent give up
+   * gracefully at two rather than being cut off at three, which is the difference between
+   * "let me get someone who can help" and a transfer landing mid-sentence.
+   */
+  readonly failedTurns: number;
+  /** True once a transfer has been triggered. Nothing should offer a person twice. */
+  readonly escalationOffered: boolean;
+}
+
+export interface Situation {
+  readonly partOfDay: PartOfDay;
+  /** 24-hour WAT, for the model to read rather than to say. */
+  readonly localTime: string;
+  readonly weekday: string;
+  /** Null when the organisation has configured no hours. */
+  readonly openNow: boolean | null;
+  /** Minutes until the line closes, or null when it is shut or the hours are unknown. */
+  readonly closesInMinutes: number | null;
+  readonly minutesElapsed: number;
+  readonly failedTurns: number;
+  readonly escalationOffered: boolean;
+}
+
+/** ISO weekday, 1 is Monday. Indexed from 1, so slot 0 is never read. */
+const WEEKDAYS: readonly string[] = [
+  "",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
+
+/**
+ * Boundaries chosen for how a working day is spoken about rather than for symmetry.
+ * Evening starts at five because that is when a line typically shuts and the caller is
+ * ringing after work; night starts at nine because past that an agent should sound like it
+ * knows the hour.
+ */
+const partOfDayAt = (hour: number): PartOfDay => {
+  if (hour < 12) return "morning";
+  if (hour < 17) return "afternoon";
+  if (hour < 21) return "evening";
+  return "night";
+};
+
+const twoDigits = (value: number): string => String(value).padStart(2, "0");
+
+export const describeSituation = (input: SituationInput): Situation => {
+  const moment = watMoment(input.now);
+  const hours = input.businessHours;
+
+  /* `closesAtHour` is exclusive — a line that shuts at five holds 17 — so "open" is
+     `hour < closesAtHour`, and the minutes remaining count to the top of that hour. */
+  const openToday = hours !== null && hours.openDays.includes(moment.weekday);
+  const openNow =
+    hours === null
+      ? null
+      : openToday && moment.hour >= hours.opensAtHour && moment.hour < hours.closesAtHour;
+
+  const closesInMinutes =
+    hours === null || openNow !== true
+      ? null
+      : (hours.closesAtHour - moment.hour) * 60 - moment.minute;
+
+  return {
+    partOfDay: partOfDayAt(moment.hour),
+    localTime: `${twoDigits(moment.hour)}:${twoDigits(moment.minute)}`,
+    weekday: WEEKDAYS[moment.weekday] ?? "",
+    openNow,
+    closesInMinutes,
+    /* Floored. A call forty seconds old is nought minutes old, and rounding up to one
+       would have the agent behaving as though the caller had been waiting. */
+    minutesElapsed: Math.max(0, Math.floor((input.now.getTime() - input.callStartedAtMs) / 60_000)),
+    failedTurns: input.failedTurns,
+    escalationOffered: input.escalationOffered,
+  };
+};
+
+const HEADER = "Where this call is right now. All of it is worked out for you.";
+
+/** Under an hour is where "we can't finish that today" starts being true. */
+const CLOSING_SOON_MINUTES = 60;
+/** Past this a caller is invested and getting impatient. See the prompt's CALL LENGTH rule. */
+const LONG_CALL_MINUTES = 4;
+
+/**
+ * Only when the hours change what the agent should do.
+ *
+ * There is no "the line is open" line, and that is the correction the tests forced. Open
+ * is the default the prompt is already written against — offer a transfer, promise things
+ * for today — so saying it every turn tells the model something it was going to assume
+ * anyway, and it made the whole block unconditional during office hours. Silence here
+ * means "carry on"; a line here means the default is wrong.
+ */
+const hoursLines = (situation: Situation): readonly string[] => {
+  /* Nothing at all when the organisation configured no hours. An agent that says "we're
+     open" on a guess is worse than one that never raises it. */
+  if (situation.openNow === null) return [];
+  if (!situation.openNow) {
+    return ["- The line is closed right now. Do not promise anything for today."];
+  }
+  const closing = situation.closesInMinutes;
+  if (closing === null || closing > CLOSING_SOON_MINUTES) return [];
+  return [
+    `- The line closes in ${closing} minutes. Do not start anything that cannot finish before then — say so and offer the alternative instead.`,
+  ];
+};
+
+const lengthLines = (situation: Situation): readonly string[] =>
+  situation.minutesElapsed < LONG_CALL_MINUTES
+    ? []
+    : [
+        `- This call has been running ${situation.minutesElapsed} minutes. Stop gathering and start resolving. If it is not close, offer them a person.`,
+      ];
+
+const escalationLines = (situation: Situation): readonly string[] => {
+  if (situation.escalationOffered) {
+    // Offering twice reads as not having listened the first time.
+    return ["- You have already offered them a person. Do not offer again."];
+  }
+  if (situation.failedTurns === 0) return [];
+  const turns =
+    situation.failedTurns === 1 ? "One turn has" : `${situation.failedTurns} turns have`;
+  return [
+    `- ${turns} gone nowhere on this call. Change approach, or offer them a person — do not try the same thing again.`,
+  ];
+};
+
+/**
+ * The block, or an empty string when there is nothing worth saying.
+ *
+ * Empty is a real answer and the common one two turns into a call in office hours: the
+ * time is unremarkable, nothing has failed, and a paragraph saying so costs prompt budget
+ * every turn while teaching the model nothing.
+ */
+export const renderSituation = (situation: Situation): string => {
+  const lines = [
+    `- It is ${situation.localTime} on ${situation.weekday} ${
+      situation.partOfDay === "night" ? "at night" : `in the ${situation.partOfDay}`
+    }, where they are.`,
+    ...hoursLines(situation),
+    ...lengthLines(situation),
+    ...escalationLines(situation),
+  ];
+
+  /* The clock line alone is not worth a block. It is here to give the other lines context
+     when they fire; by itself it mostly invites "good afternoon!" as an opener, which the
+     prompt spends a section telling the agent not to do. */
+  if (lines.length === 1) return "";
+
+  return [HEADER, "", ...lines].join("\n");
+};

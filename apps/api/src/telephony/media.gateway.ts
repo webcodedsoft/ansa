@@ -570,6 +570,10 @@ export class MediaGateway implements OnApplicationShutdown {
       fields: settings.capturedFields,
       listen,
       facts,
+      /* The same value the business-hours tool gets below. One source, so what the agent
+         senses about the hour and what it answers when asked cannot disagree — two reads
+         of the same config would be two places for one of them to go stale. */
+      businessHours: settings.businessHours,
       // Null for an unregistered number, and the orchestrator reads that as "no tools on
       // this call at all". Such a caller may hold a conversation and must not reach
       // anybody's systems (CLAUDE.md rule 3).

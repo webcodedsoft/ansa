@@ -51,6 +51,7 @@ const setup = (
     organizationId?: OrganizationId | null;
     makeTools?: OrchestratorDeps["makeTools"];
     speakingRate?: number;
+    businessHours?: OrchestratorDeps["businessHours"];
   } = {},
 ) => {
   const stream = fakeStream();
@@ -68,6 +69,9 @@ const setup = (
     greeting: GREETING,
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     organizationId: ORGANIZATION,
+    // No hours by default, so the situation block stays silent about them and every test
+    // written before it existed asserts on the same prompt it always did.
+    businessHours: null,
     forSpeech: (t) => t.replace(/\bAnsa\b/g, "An-Sah"),
     // These tests drive transcripts directly to exercise turn logic and never fan in
     // audio, so the no-speech filter would discard every one of them. The filter has its
@@ -1114,6 +1118,59 @@ describe("the prompt the call was configured with", () => {
     assertInvariants(h);
   });
 
+  /**
+   * The block is inert unless a real turn reaches it, and a pure module with its own
+   * passing tests is exactly the shape of thing that ships unwired. This drives the
+   * orchestrator and reads the prompt the model was actually sent.
+   */
+  it("puts where the call is into the prompt, worked out rather than asked", () => {
+    /* No open days at all, so the line is shut whenever this suite happens to run. The
+       first version used ordinary office hours and asserted "one of closed, closing or
+       quiet", which every possible output satisfies — it would have passed with the block
+       unwired. */
+    const h = setup({ businessHours: { opensAtHour: 9, closesAtHour: 17, openDays: [] } });
+
+    h.listen.final("What are your opening hours?");
+
+    const system = h.llm.last().request.system;
+    expect(system).toContain("Where this call is right now");
+    expect(system).toContain("The line is closed right now");
+    expect(system).toContain("Do not promise anything for today");
+    // The hour in words the model does not have to derive, which is the whole point.
+    expect(system).toMatch(/It is \d\d:\d\d on \w+day/);
+    assertInvariants(h);
+  });
+
+  it("says nothing about hours on an ordinary in-hours turn", () => {
+    /* Open is the default the prompt is written against. A block that fires every turn
+       costs prompt budget for something the model was going to assume anyway. */
+    const h = setup({
+      businessHours: { opensAtHour: 0, closesAtHour: 24, openDays: [1, 2, 3, 4, 5, 6, 7] },
+    });
+
+    h.listen.final("What are your opening hours?");
+
+    expect(h.llm.last().request.system).not.toContain("Where this call is right now");
+    assertInvariants(h);
+  });
+
+  it("tells the agent when turns have gone nowhere, before the hard rule transfers", () => {
+    /* The transfer at three is enforced in code and stays enforced. This is the earlier,
+       softer half: an agent that can see two failures can offer a person itself, which
+       lands better than a transfer arriving mid-sentence on the third. */
+    const h = setup({
+      businessHours: { opensAtHour: 0, closesAtHour: 24, openDays: [1, 2, 3, 4, 5, 6, 7] },
+    });
+
+    // A turn that produced nothing to say is one that went nowhere.
+    h.listen.final("Hello?");
+    h.llm.last().fail("upstream fell over");
+    h.listen.final("Are you there?");
+
+    expect(h.llm.last().request.system).toContain("gone nowhere on this call");
+    assertInvariants(h);
+  });
+
   it("warms once per call, not once per turn", () => {
     const h = setup();
 
@@ -1586,6 +1643,7 @@ describe("audio that arrived before the listener existed", () => {
       log: silentLog,
       greeting: GREETING,
       systemPrompt: DEFAULT_SYSTEM_PROMPT,
+      businessHours: null,
       organizationId: ORGANIZATION,
       forSpeech: (t) => t,
       minSpeechMs: 0,
@@ -1611,6 +1669,7 @@ describe("audio that arrived before the listener existed", () => {
       log: silentLog,
       greeting: GREETING,
       systemPrompt: DEFAULT_SYSTEM_PROMPT,
+      businessHours: null,
       organizationId: ORGANIZATION,
       forSpeech: (t) => t,
       minSpeechMs: 0,

@@ -2796,7 +2796,46 @@ there is no Cartesia voice catalogue here for the console to pick one from (Cart
 `/voices` endpoint; nothing reads it yet). What works today is a week on one, a week on the
 other, compared through `GET /api/v1/calls/latency` — `tts_first_byte` carries the vendor
 name, so the two are separable even in mixed data.
-- [ ] Phase 4 — dialogue state and the state block
+- [x] **Phase 4a — where the call is**. Split from Phase 4, which turned out to be roughly
+      40% already built, one item in direct conflict with a load-bearing rule, and two
+      items belonging to later phases.
+      - `conversation/situation.ts` — part of day, WAT clock, open/closed, minutes to
+        closing, how long the call has run, turns that went nowhere, whether a person has
+        been offered. Pure: `now` is a parameter, no I/O, no clock lookup of its own.
+      - Rendered as its own block beside `renderFacts`, and **empty whenever nothing is
+        worth saying** — which is most turns. There is deliberately no "the line is open"
+        line: open is the default the prompt is already written against, so saying it every
+        turn is prompt budget spent on an assumption. A line means the default is wrong.
+      - `EscalationWatch.failedTurns()` is now readable. The hard transfer at three stays
+        exactly as it was; showing the count lets the agent offer a person itself at two,
+        which lands better than a transfer arriving mid-sentence.
+      - `businessHours` is **required and nullable** on `OrchestratorDeps`, not optional —
+        the same reasoning as `organizationId`. An optional field here is a wire a
+        construction site can forget, and the symptom is not a compile error but an agent
+        that quietly never knows the time.
+
+**What was already there, and is better than the brief describes.** `slots: {value,
+confirmed}` is `captured: ReadonlyMap<string, Fact>` — four-level status, evidence sources,
+correction history. `intent + confidence` is `intent: Fact`. The StateBlockRenderer is
+`renderFacts`, and it has run every turn since §10 landed.
+
+**The brief's `record_slot(name, value, confirmed)` tool was not built, and should not be.**
+`Observation` in `call-facts.ts` has no arm in which an identifier or a captured field takes
+`source: "model"` — refused by the type system and again at runtime, because a tool call
+arrives as parsed JSON where no type was checked. That tool would let the model assert
+`confirmed: true` on a policy number, which is the single thing the module exists to
+prevent. Slot filling already happens from evidence: STT agreement, spelling, the keypad,
+caller confirmation, a system of record.
+
+**`toolCalls` in the state block was not built either.** `modelMessage(outcome)` already
+puts every tool result into the conversation verbatim, so a block copy would be a second
+source of truth for the same fact.
+
+- [ ] **Phase 4b — who this caller is to us.** `lastContactDaysAgo`, `contactsThisWeek`,
+      `priorIssueUnresolved`. A `calls`-by-caller query, so it belongs at call setup
+      alongside the LLM warm-up and never on a turn — that constraint is what makes it a
+      separate commit rather than three more fields. Also needs a definition of
+      "unresolved" that is not just `end_reason`.
 - [ ] Phase 5 — emotional read appended after the spoken text, zero latency cost
 - [ ] Phase 6 — pools instead of fixed artifacts (greetings, fillers, backchannels)
 - [ ] Phase 7 — outbound: AMD, DNC as a dial-time gate, consent basis, calling windows
