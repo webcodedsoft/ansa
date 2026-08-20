@@ -3,7 +3,7 @@ import { createDataSource, type Db } from "@ansa/db";
 
 import { createTwilioTelephonyProvider } from "@ansa/telephony";
 import { createOpenAiLlm } from "@ansa/llm";
-import { createElevenLabsTts } from "@ansa/tts";
+import { createCartesiaTts, createElevenLabsTts, type TtsProvider } from "@ansa/tts";
 import { Module } from "@nestjs/common";
 
 import { type AppConfig, loadConfig } from "../config/env";
@@ -24,6 +24,50 @@ import {
 } from "./tokens";
 import { ViewerController } from "../viewer/viewer.controller";
 import { VoiceController } from "./voice.controller";
+
+/**
+ * Whichever vendor speaks on this deployment.
+ *
+ * The one place either is named. Everything downstream — the orchestrator, the greeting
+ * pre-render, the media gateway — holds a `TtsProvider` and cannot tell which it has,
+ * which is what makes the A/B a configuration change rather than a code change.
+ *
+ * `TTS_PROVIDER` is validated at boot, so the fallback below is unreachable by a typo and
+ * exists only to satisfy the compiler.
+ */
+const speaker = (config: AppConfig): TtsProvider => {
+  if (config.ttsProvider === "cartesia") {
+    return createCartesiaTts({
+      // Non-null because `loadConfig` refuses to boot with `cartesia` and no key.
+      apiKey: config.cartesiaApiKey ?? "",
+      ...(config.cartesiaBaseUrl === undefined ? {} : { baseUrl: config.cartesiaBaseUrl }),
+      ...(config.cartesiaModelId === undefined ? {} : { modelId: config.cartesiaModelId }),
+      ...(config.cartesiaSpeed === undefined ? {} : { speed: config.cartesiaSpeed }),
+    });
+  }
+
+  return createElevenLabsTts({
+    apiKey: config.elevenLabsApiKey,
+    ...(config.elevenLabsBaseUrl === undefined ? {} : { baseUrl: config.elevenLabsBaseUrl }),
+    ...(config.elevenLabsModelId === undefined ? {} : { modelId: config.elevenLabsModelId }),
+    /* Spread one key at a time so an unset knob stays absent from the object. A
+       `stability: undefined` would be a key ElevenLabs sees, and it merges what it is sent
+       over the voice's own settings. */
+    voiceSettings: {
+      ...(config.elevenLabsStability === undefined
+        ? {}
+        : { stability: config.elevenLabsStability }),
+      ...(config.elevenLabsSimilarityBoost === undefined
+        ? {}
+        : { similarityBoost: config.elevenLabsSimilarityBoost }),
+      ...(config.elevenLabsStyle === undefined ? {} : { style: config.elevenLabsStyle }),
+      ...(config.elevenLabsSpeakerBoost === undefined
+        ? {}
+        : { useSpeakerBoost: config.elevenLabsSpeakerBoost }),
+      ...(config.elevenLabsSpeed === undefined ? {} : { speed: config.elevenLabsSpeed }),
+    },
+  });
+};
 
 /**
  * The only place a carrier is named. Swapping Twilio means changing the factory below
@@ -49,32 +93,7 @@ import { VoiceController } from "./voice.controller";
     {
       provide: TTS_PROVIDER,
       inject: [APP_CONFIG],
-      useFactory: (config: AppConfig) =>
-        createElevenLabsTts({
-          apiKey: config.elevenLabsApiKey,
-          ...(config.elevenLabsBaseUrl === undefined
-            ? {}
-            : { baseUrl: config.elevenLabsBaseUrl }),
-          ...(config.elevenLabsModelId === undefined
-            ? {}
-            : { modelId: config.elevenLabsModelId }),
-          /* Spread one key at a time so an unset knob stays absent from the object. A
-             `stability: undefined` would be a key ElevenLabs sees, and it merges what it
-             is sent over the voice's own settings. */
-          voiceSettings: {
-            ...(config.elevenLabsStability === undefined
-              ? {}
-              : { stability: config.elevenLabsStability }),
-            ...(config.elevenLabsSimilarityBoost === undefined
-              ? {}
-              : { similarityBoost: config.elevenLabsSimilarityBoost }),
-            ...(config.elevenLabsStyle === undefined ? {} : { style: config.elevenLabsStyle }),
-            ...(config.elevenLabsSpeakerBoost === undefined
-              ? {}
-              : { useSpeakerBoost: config.elevenLabsSpeakerBoost }),
-            ...(config.elevenLabsSpeed === undefined ? {} : { speed: config.elevenLabsSpeed }),
-          },
-        }),
+      useFactory: (config: AppConfig): TtsProvider => speaker(config),
     },
     {
       provide: LLM_PROVIDER,

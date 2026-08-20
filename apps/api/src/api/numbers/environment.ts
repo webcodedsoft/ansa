@@ -36,6 +36,15 @@ export interface NumbersEnvironment {
   readonly carrier: CarrierCredentials | null;
   /** Credentials for the speech vendor. Null disables the voice check, never fails it. */
   readonly voice: VoiceCredentials | null;
+  /**
+   * Which vendor actually speaks on a call — `TTS_PROVIDER`, mirrored from `config/env.ts`.
+   *
+   * Here because the voice check has to know. `voice` above is an ElevenLabs account, and
+   * an ElevenLabs account can say nothing useful about a Cartesia voice id: both are uuids,
+   * so the check would confidently pass an id the call is about to be refused for. Saying
+   * "unchecked" is the honest answer, and `probeVoice` already has that state.
+   */
+  readonly speaker: string;
   /** The voice a organization who has configured none falls back to. Null means there is none. */
   readonly platformVoiceId: string | null;
   /**
@@ -100,6 +109,9 @@ export const loadNumbersEnvironment = (
   publicBaseUrl: trimmed(env, "PUBLIC_BASE_URL")?.replace(/\/+$/, "") ?? null,
   carrier: carrierFrom(env),
   voice: voiceFrom(env),
+  /* Unvalidated here on purpose — `config/env.ts` refuses to boot on an unknown value, and
+     this surface answers dashboard requests rather than deciding what runs. */
+  speaker: trimmed(env, "TTS_PROVIDER") ?? "elevenlabs",
   platformVoiceId: trimmed(env, "ELEVENLABS_VOICE_ID"),
   credentialKey: credentialKeyState(env),
   platformHandoff: [trimmed(env, "HANDOFF_TO_NUMBER"), trimmed(env, "HANDOFF_FROM_NUMBER")].every(

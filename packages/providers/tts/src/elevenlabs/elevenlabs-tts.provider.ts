@@ -1,8 +1,9 @@
 import { Buffer } from "node:buffer";
 
-import type { AudioChunk, AudioFormat } from "@ansa/shared";
+import type { AudioFormat } from "@ansa/shared";
 
 import { durationMs } from "../audio-duration";
+import { VendorSynthesisStream } from "../synthesis-stream";
 import type { SynthesisRequest, SynthesisStream, TtsProvider } from "../types";
 
 /**
@@ -107,60 +108,6 @@ const toVoiceSettingsBody = (
   return Object.keys(body).length === 0 ? undefined : body;
 };
 
-class ElevenLabsSynthesisStream implements SynthesisStream {
-  private readonly audioListeners: ((chunk: AudioChunk) => void)[] = [];
-  private readonly doneListeners: (() => void)[] = [];
-  private readonly errorListeners: ((error: Error) => void)[] = [];
-  private readonly controller = new AbortController();
-  private cancelled = false;
-  private settled = false;
-
-  onAudio(listener: (chunk: AudioChunk) => void): void {
-    this.audioListeners.push(listener);
-  }
-
-  onDone(listener: () => void): void {
-    this.doneListeners.push(listener);
-  }
-
-  onError(listener: (error: Error) => void): void {
-    this.errorListeners.push(listener);
-  }
-
-  cancel(): void {
-    if (this.settled) return;
-    this.cancelled = true;
-    this.settled = true;
-    // Aborts the in-flight request so the vendor stops billing for audio nobody hears.
-    this.controller.abort();
-  }
-
-  get signal(): AbortSignal {
-    return this.controller.signal;
-  }
-
-  get isCancelled(): boolean {
-    return this.cancelled;
-  }
-
-  emitAudio(chunk: AudioChunk): void {
-    if (this.settled) return;
-    for (const listener of this.audioListeners) listener(chunk);
-  }
-
-  emitDone(): void {
-    if (this.settled) return;
-    this.settled = true;
-    for (const listener of this.doneListeners) listener();
-  }
-
-  emitError(error: Error): void {
-    if (this.settled) return;
-    this.settled = true;
-    for (const listener of this.errorListeners) listener(error);
-  }
-}
-
 export const createElevenLabsTts = (options: ElevenLabsOptions): TtsProvider => {
   const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
   const modelId = options.modelId ?? DEFAULT_MODEL_ID;
@@ -171,7 +118,7 @@ export const createElevenLabsTts = (options: ElevenLabsOptions): TtsProvider => 
     name: "elevenlabs",
 
     synthesize(request: SynthesisRequest): SynthesisStream {
-      const stream = new ElevenLabsSynthesisStream();
+      const stream = new VendorSynthesisStream();
 
       const run = async (): Promise<void> => {
         try {

@@ -140,7 +140,10 @@ export const probeVoice = async (
       state: "unchecked",
       voiceId,
       source,
-      reason: "this deployment holds no speech account credentials, so the voice cannot be resolved",
+      reason:
+        environment.speaker === "elevenlabs"
+          ? "this deployment holds no speech account credentials, so the voice cannot be resolved"
+          : `this deployment speaks with ${environment.speaker}, which has no voice catalogue here — the id cannot be checked until a call uses it`,
     };
   }
 
@@ -175,6 +178,12 @@ export const carrierDirectoryFor = (
       });
 
 export const voiceCatalogueFor = (environment: NumbersEnvironment): VoiceCatalogue | null => {
+  /* Only for the vendor that will actually speak. Listing ElevenLabs voices to somebody
+     whose calls are synthesised by Cartesia is worse than listing none: every id on the
+     list would be refused on the first turn, and the check above would have called each
+     one known. Cartesia has a voices endpoint and no catalogue here yet — see TASKS.md. */
+  if (environment.speaker !== "elevenlabs") return null;
+
   const voice = environment.voice;
   if (voice === null) return null;
   return createElevenLabsVoiceCatalogue({

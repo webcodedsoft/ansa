@@ -2769,16 +2769,42 @@ them is in the Phase 1 commit message.
         per stage over a range, never an average, and refuses a range over 31 days rather
         than clamping it. `tts_first_byte` and `llm_first_token` carry the vendor's name,
         which is what makes the Phase 3b A/B readable.
-- [ ] **Phase 3b — Cartesia Sonic behind `TtsProvider`**, to A/B against ElevenLabs on real
-      calls. ~40-90ms and a tighter spread under load; consistency is what a caller
-      notices.
+- [x] **Phase 3b — Cartesia Sonic behind `TtsProvider`**. `TTS_PROVIDER=elevenlabs|cartesia`,
+      validated at boot; an unknown value and a cartesia with no key both refuse to start,
+      rather than falling back to the default and reporting a clean A/B of one vendor
+      against itself. Everything downstream holds a `TtsProvider` and cannot tell which it
+      has, so the switch is configuration rather than code.
+      - **Streaming, so `/tts/sse` and not `/tts/bytes`** — the bytes endpoint returns a
+        whole utterance, which R4.2.3 treats as disqualifying rather than merely slow.
+      - **The brief is dated on the model.** "Sonic" is not an id and `sonic-2` and
+        `sonic-turbo` are gone; the line is `sonic-3.5`, `sonic-3` and `sonic-latest`.
+        Pinned to `sonic-3` — a floating tag moves what is being measured underneath the
+        measurement. The `Cartesia-Version` header is pinned for the same reason.
+      - `container: "raw"`, `encoding: "pcm_mulaw"`, `sample_rate: 8000`: native telephony
+        audio, no transcoding hop either way.
+      - `VendorSynthesisStream` is now shared by both adapters. Not tidiness — two adapters
+        being compared must not differ in how they stop, or the A/B measures the adapters.
+      - The readiness check no longer validates a Cartesia voice against an ElevenLabs
+        account. It reports `unchecked` and says why, because both ids are uuids and a
+        confident wrong answer is worse than none.
+
+**What a production A/B still needs, and this is not it.** Voice is published per agent and
+ids are per-vendor, so flipping `TTS_PROVIDER` means republishing every agent's voice — the
+switch is per deployment, not per call, and the two sides cannot run concurrently on the
+same traffic. To split live traffic properly an agent needs a voice id *per vendor*, and
+there is no Cartesia voice catalogue here for the console to pick one from (Cartesia has a
+`/voices` endpoint; nothing reads it yet). What works today is a week on one, a week on the
+other, compared through `GET /api/v1/calls/latency` — `tts_first_byte` carries the vendor
+name, so the two are separable even in mixed data.
 - [ ] Phase 4 — dialogue state and the state block
 - [ ] Phase 5 — emotional read appended after the spoken text, zero latency cost
 - [ ] Phase 6 — pools instead of fixed artifacts (greetings, fillers, backchannels)
 - [ ] Phase 7 — outbound: AMD, DNC as a dial-time gate, consent basis, calling windows
 - [ ] Phase 8 — dialogue policy layer and the output guard
 
-**Awaiting a real phone call:** phases 1, 2 and 3a. None of them is done until one is made.
+**Awaiting a real phone call:** phases 1, 2, 3a and 3b. None of them is done until one is
+made. 3b additionally needs a Cartesia key and a Cartesia voice id republished on the agent
+before it can be heard at all.
 
 **Left deliberately for later.** `TRANSCRIPTION_MODEL` is set three ways —
 `env.ts` defaults to `gpt-4o-transcribe`, `.env` agrees, and `.env.example` says

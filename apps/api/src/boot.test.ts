@@ -9,7 +9,7 @@ import { AppModule } from "./app.module";
 import { EventDeliverySweeper } from "./events/delivery.sweeper";
 import { AudioRetentionSweeper } from "./retention/audio-retention";
 import { MediaGateway } from "./telephony/media.gateway";
-import { APP_CONFIG, DATA_SOURCE, LOGGER, ORGANIZATION_REGISTRY } from "./telephony/tokens";
+import { APP_CONFIG, DATA_SOURCE, LOGGER, ORGANIZATION_REGISTRY, TTS_PROVIDER } from "./telephony/tokens";
 
 /**
  * The application starts.
@@ -127,6 +127,58 @@ describe("the application boots", () => {
       await app.close();
     }
   }, 30_000);
+
+  /**
+   * Which vendor speaks is a boot-time decision, so these belong here rather than in a
+   * unit test of `loadConfig`. The failure being guarded against is not a parse error: it
+   * is a deployment that reads `TTS_PROVIDER=cartesia`, builds ElevenLabs anyway, and
+   * reports a clean A/B of one vendor against itself.
+   */
+  describe("which vendor speaks", () => {
+    it("builds ElevenLabs when nothing says otherwise", async () => {
+      withEnv({ DATABASE_URL: undefined, TTS_PROVIDER: undefined });
+
+      const app = await boot();
+      try {
+        expect(app.get<{ name: string }>(TTS_PROVIDER).name).toBe("elevenlabs");
+      } finally {
+        await app.close();
+      }
+    }, 30_000);
+
+    it("builds Cartesia when asked, with everything downstream unchanged", async () => {
+      withEnv({
+        DATABASE_URL: undefined,
+        TTS_PROVIDER: "cartesia",
+        CARTESIA_API_KEY: "boot-test-key",
+      });
+
+      const app = await boot();
+      try {
+        expect(app.get<{ name: string }>(TTS_PROVIDER).name).toBe("cartesia");
+        // The point of the interface: the media gateway resolves either without knowing.
+        expect(app.get(MediaGateway)).toBeInstanceOf(MediaGateway);
+      } finally {
+        await app.close();
+      }
+    }, 30_000);
+
+    it("refuses to boot on cartesia with no key, rather than failing on the first call", async () => {
+      // A missing key discovered mid-call is a caller hearing the recovery line. This is
+      // the same reasoning that made DEEPGRAM_API_KEY required.
+      withEnv({ DATABASE_URL: undefined, TTS_PROVIDER: "cartesia", CARTESIA_API_KEY: undefined });
+
+      await expect(boot()).rejects.toThrow(/CARTESIA_API_KEY/);
+    }, 30_000);
+
+    it("refuses a vendor it does not have, rather than falling back to the default", async () => {
+      /* Falling back would run the whole comparison against ElevenLabs while the
+         deployment believed it was running Cartesia — a wrong answer that looks right. */
+      withEnv({ DATABASE_URL: undefined, TTS_PROVIDER: "elevenlab" });
+
+      await expect(boot()).rejects.toThrow(/TTS_PROVIDER/);
+    }, 30_000);
+  });
 
   it.skipIf(realDatabaseUrl === undefined)(
     "resolves the graph with a real database attached",

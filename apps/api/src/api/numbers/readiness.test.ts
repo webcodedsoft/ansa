@@ -37,6 +37,7 @@ const ENVIRONMENT: NumbersEnvironment = {
   publicBaseUrl: "https://ansa.example",
   carrier: null,
   voice: null,
+  speaker: "elevenlabs",
   platformVoiceId: null,
   credentialKey: "present",
   platformHandoff: true,

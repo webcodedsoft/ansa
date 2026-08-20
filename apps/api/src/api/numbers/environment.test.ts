@@ -21,6 +21,8 @@ describe("the readiness environment", () => {
       publicBaseUrl: null,
       carrier: null,
       voice: null,
+      // Not null: a deployment that names no vendor still speaks with one.
+      speaker: "elevenlabs",
       platformVoiceId: null,
       credentialKey: "absent",
       platformHandoff: false,

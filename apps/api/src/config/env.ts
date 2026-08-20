@@ -36,6 +36,30 @@ export interface AppConfig {
   readonly elevenLabsSpeakerBoost: boolean | undefined;
   /** Fallback pace for agents that publish none. The agent's own always wins. */
   readonly elevenLabsSpeed: number | undefined;
+
+  /**
+   * Who speaks: `elevenlabs` or `cartesia`.
+   *
+   * A real switch rather than a legacy escape hatch, and the difference from `LISTEN_WORDS`
+   * is worth stating. Flux won turn detection outright, so that setting was deleted. Here
+   * neither vendor has won: ElevenLabs Flash is ~75ms with a wider spread, Cartesia Sonic
+   * ~40-90ms with a tighter one, and both publish numbers measured from US datacentres
+   * which say nothing about a call from Lagos. The switch exists so real traffic can
+   * settle it — `tts_first_byte` carries the provider name, so the two are separable in
+   * the percentiles.
+   *
+   * **Switching means republishing the agent's voice.** Voice ids are per-vendor and both
+   * are uuids, so nothing can catch a mismatch by inspection; the wrong one is refused on
+   * the first turn of the first call.
+   */
+  readonly ttsProvider: string;
+  /** Required only when `TTS_PROVIDER=cartesia`, and checked at boot rather than on a call. */
+  readonly cartesiaApiKey: string | undefined;
+  readonly cartesiaBaseUrl: string | undefined;
+  readonly cartesiaModelId: string | undefined;
+  /** Fallback pace, as above. Cartesia accepts 0.6-1.5; the console only publishes 0.7-1.2. */
+  readonly cartesiaSpeed: number | undefined;
+
   readonly openAiApiKey: string;
   readonly transcriptionModel: string;
   /**
@@ -169,6 +193,28 @@ const optionalFlag = (env: NodeJS.ProcessEnv, key: string): boolean | undefined 
   return raw === undefined ? undefined : raw === "true";
 };
 
+const SPEAKERS: readonly string[] = ["elevenlabs", "cartesia"];
+
+/**
+ * Which vendor speaks, refused at boot if it is neither.
+ *
+ * A typo would otherwise fall through to the default and run the whole A/B against one
+ * vendor while the dashboard said it was running both — a wrong answer that looks like a
+ * right one. Cartesia's key is demanded here too, for the same reason: a missing key is a
+ * deployment mistake, and discovering it on the first turn of a real call means a caller
+ * hears the recovery line instead.
+ */
+const speaker = (env: NodeJS.ProcessEnv): string => {
+  const chosen = optional(env, "TTS_PROVIDER") ?? "elevenlabs";
+  if (!SPEAKERS.includes(chosen)) {
+    throw new Error(`TTS_PROVIDER must be one of ${SPEAKERS.join(", ")}, got ${JSON.stringify(chosen)}`);
+  }
+  if (chosen === "cartesia" && optional(env, "CARTESIA_API_KEY") === undefined) {
+    throw new Error("TTS_PROVIDER=cartesia needs CARTESIA_API_KEY");
+  }
+  return chosen;
+};
+
 export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
   const verifySignatures = env["TWILIO_VERIFY_SIGNATURES"] !== "false";
 
@@ -190,6 +236,11 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
     elevenLabsStyle: optionalNumber(env, "ELEVENLABS_STYLE"),
     elevenLabsSpeakerBoost: optionalFlag(env, "ELEVENLABS_SPEAKER_BOOST"),
     elevenLabsSpeed: optionalNumber(env, "ELEVENLABS_SPEED"),
+    ttsProvider: speaker(env),
+    cartesiaApiKey: optional(env, "CARTESIA_API_KEY"),
+    cartesiaBaseUrl: optional(env, "CARTESIA_BASE_URL"),
+    cartesiaModelId: optional(env, "CARTESIA_MODEL_ID"),
+    cartesiaSpeed: optionalNumber(env, "CARTESIA_SPEED"),
     openAiApiKey: required(env, "OPENAI_API_KEY"),
     // gpt-4o-transcribe rather than the mini variant. Measured A/B on the same voice and
     // line: mini rendered "policy" as apology, penalty and course, which is close to
