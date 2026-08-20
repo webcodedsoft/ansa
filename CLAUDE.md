@@ -48,10 +48,11 @@ does not know the drafts table exists. That is the design rather than an acciden
 current queries: a `published` flag on `agents` would have put unpublished text one forgotten
 `where` clause away from a caller, and a separate table cannot be read by mistake.
 
-Two guards hold it, and both fail loudly rather than drifting. `packages/db/src/drafts.test.ts`
-asserts that no `app.*` function except `save_agent_draft`, `discard_agent_draft` and
-`publish_agent_config` mentions the table. `apps/api/src/tenancy/call-path.test.ts` scans
-`telephony`, `orchestrator`, `tenancy`, `outbound` and `conversation` and fails on any
+Two guards hold it, and both fail loudly rather than drifting.
+`packages/db/src/drafts.test.ts` asserts that no `app.*` function mentions the table except
+the four that manage it: `save_agent_draft`, `stage_agent_draft_selection`,
+`discard_agent_draft` and `publish_agent_config`. `apps/api/src/tenancy/call-path.test.ts`
+scans `telephony`, `orchestrator`, `tenancy`, `outbound` and `conversation` and fails on any
 reference to the draft helpers or to the table name in raw SQL.
 
 If you are adding something a call needs, it belongs in the published document and reaches the
