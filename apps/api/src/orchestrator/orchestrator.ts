@@ -316,6 +316,16 @@ interface AgentTurn {
   sentenceAudioAt: number | null;
 }
 
+/**
+ * How long to wait for the caller to say something before deciding they did not.
+ *
+ * A transcript trails its StartOfTurn by roughly 300-1200ms on this stack, so the window
+ * has to clear the slow end or a real interruption gets talked over by its own recovery.
+ * Much beyond a second and the gap stops reading as a pause and starts reading as a
+ * dropped call, which is the thing R6.2 exists to prevent.
+ */
+const FALSE_INTERRUPTION_MS = 1000;
+
 const DEFAULT_BARGE_IN_GUARD_MS = 400;
 
 /**
@@ -864,6 +874,50 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   };
 
   /**
+   * The complement of `heardText`: everything the caller was going to hear and did not.
+   *
+   * Needed because a false interruption cannot be undone by resuming playback. Twilio has
+   * no pause — `clear` discards the carrier's buffer outright — so the only way back is to
+   * say the rest again. This is the text to say.
+   *
+   * Deliberately reconstructed from the same byte offsets `heardText` uses, so the two
+   * cannot disagree about where the cut fell and leave a word spoken twice or dropped.
+   */
+  const unheardText = (current: AgentTurn): string => {
+    const parts: string[] = [];
+
+    for (const sentence of current.spoken) {
+      if (current.bytesHeard >= sentence.endByte) continue;
+      if (current.bytesHeard <= sentence.startByte) {
+        parts.push(sentence.text);
+        continue;
+      }
+      // Partly heard. Resume from the word boundary `heardText` stopped at, so the seam
+      // is a whole word either side.
+      const span = sentence.endByte - sentence.startByte;
+      const ratio = (current.bytesHeard - sentence.startByte) / span;
+      const heardPrefix = toWordBoundary(sentence.text, Math.floor(sentence.text.length * ratio));
+      parts.push(sentence.text.slice(heardPrefix.length).trim());
+    }
+
+    const live = current.inFlight;
+    if (live !== null) {
+      if (current.bytesHeard <= live.startByte) parts.push(live.text);
+      else {
+        const msHeard = durationMs(current.bytesHeard - live.startByte, stream.format);
+        const chars = Math.floor((msHeard / 1000) * CHARS_PER_SECOND);
+        const heardPrefix = toWordBoundary(live.text, Math.min(chars, live.text.length));
+        parts.push(live.text.slice(heardPrefix.length).trim());
+      }
+    }
+
+    // Never synthesised at all.
+    parts.push(...current.queue);
+
+    return parts.filter((part) => part.length > 0).join(" ").trim();
+  };
+
+  /**
    * Updates the conversation with what the caller has actually heard so far.
    *
    * It does NOT record the turn, and used to. Every mark the carrier acknowledges runs
@@ -1070,7 +1124,38 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   };
 
   // ---- barge-in ------------------------------------------------------------
-  const stopSpeaking = (reason: string): void => {
+
+  /**
+   * A turn we tore down for the caller, before knowing whether they meant it.
+   *
+   * Barge-in fires on `StartOfTurn`, which is a sound, not a sentence — the transcript is
+   * 300-1200ms behind it. Stopping has to happen on the sound or the agent talks over a
+   * real interruption, so by the time we can tell "mm-hmm" from "no, wait" the audio is
+   * already discarded at the carrier. This holds what it would take to undo that.
+   *
+   * It also fixes a guard that could not fire. `BACKCHANNEL` was consulted as
+   * `turn !== null && BACKCHANNEL.has(flat)` — but `stopSpeaking` nulls the turn before
+   * the transcript arrives, so with barge-in on (the default) the condition was never true
+   * when it mattered. Saying "mm-hmm" over the agent both cut it off and then got answered
+   * as though it were a question.
+   */
+  interface PendingInterruption {
+    readonly seq: number;
+    /** What the caller heard, for the em-dash if this turns out to be real. */
+    readonly heard: string;
+    /** What they did not, for saying again if it turns out not to be. */
+    readonly unheard: string;
+    readonly timer: ReturnType<typeof setTimeout>;
+  }
+  let interrupted: PendingInterruption | null = null;
+
+  const forgetInterruption = (): void => {
+    if (interrupted === null) return;
+    clearTimeout(interrupted.timer);
+    interrupted = null;
+  };
+
+  const stopSpeaking = (reason: string, recoverable = false): void => {
     const current = turn;
     if (current === null) return;
     turn = null;
@@ -1078,6 +1163,11 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     // turn at all, and reporting above it would invent an interruption on a call where
     // nothing was playing.
     callState.apply({ kind: "agent.turn.interrupted", seq: current.seq, reason });
+
+    // Read before the teardown below empties the queue and cancels the synthesis: both
+    // are inputs to what the caller has not heard yet.
+    const unheard = recoverable ? unheardText(current) : "";
+    const heard = recoverable ? heardText(current) : "";
 
     // Order matters: stop producing before discarding, or audio synthesised in the gap
     // lands at the carrier after the clear and plays over the caller.
@@ -1092,6 +1182,24 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     // place that number exists.
     recordAgentTurn(current, Math.round(durationMs(current.bytesHeard, stream.format)));
     commitHeard(current);
+
+    /* Hold the evidence for a moment before believing it. A cough, a door, a carrier
+       click and a "mm-hmm" all look identical at StartOfTurn; only the transcript tells
+       them apart, and it has not arrived. If nothing arrives at all within the window,
+       nobody interrupted — the agent stopped for a noise and would otherwise sit in
+       silence for the rest of the call. */
+    forgetInterruption();
+    if (recoverable && unheard.length > 0) {
+      interrupted = {
+        seq: current.seq,
+        heard,
+        unheard,
+        timer: setTimeout(() => {
+          resumeInterrupted("nothing was said");
+        }, FALSE_INTERRUPTION_MS),
+      };
+    }
+
     record.event("barge-in", { reason, seq: current.seq });
     log.info("barge-in", {
       reason,
@@ -1162,7 +1270,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     // floor — so the transcript that follows is handled normally. Only the teardown of
     // audio already playing is withheld, which is the whole of what "interrupt" means to
     // somebody on the phone.
-    if (current !== null && bargeInEnabled) stopSpeaking("caller interrupted");
+    if (current !== null && bargeInEnabled) stopSpeaking("caller interrupted", true);
   });
 
   deps.listen.turns.onEndOfTurn(() => {
@@ -1273,6 +1381,57 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     log.info("speaking without the model", { reason, seq: direct.seq, text });
     record.event("agent said", { reason, seq: direct.seq, text });
     enqueue(direct, text);
+  };
+
+  /**
+   * It was not an interruption. Say the rest.
+   *
+   * "Resume" is the wrong word for what Twilio allows and the right word for what the
+   * caller experiences. There is no pause to release — `clear` discarded the buffer — so
+   * the remainder is synthesised again as a fresh turn. The seam lands on a word boundary
+   * because `unheardText` cuts where `heardText` cut.
+   *
+   * The history is left alone. What the caller heard was already recorded without an
+   * em-dash, and this turn records the rest, so the model sees two adjacent assistant
+   * turns — which is what happened: it said a sentence in two pieces with a gap.
+   */
+  const resumeInterrupted = (why: string): void => {
+    const pending = interrupted;
+    if (pending === null) return;
+    interrupted = null;
+    clearTimeout(pending.timer);
+
+    // A turn started in the meantime — the caller really did say something and it has
+    // already been answered. Saying the old remainder now would talk over the answer.
+    if (turn !== null) return;
+
+    log.info("false interruption, resuming", {
+      why,
+      seq: pending.seq,
+      chars: pending.unheard.length,
+    });
+    record.event("false_interruption", { why, seq: pending.seq });
+    callState.apply({ kind: "agent.turn.interrupted", seq: pending.seq, reason: "resumed" });
+    sayNow(pending.unheard, "resumed after false interruption");
+  };
+
+  /**
+   * It was an interruption. Mark the turn as cut off.
+   *
+   * The em-dash is the whole point: without it the model reads its last turn as a
+   * complete sentence it chose to end there, and carries on as though nothing happened.
+   * With it, it can tell it was cut off and let the caller speak.
+   *
+   * Nothing to mark when the caller heard nothing — `recordAgentTurn` with an empty
+   * string has already removed the turn, and a lone dash is not a thing anybody said.
+   */
+  const confirmInterruption = (): void => {
+    const pending = interrupted;
+    if (pending === null) return;
+    interrupted = null;
+    clearTimeout(pending.timer);
+    if (pending.heard.length === 0) return;
+    conversation.recordAgentTurn(pending.seq, `${pending.heard}—`);
   };
 
   /**
@@ -1950,6 +2109,21 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   // moved the conversation.
   deps.listen.transcripts.onInterim((transcript) => {
     record.event("stt_partial", { chars: transcript.text.length }, transcript.offsetMs);
+
+    /* Somebody is actually talking, so stop counting down to "nobody said anything".
+     *
+     * The timer exists for a cough, where no transcript ever arrives. But a *final*
+     * transcript only lands at end-of-turn — when the caller stops — so a caller who cuts
+     * in and then speaks for three seconds would have had the agent resume over them at
+     * the one-second mark. That is precisely the defect this phase removes, rebuilt inside
+     * its own recovery.
+     *
+     * The pending interruption is deliberately kept. Cancelling the clock is not deciding
+     * the question: the final still arrives, and a backchannel still resumes through the
+     * path below rather than through this timer. */
+    const pending = interrupted;
+    if (pending === null || transcript.text.trim().length === 0) return;
+    clearTimeout(pending.timer);
   });
 
   deps.listen.transcripts.onFinal((transcript) => {
@@ -1983,15 +2157,22 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     if (echoSegments.delete(transcript.offsetMs)) {
       log.info("ignored echoed agent audio", { text, offsetMs: transcript.offsetMs });
       callState.apply({ kind: "caller.transcript.discarded", reason: "echo" });
+      resumeInterrupted("echo");
       return;
     }
 
     const flat = normalise(text);
 
-    // Backchannel while the agent is speaking is listening, not interrupting.
-    if (turn !== null && BACKCHANNEL.has(flat)) {
+    /* Backchannel while the agent is speaking is listening, not interrupting.
+     *
+     * `turn !== null` covers the barge-in-off case, where the agent is still talking. With
+     * barge-in on it is already null — `stopSpeaking` cleared it before this transcript
+     * arrived — so `interrupted` covers that case, and this is the moment the guess made
+     * at StartOfTurn gets settled. Both are needed; neither is redundant. */
+    if ((turn !== null || interrupted !== null) && BACKCHANNEL.has(flat)) {
       log.debug("ignored backchannel", { text });
       callState.apply({ kind: "caller.transcript.discarded", reason: "backchannel" });
+      resumeInterrupted("backchannel");
       return;
     }
 
@@ -2000,8 +2181,15 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     if (NIGERIAN_PARTICLES.has(flat)) {
       log.debug("ignored bare particle", { text, speaking: turn !== null });
       callState.apply({ kind: "caller.transcript.discarded", reason: "particle" });
+      resumeInterrupted("particle");
       return;
     }
+
+    /* Past the guards above, so the caller said something with content in it — the
+       interruption was real. Mark the turn they cut off with an em-dash before anything
+       answers them, so the model reading its own last line can tell it was cut off rather
+       than that it chose to stop there. */
+    confirmInterruption();
 
     // Layer 2: the guard only covers segments whose speech-start it saw. This catches
     // the rest by content — but only against our own recent words, never as a blanket

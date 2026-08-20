@@ -1232,6 +1232,188 @@ describe("a turn the detector cut in half", () => {
   });
 });
 
+/**
+ * What the caller heard, and what to do when they did not mean to interrupt.
+ *
+ * Barge-in fires on a *sound*, 300-1200ms before the transcript that says what the sound
+ * was. So every interruption is a guess at the moment it is acted on, and these are the
+ * two ways the guess is settled: the caller said something, or they did not.
+ *
+ * The failure this replaces was silent. `BACKCHANNEL` was consulted as
+ * `turn !== null && BACKCHANNEL.has(flat)`, and `stopSpeaking` nulls the turn before the
+ * transcript arrives — so with barge-in on, saying "mm-hmm" cut the agent off and then got
+ * answered as though it were a question.
+ */
+/** `DEFAULT_BARGE_IN_GUARD_MS` in the orchestrator. Anything sooner is treated as echo. */
+const DEFAULT_GUARD_MS = 400;
+
+describe("an interruption that was not one", () => {
+  /**
+   * The agent mid-reply, with the first sentence heard and the second not.
+   *
+   * `ackAll()` is deliberately not used after the reply starts: it would mark every
+   * sentence as played, leaving nothing unheard to resume and closing the turn, so the
+   * barge-in under test would never fire.
+   */
+  const speaking = async () => {
+    const h = setup();
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    /* Marks accumulate across the whole call, and the greeting already placed one. Acking
+       `marks[0]` acks the greeting — whose sequence number does not match this turn, so
+       `onMark` drops it and the reply reads as entirely unheard. Two of these tests passed
+       vacuously that way. */
+    const beforeReply = h.stream.marks.length;
+    h.listen.final("Tell me about my policy.");
+    h.llm.last().emit("It renews in May. Your premium is unchanged. ");
+    const first = h.tts.last();
+    first.audio(800);
+    first.done();
+    // Only the first sentence reached the caller. The second is still synthesising.
+    const played = h.stream.marks[beforeReply];
+    if (played !== undefined) h.stream.ackMark(played);
+    /* Past the barge-in guard before the caller speaks. Inside it, a speech-start is
+       judged to be our own audio returning through the handset and is ignored — which is
+       correct, and meant the first version of these tests exercised nothing. */
+    await new Promise((r) => setTimeout(r, DEFAULT_GUARD_MS + 60));
+    return h;
+  };
+
+  it("says the rest when the caller only said mhm", async () => {
+    const h = await speaking();
+    const before = h.tts.texts().length;
+
+    h.listen.speechStart(9000);
+    h.listen.final("mhm", 9000);
+
+    // The remainder is spoken again, because Twilio's clear discarded it at the carrier
+    // and there is no pause to release.
+    expect(h.tts.texts().length).toBeGreaterThan(before);
+    expect(h.tts.texts().at(-1)).not.toBe("");
+    assertInvariants(h);
+  });
+
+  it("does not answer the backchannel", async () => {
+    const h = await speaking();
+    const before = h.llm.completions.length;
+
+    h.listen.speechStart(9000);
+    h.listen.final("mhm", 9000);
+
+    // The whole defect: a backchannel used to reach the model and burn a turn replying
+    // to a noise that meant "go on".
+    expect(h.llm.completions).toHaveLength(before);
+    assertInvariants(h);
+  });
+
+  it("says the rest when nothing was said at all", async () => {
+    // A cough, a door, a carrier click. Without this the agent stops mid-sentence and
+    // waits for a caller who is not going to speak.
+    const h = await speaking();
+    const before = h.tts.texts().length;
+
+    h.listen.speechStart(9000);
+    await new Promise((r) => setTimeout(r, 1200));
+
+    expect(h.tts.texts().length).toBeGreaterThan(before);
+    assertInvariants(h);
+  });
+
+  it("does not resume over a caller who is still talking", async () => {
+    /* The sharpest failure in this design, and it is not hypothetical: a *final*
+       transcript only arrives at end-of-turn, so a caller who cuts in and then speaks for
+       three seconds produces nothing to decide on until they stop. Counting down to
+       "nobody said anything" through that would have the agent resume over them at one
+       second — the exact defect this phase exists to remove. An interim proves somebody is
+       there. */
+    const h = await speaking();
+    h.listen.speechStart(9000);
+    const after = h.tts.texts().length;
+
+    h.listen.interim("I actually wanted to ask about", 9100);
+    await new Promise((r) => setTimeout(r, 1400));
+
+    expect(h.tts.texts()).toHaveLength(after);
+    assertInvariants(h);
+  });
+
+  it("stays stopped when the caller actually said something", async () => {
+    const h = await speaking();
+
+    h.listen.speechStart(9000);
+    const after = h.tts.texts().length;
+    h.listen.final("actually, cancel it", 9000);
+    await new Promise((r) => setTimeout(r, 1200));
+
+    /* Counted, not searched: `texts()` records synthesis requests, and the second
+       sentence was already requested before the caller cut in. What must not happen is a
+       *new* request after the interruption — that would talk over the answer. */
+    expect(h.tts.texts()).toHaveLength(after);
+    assertInvariants(h);
+  });
+});
+
+describe("what the model is told it said", () => {
+  const cutOffMidSentence = async () => {
+    const h = setup();
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    const beforeReply = h.stream.marks.length;
+    h.listen.final("Tell me about my policy.");
+    h.llm.last().emit("It renews in May. Your premium is unchanged. ");
+    const first = h.tts.last();
+    first.audio(800);
+    first.done();
+    const played = h.stream.marks[beforeReply];
+    if (played !== undefined) h.stream.ackMark(played);
+    await new Promise((r) => setTimeout(r, DEFAULT_GUARD_MS + 60));
+
+    h.listen.speechStart(9000);
+    h.listen.final("actually, cancel it", 9000);
+    return h;
+  };
+
+  it("marks a cut-off turn with a dash", async () => {
+    // Without it the model reads its last line as a sentence it chose to end, and carries
+    // on as though the caller had not spoken over it.
+    const h = await cutOffMidSentence();
+    await new Promise((r) => setTimeout(r, 20));
+    const said = h.llm.lastMessages().filter((m) => m.role === "assistant");
+    expect(said.at(-1)?.content).toMatch(/—$/);
+    assertInvariants(h);
+  });
+
+  it("records only what the caller actually heard", async () => {
+    const h = await cutOffMidSentence();
+    await new Promise((r) => setTimeout(r, 20));
+    const said = h.llm.lastMessages().filter((m) => m.role === "assistant");
+    // The first sentence played, so it is in the history; the second was queued and never
+    // reached the caller, so as far as the conversation goes it was never said.
+    expect(said.at(-1)?.content).toContain("It renews in May");
+    expect(said.at(-1)?.content).not.toContain("Your premium is unchanged");
+    assertInvariants(h);
+  });
+
+  it("removes the turn entirely when nothing was heard", async () => {
+    const h = setup();
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("Tell me about my policy.");
+    h.llm.last().emit("It renews in May. ");
+    // No audio acknowledged: the carrier never played a byte of it.
+    h.listen.speechStart(9000);
+    h.listen.final("actually, cancel it", 9000);
+
+    await new Promise((r) => setTimeout(r, 20));
+    const said = h.llm.lastMessages().filter((m) => m.role === "assistant");
+    expect(said.map((m) => m.content).join(" ")).not.toContain("It renews in May");
+    assertInvariants(h);
+  });
+});
+
 describe("the filler must not interrupt a deliberate pause", () => {
   it("stays silent while a turn is held for a continuation", async () => {
     const h = setup({ ...fillerSetup(), fillerAfterMs: 100 });
