@@ -1,6 +1,7 @@
 import { asOrganizationId } from "@ansa/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { recordCallEventByCarrierId } from "./call-log";
 import { loadConsentFacts, recordDoNotCall } from "./call-config";
 import { readCallerHistory } from "./call-records";
 import { createDataSource, type Db } from "./data-source";
@@ -213,5 +214,44 @@ describe("somebody asking never to be called again", () => {
   it("leaves other numbers alone", async () => {
     await recordDoNotCall(db, ORGANIZATION, NUMBER, "take me off your list");
     expect((await loadConsentFacts(db, ORGANIZATION, "+2348000000088")).suppressed).toBe(false);
+  });
+});
+
+describe("recording what answered, from a webhook that knows only a carrier id", () => {
+  /**
+   * The answering-machine verdict arrives on its own request, so the per-socket recorder
+   * is out of scope and no organisation has been set. `app.record_call_event_by_carrier_id`
+   * resolves both from the call row — which is the safety argument as much as the
+   * convenience: a webhook that could name an organisation could name somebody else's.
+   */
+  it("writes the event against the right call and the right organisation", async () => {
+    expect(await recordCallEventByCarrierId(db, "CA-hist-1", "answered_by", {
+      answeredBy: "machine_end_beep",
+    })).toBe(true);
+
+    const rows = await withOrganization(db, ORGANIZATION, (scope) =>
+      scope.query<{ kind: string; organization_id: string }>(
+        "select kind, organization_id from call_events where call_id = $1 and kind = 'answered_by'",
+        [CALL_YESTERDAY],
+      ),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.organization_id).toBe(ORGANIZATION);
+  });
+
+  it("is invisible to another organisation", async () => {
+    // The function bypasses RLS to write. What it writes must not bypass RLS to be read.
+    await recordCallEventByCarrierId(db, "CA-hist-1", "answered_by", { answeredBy: "human" });
+
+    const theirs = await withOrganization(db, OTHER, (scope) =>
+      scope.query("select 1 from call_events where kind = 'answered_by'"),
+    );
+    expect(theirs).toHaveLength(0);
+  });
+
+  it("says so rather than raising for a call it has never heard of", async () => {
+    /* A webhook for a call placed by a previous deploy is ordinary. Raising would make the
+       carrier retry something that will never succeed. */
+    expect(await recordCallEventByCarrierId(db, "CA-never-existed", "answered_by", {})).toBe(false);
   });
 });

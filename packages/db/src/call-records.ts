@@ -51,6 +51,10 @@ const METRIC_EVENT_KINDS: readonly string[] = [
      here or `readCallRecords` silently drops them and every consumer reads zero, which is
      the failure this list's own comment records. */
   "drift",
+  /* What the carrier said answered an outbound call. Registered here or `readCallRecords`
+     drops it and the human-answer rate reads zero against a table full of them — which is
+     the failure this list's own comment records having happened three times already. */
+  "answered_by",
   // The post-call review scan (review.ts). `agent said` above carries the readback reason
   // that says capture fell through to spelling or the keypad, so it is not repeated here.
   "tts_sentence_dropped",

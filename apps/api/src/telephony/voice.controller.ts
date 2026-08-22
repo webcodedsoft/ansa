@@ -9,7 +9,7 @@ import {
   Post,
   Res,
 } from "@nestjs/common";
-import { closeCallByCarrierId, type Db } from "@ansa/db";
+import { closeCallByCarrierId, recordCallEventByCarrierId, type Db } from "@ansa/db";
 import { asCallId } from "@ansa/shared";
 import type { Logger } from "@ansa/shared";
 import { wasAnswered, type TelephonyProvider } from "@ansa/telephony";
@@ -155,6 +155,30 @@ export class VoiceController {
     const callId = asCallId(callSid);
     const log = this.log.child({ callId });
     log.info("carrier reported what answered", { answeredBy });
+
+    /**
+     * Written down, not merely logged, and it is the whole reason migration 0045 exists.
+     *
+     * Two numbers the brief asks for depend on this and neither was answerable: the
+     * human-answer rate, because nothing recorded what answered, and the AMD false-positive
+     * rate, which matters here more than most places — the model is trained on US carrier
+     * patterns and nobody knows how it behaves on Nigerian networks. Reviewing a call and
+     * seeing "the carrier said machine" beside a transcript of a person talking is how that
+     * gets found.
+     *
+     * Not awaited and swallowed on failure: this webhook must return 200 quickly, and a
+     * missing measurement is not a reason to make the carrier retry.
+     */
+    if (this.dataSource !== null) {
+      void recordCallEventByCarrierId(this.dataSource, callSid, "answered_by", {
+        answeredBy,
+      }).catch((error: unknown) => {
+        log.warn("could not record what answered", {
+          answeredBy,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
 
     // "human" and "unknown" both keep the call. Hanging up on an uncertain verdict would
     // drop real callers, and the cost of talking to a voicemail is money rather than a

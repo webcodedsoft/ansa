@@ -3009,11 +3009,20 @@ The brief asks for ~20 across five tags with the same behaviour.
         that the message is composed from who we are, a brief reason and a callback number,
         and **never** an amount, a balance, an account detail or anything else somebody
         else in the room should not hear.
-      - **The AMD verdict needs to be durable before the false-positive rate can be
-        measured.** It reaches stdout and nothing else. The webhook arrives on a different
-        request from the media socket, so the per-socket recorder is out of scope and this
-        wants a by-carrier-id event write — `closeCallByCarrierId` is the precedent. That is
-        the piece of work, and it is why this is not in the commit above.
+      - [x] **The AMD verdict is durable.** Migration 0045 adds
+        `app.record_call_event_by_carrier_id`, SECURITY DEFINER and resolving both the call
+        and the organisation from the row — the webhook cannot know an organisation, so
+        being able to pass one would only ever mean passing somebody else's. Registered in
+        `METRIC_EVENT_KINDS`, so every existing reader can see it rather than counting zero
+        against a table full of them. This is the keystone the brief's two outbound numbers
+        both needed: the human-answer rate, and the AMD false-positive rate that matters
+        here because the model is trained on US carrier patterns and nobody knows how it
+        behaves on Nigerian networks.
+      - [ ] **The voicemail message itself.** The decision is recorded above as made — leave
+        one, composed only of who we are, a brief reason and a callback number, never an
+        amount or a balance or anything else somebody in the room should not hear. What it
+        needs is a way to say one sentence and hang up on a socket that may not be open
+        yet, which is a lifecycle question rather than a wording one.
       - [x] **The outbound prompt module** is in. Loaded only when `direction` is outbound,
         placed immediately after the base prompt so it stays inside the cacheable prefix.
         Its hardest rule is a prohibition and it is absolute rather than graduated: never

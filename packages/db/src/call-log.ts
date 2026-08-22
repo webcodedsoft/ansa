@@ -363,6 +363,32 @@ export const loadCall = async (
  * See migration 0009 for why this bypasses RLS and why that is safe: one row, found by an
  * identifier the carrier issued, nothing returned.
  */
+/**
+ * Write an event against a call identified only by the carrier's id.
+ *
+ * For the webhooks that arrive on their own request, where the per-socket `CallRecorder`
+ * does not exist and no organisation scope has been set — the answering-machine verdict is
+ * the first of them. The organisation is resolved inside the function from the call row
+ * rather than passed in: this caller cannot know one, so being able to supply one would
+ * only ever mean supplying somebody else's.
+ *
+ * Returns false for a carrier id we have no call for, which is ordinary rather than
+ * exceptional — a webhook can arrive for a call placed by a previous deploy. Nothing about
+ * that should raise on a path whose whole purpose is to record something after the fact.
+ */
+export const recordCallEventByCarrierId = async (
+  dataSource: Db,
+  carrierCallId: string,
+  kind: string,
+  detail: Readonly<Record<string, unknown>>,
+): Promise<boolean> => {
+  const rows = await dataSource.query<{ record_call_event_by_carrier_id: boolean }[]>(
+    "select app.record_call_event_by_carrier_id($1, $2, $3::jsonb) as record_call_event_by_carrier_id",
+    [carrierCallId, kind, JSON.stringify(detail)],
+  );
+  return rows[0]?.record_call_event_by_carrier_id ?? false;
+};
+
 export const closeCallByCarrierId = async (
   dataSource: Db,
   carrierCallId: string,
