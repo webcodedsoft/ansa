@@ -2908,17 +2908,36 @@ seventeen phrases across three tiers, pre-rendered at boot, escalating from ackn
 to progress to apology for the wait, fired on a timer that stays silent for short waits.
 The brief asks for ~20 across five tags with the same behaviour.
 
-- [ ] **Phase 6b — the returning-caller greeting, and backchannel production.** Two things,
-      both blocked on a decision rather than on work.
-      *The greeting half:* "hi again" needs the caller's history, and that read starts as
-      the media socket opens — by which time the greeting is already playing. Having it
-      sooner means a query on the answer path at ingress, where the organisation resolve
-      already is. That is a real trade (time-to-answer against the single highest-value
-      greeting variant) and it should be made deliberately.
-      *The backchannel half:* playing "mm-hm" while the caller is still speaking. The brief
-      flags the hazard itself — the turn detector must be gated for the backchannel's
-      duration or the agent interrupts itself with its own noise. Worth doing after the
-      barge-in work from Phase 2 has been heard on a real call.
+- [x] **Phase 6b — "hi again"**. The trade I posed here turned out not to exist. I had it as
+      time-to-answer against the greeting variant, on the assumption that having the history
+      early meant awaiting a query at ingress. It does not: `warmForOrganization` already
+      starts the audio render at ingress and never awaits it, because the carrier has to
+      fetch TwiML and then open a WebSocket, and that gap is the whole window. The history
+      read now goes the same way.
+      - Started in `voice.controller`, collected by the media socket via `takeHistory`,
+        keyed by the carrier call id so two people ringing at once cannot collect each
+        other's. Deleted on collection, and swept after a minute for the call whose socket
+        never opens — otherwise an entry naming a phone number outlives the call.
+      - The socket's own read stays as the fallback, so a lost race degrades to exactly the
+        behaviour before this: no returning greeting, history in time for later turns.
+      - A returning caller **always** gets an opener — no blank in that pool. Greeting
+        somebody who rang yesterday exactly as a stranger is the failure the feature is for.
+        It outranks both the time of day and the line being shut.
+      - A separate pool when a person took the last call, acknowledging the thread. Neither
+        pool ever names what the last call was about, because nothing knows: the log holds a
+        date and a handover flag, and a guess would be wrong confidently, in the first
+        sentence.
+      - Fourteen days is the boundary. Somebody who rang three months ago is not a returning
+        caller in any sense they would recognise.
+      - The ingress wiring is asserted by scanning the controller's source, the pattern
+        `numbers/environment.test.ts` already uses — including that the call is not awaited.
+
+- [ ] **Backchannel production**, split out of 6b. Playing "mm-hm" while the caller is still
+      talking, on interim transcripts, rate-limited to one per four seconds. The brief flags
+      the hazard itself: the turn detector has to be gated for the backchannel's duration
+      plus a beat, or the agent interrupts itself with its own noise — which is the Phase 2
+      defect reintroduced by the feature meant to make calls feel warmer. Worth doing once
+      the barge-in work has been heard on a real call, and not before.
 - [ ] **Phase 6c — phrase fingerprinting.** Normalise each agent utterance, hash it, log it
       with the call id, and report fingerprints appearing in more than 15% of calls. Pure
       observability, no call-path risk, and it needs the other two to have run for a while

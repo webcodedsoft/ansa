@@ -20,11 +20,15 @@ import type { PartOfDay } from "../conversation/situation";
  * forever. The call id is the thing that varies between calls and holds still within one,
  * so that is what is hashed here.
  *
- * What is deliberately missing is the returning-caller lead-in — "hi again" — which is
- * where this would earn its keep. It needs the caller's history, and that read starts as
- * the media socket opens, by which point the greeting is already playing. Having it sooner
- * means a query on the answer path at ingress, which is a trade to make deliberately
- * rather than as a side effect of this file. See TASKS.md.
+ * The returning-caller lead-in is the one that earns this. "Hi again" does more for how a
+ * caller rates the whole call than any amount of tuning on the body of it — and its absence
+ * is the complaint people actually make, which is being asked to explain the same thing to
+ * the same company for the third time this week.
+ *
+ * It needs the caller's history before the first word, and that read used to start as the
+ * media socket opened — a beat after the words it was meant to change. It now starts at
+ * ingress, on the same terms as the audio render: never awaited, and collected by the
+ * socket if it arrived. When it did not, the pools below behave exactly as they did.
  */
 
 /**
@@ -57,10 +61,47 @@ const BY_PART_OF_DAY: Readonly<Record<PartOfDay, readonly string[]>> = {
  */
 const OUT_OF_HOURS: readonly string[] = [NOTHING, "Hello.", "Hi there."];
 
+/**
+ * For somebody who has rung before, recently.
+ *
+ * No blank in this pool, and that is the one place this file spends its variety budget: a
+ * returning caller greeted identically to a stranger is the failure the whole feature is
+ * for, so here it always says something.
+ *
+ * None of them names what the last call was about, because nothing knows. The call log
+ * holds a date and whether a person took over; an opener that guessed at the subject would
+ * be wrong often and confidently, in the first sentence, which is the worst place to be
+ * either.
+ */
+const RETURNING: readonly string[] = [
+  "Hi again.",
+  "Hello again.",
+  "Welcome back.",
+  "Hi, good to hear from you again.",
+];
+
+/**
+ * For somebody whose last call ended with a person taking over.
+ *
+ * A separate pool because the situation is different in a way the caller can feel: they
+ * were handed on last time and are ringing back, so the opener acknowledges the thread
+ * rather than the visit. Still says nothing about what it was.
+ */
+const RETURNING_AFTER_HANDOVER: readonly string[] = [
+  "Hi again.",
+  "Hello again — thanks for calling back.",
+  "Welcome back.",
+];
+
 /** Every phrase that might be spoken, for the boot-time render. A blank is not audio. */
 export const ALL_GREETING_LEADS: readonly string[] = [
   ...new Set(
-    [...Object.values(BY_PART_OF_DAY).flat(), ...OUT_OF_HOURS].filter((p) => p !== NOTHING),
+    [
+      ...Object.values(BY_PART_OF_DAY).flat(),
+      ...OUT_OF_HOURS,
+      ...RETURNING,
+      ...RETURNING_AFTER_HANDOVER,
+    ].filter((p) => p !== NOTHING),
   ),
 ];
 
@@ -87,7 +128,21 @@ export interface GreetingContext {
   readonly openNow: boolean | null;
   /** The carrier's id for this call. Varies between calls, holds still within one. */
   readonly callId: string;
+  /**
+   * What this number has done before, or null when it is not known.
+   *
+   * Null covers a withheld number, no database, and a read that did not arrive before the
+   * greeting — and all three mean the same thing here: greet them as a stranger, which is
+   * what every call did before this existed.
+   */
+  readonly history: {
+    readonly lastContactDaysAgo: number | null;
+    readonly lastCallHandedOver: boolean;
+  } | null;
 }
+
+/** Beyond this they are not a returning caller, they are somebody who rang once. */
+const RETURNING_WITHIN_DAYS = 14;
 
 /**
  * The lead-in for this call, or null for none.
@@ -96,8 +151,19 @@ export interface GreetingContext {
  * call id, so one call always opens the same way however often the question is asked, and
  * two calls never have to agree.
  */
+const poolFor = (context: GreetingContext): readonly string[] => {
+  /* Ahead of the clock and ahead of the hours. "Good afternoon" to somebody who rang
+     yesterday about a problem you have not fixed is a worse opener than no time of day at
+     all — what they need to hear first is that they are not starting again. */
+  const since = context.history?.lastContactDaysAgo ?? null;
+  if (since !== null && since <= RETURNING_WITHIN_DAYS) {
+    return context.history?.lastCallHandedOver === true ? RETURNING_AFTER_HANDOVER : RETURNING;
+  }
+  return context.openNow === false ? OUT_OF_HOURS : BY_PART_OF_DAY[context.partOfDay];
+};
+
 export const chooseGreetingLead = (context: GreetingContext): string | null => {
-  const pool = context.openNow === false ? OUT_OF_HOURS : BY_PART_OF_DAY[context.partOfDay];
+  const pool = poolFor(context);
   const picked = pool[hash(context.callId) % pool.length];
   return picked === undefined || picked === NOTHING ? null : picked;
 };

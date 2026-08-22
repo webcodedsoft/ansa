@@ -94,6 +94,16 @@ export class VoiceController {
     // audible rather than silent (R6.2).
     this.media.warmForOrganization(organization);
 
+    /* And who this caller is to us, on the same terms and for the same reason. The greeting
+       is the one line that can say "hi again", and it plays before the media socket has had
+       time to ask anything — so the asking has to start here. Never awaited: the carrier is
+       waiting for this TwiML. */
+    /* Null for an unregistered number, and there is nothing to look up: no organisation
+       means no call log to have been in. */
+    if (organization.organizationId !== null) {
+      this.media.warmCallerHistory(organization.organizationId, call.caller, call.callId);
+    }
+
     const wsOrigin = this.config.publicBaseUrl.replace(/^http/, "ws");
     const answer = this.telephony.renderAnswer({
       mediaStreamUrl: `${wsOrigin}${MEDIA_STREAM_PATH}`,

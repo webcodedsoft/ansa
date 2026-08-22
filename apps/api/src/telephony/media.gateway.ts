@@ -8,8 +8,10 @@ import {
   TELEPHONY_AUDIO,
   type AudioChunk,
   type AudioFormat,
+  type CallId,
   type HandoffDestination,
   type Logger,
+  type OrganizationId,
 } from "@ansa/shared";
 import type { CallDirection, CallMediaStream, TelephonyProvider } from "@ansa/telephony";
 import type { LlmProvider } from "@ansa/llm";
@@ -110,6 +112,21 @@ export class MediaGateway implements OnApplicationShutdown {
   /** Rendered phrases per voice, pace and greeting, and the renders in flight. */
   private readonly warm = new Map<string, WarmAudio>();
   private readonly warming = new Set<string>();
+  /**
+   * What each caller has done before, fetched at ingress and collected when their socket
+   * opens.
+   *
+   * Keyed by the carrier's call id rather than by the number: a call id is unique, so two
+   * people ringing at once cannot collect each other's history, and the entry is deleted on
+   * collection rather than lingering as a per-number cache of who has rung recently.
+   *
+   * Exists because the greeting needs this and the greeting plays first. Reading it on the
+   * media socket — which is where the read used to start — meant it arrived a beat after
+   * the words it was supposed to change. Ingress is early enough and costs nothing: the
+   * carrier still has to fetch TwiML and open a WebSocket, which is the same gap
+   * `warmForOrganization` already spends rendering audio.
+   */
+  private readonly history = new Map<string, CallerHistory>();
   /**
    * R5.2.3. Per process, and keyed inside by organization and tool.
    *
@@ -254,6 +271,47 @@ export class MediaGateway implements OnApplicationShutdown {
   warmForOrganization(organization: CallAgent): void {
     const settings = callSettings(organization, this.platform());
     this.warmed(settings.voiceId, settings.greeting, settings.speakingRate);
+  }
+
+  /**
+   * Start reading what this caller has done before, at ingress.
+   *
+   * Never awaited, for the same reason the audio render is not: the carrier is waiting for
+   * TwiML. If it has not landed by the time the socket opens, the greeting opens plainly
+   * and the socket falls back to reading it itself — which is exactly what happened before
+   * this method existed.
+   *
+   * Failure is swallowed to a log line. Losing this costs a returning caller a slightly
+   * colder hello, which is not worth a single word of a real conversation.
+   */
+  warmCallerHistory(organizationId: OrganizationId, caller: string | null, callId: CallId): void {
+    if (this.dataSource === null || caller === null) return;
+    const dataSource = this.dataSource;
+
+    void withOrganization(dataSource, organizationId, (scope) =>
+      readCallerHistory(scope, { caller, carrierCallId: String(callId), now: new Date() }),
+    ).then(
+      (found) => {
+        this.history.set(callId, found);
+        /* Swept rather than left. A call whose socket never opens — the caller hangs up
+           while it rings — would otherwise hold an entry naming a phone number for as long
+           as the process lives. A minute is far longer than the gap it covers. */
+        setTimeout(() => this.history.delete(callId), 60_000).unref();
+      },
+      (error: unknown) => {
+        this.log.warn("could not read this caller's history at ingress", {
+          callId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      },
+    );
+  }
+
+  /** Collected once, by the socket that was waiting for it. */
+  private takeHistory(callId: string): CallerHistory | null {
+    const found = this.history.get(callId) ?? null;
+    this.history.delete(callId);
+    return found;
   }
 
 
@@ -597,9 +655,17 @@ export class MediaGateway implements OnApplicationShutdown {
      * is an agent that greets a returning caller as a new one, which is exactly how it
      * behaved before this existed.
      */
-    let callerHistory: CallerHistory | null = null;
+    /* Collected from the ingress prefetch, which usually beat us here. The read below is
+       the fallback for when it did not — an outbound call, a restart between the two, or a
+       slow query — and it still lands in time for every turn after the greeting. */
+    let callerHistory: CallerHistory | null = this.takeHistory(stream.callId);
     const callerNumber = stream.parameters[CALLER_PARAM] ?? null;
-    if (this.dataSource !== null && settings.organizationId !== null && callerNumber !== null) {
+    if (
+      callerHistory === null &&
+      this.dataSource !== null &&
+      settings.organizationId !== null &&
+      callerNumber !== null
+    ) {
       const dataSource = this.dataSource;
       const organizationId = settings.organizationId;
       void withOrganization(dataSource, organizationId, (scope) =>
@@ -653,6 +719,10 @@ export class MediaGateway implements OnApplicationShutdown {
         partOfDay: now.partOfDay,
         openNow: now.openNow,
         callId: stream.callId,
+        /* Whatever the ingress prefetch collected. Null here is a stranger's greeting,
+           which is the right answer for a withheld number and for a read that lost the
+           race alike. */
+        history: callerHistory,
       });
       if (lead === null) return plain;
 
