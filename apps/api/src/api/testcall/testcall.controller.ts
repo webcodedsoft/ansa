@@ -1,4 +1,4 @@
-import { loadCurrentAgentConfig } from "@ansa/db";
+import { liveAgentId, loadCurrentAgentConfig } from "@ansa/db";
 import {
   ConflictException,
   Controller,
@@ -126,7 +126,14 @@ export class TestCallController {
     rateLimit: { limit: 10, windowMs: 10 * 60_000, by: "ip" },
   })
   async place(@FromBody() body: Infer<typeof testCall>): Promise<Infer<typeof placed>> {
-    const current = await this.db.tx((scope) => loadCurrentAgentConfig(scope));
+    const current = await this.db.tx(async (scope) => {
+      /* Still organisation-scoped, unlike `config.*` which now names its agent in the route.
+         A test call has no agent picker yet, so it rings whichever agent this organisation
+         runs — and `liveAgentId` raises rather than guessing once there is more than one
+         (migration 0047), which is the honest answer until this surface grows one too. */
+      const agentId = await liveAgentId(scope);
+      return agentId === null ? null : loadCurrentAgentConfig(scope, agentId);
+    });
     // The session outliving a deleted organisation, as everywhere else on this surface.
     if (current === null) throw new NotFoundException();
 

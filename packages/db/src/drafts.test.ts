@@ -19,7 +19,22 @@ import {
   type AgentConfigFields,
 } from "./organization-config";
 import { loadDotEnv } from "./test-env";
-import { withOrganization } from "./organization-scope";
+import { withOrganization, type OrganizationScope } from "./organization-scope";
+
+/**
+ * The fixture's agent, resolved inside the scope the call is already in.
+ *
+ * These functions used to take only a scope and let the database pick the organisation's
+ * oldest live agent. They name their agent now, so every call site has to say which — and in
+ * a fixture with one agent, saying which means asking. `liveAgentId` raises on two rather
+ * than picking, so a suite that grows a second agent fails here rather than somewhere
+ * confusing.
+ */
+const theAgent = async (scope: OrganizationScope): Promise<string> => {
+  const id = await liveAgentId(scope);
+  if (id === null) throw new Error("the fixture has no live agent");
+  return id;
+};
 
 loadDotEnv();
 
@@ -125,7 +140,7 @@ describe("a draft is not a call", () => {
     // The property the whole slice rests on. `loadCurrentAgentConfig` reads the same columns
     // `agent_config_for_number` does, so if a draft could move this, it could move a call.
     const agent = await agentOf(A);
-    const before = await withOrganization(ds, A, (scope) => loadCurrentAgentConfig(scope));
+    const before = await withOrganization(ds, A, async (scope) => loadCurrentAgentConfig(scope, await theAgent(scope)));
 
     await withOrganization(ds, A, (scope) =>
       saveAgentDraft(
@@ -137,7 +152,7 @@ describe("a draft is not a call", () => {
       ),
     );
 
-    const after = await withOrganization(ds, A, (scope) => loadCurrentAgentConfig(scope));
+    const after = await withOrganization(ds, A, async (scope) => loadCurrentAgentConfig(scope, await theAgent(scope)));
     expect(after).toEqual(before);
     // Named separately from the deep compare because this is the sentence a caller would
     // hear, and `toEqual` passing on two objects that are both wrong is a real way to be
@@ -204,11 +219,11 @@ describe("publishing consumes the draft", () => {
     const staged = draft?.config;
     if (staged == null) throw new Error("the previous test should have left a configuration");
 
-    await withOrganization(ds, A, (scope) =>
-      publishAgentConfig(scope, staged, "published the draft"),
+    await withOrganization(ds, A, async (scope) =>
+      publishAgentConfig(scope, await theAgent(scope), staged, "published the draft"),
     );
 
-    const live = await withOrganization(ds, A, (scope) => loadCurrentAgentConfig(scope));
+    const live = await withOrganization(ds, A, async (scope) => loadCurrentAgentConfig(scope, await theAgent(scope)));
     expect(live?.config.greeting).toBe("A greeting nobody has published.");
 
     // In the same transaction as the publish, not from the API afterwards. A draft surviving
@@ -281,16 +296,25 @@ describe("where a draft came from", () => {
  * year: a new `agent_config_for_*` variant is caught without anybody remembering this file.
  *
  * Four are allowed to know. Three of them are how a draft is written and thrown away — the
- * configuration, the three selections, and the discard. The fourth is `publish_agent_config`,
- * which deletes it — in the same transaction as the publish,
- * because a draft that survived its own publication would leave the console reporting
- * unpublished changes that are already live.
+ * configuration, the three selections, and the discard. The fourth is the publish, which
+ * deletes it in the same transaction, because a draft that survived its own publication would
+ * leave the console reporting unpublished changes that are already live.
+ *
+ * The publish is `publish_agent_config_for_agent` since migration 0052, not
+ * `publish_agent_config`. The latter is now only the organisation-scoped resolver in front of
+ * it and touches no draft of its own, so it comes off this list rather than sitting on it.
+ *
+ * Both halves of this guard fired during that change, which is the argument for having
+ * written it this way. The forward check caught the new function the moment it existed; the
+ * converse check then refused to let the old name stay on the list once it had stopped
+ * touching the table — and a name that no longer does anything is exactly how an allow-list
+ * rots into a list nobody can reason about.
  */
 const MAY_TOUCH_DRAFTS = new Set([
   "save_agent_draft",
   "stage_agent_draft_selection",
   "discard_agent_draft",
-  "publish_agent_config",
+  "publish_agent_config_for_agent",
 ]);
 
 describe("nothing a call reads knows about drafts", () => {
@@ -406,14 +430,14 @@ describe("staging the rest of an agent", () => {
     // bumps once for the whole act — a form that took a version of its own would leave two
     // rows in the history for one publish.
     const agent = await agentOf(A);
-    const before = await withOrganization(ds, A, (scope) => loadCurrentAgentConfig(scope));
+    const before = await withOrganization(ds, A, async (scope) => loadCurrentAgentConfig(scope, await theAgent(scope)));
 
     const applied = await withOrganization(ds, A, (scope) =>
       applyCapturedFields(scope, agent, []),
     );
     expect(applied).toBe(true);
 
-    const after = await withOrganization(ds, A, (scope) => loadCurrentAgentConfig(scope));
+    const after = await withOrganization(ds, A, async (scope) => loadCurrentAgentConfig(scope, await theAgent(scope)));
     expect(after?.version).toBe(before?.version);
 
     await withOrganization(ds, A, (scope) => discardAgentDraft(scope, agent));
@@ -454,7 +478,7 @@ describe("publishing what was staged", () => {
       if (draft.capturedFields != null) {
         await applyCapturedFields(scope, agent, draft.capturedFields);
       }
-      await publishAgentConfig(scope, stagedConfig, "published the staged sections");
+      await publishAgentConfig(scope, await theAgent(scope), stagedConfig, "published the staged sections");
       if (draft.tools != null) await setAgentTools(scope, agent, draft.tools);
     });
 
@@ -558,14 +582,14 @@ describe("staging the behaviour flags", () => {
     // Nothing in `agent_prompt_versions` records either flag, so applying one is not a
     // publication and must not take a version number of its own.
     const agent = await agentOf(B);
-    const before = await withOrganization(ds, B, (scope) => loadCurrentAgentConfig(scope));
+    const before = await withOrganization(ds, B, async (scope) => loadCurrentAgentConfig(scope, await theAgent(scope)));
 
     const applied = await withOrganization(ds, B, (scope) =>
       applyAgentBehaviour(scope, agent, { bargeIn: true }),
     );
     expect(applied).toBe(true);
 
-    const after = await withOrganization(ds, B, (scope) => loadCurrentAgentConfig(scope));
+    const after = await withOrganization(ds, B, async (scope) => loadCurrentAgentConfig(scope, await theAgent(scope)));
     expect(after?.version).toBe(before?.version);
   });
 });
@@ -598,7 +622,7 @@ describe("publishing the behaviour flags", () => {
     // `publish_agent_config` rather than before it, because the snapshot has no column for
     // either — unlike the captured-field form, which has to be on the row first.
     await withOrganization(ds, B, async (scope) => {
-      await publishAgentConfig(scope, stagedConfig, "published a staged switch");
+      await publishAgentConfig(scope, await theAgent(scope), stagedConfig, "published a staged switch");
       await applyAgentBehaviour(scope, agent, {
         ...(draft.bargeIn === null ? {} : { bargeIn: draft.bargeIn }),
         ...(draft.answeringMachineDetection === null
@@ -626,8 +650,8 @@ describe("publishing the behaviour flags", () => {
     expect(draft.bargeIn).toBeNull();
     expect(draft.answeringMachineDetection).toBeNull();
 
-    await withOrganization(ds, B, (scope) =>
-      publishAgentConfig(scope, stagedConfig, "published without touching the switches"),
+    await withOrganization(ds, B, async (scope) =>
+      publishAgentConfig(scope, await theAgent(scope), stagedConfig, "published without touching the switches"),
     );
 
     // Exactly what the previous test left: barge-in off, detection on. A publish that wrote

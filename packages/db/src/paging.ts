@@ -33,14 +33,20 @@ export interface PageSlice<T> {
  * microsecond in an arbitrary order, and an arbitrary order under `offset` means a row can
  * appear on two pages or on none. Callers pass their own column names because the
  * tiebreaker is not called `id` on every table.
+ *
+ * `from` is where the two placeholders start, for a query that binds something of its own
+ * first — a `where` clause on an agent id, say. It defaults to 1, which is every caller that
+ * filters on nothing but RLS. Without it a filtered list has to pass its own parameters
+ * *after* the limit and offset, which reads backwards from the query it is building and is
+ * the kind of thing that binds a uuid to `limit` once and is never written again.
  */
-export const pageOrder = (createdAt: string, id: string): string =>
-  `order by ${createdAt} desc, ${id} desc limit $1 offset $2`;
+export const pageOrder = (createdAt: string, id: string, from = 1): string =>
+  `order by ${createdAt} desc, ${id} desc limit $${from} offset $${from + 1}`;
 
 /** Selected alongside the row columns so the total travels with the page. */
 export const TOTAL_COLUMN = "count(*) over() as total_rows";
 
-/** Parameters for `pageOrder`, bound as $1 and $2. */
+/** Parameters for `pageOrder`, in that order. Bound at `from` and `from + 1`. */
 export const pageParams = (page: PageRequest): readonly unknown[] => [page.limit, page.offset];
 
 /** A row as returned by a query that selected `TOTAL_COLUMN`. */

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Button, PageHeader, Pagination, SelectField, TextField } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { readPaging } from "@/lib/paging";
-import { currentConfiguration } from "@/features/agents/agents.service";
+import { currentConfiguration, soleLiveAgentId } from "@/features/agents/agents.service";
 import { listCalls, type CallFilters } from "@/features/calls/calls.service";
 import { CallTable } from "@/features/calls/components/call-table";
 import { TestCallForm } from "@/features/calls/components/test-call-form";
@@ -67,9 +67,13 @@ const CallsPage = async ({
      dependency of the list, so making the list wait for it would be a second
      round trip for one number. `allSettled` because a caption is not worth
      failing the page over. */
+  /* The caption names a configuration version, and a version belongs to an agent. This list
+     is organisation-wide and has no agent in its route, so it asks for the organisation's
+     only live agent — see `soleLiveAgentId`, which is where that assumption now lives. */
+  const captionAgent = await soleLiveAgentId().catch(() => null);
   const [calls, configuration] = await Promise.allSettled([
     listCalls(filters),
-    currentConfiguration(),
+    captionAgent === null ? Promise.reject(new Error("no live agent")) : currentConfiguration(captionAgent),
   ]);
   if (calls.status === "rejected") throw calls.reason;
   const { items, page: pageNumber, perPage, totalPages, total } = calls.value;

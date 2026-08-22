@@ -3,7 +3,6 @@ import {
   applyCapturedFields,
   discardAgentDraft,
   listAgentConfigVersions,
-  liveAgentId,
   loadAgentDraft,
   loadConfigVersionForCall,
   loadCurrentAgentConfig,
@@ -261,7 +260,18 @@ const currentConfig = object({
 
 const published = object({ version: configVersion, vocabulary });
 
-const versionPath = object({ version: integer({ minimum: 1 }) });
+/**
+ * Every route on this surface now names its agent.
+ *
+ * It used to have none, and resolved the organisation's oldest live agent inside the
+ * database — correct while an organisation could only have one, a silent coin toss the
+ * moment it can have two. `agentPath` is the whole of the fix at this layer; the refusal to
+ * act on somebody else's agent lives below, in RLS and in the functions migrations 0050 and
+ * 0052 taught to check the scope.
+ */
+const agentPath = object({ agentId: uuid() });
+
+const versionPath = object({ agentId: uuid(), version: integer({ minimum: 1 }) });
 
 /**
  * Which two versions to compare.
@@ -306,7 +316,7 @@ const versionDiff = object({
 /* No body. Restoring fills the draft, and a draft carries no note — the provenance travels
    as `restoredFrom` and becomes the note when the draft is published. */
 
-const callPath = object({ callId: uuid() });
+const callPath = object({ agentId: uuid(), callId: uuid() });
 
 const callConfig = object({
   callId: uuid(),
@@ -420,7 +430,7 @@ const toVocabulary = (configured: readonly string[]): Infer<typeof vocabulary> =
   cap: MAX_KEYTERMS,
 });
 
-@Controller(apiRoute("config"))
+@Controller(apiRoute("agents/:agentId/config"))
 export class ConfigController {
   constructor(@Inject(OrganizationContext) private readonly db: OrganizationContext) {}
 
@@ -437,6 +447,7 @@ export class ConfigController {
       "naming the id — and the rule would have held anyway, because none of them is held up " +
       "by the prompt.",
     capability: "config:read",
+    params: agentPath,
     response: guarantees,
   })
   listGuarantees(): Infer<typeof guarantees> {
@@ -458,16 +469,20 @@ export class ConfigController {
       "rather than a sequence and reordering them changes nothing on a call. 404 if either " +
       "version has no snapshot behind it.",
     capability: "config:read",
+    params: agentPath,
     query: diffQuery,
     response: versionDiff,
   })
-  async diff(@FromQuery() query: Infer<typeof diffQuery>): Promise<Infer<typeof versionDiff>> {
+  async diff(
+    @FromPath() path: Infer<typeof agentPath>,
+    @FromQuery() query: Infer<typeof diffQuery>,
+  ): Promise<Infer<typeof versionDiff>> {
     // One transaction, one query after the other. Both ends of the comparison are read
     // from the same snapshot, and two queries raced onto one connection is a driver
     // problem rather than a speed-up.
     const pair = await this.db.tx(async (scope) => ({
-      from: await loadAgentConfigVersion(scope, query.from),
-      to: await loadAgentConfigVersion(scope, query.to),
+      from: await loadAgentConfigVersion(scope, path.agentId, query.from),
+      to: await loadAgentConfigVersion(scope, path.agentId, query.to),
     }));
 
     // 404 for either, and deliberately without saying which: under RLS another
@@ -485,14 +500,19 @@ export class ConfigController {
   @Endpoint({
     summary: "Every configuration version this organisation has published, newest first",
     capability: "config:read",
+    params: agentPath,
     query: pageQuery,
     response: versionPage,
   })
   async listVersions(
+    @FromPath() path: Infer<typeof agentPath>,
     @FromQuery() query: Infer<typeof pageQuery>,
   ): Promise<Infer<typeof versionPage>> {
     const page = toPageRequest(query);
-    return toPageBody(await this.db.tx((scope) => listAgentConfigVersions(scope, page)), query);
+    return toPageBody(
+      await this.db.tx((scope) => listAgentConfigVersions(scope, path.agentId, page)),
+      query,
+    );
   }
 
   @Post("versions")
@@ -505,11 +525,15 @@ export class ConfigController {
       "snapshots it atomically, so the number recorded on every subsequent call has a row " +
       "behind it.",
     capability: "config:write",
+    params: agentPath,
     body: publication,
     response: published,
     status: 201,
   })
-  async publish(@FromBody() body: Infer<typeof publication>): Promise<Infer<typeof published>> {
+  async publish(
+    @FromPath() path: Infer<typeof agentPath>,
+    @FromBody() body: Infer<typeof publication>,
+  ): Promise<Infer<typeof published>> {
     const problems = publicationProblems(body);
     if (problems.length > 0) throw new ValidationFailed(problems);
 
@@ -533,14 +557,14 @@ export class ConfigController {
        * and a publish that blanked an agent's tools because the operator only edited the
        * greeting is the whole class of defect this slice exists to end.
        */
-      const agentId = await liveAgentId(scope);
+      const agentId = path.agentId;
       const staged = agentId === null ? null : await loadAgentDraft(scope, agentId);
 
       if (agentId !== null && staged?.capturedFields != null) {
         await applyCapturedFields(scope, agentId, staged.capturedFields);
       }
 
-      const version = await publishAgentConfig(scope, fields, note);
+      const version = await publishAgentConfig(scope, path.agentId, fields, note);
 
       if (agentId !== null && staged?.tools != null) {
         await setAgentTools(scope, agentId, staged.tools);
@@ -560,7 +584,7 @@ export class ConfigController {
       // Read back inside the same transaction rather than echoing the request. What comes
       // out is what was stored, with the author and the timestamp the database assigned, so
       // the response is evidence rather than a restatement of the body.
-      return loadAgentConfigVersion(scope, version);
+      return loadAgentConfigVersion(scope, path.agentId, version);
     });
 
     if (version === null) {
@@ -615,10 +639,8 @@ export class ConfigController {
     @FromPath() path: Infer<typeof versionPath>,
   ): Promise<Infer<typeof draft>> {
     const restored = await this.db.tx(async (scope) => {
-      const agentId = await liveAgentId(scope);
-      if (agentId === null) throw new NotFoundException();
-
-      const source = await loadAgentConfigVersion(scope, path.version);
+      const agentId = path.agentId;
+      const source = await loadAgentConfigVersion(scope, path.agentId, path.version);
       if (source === null) throw new NotFoundException();
 
       const problems = publicationProblems(source.config);
@@ -666,12 +688,12 @@ export class ConfigController {
       "missing resource. Nothing on a call reads this: the live read path takes the agent's " +
       "own columns and cannot see a draft at all.",
     capability: "config:read",
+    params: agentPath,
     response: draftState,
   })
-  async readDraft(): Promise<Infer<typeof draftState>> {
+  async readDraft(@FromPath() path: Infer<typeof agentPath>): Promise<Infer<typeof draftState>> {
     const found = await this.db.tx(async (scope) => {
-      const agentId = await liveAgentId(scope);
-      if (agentId === null) return null;
+      const agentId = path.agentId;
       return loadAgentDraft(scope, agentId);
     });
 
@@ -689,10 +711,14 @@ export class ConfigController {
       "draft cannot be saved that could never be published. Changes nothing about a call in " +
       "progress or a call that arrives a second later.",
     capability: "config:write",
+    params: agentPath,
     body: draftBody,
     response: draft,
   })
-  async saveDraft(@FromBody() body: Infer<typeof draftBody>): Promise<Infer<typeof draft>> {
+  async saveDraft(
+    @FromPath() path: Infer<typeof agentPath>,
+    @FromBody() body: Infer<typeof draftBody>,
+  ): Promise<Infer<typeof draft>> {
     // The same check a publish makes, deliberately. A draft that passes here and fails at
     // publish is a trap: the operator is told it saved, and finds out it was never publishable
     // at the moment they wanted it live.
@@ -700,8 +726,7 @@ export class ConfigController {
     if (problems.length > 0) throw new ValidationFailed(problems);
 
     const saved = await this.db.tx(async (scope) => {
-      const agentId = await liveAgentId(scope);
-      if (agentId === null) return null;
+      const agentId = path.agentId;
       await saveAgentDraft(scope, agentId, body, null, null);
       // Read back inside the transaction rather than echoing the request, as publish does:
       // the response carries the timestamp the database assigned.
@@ -722,12 +747,12 @@ export class ConfigController {
       "into the draft, which does go through the version list. False means there was nothing " +
       "to discard.",
     capability: "config:write",
+    params: agentPath,
     response: discarded,
   })
-  async discardDraft(): Promise<Infer<typeof discarded>> {
+  async discardDraft(@FromPath() path: Infer<typeof agentPath>): Promise<Infer<typeof discarded>> {
     const gone = await this.db.tx(async (scope) => {
-      const agentId = await liveAgentId(scope);
-      if (agentId === null) return null;
+      const agentId = path.agentId;
       return discardAgentDraft(scope, agentId);
     });
 
@@ -745,7 +770,9 @@ export class ConfigController {
     response: configVersion,
   })
   async version(@FromPath() path: Infer<typeof versionPath>): Promise<Infer<typeof configVersion>> {
-    const found = await this.db.tx((scope) => loadAgentConfigVersion(scope, path.version));
+    const found = await this.db.tx((scope) =>
+      loadAgentConfigVersion(scope, path.agentId, path.version),
+    );
     // Under RLS, another organisation's version and a version that never existed are the
     // same query result, and answering differently would confirm which.
     if (found === null) throw new NotFoundException();
@@ -783,12 +810,14 @@ export class ConfigController {
       "and the vocabulary they resolve to. `operatorManaged` is read-only and has no " +
       "counterpart in the publish body.",
     capability: "config:read",
+    params: agentPath,
     response: currentConfig,
   })
-  async current(): Promise<Infer<typeof currentConfig>> {
-    const found = await this.db.tx((scope) => loadCurrentAgentConfig(scope));
-    // The organisation behind a live session always has a row; this is the session outliving
-    // a deleted organization, which is a 404 rather than a 500.
+  async current(@FromPath() path: Infer<typeof agentPath>): Promise<Infer<typeof currentConfig>> {
+    const found = await this.db.tx((scope) => loadCurrentAgentConfig(scope, path.agentId));
+    /* Null is now "no such agent for you" as well as "the organisation is gone": RLS decides
+       whether the id in the path is readable at all, so another organisation's agent and one
+       that never existed are the same 404. */
     if (found === null) throw new NotFoundException();
 
     const { consentPolicy, consentBasis, callingEarliestHour, callingLatestHour, ...operator } =

@@ -107,14 +107,17 @@ const AgentWorkspacePage = async ({
   const previousStart = new Date(now - 2 * WINDOW_DAYS * DAY_MS).toISOString();
 
   const [liveConfiguration, unpublished, tools, knowledge, readiness, versionPage] = await Promise.all([
-    currentConfiguration(),
+    /* The id from the URL, at last. This page used to read whichever agent the database
+       picked and render it under whatever id the reader had navigated to — the same document
+       on every agent's page. */
+    currentConfiguration(agentId),
     // Read beside the live configuration rather than instead of it. Every tab shows the
     // draft where there is one, and the header needs both to say what is unpublished.
-    readDraft(),
+    readDraft(agentId),
     readTools(),
     readKnowledge(),
     readinessReport(),
-    listVersions(),
+    listVersions(agentId),
   ]);
 
   /* Counts and signals are decoration relative to the agent itself, and none of them may

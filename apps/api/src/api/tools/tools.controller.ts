@@ -1,3 +1,4 @@
+import { liveAgentId } from "@ansa/db";
 import { HARD_TIMEOUT_MS, parseConnectorConfig, type ConnectorConfig } from "@ansa/tools";
 import {
   ConflictException,
@@ -606,7 +607,13 @@ export class ToolsController {
       const uses = credentialUses(tools, eventsOrNothing(current.eventConfig));
       orRefuse(() => refuseUnusableReferences(uses, new Set(sealed.keys()), kinds));
 
-      const version = await publishConfiguration(scope, current, {
+      /* The tool registry is the organisation's, so this surface resolves rather than
+         naming an agent, exactly as the events one does. `liveAgentId` raises on two rather
+         than picking one — see migration 0047. */
+      const agentId = await liveAgentId(scope);
+      if (agentId === null) throw new NotFoundException();
+
+      const version = await publishConfiguration(scope, agentId, current, {
         toolConfig: stamped(document, current.toolConfig),
         // Carried over untouched. A publish rewrites every column it takes, so leaving this
         // out would stop every delivery this organisation is expecting.

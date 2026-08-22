@@ -31,7 +31,16 @@ type Diff = Extract<DiffResult, { readonly ok: true }>["diff"];
  * the workspace's one publish `<form>`, and a nested `<form>` is invalid HTML. Restoring and
  * diffing both call their Server Action directly from a button.
  */
-export const VersionsTab = ({ versions, liveVersion }: { readonly versions: readonly VersionRow[]; readonly liveVersion: number }) => {
+export const VersionsTab = ({
+  agentId,
+  versions,
+  liveVersion,
+}: {
+  /** Whose history this is. Versions number per agent, so two agents both have a version 3. */
+  readonly agentId: string;
+  readonly versions: readonly VersionRow[];
+  readonly liveVersion: number;
+}) => {
   const [state, dispatch, pending] = useActionState(rollback, START);
   const [busyVersion, setBusyVersion] = useState<number | null>(null);
   const [diff, setDiff] = useState<{ readonly against: number; readonly result: Diff } | null>(null);
@@ -40,6 +49,7 @@ export const VersionsTab = ({ versions, liveVersion }: { readonly versions: read
   const restore = (version: number) => {
     setBusyVersion(version);
     const form = new FormData();
+    form.set("agentId", agentId);
     form.set("version", String(version));
     dispatch(form);
   };
@@ -47,7 +57,7 @@ export const VersionsTab = ({ versions, liveVersion }: { readonly versions: read
   const viewDiff = async (version: number) => {
     setDiffError(null);
     setDiff(null);
-    const outcome = await getDiff(version, liveVersion);
+    const outcome = await getDiff(agentId, version, liveVersion);
     if (outcome.ok) setDiff({ against: version, result: outcome.diff });
     else setDiffError(outcome.message);
   };

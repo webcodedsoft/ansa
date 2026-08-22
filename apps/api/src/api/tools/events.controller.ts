@@ -1,3 +1,4 @@
+import { liveAgentId } from "@ansa/db";
 import {
   EVENT_TYPES,
   parseEventConfig,
@@ -195,7 +196,14 @@ export class EventSubscriptionsController {
       const uses = credentialUses(toolsOrNothing(current.toolConfig), events);
       orRefuse(() => refuseUnusableReferences(uses, new Set(sealed.keys()), kinds));
 
-      const version = await publishConfiguration(scope, current, {
+      /* Event configuration is the organisation's, not one agent's, so this surface keeps
+         resolving rather than naming an agent. `liveAgentId` raises on two rather than
+         picking one — see migration 0047 — which is the honest answer while the registry is
+         shared and the version it bumps sits on an agent row. */
+      const agentId = await liveAgentId(scope);
+      if (agentId === null) throw new NotFoundException();
+
+      const version = await publishConfiguration(scope, agentId, current, {
         // Carried over untouched, for the same reason the tools endpoint carries this one.
         toolConfig: current.toolConfig,
         eventConfig: document,

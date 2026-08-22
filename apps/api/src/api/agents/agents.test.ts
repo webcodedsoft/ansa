@@ -357,49 +357,73 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("the agents endp
   });
 
   /**
-   * The reason this file exists.
+   * The reason this file exists, inverted by the work it prompted.
    *
-   * `PUT /config/draft` has no agent in its route and resolves one in the database. Beta
-   * walks all three states through the agents routes, and the configuration surface answers
-   * differently in each — which is the coupling nothing was testing.
+   * It used to assert that a second live agent made `PUT /config/draft` refuse: that route
+   * had no agent in its path and resolved the organisation's oldest live agent, so with two
+   * it could only guess, and migration 0047 made it raise instead of guessing.
+   *
+   * Configuration is agent-scoped now. The route carries the id, so two agents is an ordinary
+   * state rather than an ambiguous one, and the property worth pinning is the opposite of the
+   * old one — each agent has its own draft, and writing one must not touch the other. That is
+   * the whole point of the change, and it is the assertion that would have failed at every
+   * point before it.
    */
-  it("makes the configuration surface refuse once a second agent exists", async () => {
-    const draft = async (): Promise<Reply> =>
-      request("PUT", "/api/v1/config/draft", { token: beta.owner.token, body: configuration });
-
-    // No live agent: a 404, because there is nothing to save a draft against.
-    expect((await draft()).status).toBe(404);
+  it("gives each agent its own configuration once there are two", async () => {
+    const draftFor = async (agentId: string, greeting: string): Promise<Reply> =>
+      request("PUT", `/api/v1/agents/${agentId}/config/draft`, {
+        token: beta.owner.token,
+        body: { ...configuration, greeting },
+      });
 
     const first = await request("POST", "/api/v1/agents", {
       token: beta.owner.token,
-      body: { name: "Only" },
+      body: { name: "First of two" },
     });
     expect(first.status, JSON.stringify(first.body)).toBe(200);
-
-    const saved = await draft();
-    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    const firstId = String(first.body["agentId"]);
 
     const second = await request("POST", "/api/v1/agents", {
       token: beta.owner.token,
-      body: { name: "Second" },
+      body: { name: "Second of two" },
     });
     expect(second.status, JSON.stringify(second.body)).toBe(200);
+    const secondId = String(second.body["agentId"]);
 
-    /* Two live agents and no agent in the route. Before migration 0047 this saved against
-       the older one and said nothing — an operator edits the agent they have open, and the
-       work lands on the other. It now fails, and failing is the requirement: the assertion
-       is that it is no longer a 200, not that any particular status came back. */
-    const ambiguous = await draft();
-    expect(ambiguous.status, "a draft with two live agents must not silently save").not.toBe(200);
+    // Both save. Before this slice the second call could not even name which agent it meant.
+    expect((await draftFor(firstId, "One speaking.")).status).toBe(200);
+    expect((await draftFor(secondId, "Two speaking.")).status).toBe(200);
 
-    // Archiving the second returns the organisation to one, and the surface works again.
-    const gone = await request("DELETE", `/api/v1/agents/${String(second.body["agentId"])}`, {
-      token: beta.owner.token,
+    const readBack = async (agentId: string): Promise<unknown> => {
+      const reply = await request("GET", `/api/v1/agents/${agentId}/config/draft`, {
+        token: beta.owner.token,
+      });
+      expect(reply.status, JSON.stringify(reply.body)).toBe(200);
+      const draft = reply.body["draft"] as Record<string, unknown> | null;
+      return (draft?.["config"] as Record<string, unknown> | undefined)?.["greeting"];
+    };
+
+    /* The assertion the old design could not make. One draft per agent, and the second write
+       did not land on the first agent — which is exactly what "resolve the oldest live agent"
+       would have done, silently, to whichever one it picked. */
+    expect(await readBack(firstId)).toBe("One speaking.");
+    expect(await readBack(secondId)).toBe("Two speaking.");
+
+    /* Another organisation reading this agent's draft sees nothing in it.
+       200 with `draft: null`, not 404, and that is the right answer rather than a gap: the
+       route answers the same way for an agent with no draft as for an agent that is not
+       yours, so the response distinguishes neither the id nor its owner. What matters is
+       that no staged greeting crosses, and that is what is asserted. */
+    const trespass = await request("GET", `/api/v1/agents/${firstId}/config/draft`, {
+      token: alpha.owner.token,
     });
-    expect(gone.status).toBe(204);
+    expect(trespass.status).toBe(200);
+    expect(trespass.body["draft"]).toBeNull();
+    expect(JSON.stringify(trespass.body)).not.toContain("One speaking.");
 
-    const recovered = await draft();
-    expect(recovered.status, JSON.stringify(recovered.body)).toBe(200);
+    for (const id of [firstId, secondId]) {
+      await request("DELETE", `/api/v1/agents/${id}`, { token: beta.owner.token });
+    }
   });
 
   /**
@@ -443,7 +467,7 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("the agents endp
     }, 30_000);
 
     const draft = async (): Promise<Reply> =>
-      request("GET", "/api/v1/config/draft", { token: gamma.owner.token });
+      request("GET", `/api/v1/agents/${agentId}/config/draft`, { token: gamma.owner.token });
 
     const agent = async (): Promise<Reply> =>
       request("GET", `/api/v1/agents/${agentId}`, { token: gamma.owner.token });

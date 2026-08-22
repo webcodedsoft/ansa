@@ -668,7 +668,11 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
      * The configuration the agent is answering on right now
      * The live values, which are what calls run on, with the history row for them alongside and the vocabulary they resolve to. `operatorManaged` is read-only and has no counterpart in the publish body.
      */
-    current: () =>
+    current: (input: {
+        readonly path: {
+          readonly agentId: string;
+        };
+      }) =>
       send<{
         readonly version: number;
         readonly config: {
@@ -718,7 +722,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly callingLatestHour: number | null;
       };
       };
-      }>(options, "GET", `/api/v1/config`, {}),
+      }>(options, "GET", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}/config`, input),
 
     /**
      * The configuration that served one call
@@ -726,6 +730,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
      */
     forCall: (input: {
         readonly path: {
+          readonly agentId: string;
           readonly callId: string;
         };
       }) =>
@@ -764,13 +769,16 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       } | null;
       };
       } | null;
-      }>(options, "GET", `/api/v1/config/calls/${encodeURIComponent(input.path.callId)}`, input),
+      }>(options, "GET", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}/config/calls/${encodeURIComponent(input.path.callId)}`, input),
 
     /**
      * What changed between two configuration versions
      * Only the fields that moved, with the nested shapes flattened to dotted paths — `businessHours.closesAtHour` rather than two objects to compare by eye. Keyterms are compared as a set, without regard to case, because they are a bias on the transcriber rather than a sequence and reordering them changes nothing on a call. 404 if either version has no snapshot behind it.
      */
     diff: (input: {
+        readonly path: {
+          readonly agentId: string;
+        };
         readonly query: {
           readonly from: number;
           readonly to: number;
@@ -799,13 +807,17 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly added: readonly (string)[];
         readonly removed: readonly (string)[];
       };
-      }>(options, "GET", `/api/v1/config/diff`, input),
+      }>(options, "GET", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}/config/diff`, input),
 
     /**
      * Configuration saved but not published
      * Null when there is nothing unpublished, which is the ordinary state rather than a missing resource. Nothing on a call reads this: the live read path takes the agent's own columns and cannot see a draft at all.
      */
-    readDraft: () =>
+    readDraft: (input: {
+        readonly path: {
+          readonly agentId: string;
+        };
+      }) =>
       send<{
         readonly draft: {
         readonly config: {
@@ -853,13 +865,16 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly restoredFrom: number | null;
         readonly updatedAt: string;
       } | null;
-      }>(options, "GET", `/api/v1/config/draft`, {}),
+      }>(options, "GET", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}/config/draft`, input),
 
     /**
      * Save configuration without making it live
      * Replaces the whole draft, for the same reason a publication is whole: a partial draft would have to be merged against a live document that may have moved since, and the merge is where the wrong greeting goes out. Validated exactly as a publish is, so a draft cannot be saved that could never be published. Changes nothing about a call in progress or a call that arrives a second later.
      */
     saveDraft: (input: {
+        readonly path: {
+          readonly agentId: string;
+        };
         readonly body: {
           readonly name: string;
           readonly voiceId: string | null;
@@ -932,34 +947,45 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly updatedBy: string | null;
         readonly restoredFrom: number | null;
         readonly updatedAt: string;
-      }>(options, "PUT", `/api/v1/config/draft`, input),
+      }>(options, "PUT", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}/config/draft`, input),
 
     /**
      * Throw away unpublished work
      * The first of the two ways back. This one forgets what has been saved since the last publish and leaves no trace, because a draft nobody published never answered a call and is not part of the history. The other way back is rolling a published version into the draft, which does go through the version list. False means there was nothing to discard.
      */
-    discardDraft: () =>
+    discardDraft: (input: {
+        readonly path: {
+          readonly agentId: string;
+        };
+      }) =>
       send<{
         readonly discarded: boolean;
-      }>(options, "DELETE", `/api/v1/config/draft`, {}),
+      }>(options, "DELETE", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}/config/draft`, input),
 
     /**
      * What this organisation cannot configure, and where each rule is enforced
      * Generated from the list the platform actually enforces, so it cannot describe a rule that stopped being enforced. A publication tripping one of these is refused with 422 naming the id — and the rule would have held anyway, because none of them is held up by the prompt.
      */
-    listGuarantees: () =>
+    listGuarantees: (input: {
+        readonly path: {
+          readonly agentId: string;
+        };
+      }) =>
       send<{
         readonly guarantees: readonly ({
         readonly id: string;
         readonly enforcedIn: string;
         readonly restatedToTheModel: boolean;
       })[];
-      }>(options, "GET", `/api/v1/config/guarantees`, {}),
+      }>(options, "GET", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}/config/guarantees`, input),
 
     /**
      * Every configuration version this organisation has published, newest first
      */
     listVersions: (input: {
+        readonly path: {
+          readonly agentId: string;
+        };
         readonly query?: {
           readonly page?: number;
           readonly perPage?: number;
@@ -976,13 +1002,16 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly perPage: number;
         readonly total: number;
         readonly totalPages: number;
-      }>(options, "GET", `/api/v1/config/versions`, input),
+      }>(options, "GET", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}/config/versions`, input),
 
     /**
      * Publish a new configuration version
      * The whole configuration, not a patch: a field left out is a field cleared, so every one of them is required. Tool and event configuration is not settable here and is carried forward unchanged inside the same transaction. Bumps the version and snapshots it atomically, so the number recorded on every subsequent call has a row behind it.
      */
     publish: (input: {
+        readonly path: {
+          readonly agentId: string;
+        };
         readonly body: {
           readonly name: string;
           readonly voiceId: string | null;
@@ -1049,7 +1078,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly effective: readonly (string)[];
         readonly cap: number;
       };
-      }>(options, "POST", `/api/v1/config/versions`, input),
+      }>(options, "POST", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}/config/versions`, input),
 
     /**
      * One configuration version, as it was published
@@ -1057,6 +1086,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
      */
     version: (input: {
         readonly path: {
+          readonly agentId: string;
           readonly version: number;
         };
       }) =>
@@ -1091,7 +1121,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly ringSeconds: number | null;
       } | null;
       };
-      }>(options, "GET", `/api/v1/config/versions/${encodeURIComponent(input.path.version)}`, input),
+      }>(options, "GET", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}/config/versions/${encodeURIComponent(input.path.version)}`, input),
 
     /**
      * Load an earlier version's configuration into the draft
@@ -1099,6 +1129,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
      */
     rollback: (input: {
         readonly path: {
+          readonly agentId: string;
           readonly version: number;
         };
       }) =>
@@ -1147,7 +1178,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly updatedBy: string | null;
         readonly restoredFrom: number | null;
         readonly updatedAt: string;
-      }>(options, "POST", `/api/v1/config/versions/${encodeURIComponent(input.path.version)}/rollback`, input),
+      }>(options, "POST", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}/config/versions/${encodeURIComponent(input.path.version)}/rollback`, input),
   },
 
   credentials: {

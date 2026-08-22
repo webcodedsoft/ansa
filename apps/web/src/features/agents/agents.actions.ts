@@ -59,14 +59,35 @@ export interface Published {
   readonly publishedAt: string;
 }
 
+/**
+ * Which agent this form is for.
+ *
+ * Carried as a hidden field rather than inferred, because a server action has no route to
+ * read it from — it is called by the form, not by the page. Configuration used to need no
+ * agent at all: the API resolved the organisation's oldest live agent, so every workspace
+ * published into the same document whatever id was in the URL.
+ *
+ * A missing or malformed value fails the action rather than falling back to "the only agent".
+ * A fallback here would restore exactly the behaviour this change exists to remove, and it
+ * would do it silently on the one path that writes.
+ */
+const agentFrom = (form: FormData): string | null => {
+  const value = form.get("agentId");
+  return typeof value === "string" && UUID.test(value) ? value : null;
+};
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export type PublishState = FormState<Published>;
 
 export const publish = async (_previous: PublishState, form: FormData): Promise<PublishState> => {
+  const agentId = agentFrom(form);
+  if (agentId === null) return failedForm("This form does not say which agent it is for.");
   const parsed = publishSchema.safeParse(publishFormInput(form));
   if (!parsed.success) return invalidForm(parsed.error);
 
   try {
-    const result = await publishConfiguration(parsed.data);
+    const result = await publishConfiguration(agentId, parsed.data);
     revalidatePath("/agents", "layout");
     return succeededForm({ version: result.version.version, publishedAt: result.version.publishedAt });
   } catch (error) {
@@ -95,11 +116,13 @@ export const saveDraftAction = async (
   _previous: SaveDraftState,
   form: FormData,
 ): Promise<SaveDraftState> => {
+  const agentId = agentFrom(form);
+  if (agentId === null) return failedForm("This form does not say which agent it is for.");
   const parsed = draftSchema.safeParse(publishFormInput(form));
   if (!parsed.success) return invalidForm(parsed.error);
 
   try {
-    const result = await saveDraft(parsed.data);
+    const result = await saveDraft(agentId, parsed.data);
     revalidatePath("/agents", "layout");
     return succeededForm({ updatedAt: result.updatedAt });
   } catch (error) {
@@ -118,9 +141,12 @@ export type DiscardDraftState = FormState<{ readonly discarded: boolean }>;
 
 export const discardDraftAction = async (
   _previous: DiscardDraftState,
+  form: FormData,
 ): Promise<DiscardDraftState> => {
+  const agentId = agentFrom(form);
+  if (agentId === null) return failedForm("This form does not say which agent it is for.");
   try {
-    const result = await discardDraft();
+    const result = await discardDraft(agentId);
     revalidatePath("/agents", "layout");
     return succeededForm({ discarded: result.discarded });
   } catch (error) {
@@ -144,11 +170,13 @@ export type RollbackState = FormState<Restored>;
  * page can say "loaded, review it and publish" rather than "done".
  */
 export const rollback = async (_previous: RollbackState, form: FormData): Promise<RollbackState> => {
+  const agentId = agentFrom(form);
+  if (agentId === null) return failedForm("This form does not say which agent it is for.");
   const version = Number(form.get("version"));
   if (!Number.isInteger(version)) return failedForm("That is not a version number.");
 
   try {
-    const restored = await rollbackToVersion(version);
+    const restored = await rollbackToVersion(agentId, version);
     revalidatePath("/agents", "layout");
     return succeededForm({ restoredFrom: version, updatedAt: restored.updatedAt });
   } catch (error) {
@@ -204,9 +232,9 @@ export type DiffResult =
  * client component cannot import `failureMessage` itself: it lives in `@/lib/api/server`,
  * which pulls in `next/headers` and cannot be bundled for the client.
  */
-export const getDiff = async (from: number, to: number): Promise<DiffResult> => {
+export const getDiff = async (agentId: string, from: number, to: number): Promise<DiffResult> => {
   try {
-    return { ok: true, diff: await diffVersions(from, to) };
+    return { ok: true, diff: await diffVersions(agentId, from, to) };
   } catch (error) {
     return { ok: false, message: failureMessage(error) };
   }

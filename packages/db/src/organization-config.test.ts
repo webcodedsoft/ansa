@@ -13,7 +13,23 @@ import {
   type AgentConfigFields,
 } from "./organization-config";
 import { loadDotEnv } from "./test-env";
-import { withOrganization } from "./organization-scope";
+import { liveAgentId } from "./drafts";
+import { withOrganization, type OrganizationScope } from "./organization-scope";
+
+/**
+ * The fixture's agent, resolved inside the scope the call is already in.
+ *
+ * These functions used to take only a scope and let the database pick the organisation's
+ * oldest live agent. They name their agent now, so every call site has to say which — and in
+ * a fixture with one agent, saying which means asking. `liveAgentId` raises on two rather
+ * than picking, so a suite that grows a second agent fails here rather than somewhere
+ * confusing.
+ */
+const theAgent = async (scope: OrganizationScope): Promise<string> => {
+  const id = await liveAgentId(scope);
+  if (id === null) throw new Error("the fixture has no live agent");
+  return id;
+};
 
 loadDotEnv();
 
@@ -112,9 +128,10 @@ afterAll(async () => {
 
 describe("publishing a version", () => {
   it("bumps the version and leaves a snapshot that can be read back", async () => {
-    const published = await withOrganization(ds, A, (scope) =>
+    const published = await withOrganization(ds, A, async (scope) =>
       publishAgentConfig(
         scope,
+        await theAgent(scope),
         fields({
           greeting: "Good afternoon.",
           keyterms: ["Renewal Notice"],
@@ -125,13 +142,13 @@ describe("publishing a version", () => {
       ),
     );
 
-    const current = await withOrganization(ds, A, (scope) => loadCurrentAgentConfig(scope));
+    const current = await withOrganization(ds, A, async (scope) => loadCurrentAgentConfig(scope, await theAgent(scope)));
     expect(current?.version).toBe(published);
     expect(current?.config.greeting).toBe("Good afternoon.");
     expect(current?.published?.note).toBe("opening hours and a transfer target");
 
-    const snapshot = await withOrganization(ds, A, (scope) =>
-      loadAgentConfigVersion(scope, published),
+    const snapshot = await withOrganization(ds, A, async (scope) =>
+      loadAgentConfigVersion(scope, await theAgent(scope), published),
     );
     // Everything the snapshot does carry matches what is live, except the hours.
     expect(snapshot?.config.greeting).toEqual(current?.config.greeting);
@@ -173,8 +190,8 @@ describe("publishing a version", () => {
       ]);
     });
 
-    await withOrganization(ds, A, (scope) =>
-      publishAgentConfig(scope, fields(), "a publish that says nothing about tools"),
+    await withOrganization(ds, A, async (scope) =>
+      publishAgentConfig(scope, await theAgent(scope), fields(), "a publish that says nothing about tools"),
     );
 
     const after = await withOrganization(ds, A, (scope) =>
@@ -184,7 +201,7 @@ describe("publishing a version", () => {
   });
 
   it("is whole rather than a patch: a field left out is a field cleared", async () => {
-    const current = await withOrganization(ds, A, (scope) => loadCurrentAgentConfig(scope));
+    const current = await withOrganization(ds, A, async (scope) => loadCurrentAgentConfig(scope, await theAgent(scope)));
     // The greeting published by the first case is gone, because the second case did not
     // repeat it. That is the contract, and it is why every field in the request body is
     // required rather than optional.
@@ -194,16 +211,16 @@ describe("publishing a version", () => {
 
 describe("the history", () => {
   it("is newest first, and page two carries on where page one stopped", async () => {
-    const first = await withOrganization(ds, A, (scope) =>
-      listAgentConfigVersions(scope, { limit: 1, offset: 0 }),
+    const first = await withOrganization(ds, A, async (scope) =>
+      listAgentConfigVersions(scope, await theAgent(scope), { limit: 1, offset: 0 }),
     );
     expect(first.items).toHaveLength(1);
     // The total counts every version, not the one row on this page — that is the whole
     // reason offset paging can say how many pages there are.
     expect(first.total).toBeGreaterThan(1);
 
-    const second = await withOrganization(ds, A, (scope) =>
-      listAgentConfigVersions(scope, { limit: 1, offset: 1 }),
+    const second = await withOrganization(ds, A, async (scope) =>
+      listAgentConfigVersions(scope, await theAgent(scope), { limit: 1, offset: 1 }),
     );
     const [newest] = first.items;
     const [older] = second.items;
@@ -212,8 +229,8 @@ describe("the history", () => {
   });
 
   it("records why, not only what", async () => {
-    const page = await withOrganization(ds, A, (scope) =>
-      listAgentConfigVersions(scope, { limit: 10, offset: 0 }),
+    const page = await withOrganization(ds, A, async (scope) =>
+      listAgentConfigVersions(scope, await theAgent(scope), { limit: 10, offset: 0 }),
     );
     for (const version of page.items) {
       expect(version.note).not.toBeNull();
@@ -224,8 +241,8 @@ describe("the history", () => {
 
 describe("tracing a call to the configuration that served it", () => {
   it("answers with the snapshot, not just the number", async () => {
-    const version = await withOrganization(ds, A, (scope) =>
-      publishAgentConfig(scope, fields({ greeting: "Traced." }), "for the trace"),
+    const version = await withOrganization(ds, A, async (scope) =>
+      publishAgentConfig(scope, await theAgent(scope), fields({ greeting: "Traced." }), "for the trace"),
     );
 
     const callId = "77777777-7777-4777-8777-bbbbbbbbbbbb";
@@ -260,8 +277,8 @@ describe("tracing a call to the configuration that served it", () => {
 
 describe("one organisation reaching for another's", () => {
   it("cannot read a version number it does not own", async () => {
-    const mine = await withOrganization(ds, A, (scope) =>
-      listAgentConfigVersions(scope, { limit: 1, offset: 0 }),
+    const mine = await withOrganization(ds, A, async (scope) =>
+      listAgentConfigVersions(scope, await theAgent(scope), { limit: 1, offset: 0 }),
     );
     const version = mine.items[0]?.version;
     expect(version).toBeDefined();
@@ -269,13 +286,13 @@ describe("one organisation reaching for another's", () => {
     // The same integer, asked for by the other organisation. A version number is small and
     // guessable, which is why nothing here compares it to anything: the row is not visible.
     expect(
-      await withOrganization(ds, B, (scope) => loadAgentConfigVersion(scope, version ?? 1)),
+      await withOrganization(ds, B, async (scope) => loadAgentConfigVersion(scope, await theAgent(scope), version ?? 1)),
     ).toBeNull();
   });
 
   it("sees no history at all before it has published", async () => {
-    const page = await withOrganization(ds, B, (scope) =>
-      listAgentConfigVersions(scope, { limit: 50, offset: 0 }),
+    const page = await withOrganization(ds, B, async (scope) =>
+      listAgentConfigVersions(scope, await theAgent(scope), { limit: 50, offset: 0 }),
     );
     expect(page.items).toEqual([]);
   });
@@ -287,7 +304,7 @@ describe("one organisation reaching for another's", () => {
   });
 
   it("reads its own configuration, and only its own", async () => {
-    const current = await withOrganization(ds, B, (scope) => loadCurrentAgentConfig(scope));
+    const current = await withOrganization(ds, B, async (scope) => loadCurrentAgentConfig(scope, await theAgent(scope)));
     expect(current?.config.name).toBe("Config organization B");
   });
 });
@@ -316,30 +333,30 @@ describe("policies a screen cannot edit", () => {
   ];
 
   it("stores and returns them", async () => {
-    await withOrganization(ds, A, (scope) =>
-      publishAgentConfig(scope, fields({ policyBlocks: withPolicies }), "with policies"),
+    await withOrganization(ds, A, async (scope) =>
+      publishAgentConfig(scope, await theAgent(scope), fields({ policyBlocks: withPolicies }), "with policies"),
     );
     expect(await livePolicies()).toEqual(withPolicies);
   });
 
   it("leaves them alone when a publish omits them", async () => {
     // The console's publish, which cannot see them.
-    await withOrganization(ds, A, (scope) =>
-      publishAgentConfig(scope, fields({ policyBlocks: withPolicies }), "with policies"),
+    await withOrganization(ds, A, async (scope) =>
+      publishAgentConfig(scope, await theAgent(scope), fields({ policyBlocks: withPolicies }), "with policies"),
     );
-    await withOrganization(ds, A, (scope) =>
-      publishAgentConfig(scope, fields(), "from a screen with no policy editor"),
+    await withOrganization(ds, A, async (scope) =>
+      publishAgentConfig(scope, await theAgent(scope), fields(), "from a screen with no policy editor"),
     );
 
     expect(await livePolicies()).toEqual(withPolicies);
   });
 
   it("clears them for an empty list, which is a different thing from omitting", async () => {
-    await withOrganization(ds, A, (scope) =>
-      publishAgentConfig(scope, fields({ policyBlocks: withPolicies }), "with policies"),
+    await withOrganization(ds, A, async (scope) =>
+      publishAgentConfig(scope, await theAgent(scope), fields({ policyBlocks: withPolicies }), "with policies"),
     );
-    await withOrganization(ds, A, (scope) =>
-      publishAgentConfig(scope, fields({ policyBlocks: [] }), "deliberately none"),
+    await withOrganization(ds, A, async (scope) =>
+      publishAgentConfig(scope, await theAgent(scope), fields({ policyBlocks: [] }), "deliberately none"),
     );
 
     expect(await livePolicies()).toEqual([]);
@@ -348,12 +365,19 @@ describe("policies a screen cannot edit", () => {
 
 describe("an organisation with more than one agent", () => {
   /**
-   * `config.*` has no agent in its route and resolves the oldest live one. With a second
-   * agent that is a coin toss that never says it flipped: an operator edits the agent they
-   * have open, publishes, and it lands on the other. Nothing errors and the version bumps.
+   * What is left of the guess, and where it still has to refuse.
    *
-   * `POST /agents` exists, so this is one request away rather than hypothetical. Making the
-   * surface agent-scoped is the real fix; refusing to guess is the half worth having first.
+   * These tests used to be about publishing. `config.*` had no agent in its route and
+   * resolved the oldest live one, so a second agent made every publish a coin toss that
+   * never said it flipped. That is fixed: the routes carry an agent id and
+   * `publishAgentConfig` takes one, so publishing cannot pick the wrong agent any more.
+   *
+   * The resolver did not go away, though. `liveAgentId` is what the surfaces with no agent in
+   * their route still use — the test call, the corpus viewer, and the two registry publishes,
+   * all of which act on something genuinely organisation-wide. So the guard from migration
+   * 0047 still matters, and these tests now name the thing that actually raises rather than
+   * reaching it sideways through a publish. They passed either way, which is the problem:
+   * the rejection was coming from the fixture's own helper.
    */
   const SECOND = "a2a2a2a2-a2a2-4a2a-8a2a-a2a2a2a2a2a2";
 
@@ -386,18 +410,18 @@ describe("an organisation with more than one agent", () => {
   const removeSecondAgent = (): Promise<void> =>
     asOwner("delete from agents where id = $1", [SECOND]);
 
-  it("publishes normally while there is only one", async () => {
+  it("resolves normally while there is only one", async () => {
     // The case every organisation is in today. The guard must be invisible here.
     await expect(
-      withOrganization(ds, A, (scope) => publishAgentConfig(scope, fields(), "one agent")),
-    ).resolves.toBeGreaterThan(0);
+      withOrganization(ds, A, (scope) => liveAgentId(scope)),
+    ).resolves.toEqual(expect.any(String));
   });
 
-  it.skipIf(owner === undefined)("refuses to publish rather than picking one", async () => {
+  it.skipIf(owner === undefined)("refuses to resolve rather than picking one", async () => {
     await addSecondAgent();
     try {
       await expect(
-        withOrganization(ds, A, (scope) => publishAgentConfig(scope, fields(), "two agents")),
+        withOrganization(ds, A, (scope) => liveAgentId(scope)),
       ).rejects.toThrow(/live agents/);
     } finally {
       await removeSecondAgent();
@@ -409,8 +433,8 @@ describe("an organisation with more than one agent", () => {
        the surface cannot mean one agent any more and which routes can. */
     await addSecondAgent();
     try {
-      await withOrganization(ds, A, (scope) => publishAgentConfig(scope, fields(), "two"));
-      expect.unreachable("the publish should have refused");
+      await withOrganization(ds, A, (scope) => liveAgentId(scope));
+      expect.unreachable("resolving should have refused");
     } catch (error) {
       expect(String(error)).toContain("2 live agents");
       expect(String(error)).toContain("agent-scoped");
@@ -419,12 +443,47 @@ describe("an organisation with more than one agent", () => {
     }
   });
 
-  it.skipIf(owner === undefined)("publishes again once the second agent is gone", async () => {
+  it.skipIf(owner === undefined)("resolves again once the second agent is gone", async () => {
     // The guard is about ambiguity, not a latch. Removing the second must restore the path.
     await addSecondAgent();
     await removeSecondAgent();
     await expect(
-      withOrganization(ds, A, (scope) => publishAgentConfig(scope, fields(), "one again")),
-    ).resolves.toBeGreaterThan(0);
+      withOrganization(ds, A, (scope) => liveAgentId(scope)),
+    ).resolves.toEqual(expect.any(String));
+  });
+
+  it.skipIf(owner === undefined)("publishes to both, because publishing names its agent", async () => {
+    /* The other half, and the point of the whole change. Two live agents is a refusal for
+       anything that has to guess and an ordinary Tuesday for anything that does not: each
+       agent publishes on its own, and neither version lands on the other. */
+    await addSecondAgent();
+    try {
+      const first = await withOrganization(ds, A, async (scope) => {
+        const rows = await scope.query<{ id: string }>(
+          "select id from agents where organization_id = $1 and id <> $2 and deleted_at is null",
+          [A, SECOND],
+        );
+        return String(rows[0]?.id);
+      });
+
+      await expect(
+        withOrganization(ds, A, (scope) =>
+          publishAgentConfig(scope, first, fields({ greeting: "First." }), "the first agent"),
+        ),
+      ).resolves.toBeGreaterThan(0);
+      await expect(
+        withOrganization(ds, A, (scope) =>
+          publishAgentConfig(scope, SECOND, fields({ greeting: "Second." }), "the second agent"),
+        ),
+      ).resolves.toBeGreaterThan(0);
+
+      const greetings = await withOrganization(ds, A, async (scope) => ({
+        first: (await loadCurrentAgentConfig(scope, first))?.config.greeting,
+        second: (await loadCurrentAgentConfig(scope, SECOND))?.config.greeting,
+      }));
+      expect(greetings).toEqual({ first: "First.", second: "Second." });
+    } finally {
+      await removeSecondAgent();
+    }
   });
 });

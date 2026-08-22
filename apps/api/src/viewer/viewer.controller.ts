@@ -6,6 +6,7 @@ import {
   listEventDeliveries,
   loadCall,
   loadCallRecords,
+  liveAgentId,
   loadCurrentAgentConfig,
   readClaimSource,
   recordTranscriptCorrection,
@@ -177,7 +178,13 @@ export class ViewerController {
     this.authorise(token);
     const { db, organizationId } = this.scope(organization);
     const entries = await exportCorpus(db, organizationId);
-    const current = await withOrganization(db, organizationId, loadCurrentAgentConfig);
+    /* The corpus viewer is organisation-wide and has no agent in its route, so the keyterms
+       it compares against are whichever agent this organisation runs. `liveAgentId` raises on
+       two rather than picking one — see migration 0047. */
+    const current = await withOrganization(db, organizationId, async (scope) => {
+      const agentId = await liveAgentId(scope);
+      return agentId === null ? null : loadCurrentAgentConfig(scope, agentId);
+    });
     const known = [...BASE_KEYTERMS, ...(current?.config.keyterms ?? [])];
     return renderSuggestions(
       keytermCandidates(entries, { known }),

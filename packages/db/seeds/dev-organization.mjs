@@ -54,6 +54,14 @@ const keyterms = [
 // organization is allowed to say here is bounded and filtered on the way into the prompt — see
 // apps/api/src/prompts/organization-layer.ts. Writing "skip the readback" in either field would
 // not skip the readback; the field would be dropped and the call logged as an error.
+/*
+ * The first thing a caller hears, and until now the seed had none.
+ *
+ * The publish call was misaligned by one, so the persona was landing in the greeting slot: a
+ * dev agent that opened a call by reciting its own character notes. Nobody saw it, because
+ * the same misalignment stopped the function resolving at all.
+ */
+const greeting = "Kano General Insurance, good afternoon. How can I help you today?";
 const persona = "Warm and direct. Nigerian English. Never rush the caller off the line.";
 const instructions = [
   "Office hours are 8am to 5pm WAT, Monday to Friday.",
@@ -173,18 +181,38 @@ await client.query("select set_config('app.organization_id', $1, true)", [organi
 // "function does not exist" rather than with anything that names the missing field. Keep
 // it in step, in the same commit as the migration.
 //
-// It still takes the organisation rather than the agent and resolves the oldest live one,
-// which is wrong and known. There is one agent here, so the seed is not where it bites.
+// It names the agent it just created. It used to pass the organisation and let the database
+// resolve the oldest live one — wrong once an organisation can run two, and unnecessary here
+// where the id is three lines up.
+//
+// It was also broken. The call supplied sixteen arguments to a function requiring seventeen,
+// so every position after `speaking_rate` was shifted by one and Postgres could not resolve
+// the overload at all: the greeting slot held the persona, the instructions slot held a
+// `text[]`, and the keyterms slot held the integer 8. It failed with "function does not
+// exist", which names nothing and is exactly the rot the comment above warns about — the
+// warning was right and the call it guards had already rotted again.
+//
+// Every argument is now labelled with the parameter it fills. Positional calls with
+// eighteen slots are unreadable, and unreadable is how this happened twice.
 const { rows } = await client.query(
-  `select app.publish_agent_config(
-     $1, $2, null, null, $3, $4, $5,
+  `select app.publish_agent_config_for_agent(
+     $1,                    -- p_agent
+     $2,                    -- p_name
+     null, null,            -- p_voice_id, p_speaking_rate
+     $3,                    -- p_greeting
+     $4,                    -- p_persona
+     $5,                    -- p_instructions
+     $6,                    -- p_keyterms
      8, 17, '{1,2,3,4,5}',  -- business hours: the organisation's, not the agent's
-     null, null,            -- tools, event receivers
+     null, null,            -- p_tool_config, p_event_config
      null, null, null,      -- escalation: falls back to the platform number
-     $6) as version`,
+     $7,                    -- p_note
+     null                   -- p_policy_blocks
+   ) as version`,
   [
-    organizationId,
+    agentId,
     "Kano General Insurance",
+    greeting,
     persona,
     instructions,
     keyterms,

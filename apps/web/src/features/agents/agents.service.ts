@@ -3,13 +3,17 @@ import { api } from "@/lib/api/server";
 import type { DraftBody, PublishBody, TestCallInput } from "./agents.schema";
 
 /**
- * Everything this app does with the agent's configuration.
+ * Everything this app does with an agent's configuration.
  *
- * The API has one configuration per organization, not one per agent — every function here reads
- * or writes that single document. `/agents/[agentId]` calls `currentConfiguration` no
- * matter what id is in the URL; see the comment there. Keeping every call in one file is
- * what stops the list page, the workspace and the wizard from disagreeing about the shape
- * of a configuration.
+ * Every configuration call now names its agent. It used to name none: the API had one
+ * configuration per organisation and resolved the oldest live agent in the database, so
+ * `/agents/[agentId]` read and published the same document whatever id was in the URL — right
+ * while an organisation could only have one agent, and a silent coin toss the moment it could
+ * have two. The id these functions take is the one from the route.
+ *
+ * Keeping every call in one file is what stops the list page, the workspace and the wizard
+ * from disagreeing about the shape of a configuration — and it is why threading the agent
+ * through cost twelve lines rather than a sweep of every screen.
  */
 
 /**
@@ -70,24 +74,46 @@ export const setAgentTools = async (agentId: string, tools: readonly string[]) =
 
 export type AgentSummary = Awaited<ReturnType<typeof listAgents>>["items"][number];
 
-export const currentConfiguration = async () => (await api()).config.current();
+/**
+ * The agent an organisation-wide screen means when it has no agent in its route.
+ *
+ * The call list and the organisation settings page both need something off a configuration
+ * document — a version caption, the operator's consent window — and neither has an agent id
+ * to work from. They used to get one for free, because the API resolved the organisation's
+ * oldest live agent itself. Now that the route names the agent, that assumption has to live
+ * somewhere, and here is better than inside a query: it is one function to find when the
+ * console grows a second agent, and it is honest that a screen is choosing.
+ *
+ * Null when there is no live agent. More than one is not an error here — the first is
+ * returned, matching what the database used to do — but it is the case that makes these two
+ * screens wrong, and the reason they are worth revisiting before a second agent ships.
+ */
+export const soleLiveAgentId = async (): Promise<string | null> => {
+  const live = await liveAgents();
+  return live[0]?.agentId ?? null;
+};
+
+export const currentConfiguration = async (agentId: string) =>
+  (await api()).config.current({ path: { agentId } });
 
 export type LiveConfiguration = Awaited<ReturnType<typeof currentConfiguration>>;
 
-export const publishConfiguration = async (body: PublishBody) => {
-  const result = await (await api()).config.publish({ body });
+export const publishConfiguration = async (agentId: string, body: PublishBody) => {
+  const result = await (await api()).config.publish({ path: { agentId }, body });
   return result;
 };
 
-export const listVersions = async (page?: number) =>
+export const listVersions = async (agentId: string, page?: number) =>
   (await api()).config.listVersions({
+    path: { agentId },
     query: { perPage: 25, ...(page === undefined ? {} : { page }) },
   });
 
-export const getVersion = async (version: number) => (await api()).config.version({ path: { version } });
+export const getVersion = async (agentId: string, version: number) =>
+  (await api()).config.version({ path: { agentId, version } });
 
-export const diffVersions = async (from: number, to: number) =>
-  (await api()).config.diff({ query: { from, to } });
+export const diffVersions = async (agentId: string, from: number, to: number) =>
+  (await api()).config.diff({ path: { agentId }, query: { from, to } });
 
 /**
  * Puts a published version back on screen. It does not publish it.
@@ -97,20 +123,24 @@ export const diffVersions = async (from: number, to: number) =>
  * is where it lands: the draft, so somebody sees what they are reinstating before it answers
  * a call.
  */
-export const rollbackToVersion = async (version: number) =>
-  (await api()).config.rollback({ path: { version } });
+export const rollbackToVersion = async (agentId: string, version: number) =>
+  (await api()).config.rollback({ path: { agentId, version } });
 
 /** Unpublished work, or null. Read alongside the live configuration on every tab. */
-export const readDraft = async () => (await api()).config.readDraft();
+export const readDraft = async (agentId: string) =>
+  (await api()).config.readDraft({ path: { agentId } });
 
 export type AgentDraft = NonNullable<Awaited<ReturnType<typeof readDraft>>["draft"]>;
 
 /** Saves without making anything live. The whole document, as a publish is. */
-export const saveDraft = async (body: DraftBody) => (await api()).config.saveDraft({ body });
+export const saveDraft = async (agentId: string, body: DraftBody) =>
+  (await api()).config.saveDraft({ path: { agentId }, body });
 
-export const discardDraft = async () => (await api()).config.discardDraft();
+export const discardDraft = async (agentId: string) =>
+  (await api()).config.discardDraft({ path: { agentId } });
 
-export const listGuarantees = async () => (await api()).config.listGuarantees();
+export const listGuarantees = async (agentId: string) =>
+  (await api()).config.listGuarantees({ path: { agentId } });
 
 export const readinessReport = async () => (await api()).readiness.report();
 

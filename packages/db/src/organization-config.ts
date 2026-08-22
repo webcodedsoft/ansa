@@ -198,17 +198,22 @@ const asJsonb = (value: unknown): string | null =>
  */
 export const publishConfiguration = async (
   scope: OrganizationScope,
+  agentId: string,
   current: StoredConfiguration,
   patch: ConfigurationPatch,
   note: string,
 ): Promise<number> => {
   const next = { ...current, ...patch };
+  /* `publish_agent_config_for_agent`, not `publish_agent_config`: the agent is named rather
+     than resolved from the organisation. The function reads the organisation off the agent
+     row and refuses unless it matches the current scope, so an id from a request path cannot
+     publish into somebody else's organisation — see migration 0052. */
   const rows = await scope.query<{ version: number }>(
-    `select app.publish_agent_config(
+    `select app.publish_agent_config_for_agent(
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
      ) as version`,
     [
-      scope.organizationId,
+      agentId,
       next.name,
       next.voiceId,
       next.speakingRate,
@@ -232,7 +237,7 @@ export const publishConfiguration = async (
   );
 
   const published = rows[0];
-  if (published === undefined) throw new Error("publish_organization_config returned no version");
+  if (published === undefined) throw new Error("publish_agent_config_for_agent returned no version");
   return Number(published.version);
 };
 
@@ -448,7 +453,13 @@ interface CurrentRow extends ConfigColumns, VersionColumns {
  */
 export const loadCurrentAgentConfig = async (
   scope: OrganizationScope,
+  agentId: string,
 ): Promise<CurrentAgentConfig | null> => {
+  /* Named rather than resolved. This used to take the organisation's oldest live agent —
+     correct while there could only be one, and a coin toss the moment there can be two.
+     RLS still decides whether the id is readable at all, so an agent belonging to somebody
+     else returns null here and reads to the caller as "no such agent", which is the answer
+     every other route on this surface gives. */
   const rows = await scope.query<CurrentRow>(
     `select a.config_version, ${configColumns("a")},
             t.business_open_hour, t.business_close_hour, t.business_days,
@@ -459,9 +470,8 @@ export const loadCurrentAgentConfig = async (
        join organizations t on t.id = a.organization_id
        left join agent_prompt_versions p
          on p.agent_id = a.id and p.version = a.config_version
-      where a.deleted_at is null
-      order by a.created_at, a.id
-      limit 1`,
+      where a.id = $1 and a.deleted_at is null`,
+    [agentId],
   );
 
   const row = rows[0];
@@ -500,16 +510,25 @@ interface VersionRow {
   readonly published_at: Date;
 }
 
-/** Every version this organisation has published, newest first. */
+/**
+ * Every version one agent has published, newest first.
+ *
+ * Filtered on the agent, not only on RLS. Leaving it to RLS was correct while an
+ * organisation could have one live agent and wrong the moment it can have two: the histories
+ * would interleave, and a version list on one agent's workspace would show publishes nobody
+ * made to it. `config_version` counts per agent, so the numbers themselves collide.
+ */
 export const listAgentConfigVersions = async (
   scope: OrganizationScope,
+  agentId: string,
   page: PageRequest,
 ): Promise<PageSlice<ConfigVersionSummary>> => {
   const rows = await scope.query<VersionRow & WithTotal>(
     `select p.version, p.note, p.published_by, p.published_at, ${TOTAL_COLUMN}
        from agent_prompt_versions p
-      ${pageOrder("p.published_at", VERSION_ORDER)}`,
-    pageParams(page),
+      where p.agent_id = $1
+      ${pageOrder("p.published_at", VERSION_ORDER, 2)}`,
+    [agentId, ...pageParams(page)],
   );
 
   return toSlice(
@@ -539,13 +558,14 @@ const toVersion = (row: SnapshotRow): ConfigVersion | null => {
  */
 export const loadAgentConfigVersion = async (
   scope: OrganizationScope,
+  agentId: string,
   version: number,
 ): Promise<ConfigVersion | null> => {
   const rows = await scope.query<SnapshotRow>(
     `select p.version, p.note, p.published_by, p.published_at, ${configColumns("p")}
        from agent_prompt_versions p
-      where p.version = $1`,
-    [version],
+      where p.agent_id = $1 and p.version = $2`,
+    [agentId, version],
   );
   const row = rows[0];
   return row === undefined ? null : toVersion(row);
@@ -613,6 +633,7 @@ export const loadConfigVersionForCall = async (
  */
 export const publishAgentConfig = async (
   scope: OrganizationScope,
+  agentId: string,
   fields: AgentConfigFields,
   note: string,
 ): Promise<number> => {
@@ -632,6 +653,7 @@ export const publishAgentConfig = async (
   // then record a connector somebody configured last week as deliberately deleted.
   return publishConfiguration(
     scope,
+    agentId,
     current,
     {
       name: fields.name,

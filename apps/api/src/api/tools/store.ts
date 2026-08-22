@@ -57,11 +57,13 @@ export interface ConfigurationChange {
 
 export const publishConfiguration = async (
   scope: OrganizationScope,
+  agentId: string,
   current: StoredConfiguration,
   change: ConfigurationChange,
 ): Promise<number> =>
   dbPublishConfiguration(
     scope,
+    agentId,
     current,
     { toolConfig: change.toolConfig, eventConfig: change.eventConfig },
     change.note,

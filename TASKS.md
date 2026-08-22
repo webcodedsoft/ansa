@@ -2784,32 +2784,43 @@ What to listen for, in order of what is actually in doubt:
       building something that is already there. That is the same defect as a docstring
       claiming a lint rule that does not exist, pointing the other way.
 
-- [ ] `config.*` reads and writes the tenant's oldest live agent via
-      `app.tenant_config_for_id`. Correct with one agent, a coin toss with two. **This is
-      the blocker on creating a second agent through the UI** — the wizard at `/agents/new`
-      and the workspace at `/agents/[agentId]` both publish through `config.publish`, so
-      today they would edit whichever agent that function picks. Make them agent-scoped
-      before wiring a create form to `POST /agents`.
+- [x] **`config.*` is agent-scoped (2026-08-22).** The eleven routes moved from `/config/...`
+      to `/agents/:agentId/config/...`, and every function under them names its agent.
+      Publishing can no longer land on an agent nobody was editing.
 
-      **Groundwork done, the routes are not (2026-08-22).** Scoping this work turned up a
-      latent isolation hole and it had to be closed first: `app.agent_config_for_id` is
-      SECURITY DEFINER, filters on `where a.id = agent` and nothing else, returns the
-      organisation's `organization_credentials` in its result, and was granted to `ansa_app`
-      with no TypeScript caller. Making `config.*` agent-scoped means handing a request's
-      agent id to a configuration reader — that reader — so the hole would have opened as a
-      side effect of a change nobody would have called an isolation change. Migration 0050
-      revokes it and adds `app.agent_config_for_agent`, which refuses an agent outside the
-      current scope and answers "absent" rather than "forbidden" so an id is never confirmed.
-      Five adversarial tests in `agent-config-scope.test.ts`, mutation-verified.
+      Two isolation holes had to close first, and both were found by re-reading each function
+      as though its agent id were hostile — which after this change it is.
+      `app.agent_config_for_id` was SECURITY DEFINER with no organisation check and returned
+      the organisation's credentials (0050). `app.agent_config_at_version` was the same shape
+      over the published history, fixed by dropping SECURITY DEFINER so RLS does the work
+      rather than a second copy of the rule (0052).
 
-      What is left is smaller than it looked. The draft functions — `save_agent_draft`,
-      `stage_agent_draft_selection`, `discard_agent_draft`, `load_agent_draft` — already take
-      an agent id; only the controller throws it away and calls `liveAgentId(scope)` instead.
-      So the remaining work is: an agent-scoped `publish_agent_config`, moving the eleven
-      `config.*` routes under `/agents/:agentId/config/...` (the shape the agents controller
-      already uses for `behaviour`, `tools`, `knowledge` and `fields`), and passing the id
-      through the twelve one-line wrappers in `agents.service.ts` that the console funnels
-      everything through.
+      Two readers were wrong in a way nothing would have noticed until a second agent existed:
+      `listAgentConfigVersions` and `loadAgentConfigVersion` queried `agent_prompt_versions`
+      with no agent filter at all. `config_version` counts per agent, so two agents both have
+      a version 3 and the histories would have interleaved.
+
+      **Both hand-run publish tools were broken and had been since 0035.**
+      `packages/db/seeds/dev-organization.mjs` and `tools/organization/config.mjs` each passed
+      sixteen arguments to a seventeen-argument function — `speaking_rate` was added between
+      `voice_id` and `greeting` and neither call site followed. Postgres could not resolve the
+      overload, so both failed with "function does not exist", which names nothing. The seed
+      was also publishing the persona as the greeting. Both fixed, and every argument is
+      labelled with the parameter it fills, because an eighteen-slot positional call is how
+      this happened twice.
+
+      What still resolves an agent from the organisation: the test call, the corpus viewer and
+      the two registry publishes, all acting on something genuinely organisation-wide. They go
+      through `liveAgentId`, which raises on two rather than guessing (0047). The console makes
+      the same assumption explicit in `soleLiveAgentId` for the call list and the consent
+      screen, which is where to look when a second agent ships.
+
+      The publish form carries the agent in a hidden field, and the server action refuses when
+      it is missing rather than falling back to "the only agent" — a fallback there would
+      restore exactly what this removed, silently, on the one path that writes.
+
+      Follow-on, now unblocked: per-agent readiness, the create form wired to `POST /agents`,
+      and moving the Routing & hours card to an organisation settings screen.
 - [x] The agents surface is exercised over HTTP — `apps/api/src/api/agents/agents.test.ts`,
       eight tests against a real database. This entry used to say only `GET /agents` was
       covered; nothing was, across all nine routes.

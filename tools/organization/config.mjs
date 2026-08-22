@@ -233,12 +233,46 @@ if (command === "show") {
   // says so too. A typo therefore fails here rather than at the carrier, one second after
   // a caller has been told they are being put through.
   const escalation = config.escalation ?? {};
+  /*
+   * Sixteen arguments went to a function that takes seventeen, and had since migration 0035
+   * added `speaking_rate` between `voice_id` and `greeting`. Every position after the voice
+   * was shifted by one, so Postgres could not resolve the overload at all and this command
+   * failed with "function does not exist" — a message that names nothing and sends the reader
+   * looking for a missing migration rather than a missing argument. The dev seed had rotted
+   * in exactly the same place, which is what a positional call with eighteen slots earns.
+   *
+   * Every argument is labelled with the parameter it fills now. That is the only thing that
+   * makes this reviewable, and reviewable is what it was not.
+   */
   const { rows } = await client.query(
-    "select app.publish_agent_config($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) as version",
+    `select app.publish_agent_config(
+       $1,  -- organization
+       $2,  -- p_name
+       $3,  -- p_voice_id
+       $4,  -- p_speaking_rate
+       $5,  -- p_greeting
+       $6,  -- p_persona
+       $7,  -- p_instructions
+       $8,  -- p_keyterms
+       $9,  -- p_open_hour
+       $10, -- p_close_hour
+       $11, -- p_business_days
+       $12, -- p_tool_config
+       $13, -- p_event_config
+       $14, -- p_escalation_to
+       $15, -- p_escalation_from
+       $16, -- p_escalation_ring
+       $17, -- p_note
+       $18  -- p_policy_blocks
+     ) as version`,
     [
       organizationId,
       config.name ?? null,
       config.voiceId ?? null,
+      /* Null is the voice's own pace, which is what almost every agent should use. Absent
+         here means the same thing rather than "leave the stored one alone": a publish is a
+         whole document, and every other field on this call follows that rule. */
+      config.speakingRate ?? null,
       config.greeting ?? null,
       config.persona ?? null,
       config.instructions ?? null,
@@ -256,6 +290,11 @@ if (command === "show") {
       escalation.fromNumber ?? null,
       escalation.ringSeconds ?? null,
       note,
+      /* The exception to "whole document, never a patch", and it is deliberate — see
+         migration 0046. Null leaves stored policies alone because this file and the console
+         both publish configurations they cannot edit policies in; an empty array is how you
+         say there are none. */
+      config.policyBlocks == null ? null : JSON.stringify(config.policyBlocks),
     ],
   );
   console.log(`published version ${rows[0].version} for ${organizationId}`);

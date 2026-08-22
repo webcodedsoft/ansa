@@ -286,7 +286,13 @@ export const AgentWorkspace = ({
               permanently beside Publish invites the click it should not get. */}
           {draft !== null && (
             <Button
-              onClick={() => discard()}
+              onClick={() => {
+                /* The action is called by the button, not by the page, so it has no route to
+                   read the agent from. Same reason the publish form carries a hidden field. */
+                const form = new FormData();
+                form.set("agentId", agent.agentId);
+                discard(form);
+              }}
               disabled={discarding || saving || pending}
               aria-busy={discarding}
             >
@@ -325,6 +331,13 @@ export const AgentWorkspace = ({
 
       {/* No key on the form. Each panel carries its own — see `shownAs`. */}
       <form id={PUBLISH_FORM} action={save} className="mt-3.5">
+        {/* Which agent every button on this form writes to.
+            A server action is called by the form, not by the page, so it cannot read the id
+            out of the route the way a loader can. Nothing in the type system connects this
+            field to `agentFrom` in `agents.actions.ts` — delete it and Save and Publish both
+            fail at runtime with a compiling build, which is exactly why the action refuses
+            rather than falling back to the organisation's only agent. */}
+        <input type="hidden" name="agentId" value={agent.agentId} />
         {(state.status === "failed" || state.status === "invalid") && (
           <Notice tone="error" className="mb-3.5">
             {state.message}
@@ -352,7 +365,7 @@ export const AgentWorkspace = ({
             },
             { id: "voice", label: "Voice", problem: problemTabs.has("voice"), panel: <VoiceTab key={shownAs(config)} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
             { id: "routing", label: "Routing & hours", problem: problemTabs.has("routing"), panel: <RoutingTab key={shownAs(config)} config={config} operatorManaged={operatorManaged} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
-            { id: "versions", label: "Versions", panel: <VersionsTab versions={versions} liveVersion={agent.configVersion} /> },
+            { id: "versions", label: "Versions", panel: <VersionsTab agentId={agent.agentId} versions={versions} liveVersion={agent.configVersion} /> },
           ]}
         />
       </form>
