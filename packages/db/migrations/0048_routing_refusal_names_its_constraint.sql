@@ -1,0 +1,32 @@
+-- Every unroutable number has answered 500 instead of 409, since 0025.
+--
+-- `createAgent` and `updateAgent` catch the database's two refusals and turn both into
+-- `NumberNotRoutable`, which the controller answers with a 409 and a message that
+-- deliberately does not say who holds the number. That is the designed behaviour and it is
+-- documented on the endpoint.
+--
+-- It has never happened for one of the two. The matcher looks for a constraint called
+-- `agents_number_held_by_organization`; the constraint is called
+-- `agents_number_held_by_tenant`. 0025 renamed the tables, the columns and the whole
+-- TypeScript vocabulary from "tenant" to "organization", and a constraint name is a string
+-- inside `pg_constraint` rather than an identifier the rename swept — so the code was
+-- updated to match a name nothing ever created.
+--
+-- The failure is quiet in the way that matters. The unique-violation half still matches, so
+-- routing a number another of your own agents answers correctly returns 409. Only the
+-- foreign-key half — routing a number your organisation does not hold, which is the case
+-- with a security argument behind its wording — falls through `asRoutingRefusal` as an
+-- unrecognised error and surfaces as "Something went wrong". An operator typing a number
+-- they do not own is told the platform is broken.
+--
+-- Renamed rather than teaching the matcher the old name, because the old name is the bug:
+-- the next person to grep for "organization" while touching routing finds nothing and
+-- concludes the constraint does not exist. `asRoutingRefusal` accepts both for now all the
+-- same — new code runs against a database this has not reached yet during any deploy, and
+-- a window where the 500 comes back is the thing being fixed.
+--
+-- Metadata only. No table rewrite, no lock beyond the catalogue update, and the constraint
+-- keeps its definition, its `on update cascade` and its `on delete restrict`.
+
+alter table agents rename constraint agents_number_held_by_tenant
+  to agents_number_held_by_organization;

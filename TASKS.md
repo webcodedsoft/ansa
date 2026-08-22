@@ -2743,19 +2743,30 @@ What to listen for, in order of what is actually in doubt:
       and the workspace at `/agents/[agentId]` both publish through `config.publish`, so
       today they would edit whichever agent that function picks. Make them agent-scoped
       before wiring a create form to `POST /agents`.
-- [ ] **No agents route is exercised over HTTP** — not one, and this entry used to claim
-      `GET /agents` was. Checked 2026-08-22: `apps/api/src/api/agents/` holds a controller
-      and no test file, and nothing anywhere requests `/api/v1/agents`. Five routes are
-      uncovered: list, create, read, patch and delete.
+- [x] The agents surface is exercised over HTTP — `apps/api/src/api/agents/agents.test.ts`,
+      eight tests against a real database. This entry used to say only `GET /agents` was
+      covered; nothing was, across all nine routes.
 
-      Worth more now than when it was written. `POST /agents` and `DELETE /agents/:id` are
-      what move an organisation between one live agent and two, which is the condition
-      migration 0047 made `config.*` refuse on — so those two routes now decide whether a
-      publish succeeds or raises, and nothing drives them.
+      It found a live bug on the first run. `POST /agents` and `PATCH /agents/:id` promise a
+      409 for a number the organisation does not hold, and both answered **500** instead.
+      `asRoutingRefusal` matched on a constraint named `agents_number_held_by_organization`;
+      the constraint has been called `agents_number_held_by_tenant` since 0019. Migration
+      0025 renamed the tables, the columns and the TypeScript vocabulary, and a constraint
+      name lives in `pg_constraint` where that sweep did not reach — so from 0025 the check
+      compared against a name nothing had ever created. Unit tests could not see it: the
+      matcher agrees with itself, and only a real Postgres reports the real name.
 
-      The work is a test file mirroring `calls.test.ts`: real database, real HTTP, two
-      organisations. Most of that file is harness — `seed`, `signIn`, `request`, the Nest
-      bootstrap — so the first question is whether to extract it rather than copy it.
+      Fixed by migration 0048, which renames the constraint, plus a matcher that accepts
+      both names so the fix does not depend on the migration having landed.
+
+      Covered: create at version 1 with no tools, cross-organisation invisibility on read,
+      patch and delete (404 rather than 403, and the agent unchanged afterwards), a member
+      refused `config:write` while keeping `config:read`, a patch carrying a published field
+      refused with 422, archive-not-delete with the number released and reusable, and the
+      0047 guard walked end to end — no agent 404s, one agent saves, a second makes
+      `PUT /config/draft` refuse, archiving it restores the surface.
+
+      Not covered: the four `@Put` staging routes (behaviour, tools, knowledge, fields).
 - [ ] Readiness is organisation-wide, so a failing check pauses every agent. Honest today
       (none of them can answer) and wrong once checks become per agent.
 

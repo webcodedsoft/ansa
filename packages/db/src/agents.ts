@@ -39,8 +39,8 @@ const constraintOf = (error: unknown): string | undefined =>
  *
  * Two database refusals collapse into one error on purpose, and the message does not say
  * which fired. `agents_dialled_number_idx` means some agent already answers that number;
- * `agents_number_held_by_organization` means it is not in this organisation's inventory. Telling
- * them apart would tell a caller whether a number is live on the platform at all, and an
+ * the held-by-organisation foreign key means it is not in this organisation's inventory.
+ * Telling them apart would tell a caller whether a number is live on the platform at all, and an
  * organisation could walk a number range to learn who else is a customer.
  *
  * So the answer is the same either way: not a number you can route.
@@ -52,12 +52,34 @@ export class NumberNotRoutable extends Error {
   }
 }
 
+/**
+ * Both names the held-by-organisation foreign key has had.
+ *
+ * 0019 created it as `agents_number_held_by_tenant` and 0048 renamed it, so which name a
+ * database reports depends on whether that migration has reached it yet.
+ *
+ * Matching one name is how this broke. 0025 renamed the tables, the columns and this
+ * vocabulary from "tenant" to "organization"; a constraint name lives in `pg_constraint`
+ * and was not swept, so from 0025 until 0048 the check below compared against a name
+ * nothing had ever created. Every attempt to route a number an organisation does not hold
+ * fell past this function as an unrecognised error and answered 500.
+ *
+ * The old name goes when no deployed database still carries it, and not before — a rollback
+ * to a pre-0048 schema must not quietly bring that 500 back.
+ */
+const HELD_BY_ORGANIZATION: ReadonlySet<string> = new Set([
+  "agents_number_held_by_organization",
+  "agents_number_held_by_tenant",
+]);
+
 const asRoutingRefusal = (error: unknown, dialledNumber: string | null): never => {
   const code = codeOf(error);
   const constraint = constraintOf(error);
   const routing =
     (code === UNIQUE_VIOLATION && constraint === "agents_dialled_number_idx") ||
-    (code === FOREIGN_KEY_VIOLATION && constraint === "agents_number_held_by_organization");
+    (code === FOREIGN_KEY_VIOLATION &&
+      constraint !== undefined &&
+      HELD_BY_ORGANIZATION.has(constraint));
   if (routing) throw new NumberNotRoutable(dialledNumber ?? "");
   throw error;
 };
