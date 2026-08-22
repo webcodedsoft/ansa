@@ -70,3 +70,35 @@ export const purgeExpiredAudioSegments = async (dataSource: Db): Promise<number>
   )) as { removed: number }[];
   return Number(rows[0]?.removed ?? 0);
 };
+
+/**
+ * What a purge of expired call content removed, per table.
+ *
+ * Counts only. The whole point of the sweep is that these rows held things nobody should be
+ * keeping, so returning any of it — even a sample, even for a log line — would defeat it.
+ */
+export interface PurgedCallContent {
+  readonly transcripts: number;
+  readonly events: number;
+  readonly invocations: number;
+}
+
+/**
+ * Deletes the caller's words for every call past its organisation's window.
+ *
+ * `transcripts`, `call_events` and `tool_invocations`, which between them hold everything
+ * that was said — including, since R5.2.4 was withdrawn, identity numbers and one-time codes
+ * in full. `calls`, `turns` and `latencies` are untouched: they carry timings and outcomes,
+ * so call history and every latency percentile survive a call whose transcript is gone.
+ */
+export const purgeExpiredCallContent = async (dataSource: Db): Promise<PurgedCallContent> => {
+  const rows = (await dataSource.query(
+    "select transcripts, events, invocations from app.purge_expired_call_content()",
+  )) as { transcripts: number; events: number; invocations: number }[];
+  const row = rows[0];
+  return {
+    transcripts: Number(row?.transcripts ?? 0),
+    events: Number(row?.events ?? 0),
+    invocations: Number(row?.invocations ?? 0),
+  };
+};

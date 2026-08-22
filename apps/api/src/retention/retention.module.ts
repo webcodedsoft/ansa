@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 
 import { TelephonyModule } from "../telephony/telephony.module";
 import { AudioRetentionSweeper } from "./audio-retention";
+import { CallContentRetentionSweeper } from "./call-content-retention";
 
 /**
  * Its own module, importing the telephony one purely for the config, logger and database
@@ -10,6 +11,6 @@ import { AudioRetentionSweeper } from "./audio-retention";
  */
 @Module({
   imports: [TelephonyModule],
-  providers: [AudioRetentionSweeper],
+  providers: [AudioRetentionSweeper, CallContentRetentionSweeper],
 })
 export class RetentionModule {}

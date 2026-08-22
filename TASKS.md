@@ -1998,7 +1998,14 @@ are that decision. Capture was purely reactive — `classify()` on what a caller
       `identifiers` this agent never collects, and an enabled one raises a notice. Only
       `callerName` and `policyNumber` resolve without a field — `customerId` has a slot in
       the fact store and no path that fills one.
-- [ ] `redact: true` is stored and shown but does not yet suppress a value in transcripts.
+- [x] ~~`redact: true` is stored and shown but does not yet suppress a value in
+      transcripts.~~ **Overtaken.** R5.2.4 was withdrawn later the same day and the toggle
+      was deleted from the API, the field builder and the templates — see the withdrawal
+      section below for why a shape-based masker is worse than none. Verified 2026-08-22:
+      nothing named `redact` survives outside `redactPayload`/`redactArgs`, which strip
+      credential-shaped keys and are a different rule. Left here struck through rather than
+      deleted because on its own it reads as half-built work and sent this session looking
+      for a bug that had been removed on purpose.
 - [ ] `publish_agent_config` still takes the organisation and resolves the oldest live
       agent. One agent per organisation hides it; two will not.
 - [ ] **None of this has been heard on a real call.** See below.
@@ -2071,8 +2078,29 @@ They are identifying data at rest. `recordings/`, `eval/runs/` and `eval/results
 already gitignored for that reason; the event log deserves the same care and does not yet
 have a retention rule of its own.
 
-- [ ] The event log has no retention policy. Audio does (`audio_retention_days`); the words
-      do not, and the words now carry more than they did yesterday.
+- [x] **The event log has a retention policy (2026-08-22).** Migration 0049 adds
+      `organizations.transcript_retention_days`, `app.purge_expired_call_content()` and a
+      `CallContentRetentionSweeper` beside the audio one.
+      - **Ninety days, not audio's thirty.** The words have a job the recording does not: the
+        review loop corrects transcripts and the eval corpus is built from the corrections.
+        Thirty would delete the evidence before a quarterly accuracy review could use it.
+      - **Rows are deleted, not masked.** Stripping text-bearing keys out of `detail` is the
+        shape of the masker R5.2.4 was withdrawn for — a denylist that misses the next event
+        kind somebody adds while reading like a policy that holds. Deleting the row cannot
+        miss a field.
+      - **`transcripts`, `call_events` and `tool_invocations`.** Tool arguments carry a policy
+        number, an amount, sometimes an address; a tool call is as much a record of what was
+        said as the transcript is.
+      - **`calls`, `turns` and `latencies` survive**, and that is the half that makes it
+        affordable: history, duration, barge-in timing and every latency percentile still work
+        on a call whose transcript is gone. The recorder writes latency to `latencies` as well
+        as to the event log, which is exactly the redundancy this relies on.
+      - **What degrades, stated rather than discovered:** anything reading `call_events` past
+        the window. The outbound do-not-call and human-answer rates thin out beyond ninety days.
+      - A separate sweeper from the audio one on purpose. That one does most of its work only
+        when `RECORD_AUDIO_DIR` is set, so a rule living beside the file walk would silently not
+        run on exactly the deployments that believed recording was off.
+      - No API surface, matching `audio_retention_days`, which has none either.
 
 ### Tool creation is a form now (2026-08-15)
 
