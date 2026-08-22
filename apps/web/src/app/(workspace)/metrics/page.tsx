@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 
 import { Card, PageHeader, Stat } from "@/components/ui";
-import { callMetrics, callTrends } from "@/features/calls/calls.service";
+import { callMetrics, callTrends, outboundMetrics } from "@/features/calls/calls.service";
 import { LatencyTable } from "@/features/calls/components/latency-table";
 import { MetricsTable } from "@/features/calls/components/metrics-table";
+import { OutboundTable } from "@/features/calls/components/outbound-table";
 import { TrendsTable } from "@/features/calls/components/trends-table";
 import { msLabel, percent } from "@/features/calls/format";
 
@@ -11,7 +12,11 @@ export const metadata: Metadata = { title: "Metrics · Ansa" };
 export const dynamic = "force-dynamic";
 
 const MetricsPage = async () => {
+  /* Settled rather than awaited outright for the outbound figures alone: they are a panel on
+     a page about everything, and an organisation that has never placed a call should not get
+     an error screen instead of its inbound metrics. */
   const [metrics, trends] = await Promise.all([callMetrics(), callTrends()]);
+  const placed = await outboundMetrics().catch(() => null);
 
   return (
     <>
@@ -42,6 +47,16 @@ const MetricsPage = async () => {
       >
         <MetricsTable metrics={metrics} />
       </Card>
+
+      {placed !== null && (
+        <Card
+          title="Calls we placed"
+          description="Outbound only. An inbound call is answered by definition, so every rate here computed across both would mostly measure how much inbound traffic there was."
+          className="mt-3.5"
+        >
+          <OutboundTable metrics={placed} />
+        </Card>
+      )}
 
       <Card
         title="By configuration version"

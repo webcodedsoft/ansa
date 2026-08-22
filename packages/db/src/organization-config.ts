@@ -305,6 +305,8 @@ export interface ConfigVersion extends ConfigVersionSummary {
 export interface OperatorManagedConfig {
   readonly dialledNumber: string | null;
   readonly audioRetentionDays: number;
+  /** How long the words are kept, as against the voice. Migration 0049. */
+  readonly transcriptRetentionDays: number;
   /** `per_number` or `existing_relationship`; see `apps/api/src/outbound/consent.ts`. */
   readonly consentPolicy: string;
   readonly consentBasis: string | null;
@@ -437,6 +439,7 @@ interface CurrentRow extends ConfigColumns, VersionColumns {
   readonly config_version: number;
   readonly dialled_number: string | null;
   readonly audio_retention_days: number;
+  readonly transcript_retention_days: number;
   readonly consent_policy: string;
   readonly consent_basis: string | null;
   readonly calling_earliest_hour: number | null;
@@ -463,7 +466,8 @@ export const loadCurrentAgentConfig = async (
   const rows = await scope.query<CurrentRow>(
     `select a.config_version, ${configColumns("a")},
             t.business_open_hour, t.business_close_hour, t.business_days,
-            a.dialled_number, t.audio_retention_days, t.consent_policy, t.consent_basis,
+            a.dialled_number, t.audio_retention_days, t.transcript_retention_days,
+            t.consent_policy, t.consent_basis,
             t.calling_earliest_hour, t.calling_latest_hour,
             p.version, p.note, p.published_by, p.published_at
        from agents a
@@ -483,6 +487,7 @@ export const loadCurrentAgentConfig = async (
     operatorManaged: {
       dialledNumber: row.dialled_number,
       audioRetentionDays: Number(row.audio_retention_days),
+      transcriptRetentionDays: Number(row.transcript_retention_days),
       consentPolicy: row.consent_policy,
       consentBasis: row.consent_basis,
       callingEarliestHour: row.calling_earliest_hour,

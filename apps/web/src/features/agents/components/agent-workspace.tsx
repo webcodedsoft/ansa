@@ -30,6 +30,7 @@ import { ConversationTab } from "./conversation-tab";
 import { DataCapturedTab } from "./data-captured-tab";
 import { FlowCanvas } from "./flow-canvas";
 import { OverviewTab, type AgentStats, type AttentionItem } from "./overview-tab";
+import { PolicyTab } from "./policy-tab";
 import { RoutingTab } from "./routing-tab";
 import { KnowledgeTab } from "./knowledge-tab";
 import { ToolsTab } from "./tools-tab";
@@ -76,11 +77,16 @@ const FIELD_TAB: Readonly<Record<string, string>> = {
   toNumber: "routing",
   fromNumber: "routing",
   ringSeconds: "routing",
+  /* The whole editor is one field, so every policy error lands on this one key. Without the
+     entry the tab would never be marked and somebody would be told the publish failed with
+     no indication of where. */
+  policyBlocks: "policies",
 };
 
 const TAB_LABEL: Readonly<Record<string, string>> = {
   conversation: "Conversation",
   voice: "Voice",
+  policies: "Policies",
   routing: "Routing & hours",
 };
 
@@ -364,6 +370,7 @@ export const AgentWorkspace = ({
               panel: <KnowledgeTab key={shownAs(staged.knowledgeSources)} agent={staged} knowledge={knowledge} />,
             },
             { id: "voice", label: "Voice", problem: problemTabs.has("voice"), panel: <VoiceTab key={shownAs(config)} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
+            { id: "policies", label: "Policies", problem: problemTabs.has("policies"), panel: <PolicyTab key={shownAs(config)} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
             { id: "routing", label: "Routing & hours", problem: problemTabs.has("routing"), panel: <RoutingTab key={shownAs(config)} config={config} operatorManaged={operatorManaged} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
             { id: "versions", label: "Versions", panel: <VersionsTab agentId={agent.agentId} versions={versions} liveVersion={agent.configVersion} /> },
           ]}

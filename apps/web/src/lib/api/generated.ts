@@ -715,6 +715,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly operatorManaged: {
         readonly dialledNumber: string | null;
         readonly audioRetentionDays: number;
+        readonly transcriptRetentionDays: number;
         readonly consent: {
         readonly policy: string;
         readonly basis: string | null;
@@ -1576,6 +1577,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly name: string;
         readonly createdAt: string;
         readonly audioRetentionDays: number;
+        readonly transcriptRetentionDays: number;
         readonly consent: {
         readonly policy: string;
         readonly basis: string | null;
@@ -1598,6 +1600,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly name: string;
         readonly createdAt: string;
         readonly audioRetentionDays: number;
+        readonly transcriptRetentionDays: number;
         readonly consent: {
         readonly policy: string;
         readonly basis: string | null;

@@ -27,6 +27,13 @@ export interface Organization {
    * under. Neither is a self-serve decision.
    */
   readonly audioRetentionDays: number;
+  /**
+   * How long the caller's *words* are kept — transcripts, call events and tool arguments.
+   *
+   * Separate from the audio because they outlive it on purpose: the review loop corrects
+   * transcripts and the eval corpus is built from those corrections. See migration 0049.
+   */
+  readonly transcriptRetentionDays: number;
   /** Operator-set: the NDPR/NCC posture the outbound consent gate enforces. */
   readonly consent: {
     readonly policy: string;
@@ -41,6 +48,7 @@ interface OrganizationRow {
   name: string;
   created_at: Date | string;
   audio_retention_days: number;
+  transcript_retention_days: number;
   consent_policy: string;
   consent_basis: string | null;
   calling_earliest_hour: number | null;
@@ -56,6 +64,7 @@ const toOrganization = (row: OrganizationRow): Organization => ({
   name: row.name,
   createdAt: iso(row.created_at),
   audioRetentionDays: row.audio_retention_days,
+  transcriptRetentionDays: row.transcript_retention_days,
   consent: {
     policy: row.consent_policy,
     basis: row.consent_basis,
@@ -78,7 +87,7 @@ export const readOrganization = async (
   scope: OrganizationScope,
 ): Promise<Organization | null> => {
   const rows = await scope.query<OrganizationRow>(
-    `select id, name, created_at, audio_retention_days,
+    `select id, name, created_at, audio_retention_days, transcript_retention_days,
             consent_policy, consent_basis, calling_earliest_hour, calling_latest_hour
        from organizations`,
   );

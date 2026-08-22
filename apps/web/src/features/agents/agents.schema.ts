@@ -42,6 +42,58 @@ const keyterms = z
       .max(100, "That is more than 100 keyterms."),
   );
 
+/**
+ * The organisation's own rules, as blocks the prompt renders under headings.
+ *
+ * Carried through the form as one JSON string rather than as flat fields, and that is a
+ * deliberate exception to how everything else here travels. A policy block is a name, a
+ * sentence and three lists of sentences; expressing twelve of those as `FormData` keys means
+ * inventing an index-in-the-name convention and a parser for it, and that convention is the
+ * bug — a dropped index silently merges two policies.
+ *
+ * Parsed defensively for the same reason the API parses it again: this arrives as a string
+ * from a hidden input, so it is untrusted in exactly the way a text field is. Anything that
+ * is not the expected shape fails the form rather than reaching the publish half-formed.
+ */
+const policyLine = z.string().trim().min(1).max(300);
+
+const policyBlock = z.object({
+  name: z.string().trim().min(1, "A policy needs a name.").max(80, "That policy name is too long."),
+  applies: z
+    .string()
+    .trim()
+    .min(1, "Say when this policy applies, or the model cannot tell which one to use.")
+    .max(300, "That is too long for one line."),
+  canDo: z.array(policyLine).max(12, "That is more than 12 lines."),
+  cannotDo: z.array(policyLine).max(12, "That is more than 12 lines."),
+  escalateWhen: z.array(policyLine).max(12, "That is more than 12 lines."),
+});
+
+/**
+ * Optional, and the three states are all different.
+ *
+ * Absent — the field never rendered — leaves the stored policies alone, because a screen that
+ * cannot edit them must not be able to delete them. That is the rule migration 0046's
+ * `coalesce` enforces in the database, and this is the same rule on the way in.
+ *
+ * Present and empty is a decision: this agent has no policies, delete the ones it had. An
+ * editor that could not express that would make the last policy undeletable.
+ */
+const policyBlocks = z.optional(
+  z
+    .string()
+    .transform((raw, context) => {
+      if (raw.trim() === "") return [];
+      try {
+        return JSON.parse(raw) as unknown;
+      } catch {
+        context.addIssue({ code: "custom", message: "The policies could not be read." });
+        return z.NEVER;
+      }
+    })
+    .pipe(z.array(policyBlock).max(12, "That is more than 12 policies.")),
+);
+
 const CONFIG_SHAPE = {
   name: z.string().trim().min(1, "The agent needs a name.").max(120, "That name is too long."),
   voiceId: optionalText(200, "The voice id"),
@@ -65,6 +117,7 @@ const CONFIG_SHAPE = {
   fromNumber: z.string().trim(),
   ringSeconds: z.union([z.literal(""), z.coerce.number().int().min(5).max(120)]),
 
+  policyBlocks,
 } as const;
 
 /**
@@ -128,6 +181,11 @@ const toDocument = (value: ConfigShape) => ({
         ringSeconds: value.ringSeconds === "" ? null : value.ringSeconds,
       }
     : null,
+  /* An empty array, not null, and the difference reaches the database. `publish_agent_config`
+     coalesces null to the stored value so a screen with no policy editor cannot wipe them —
+     see migration 0046. This screen has one, so it must say "none" rather than "unchanged",
+     or deleting the last policy would silently do nothing. */
+  policyBlocks: value.policyBlocks,
 });
 
 export const publishSchema = publishForm
@@ -162,6 +220,12 @@ export const publishFormInput = (form: FormData) => ({
   ringSeconds: form.get("ringSeconds") ?? "",
 
   note: form.get("note") ?? "",
+
+  /* One hidden field holding JSON — see `policyBlocks` above for why this one is not flat.
+     Undefined when the field is absent, and deliberately not "": absent means the editor did
+     not render, and an agent whose policies cannot be edited on this screen must not have
+     them cleared by it. An empty string is the editor saying there are none. */
+  policyBlocks: form.get("policyBlocks") ?? undefined,
 });
 
 /** A test call: ring a number and let the live configuration answer it. */

@@ -1750,6 +1750,10 @@
                           "type": "integer",
                           "minimum": 1
                         },
+                        "transcriptRetentionDays": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
                         "consent": {
                           "type": "object",
                           "properties": {
@@ -1793,6 +1797,7 @@
                       "required": [
                         "dialledNumber",
                         "audioRetentionDays",
+                        "transcriptRetentionDays",
                         "consent"
                       ],
                       "additionalProperties": false
@@ -10848,6 +10853,10 @@
                       "type": "integer",
                       "minimum": 1
                     },
+                    "transcriptRetentionDays": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
                     "consent": {
                       "type": "object",
                       "properties": {
@@ -10893,6 +10902,7 @@
                     "name",
                     "createdAt",
                     "audioRetentionDays",
+                    "transcriptRetentionDays",
                     "consent"
                   ],
                   "additionalProperties": false
@@ -10995,6 +11005,10 @@
                       "type": "integer",
                       "minimum": 1
                     },
+                    "transcriptRetentionDays": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
                     "consent": {
                       "type": "object",
                       "properties": {
@@ -11040,6 +11054,7 @@
                     "name",
                     "createdAt",
                     "audioRetentionDays",
+                    "transcriptRetentionDays",
                     "consent"
                   ],
                   "additionalProperties": false

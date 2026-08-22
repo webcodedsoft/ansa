@@ -236,6 +236,16 @@ const vocabulary = object({
 const operatorManaged = object({
   dialledNumber: nullable(text({ maxLength: 32 })),
   audioRetentionDays: integer({ minimum: 1 }),
+  /**
+   * How long the caller's words are kept — transcripts, call events and tool arguments.
+   *
+   * Shown beside the audio window and separate from it, because they are separate policies
+   * and the words outlive the recording deliberately: the review loop corrects transcripts
+   * and the eval corpus is built from those corrections. Read-only here for the same reason
+   * `audioRetentionDays` is — the platform operator sets it, and a screen that could change
+   * it would be a screen that could quietly extend how long identity numbers are held.
+   */
+  transcriptRetentionDays: integer({ minimum: 1 }),
   consent: object({
     policy: text({ maxLength: 64 }),
     basis: nullable(text({ maxLength: 500 })),

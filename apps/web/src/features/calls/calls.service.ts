@@ -100,6 +100,16 @@ export const callMetrics = async () => (await api()).calls.metrics();
 /** Quality by configuration version, so a rollout's effect is visible against the last one. */
 export const callTrends = async () => (await api()).calls.trends();
 
+/**
+ * How the calls we placed are going, which is a different question from the ones we answered.
+ *
+ * Outbound only. An inbound call is answered by definition, so a connect rate computed across
+ * both mostly measures how much inbound traffic there was.
+ */
+export const outboundMetrics = async () => (await api()).calls.outbound();
+
+export type OutboundMetrics = Awaited<ReturnType<typeof outboundMetrics>>;
+
 /** Calls worth reviewing first, worst rated highest. */
 export const listReviewQueue = async () => (await api()).calls.reviewQueue({});
 

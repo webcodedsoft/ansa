@@ -111,6 +111,16 @@ export const RoutingTab = ({ config, operatorManaged, errors, publishForm, savin
               <Td className="text-[var(--ink-3)]">Audio retention</Td>
               <Td>{operatorManaged.audioRetentionDays} days</Td>
             </tr>
+            {/* Two windows, not one, and worth showing separately: the recording of somebody
+                reading their policy number aloud is deleted on the first clock, the
+                transcript of them reading it on the second. The words are kept longer on
+                purpose — the review loop corrects transcripts and the eval corpus is built
+                from those corrections — and a reader who saw only the audio number would
+                believe everything was gone a month after the call. */}
+            <tr>
+              <Td className="text-[var(--ink-3)]">Transcript retention</Td>
+              <Td>{operatorManaged.transcriptRetentionDays} days</Td>
+            </tr>
             <tr>
               <Td className="text-[var(--ink-3)]">Consent policy</Td>
               <Td>
