@@ -1891,6 +1891,25 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
             wordsSpoken,
             budgetWords: budget.maxWords,
           });
+          /**
+           * A capped turn is an over-long reply, and this is the only place that knows.
+           *
+           * `driftIn` runs in `onDone` against the model's whole output — but the next line
+           * cancels the completion, so on exactly the turns that ran long there is no
+           * `onDone` and no whole output to measure. Cancelling is right: it stops us
+           * paying for tokens nobody will hear. Recording the drift here is what stops that
+           * saving costing the measurement.
+           *
+           * `sentences` is what was spoken rather than what was written, because what was
+           * written no longer exists. It is a floor, and the flag is the fact.
+           */
+          record.event("drift", {
+            seq,
+            sentences: sentencesSpoken,
+            tooLong: true,
+            screenFormatting: false,
+            capped: true,
+          });
           current.llmDone = true;
           current.cancelLlm?.();
           return;
@@ -1956,6 +1975,11 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
          the point: a handful of these scattered through a call is a model having a moment,
          and a cluster after turn fifteen is the history growing past what it can follow,
          which is a different fix from rewording anything. */
+      /* The other half. This sees the model's whole output and so can judge formatting and
+         a reply that ran long without running past the budget; the cap site above catches
+         the ones cancelled before `full` ever existed. Between them every turn is covered
+         once — a capped turn never reaches here, because a cancelled completion has no
+         `onDone`. */
       const drift = driftIn(full);
       if (drift.drifted) {
         log.info("reply drifted from the prompt", {

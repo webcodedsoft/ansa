@@ -1380,6 +1380,47 @@ describe("the prompt the call was configured with", () => {
     assertInvariants(h);
   });
 
+  it("records the drift on a turn the budget cut short", () => {
+    /**
+     * The gap the previous commit left, and the one the first version of the test above
+     * ran into. A reply long enough to run past three sentences also runs past the turn
+     * budget, which cancels the completion — so there is no `onDone`, no `full`, and
+     * nothing for `driftIn` to read. On exactly the turns that drift most, the signal was
+     * absent. The cap site is the only place that knows.
+     */
+    const seen: { kind: string; detail: Record<string, unknown> }[] = [];
+    const h = setup({
+      recorder: {
+        started: () => undefined,
+        event: (kind: string, detail?: Record<string, unknown>) =>
+          seen.push({ kind, detail: detail ?? {} }),
+        transcript: () => undefined,
+        turn: () => undefined,
+        latency: () => undefined,
+        ended: () => undefined,
+      } as unknown as CallRecorder,
+    });
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("What are your opening hours?");
+    // Far past any budget, one sentence at a time, so the cap fires mid-generation.
+    for (const sentence of [
+      "We open at nine in the morning every weekday. ",
+      "We close at five in the afternoon on those days. ",
+      "On Saturday we open later and close earlier than that. ",
+      "On Sunday we do not open at all, not even for urgent things. ",
+    ]) {
+      h.llm.last().emit(sentence);
+    }
+
+    const drift = seen.find((e) => e.kind === "drift");
+    expect(drift?.detail["tooLong"]).toBe(true);
+    // Flagged as a cap, so a reader can tell a floor from a count.
+    expect(drift?.detail["capped"]).toBe(true);
+    assertInvariants(h);
+  });
+
   it("says nothing about hours on an ordinary in-hours turn", () => {
     /* Open is the default the prompt is written against. A block that fires every turn
        costs prompt budget for something the model was going to assume anyway. */

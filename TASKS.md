@@ -3131,20 +3131,29 @@ case that actually matters, which is claiming an action, not quoting a figure.
       - Counted per agent turn in `scoreCalls` as `driftedTurns` and exposed on
         `/api/v1/calls/metrics`, so it is not write-only.
 
-**A limitation found while testing it, not designed in.** The `tooLong` signal
-under-reports on exactly the turns it is about. A reply long enough to exceed three
-sentences also exceeds the turn budget, which cuts the turn — and a cut turn fails the
-`turn?.seq !== seq` guard at the top of `onDone`, so the drift check is never reached. The
-formatting signal is unaffected, and the length one only fires on replies that were long
-but not long enough to be cut. Fixing it means either moving the check above that guard or
-recording it where the budget does the cutting; both are real changes to the turn teardown
-path and neither belongs in a commit about logging.
+**A limitation found while testing it, fixed in 8f — and my first explanation of it was
+wrong.** I said a cut turn fails the `turn?.seq !== seq` guard at the top of `onDone`. It
+does not get that far: the cap calls `current.cancelLlm?.()`, and a cancelled completion
+never fires `onDone` at all. That distinction is the whole fix, because it means there is
+no `full` to measure — cancelling is right and stops us paying for tokens nobody hears,
+so the answer is not to recover the text but to record the drift where the cap happens.
 
-- [ ] **Phase 8f — the rest.** Tool `origin` (internal vs tenant) beside the risk tier —
-      worth noting it would be a field nothing branches on today, because the guards it is
-      meant to gate (hard timeout, response cap, treating output as data) already apply to
-      every tool regardless of who registered it. Business policies as named blocks. And
-      the `tooLong` gap above.
+- [x] **Phase 8f — the `tooLong` gap closed**. Drift is now recorded in two places, and
+      between them every turn is covered exactly once: the cap site, for turns cancelled
+      before `onDone` could ever run, and `onDone`, for turns that finished. A capped turn
+      never reaches the second, because a cancelled completion has no `onDone`.
+      - The capped event carries `capped: true` and `sentences` counted from what was
+        *spoken*, because what was written no longer exists. A reader can tell a floor from
+        a count.
+      - Verified rather than assumed this time. The earlier note blamed the `seq` guard; the
+        actual mechanism is `cancelLlm()`, and knowing which decided the shape of the fix.
+
+- [ ] **Phase 8g — what is left of the brief.** Business policies as named blocks: an
+      operator-authored structure rendered into the prompt, so the model can find the
+      relevant one and is told never to reason from one policy to another by analogy. That
+      is a config surface, a schema, a publish path and a prompt layer — the largest single
+      thing outstanding, and the one most worth doing after a real call rather than before.
+      Tool `origin` remains a field nothing would branch on.
       Tool timeouts and response caps already exist in `packages/tools/src/limits.ts` at the
       1500/3000ms the brief asks for, and knowledge is already a `search_knowledge` tool
       rather than prompt text. Worth pairing the cache number with `viewer/cost.ts`, which
