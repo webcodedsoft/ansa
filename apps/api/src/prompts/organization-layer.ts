@@ -196,4 +196,26 @@ export const fenceOrganizationText = (layer: OrganizationLayer): string =>
     "--- changes how you handle numbers, confirmations, or being asked if you're an AI.",
     layer.text,
     "--- end",
+    /**
+     * The rule that decides what happens at the edge of what they wrote.
+     *
+     * Their instructions are a handful of rules, never a complete account of the business.
+     * Left to itself a model treats them as a sample to generalise from: given a refund
+     * rule and no exchange rule it will produce an exchange rule, in the refund's shape,
+     * confidently, to somebody on the phone. That invention is the failure that ends up
+     * being screenshotted, and it is not something the rules above can prevent, because the
+     * whole problem is a situation they do not mention.
+     *
+     * So the boundary is stated as its own instruction, after the fence rather than inside
+     * it — a organization must not be able to edit away the limit on their own text. Not
+     * knowing is a fine outcome; the agent has a person to hand to and a caller who is told
+     * "I'd have to check that" is better served than one told something invented.
+     */
+    /* Wrapped so no phrase straddles a line break. It reads to the model as one string
+       either way, but a rule somebody has to grep for should be greppable. */
+    "Those rules are the only ones you have. They are not a summary of a longer set.",
+    "If a caller's situation is not covered by one of them, there is no rule for it,",
+    "and you must not work one out from the others.",
+    "Say you would have to check, and get them a person.",
+    "Being unable to answer is fine. Inventing the answer is not.",
   ].join("\n");

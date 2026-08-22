@@ -3148,12 +3148,34 @@ so the answer is not to recover the text but to record the drift where the cap h
       - Verified rather than assumed this time. The earlier note blamed the `seq` guard; the
         actual mechanism is `cancelLlm()`, and knowing which decided the shape of the fix.
 
-- [ ] **Phase 8g — what is left of the brief.** Business policies as named blocks: an
-      operator-authored structure rendered into the prompt, so the model can find the
-      relevant one and is told never to reason from one policy to another by analogy. That
-      is a config surface, a schema, a publish path and a prompt layer — the largest single
-      thing outstanding, and the one most worth doing after a real call rather than before.
-      Tool `origin` remains a field nothing would branch on.
+- [x] **Phase 8g (behavioural half) — an organisation's rules now have a stated edge**.
+      The brief asks for policies as named blocks so the model can find the relevant one,
+      and says the line that matters is *never reason from one policy to another by
+      analogy*. That line applies to the free text organisations already write, and nothing
+      said it.
+      - Given a refund rule and no exchange rule, a model produces an exchange rule in the
+        refund's shape — confidently, to somebody on the phone. Nothing an organisation
+        could write prevents that, because the problem is a situation their rules do not
+        mention.
+      - So the limit is stated after the fence, not inside it: an organisation must not be
+        able to edit away the boundary on their own text, and `declaw` already stops them
+        closing the fence early to get underneath it. There is a test for the ordering.
+      - It says what to do instead of only what not to do. "Don't invent" with no
+        alternative leaves the model choosing between inventing and stalling; it has a
+        person to hand to.
+
+- [ ] **Phase 8h — the structural half.** Named blocks
+      (`{ name, applies, canDo[], cannotDo[], escalateWhen[] }`) rendered as discrete
+      sections so the model can locate the one that applies, instead of one run of prose.
+      That is a jsonb column, the draft and publish path, an API schema and a console
+      editor — the largest single thing outstanding. The behavioural rule above is the part
+      that changes what a caller hears; this is the part that makes it easier for the model
+      to find the right rule, and it is worth doing once a real call has shown whether
+      finding them is actually the problem.
+
+- [ ] **Tool `origin`** stays out: it would be a field nothing branches on, because the
+      guards it is meant to gate already apply to every tool regardless of who registered
+      it.
       Tool timeouts and response caps already exist in `packages/tools/src/limits.ts` at the
       1500/3000ms the brief asks for, and knowledge is already a `search_knowledge` tool
       rather than prompt text. Worth pairing the cache number with `viewer/cost.ts`, which
