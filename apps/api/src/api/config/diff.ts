@@ -83,6 +83,16 @@ const leaves = (config: AgentConfigFields): Readonly<Record<string, string | nul
   greeting: render(config.greeting),
   persona: render(config.persona),
   instructions: render(config.instructions),
+  /**
+   * One leaf for the whole set, unlike every other structured field here.
+   *
+   * `businessHours` and `escalation` are flattened because their shape is fixed and a
+   * reader wants to know which hour moved. Policies are a list an operator adds to and
+   * reorders, so per-leaf paths would report renumbering as a dozen changes and hide the
+   * one rule that actually changed. Serialised whole: the history says the policies were
+   * edited, and the version snapshot beside it says exactly how.
+   */
+  policyBlocks: config.policyBlocks == null ? null : JSON.stringify(config.policyBlocks),
   "businessHours.opensAtHour": render(config.businessHours?.opensAtHour),
   "businessHours.closesAtHour": render(config.businessHours?.closesAtHour),
   "businessHours.openDays": renderDays(config.businessHours?.openDays),

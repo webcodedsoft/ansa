@@ -29,6 +29,7 @@ import {
   integer,
   list,
   nullable,
+  optional,
   number,
   object,
   text,
@@ -130,6 +131,37 @@ const escalation = object({
  * own, imported rather than repeated. Text past them is silently clamped on the way into the
  * prompt, so accepting a longer value here would store something the agent never reads.
  */
+/** A heading, not a sentence. */
+const MAX_POLICY_NAME_CHARS = 60;
+/** One rule, said once. Longer than this is prose, which `instructions` already holds. */
+const MAX_POLICY_LINE_CHARS = 200;
+/** Enough to be useful, few enough that the model can hold them all. */
+const MAX_POLICY_LINES = 8;
+const MAX_POLICY_BLOCKS = 12;
+
+/**
+ * One business policy, as a block the model can locate.
+ *
+ * The shape is the point. An organisation's rules arrive today as one run of prose, and a
+ * model reading prose picks whichever clause is nearest rather than the one that applies.
+ * Named blocks let it find the right one — and let it tell that there is no right one,
+ * which is what 8g's prohibition on reasoning by analogy actually needs to be usable.
+ *
+ * `cannotDo` and `escalateWhen` are separate from `canDo` rather than negations inside it,
+ * because they have different consequences: one is a refusal the agent explains, the other
+ * hands the call to a person, and a model asked to infer which from a sentence will get it
+ * wrong in the direction that keeps the call.
+ */
+const policyBlock = object({
+  /** What a person would call it: "Refunds", "Late delivery". Short — it is a heading. */
+  name: text({ minLength: 1, maxLength: MAX_POLICY_NAME_CHARS }),
+  /** When this block is the relevant one. The sentence the model matches against. */
+  applies: text({ minLength: 1, maxLength: MAX_POLICY_LINE_CHARS }),
+  canDo: list(text({ minLength: 1, maxLength: MAX_POLICY_LINE_CHARS }), { maxItems: MAX_POLICY_LINES }),
+  cannotDo: list(text({ minLength: 1, maxLength: MAX_POLICY_LINE_CHARS }), { maxItems: MAX_POLICY_LINES }),
+  escalateWhen: list(text({ minLength: 1, maxLength: MAX_POLICY_LINE_CHARS }), { maxItems: MAX_POLICY_LINES }),
+});
+
 const CONFIG_FIELDS = {
   name: text({ minLength: 1, maxLength: LIMITS.name.chars }),
   voiceId: nullable(text({ maxLength: MAX_VOICE_ID_CHARS })),
@@ -138,6 +170,12 @@ const CONFIG_FIELDS = {
   greeting: nullable(text({ maxLength: MAX_GREETING_CHARS })),
   persona: nullable(text({ maxLength: LIMITS.persona.chars })),
   instructions: nullable(text({ maxLength: LIMITS.instructions.chars })),
+  /**
+   * Bounded like every other free text here, and for the same reason: this is read on every
+   * turn of every call, so a organization pasting a policy manual in is a latency cost paid
+   * by their own callers. An empty list and null are the same thing to the prompt.
+   */
+  policyBlocks: optional(nullable(list(policyBlock, { maxItems: MAX_POLICY_BLOCKS }))),
   keyterms: list(text({ minLength: 1, maxLength: MAX_KEYTERM_CHARS }), { maxItems: MAX_KEYTERMS }),
   businessHours: nullable(businessHours),
   escalation: nullable(escalation),
@@ -337,6 +375,10 @@ const toConfigBody = (config: AgentConfigFields): Infer<typeof configFields> => 
   greeting: config.greeting,
   persona: config.persona,
   instructions: config.instructions,
+  /* Stored as jsonb and therefore `unknown` on the way out. Cast rather than re-validated:
+     it was validated by this same schema on the way in, and a second parse here would be a
+     second definition of what a policy is. */
+  policyBlocks: (config.policyBlocks ?? null) as Infer<typeof configFields>["policyBlocks"],
   keyterms: [...config.keyterms],
   businessHours:
     config.businessHours === null

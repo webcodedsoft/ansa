@@ -678,6 +678,13 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly greeting: string | null;
         readonly persona: string | null;
         readonly instructions: string | null;
+        readonly policyBlocks?: readonly ({
+        readonly name: string;
+        readonly applies: string;
+        readonly canDo: readonly (string)[];
+        readonly cannotDo: readonly (string)[];
+        readonly escalateWhen: readonly (string)[];
+      })[] | null;
         readonly keyterms: readonly (string)[];
         readonly businessHours: {
         readonly opensAtHour: number;
@@ -737,6 +744,13 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly greeting: string | null;
         readonly persona: string | null;
         readonly instructions: string | null;
+        readonly policyBlocks?: readonly ({
+        readonly name: string;
+        readonly applies: string;
+        readonly canDo: readonly (string)[];
+        readonly cannotDo: readonly (string)[];
+        readonly escalateWhen: readonly (string)[];
+      })[] | null;
         readonly keyterms: readonly (string)[];
         readonly businessHours: {
         readonly opensAtHour: number;
@@ -801,6 +815,13 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly greeting: string | null;
         readonly persona: string | null;
         readonly instructions: string | null;
+        readonly policyBlocks?: readonly ({
+        readonly name: string;
+        readonly applies: string;
+        readonly canDo: readonly (string)[];
+        readonly cannotDo: readonly (string)[];
+        readonly escalateWhen: readonly (string)[];
+      })[] | null;
         readonly keyterms: readonly (string)[];
         readonly businessHours: {
         readonly opensAtHour: number;
@@ -846,6 +867,13 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
           readonly greeting: string | null;
           readonly persona: string | null;
           readonly instructions: string | null;
+          readonly policyBlocks?: readonly ({
+          readonly name: string;
+          readonly applies: string;
+          readonly canDo: readonly (string)[];
+          readonly cannotDo: readonly (string)[];
+          readonly escalateWhen: readonly (string)[];
+        })[] | null;
           readonly keyterms: readonly (string)[];
           readonly businessHours: {
           readonly opensAtHour: number;
@@ -867,6 +895,13 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly greeting: string | null;
         readonly persona: string | null;
         readonly instructions: string | null;
+        readonly policyBlocks?: readonly ({
+        readonly name: string;
+        readonly applies: string;
+        readonly canDo: readonly (string)[];
+        readonly cannotDo: readonly (string)[];
+        readonly escalateWhen: readonly (string)[];
+      })[] | null;
         readonly keyterms: readonly (string)[];
         readonly businessHours: {
         readonly opensAtHour: number;
@@ -955,6 +990,13 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
           readonly greeting: string | null;
           readonly persona: string | null;
           readonly instructions: string | null;
+          readonly policyBlocks?: readonly ({
+          readonly name: string;
+          readonly applies: string;
+          readonly canDo: readonly (string)[];
+          readonly cannotDo: readonly (string)[];
+          readonly escalateWhen: readonly (string)[];
+        })[] | null;
           readonly keyterms: readonly (string)[];
           readonly businessHours: {
           readonly opensAtHour: number;
@@ -982,6 +1024,13 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly greeting: string | null;
         readonly persona: string | null;
         readonly instructions: string | null;
+        readonly policyBlocks?: readonly ({
+        readonly name: string;
+        readonly applies: string;
+        readonly canDo: readonly (string)[];
+        readonly cannotDo: readonly (string)[];
+        readonly escalateWhen: readonly (string)[];
+      })[] | null;
         readonly keyterms: readonly (string)[];
         readonly businessHours: {
         readonly opensAtHour: number;
@@ -1023,6 +1072,13 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly greeting: string | null;
         readonly persona: string | null;
         readonly instructions: string | null;
+        readonly policyBlocks?: readonly ({
+        readonly name: string;
+        readonly applies: string;
+        readonly canDo: readonly (string)[];
+        readonly cannotDo: readonly (string)[];
+        readonly escalateWhen: readonly (string)[];
+      })[] | null;
         readonly keyterms: readonly (string)[];
         readonly businessHours: {
         readonly opensAtHour: number;
@@ -1054,6 +1110,13 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly greeting: string | null;
         readonly persona: string | null;
         readonly instructions: string | null;
+        readonly policyBlocks?: readonly ({
+        readonly name: string;
+        readonly applies: string;
+        readonly canDo: readonly (string)[];
+        readonly cannotDo: readonly (string)[];
+        readonly escalateWhen: readonly (string)[];
+      })[] | null;
         readonly keyterms: readonly (string)[];
         readonly businessHours: {
         readonly opensAtHour: number;

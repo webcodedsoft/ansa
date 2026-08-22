@@ -1,5 +1,6 @@
 import { BASE_CONDUCT, identityLine } from "./base";
 import { EMOTIONAL_LAYER } from "./emotional";
+import { renderPolicyBlocks, toPolicyBlocks } from "./policy-blocks";
 import { GUARANTEES_LAYER } from "./guarantees";
 import { LOCALE_LAYER } from "./locale";
 import { fenceOrganizationText, type OrganizationLayer } from "./organization-layer";
@@ -43,6 +44,13 @@ export interface CallPrompt {
    * typed at the model.
    */
   readonly fields?: readonly CollectedField[];
+  /**
+   * The organisation's rules as named blocks, straight off the config row.
+   *
+   * `unknown` because it is jsonb and this is the call path: rows written by an older
+   * schema or by a script reach here too, so it is checked rather than trusted.
+   */
+  readonly policyBlocks?: unknown;
 }
 
 export const composeSystemPrompt = (input: CallPrompt): string =>
@@ -56,6 +64,13 @@ export const composeSystemPrompt = (input: CallPrompt): string =>
     ...(input.organization !== null && input.organization.text !== ""
       ? [fenceOrganizationText(input.organization)]
       : []),
+    /* After their prose and before the task layer. Their own words first, because a block
+       is the structured half of the same thing and reads as a refinement of it; the tools
+       after, because what may be done is downstream of what is allowed. */
+    ...(() => {
+      const rendered = renderPolicyBlocks(toPolicyBlocks(input.policyBlocks));
+      return rendered === "" ? [] : [rendered];
+    })(),
     taskLayer(input.tools, input.fields ?? []),
     /* Before the guarantees, which must land last, and after the task layer, because how
        to sound is a smaller instruction than what may be done. */

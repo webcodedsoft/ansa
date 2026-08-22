@@ -306,6 +306,7 @@ const toCallAgent = async (
         ...connectors.tools,
       ],
       fields,
+      policyBlocks: config.policyBlocks,
     }),
     hasKnowledgeSources,
     businessHours: config.businessHours,

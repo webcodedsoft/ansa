@@ -54,6 +54,8 @@ const fields = (overrides: Partial<AgentConfigFields> = {}): AgentConfigFields =
   greeting: null,
   persona: null,
   instructions: null,
+  // Null is "they wrote none", which is every organisation until one does.
+  policyBlocks: null,
   keyterms: [],
   businessHours: null,
   escalation: null,
@@ -286,5 +288,59 @@ describe("one organisation reaching for another's", () => {
   it("reads its own configuration, and only its own", async () => {
     const current = await withOrganization(ds, B, (scope) => loadCurrentAgentConfig(scope));
     expect(current?.config.name).toBe("Config organization B");
+  });
+});
+
+describe("policies a screen cannot edit", () => {
+  /**
+   * The console publishes the whole document and has no policy editor. If a publish with no
+   * policies in it overwrote, the first save from that screen would silently delete rules
+   * somebody authored through the API — so null means "leave them alone" and an empty array
+   * means "there are none", the same distinction `agent_config_drafts` already draws.
+   */
+  const livePolicies = async (): Promise<unknown> => {
+    const rows = await withOrganization(ds, A, (scope) =>
+      /* The same agent `publish_agent_config` picks — the oldest live one. An unordered
+         `limit 1` reads whichever row the planner returns, which is how this first read
+         came back null against a row that had just been written. */
+      scope.query<{ policy_blocks: unknown }>(
+        "select policy_blocks from agents where deleted_at is null order by created_at, id limit 1",
+      ),
+    );
+    return rows[0]?.policy_blocks ?? null;
+  };
+
+  const withPolicies = [
+    { name: "Refunds", applies: "money back", canDo: ["log it"], cannotDo: ["approve it"], escalateWhen: [] },
+  ];
+
+  it("stores and returns them", async () => {
+    await withOrganization(ds, A, (scope) =>
+      publishAgentConfig(scope, fields({ policyBlocks: withPolicies }), "with policies"),
+    );
+    expect(await livePolicies()).toEqual(withPolicies);
+  });
+
+  it("leaves them alone when a publish omits them", async () => {
+    // The console's publish, which cannot see them.
+    await withOrganization(ds, A, (scope) =>
+      publishAgentConfig(scope, fields({ policyBlocks: withPolicies }), "with policies"),
+    );
+    await withOrganization(ds, A, (scope) =>
+      publishAgentConfig(scope, fields(), "from a screen with no policy editor"),
+    );
+
+    expect(await livePolicies()).toEqual(withPolicies);
+  });
+
+  it("clears them for an empty list, which is a different thing from omitting", async () => {
+    await withOrganization(ds, A, (scope) =>
+      publishAgentConfig(scope, fields({ policyBlocks: withPolicies }), "with policies"),
+    );
+    await withOrganization(ds, A, (scope) =>
+      publishAgentConfig(scope, fields({ policyBlocks: [] }), "deliberately none"),
+    );
+
+    expect(await livePolicies()).toEqual([]);
   });
 });

@@ -59,6 +59,8 @@ const fields = (overrides: Partial<AgentConfigFields> = {}): AgentConfigFields =
   greeting: null,
   persona: null,
   instructions: null,
+  // Null is "they wrote none", which is every organisation until one does.
+  policyBlocks: null,
   keyterms: [],
   businessHours: null,
   escalation: null,

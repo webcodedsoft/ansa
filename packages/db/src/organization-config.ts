@@ -62,6 +62,15 @@ export interface StoredConfiguration {
   readonly greeting: string | null;
   readonly persona: string | null;
   readonly instructions: string | null;
+  /**
+   * The organisation's rules, given a shape.
+   *
+   * Null is "they wrote none", which is every organisation until one does — and an agent
+   * with none behaves exactly as it did, reading their `instructions` prose instead. The
+   * two coexist on purpose: prose is where a rule that fits nowhere goes, and a block is
+   * for the ones that recur.
+   */
+  readonly policyBlocks: unknown;
   readonly keyterms: readonly string[];
   readonly businessOpenHour: number | null;
   readonly businessCloseHour: number | null;
@@ -83,6 +92,7 @@ interface StoredConfigurationRow {
   greeting: string | null;
   persona: string | null;
   instructions: string | null;
+  policy_blocks: unknown;
   keyterms: string[] | null;
   business_open_hour: number | null;
   business_close_hour: number | null;
@@ -105,7 +115,7 @@ interface StoredConfigurationRow {
  * possible way to be wrong.
  */
 const STORED_COLUMNS = `
-  a.name, a.voice_id, a.greeting, a.persona, a.instructions, a.keyterms,
+  a.name, a.voice_id, a.greeting, a.persona, a.instructions, a.policy_blocks, a.keyterms,
   t.business_open_hour, t.business_close_hour, t.business_days,
   a.escalation_to_number, a.escalation_from_number, a.escalation_ring_seconds,
   t.tool_config, t.event_config, a.config_version`;
@@ -150,6 +160,7 @@ export const readStoredConfiguration = async (
     greeting: row.greeting,
     persona: row.persona,
     instructions: row.instructions,
+    policyBlocks: row.policy_blocks ?? null,
     keyterms: row.keyterms ?? [],
     businessOpenHour: row.business_open_hour,
     businessCloseHour: row.business_close_hour,
@@ -194,7 +205,7 @@ export const publishConfiguration = async (
   const next = { ...current, ...patch };
   const rows = await scope.query<{ version: number }>(
     `select app.publish_agent_config(
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
      ) as version`,
     [
       scope.organizationId,
@@ -214,6 +225,9 @@ export const publishConfiguration = async (
       next.escalationFromNumber,
       next.escalationRingSeconds,
       note,
+      /* Last, matching the parameter appended in migration 0046. Everything above is
+         positional, so a new argument anywhere else would silently reassign a value. */
+      asJsonb(next.policyBlocks ?? null),
     ],
   );
 
@@ -247,6 +261,15 @@ export interface AgentConfigFields {
   readonly greeting: string | null;
   readonly persona: string | null;
   readonly instructions: string | null;
+  /**
+   * The organisation's rules, given a shape.
+   *
+   * Null is "they wrote none", which is every organisation until one does — and an agent
+   * with none behaves exactly as it did, reading their `instructions` prose instead. The
+   * two coexist on purpose: prose is where a rule that fits nowhere goes, and a block is
+   * for the ones that recur.
+   */
+  readonly policyBlocks?: unknown;
   readonly keyterms: readonly string[];
   readonly businessHours: BusinessHours | null;
   readonly escalation: EscalationConfig | null;
@@ -319,6 +342,7 @@ const CONFIG_COLUMNS = [
   "greeting",
   "persona",
   "instructions",
+  "policy_blocks",
   "keyterms",
   "escalation_to_number",
   "escalation_from_number",
@@ -335,6 +359,7 @@ interface ConfigColumns {
   readonly greeting: string | null;
   readonly persona: string | null;
   readonly instructions: string | null;
+  readonly policy_blocks: unknown;
   readonly keyterms: string[] | null;
   readonly business_open_hour: number | null;
   readonly business_close_hour: number | null;
@@ -373,6 +398,7 @@ const toFields = (row: ConfigColumns): AgentConfigFields => ({
   greeting: row.greeting,
   persona: row.persona,
   instructions: row.instructions,
+  policyBlocks: row.policy_blocks ?? null,
   keyterms: row.keyterms ?? [],
   businessHours: toBusinessHours(row),
   escalation: toEscalation(row),
@@ -613,6 +639,11 @@ export const publishAgentConfig = async (
       greeting: fields.greeting,
       persona: fields.persona,
       instructions: fields.instructions,
+      /* Named here or it is dropped between the API and the database, which is exactly what
+         happened: the patch below is built field by field, so anything not listed is not
+         "carried forward", it is never sent. Undefined stays undefined so the publish
+         function's own coalesce leaves stored policies alone. */
+      policyBlocks: fields.policyBlocks,
       keyterms: fields.keyterms,
       businessOpenHour: hours?.opensAtHour ?? null,
       businessCloseHour: hours?.closesAtHour ?? null,

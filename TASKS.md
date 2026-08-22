@@ -3219,14 +3219,30 @@ so the answer is not to recover the text but to record the drift where the cap h
         alternative leaves the model choosing between inventing and stalling; it has a
         person to hand to.
 
-- [ ] **Phase 8h — the structural half.** Named blocks
-      (`{ name, applies, canDo[], cannotDo[], escalateWhen[] }`) rendered as discrete
-      sections so the model can locate the one that applies, instead of one run of prose.
-      That is a jsonb column, the draft and publish path, an API schema and a console
-      editor — the largest single thing outstanding. The behavioural rule above is the part
-      that changes what a caller hears; this is the part that makes it easier for the model
-      to find the right rule, and it is worth doing once a real call has shown whether
-      finding them is actually the problem.
+- [x] **Phase 8h — business policies as named blocks**. The structural half of 8g, wired end
+      to end: migration 0046, the config layer, the API schema, the call path, and a prompt
+      layer. No console editor — authored through the API for now.
+      - **Null means unchanged; an empty array means none.** Load-bearing rather than tidy:
+        the console publishes the whole document and has no policy editor, so a null that
+        overwrote would have the first save from a screen that cannot show policies silently
+        delete them. The same distinction `agent_config_drafts` already draws.
+      - Snapshotted into `agent_prompt_versions`, because R7.5 needs a call attributable to
+        the configuration in force. A field that published but never versioned would make
+        the history claim the agent always had whatever it has now.
+      - The readers were generated from their live definitions rather than retyped, so
+        nothing else about them could drift through this migration.
+      - `unknown` on the call path rather than a parsed type, and checked in the prompt
+        layer: this reads jsonb written by an older schema or by a script as readily as by
+        the API, and a type there would be a promise the row cannot keep.
+      - The closing rule is repeated from 8g and stated *after* the blocks, so nothing an
+        organisation wrote sits downstream of the limit on what they wrote.
+
+**Two guards earned their keep.** `diff.test.ts` asserts every config field is named, and
+failed until policies were in the diff — one leaf for the whole set rather than per-block
+paths, because reordering would otherwise report a dozen changes and hide the one real edit.
+And the round-trip test caught `publishAgentConfig` dropping the field entirely: that
+function builds its patch field by field, so anything unlisted is not carried forward, it is
+never sent. It typechecked, it published, and the policies never reached the database.
 
 - [ ] **Tool `origin`** stays out: it would be a field nothing branches on, because the
       guards it is meant to gate already apply to every tool regardless of who registered

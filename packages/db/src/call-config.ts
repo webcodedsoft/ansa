@@ -45,6 +45,14 @@ export interface AgentConfig {
    */
   readonly instructions: string | null;
   /**
+   * Their rules as named blocks, or null when they wrote none.
+   *
+   * `unknown` rather than a parsed type: this is the call path, it reads jsonb written by
+   * an older schema or by a script as readily as by the API, and the prompt layer checks it
+   * on the way in. A type here would be a promise this row cannot keep.
+   */
+  readonly policyBlocks: unknown;
+  /**
    * When their own line is staffed, in WAT (R6.5). Null until they say.
    *
    * Null is the honest default and not a gap to be filled with a plausible nine to five:
@@ -130,6 +138,7 @@ interface ConfigRow {
   greeting: string | null;
   persona: string | null;
   instructions: string | null;
+  policy_blocks: unknown;
   business_open_hour: number | null;
   business_close_hour: number | null;
   business_days: number[] | null;
@@ -209,6 +218,7 @@ const toConfig = (row: ConfigRow): AgentConfig => ({
   greeting: row.greeting,
   persona: row.persona,
   instructions: row.instructions ?? null,
+  policyBlocks: row.policy_blocks ?? null,
   businessHours: toBusinessHours(row),
   handoff: toHandoff(row),
   // `undefined` when migration 0013 has not been applied — the row comes back without the
