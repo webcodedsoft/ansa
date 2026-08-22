@@ -15,6 +15,7 @@ import {
 import { chunkOf, fakeListen, fakeLlm, fakeStream, fakeTts, silentLog } from "./fakes";
 import { createCallFacts, type CallFactsStore } from "../conversation/call-facts";
 import { DEFAULT_SYSTEM_PROMPT } from "../prompts/compose";
+import { OUTBOUND_LAYER } from "../prompts/outbound";
 import type { Handoff } from "../handoff/handoff";
 import type { EscalationTrigger } from "../handoff/triggers";
 import type { CallRecorder } from "../telephony/event-log";
@@ -51,6 +52,7 @@ const setup = (
     organizationId?: OrganizationId | null;
     makeTools?: OrchestratorDeps["makeTools"];
     speakingRate?: number;
+    direction?: OrchestratorDeps["direction"];
     businessHours?: OrchestratorDeps["businessHours"];
     recordDoNotCall?: OrchestratorDeps["recordDoNotCall"];
     callerHistory?: OrchestratorDeps["callerHistory"];
@@ -73,6 +75,9 @@ const setup = (
     organizationId: ORGANIZATION,
     // No hours by default, so the situation block stays silent about them and every test
     // written before it existed asserts on the same prompt it always did.
+    // Inbound unless a test says otherwise, which is what every test written before the
+    // outbound layer existed assumed.
+    direction: "inbound",
     businessHours: null,
     // No history by default: every test written before this existed sees the same prompt.
     callerHistory: () => null,
@@ -1421,6 +1426,55 @@ describe("the prompt the call was configured with", () => {
     assertInvariants(h);
   });
 
+  /**
+   * Outbound is not inbound with the direction flipped.
+   *
+   * The rule that matters most is a prohibition: a stranger who telephones somebody and
+   * asks for their date of birth is indistinguishable from a scam, and asking teaches them
+   * to answer the next person who does. An outbound call conducted with inbound
+   * instructions is the worst single thing this codebase can do, so the wiring is asserted
+   * rather than assumed.
+   */
+  it("tells an outbound agent never to ask a stranger to verify themselves", () => {
+    const h = setup({ direction: "outbound" });
+
+    h.listen.final("What are your opening hours?");
+
+    const system = h.llm.last().request.system;
+    expect(system).toContain("You placed this call");
+    expect(system).toContain("must never ask them for any of these");
+    expect(system).toContain("date of birth");
+    expect(system).toContain("one-time code");
+    assertInvariants(h);
+  });
+
+  it("says none of that on an inbound call", () => {
+    /* Inbound, the caller rang us and verification is how their account is protected.
+       Loading the outbound prohibitions there would stop the agent doing its job. */
+    const h = setup({ direction: "inbound" });
+
+    h.listen.final("What are your opening hours?");
+
+    expect(h.llm.last().request.system).not.toContain("You placed this call");
+    assertInvariants(h);
+  });
+
+  it("keeps the outbound layer inside the part of the prompt that can be cached", () => {
+    /* Static for the whole call, so it belongs before anything that moves per turn. After
+       the situation block it would sit downstream of a clock that changes every turn, and
+       the cacheable prefix would end at the base prompt instead of after this. */
+    const h = setup({ direction: "outbound" });
+
+    h.listen.final("What are your opening hours?");
+
+    /* The property, stated exactly: the outbound layer follows the base prompt and nothing
+       comes between them. An earlier version asserted it appeared before a phrase I assumed
+       belonged to the per-turn budget line — the phrase was in the base prompt, so the
+       assertion was about nothing. */
+    const system = h.llm.last().request.system;
+    expect(system.startsWith(`${DEFAULT_SYSTEM_PROMPT}\n\n${OUTBOUND_LAYER}`)).toBe(true);
+  });
+
   it("says nothing about hours on an ordinary in-hours turn", () => {
     /* Open is the default the prompt is written against. A block that fires every turn
        costs prompt budget for something the model was going to assume anyway. */
@@ -1923,6 +1977,7 @@ describe("audio that arrived before the listener existed", () => {
       log: silentLog,
       greeting: GREETING,
       systemPrompt: DEFAULT_SYSTEM_PROMPT,
+      direction: "inbound",
       businessHours: null,
       callerHistory: () => null,
       recordDoNotCall: () => undefined,
@@ -1951,6 +2006,7 @@ describe("audio that arrived before the listener existed", () => {
       log: silentLog,
       greeting: GREETING,
       systemPrompt: DEFAULT_SYSTEM_PROMPT,
+      direction: "inbound",
       businessHours: null,
       callerHistory: () => null,
       recordDoNotCall: () => undefined,

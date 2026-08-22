@@ -3014,9 +3014,17 @@ The brief asks for ~20 across five tags with the same behaviour.
         request from the media socket, so the per-socket recorder is out of scope and this
         wants a by-carrier-id event write — `closeCallByCarrierId` is the precedent. That is
         the piece of work, and it is why this is not in the commit above.
-      - **A separate outbound prompt module** replacing the inbound OPENING section: state
-        who you are and why in one breath, ask whether now is a good time, never ask an
-        outbound recipient to verify anything. `prompts/` has no outbound layer.
+      - [x] **The outbound prompt module** is in. Loaded only when `direction` is outbound,
+        placed immediately after the base prompt so it stays inside the cacheable prefix.
+        Its hardest rule is a prohibition and it is absolute rather than graduated: never
+        ask an outbound recipient for a date of birth, an address, an ID, BVN or NIN, a card
+        or bank number, a password, a PIN, a one-time code, or a security answer. A stranger
+        who telephones somebody and asks those things is what a scam sounds like, and asking
+        teaches them to answer the next person who does — so there is no business value that
+        buys an exception. If the task genuinely needs a verified caller, it does not happen
+        on that call. `direction` is required on `OrchestratorDeps` for the same reason
+        `organizationId` is: an optional one defaults to inbound, and the failure is an
+        outbound call conducted with inbound instructions.
       - **Outbound metrics**: connect rate, human-answer rate, DNC rate, average
         time-to-hangup. A rising DNC rate is the alarm and there is nothing to see it with.
       - **The window refusal should become a timezone lookup** the day somebody genuinely

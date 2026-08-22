@@ -740,6 +740,11 @@ export class MediaGateway implements OnApplicationShutdown {
       fields: settings.capturedFields,
       listen,
       facts,
+      /* The same `direction` the recorder is given, so what the agent is told and what the
+         call is written down as cannot disagree. Outbound loads a layer of prohibitions
+         inbound does not — chiefly that a stranger must never be asked to verify
+         themselves — and getting this wrong is the worst single thing here. */
+      direction,
       /* The same value the business-hours tool gets below. One source, so what the agent
          senses about the hour and what it answers when asked cannot disagree — two reads
          of the same config would be two places for one of them to go stale. */

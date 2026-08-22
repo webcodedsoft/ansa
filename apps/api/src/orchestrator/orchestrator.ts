@@ -24,11 +24,13 @@ import {
   type EntityKind,
 } from "./capture";
 import type { CallerHistory } from "@ansa/db";
+import type { CallDirection } from "@ansa/telephony";
 
 import type { CallFactsStore, IdentifierField } from "../conversation/call-facts";
 import type { CollectedField } from "../tenancy/captured-fields";
 import { createForm } from "./form";
 import { renderFacts } from "../conversation/facts-prompt";
+import { OUTBOUND_LAYER } from "../prompts/outbound";
 import {
   createReadStripper,
   parseRead,
@@ -224,6 +226,15 @@ export interface OrchestratorDeps {
    * the symptom is not a compile error but an agent that quietly never knows the time. A
    * deployment with no hours has to say so.
    */
+  /**
+   * Who rang whom.
+   *
+   * Required and nullable-free, like `organizationId`: an optional direction defaults to
+   * inbound, and the failure is an outbound call conducted with an inbound agent's
+   * instructions — one that asks a stranger to confirm their date of birth. That is the
+   * single worst thing this codebase can do, so it is not a wire anybody may forget.
+   */
+  readonly direction: CallDirection;
   readonly businessHours: BusinessHours | null;
   /**
    * What this number has done before, or null when it is not known.
@@ -1790,7 +1801,12 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
        here and is therefore true, while this is the model's own guess about the caller
        handed back to it. Keeping them apart stops the guess reading as a fact. */
     const feeling = renderRead(read, previousRead) ?? "";
-    const system = [deps.systemPrompt, known, situation, feeling, budget.instruction]
+    /* Straight after the base prompt, and before anything that changes per turn. It is
+       static for the whole call, so it sits inside the stable prefix and costs the prompt
+       cache nothing — and it belongs near the top for the same reason the base does, since
+       what it carries are prohibitions rather than details. */
+    const outbound = deps.direction === "outbound" ? OUTBOUND_LAYER : "";
+    const system = [deps.systemPrompt, outbound, known, situation, feeling, budget.instruction]
       .filter((s) => s !== "")
       .join("\n\n");
     /**
