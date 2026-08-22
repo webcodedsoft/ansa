@@ -104,7 +104,7 @@ export interface CatchphraseReport {
  * an agent that never says "one moment" is an agent straining for variety — but a phrasing
  * in one call out of six is something a regular caller will notice.
  */
-export const CATCHPHRASE_SHARE = 0.15;
+const CATCHPHRASE_SHARE = 0.15;
 
 /**
  * Counted per call, not per utterance, and that is the whole measurement.

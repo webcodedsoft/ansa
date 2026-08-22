@@ -66,6 +66,9 @@ export const placeOutboundCall = async (deps: {
 
   const verdict = mayCall({
     ...facts,
+    // The calling window is in the recipient's day, and this is the only thing that says
+    // whose day that is.
+    to: request.to,
     policy,
     now: deps.now?.() ?? new Date(),
     ...(earliest === undefined || earliest === null ? {} : { earliestHour: earliest }),

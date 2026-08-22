@@ -2982,22 +2982,47 @@ The brief asks for ~20 across five tags with the same behaviour.
         "take me off your list and put me through to a person" is transferred and never
         suppressed.
 
-- [ ] **Phase 7b — the rest of outbound.** Four items, none blocked, none as urgent as the
-      write above.
-      - **AMD leaves no message.** Today it hangs up on a machine, which is safer than the
-        brief's "play a single voicemail message" — nothing private can be left on a
-        stranger's answerphone — but it is a product decision, not an accident, and it
-        should be made deliberately. The brief also asks for the AMD false-positive rate to
-        be logged, because the model is trained on US carrier patterns and nobody knows how
-        it behaves on Nigerian networks. Nothing measures that yet.
+- [x] **Phase 7b — the calling window is in the recipient's day, not ours**. `mayCall` used
+      `hourInWat` for every number it was ever given, and never saw the number at all —
+      08:00 WAT is 07:00 in London and 02:00 in New York, so a list with one non-Nigerian
+      number in it was a two-in-the-morning cold call waiting to be placed.
+      - It now takes the destination and refuses any number whose local time it cannot work
+        out. **No timezone table**, and there should not be one until somebody actually
+        dials outside Nigeria — the refusal is the honest version, and it fails closed like
+        every other arm of that function.
+      - Nigerian national format (`0803…`) is accepted alongside `+234…`: it is the same
+        person, there is no other country it could be, and refusing it would fail closed on
+        the commonest input rather than an unusual one.
+      - Suppression still outranks it. "They asked us not to" is a better answer than "we
+        could not work out the time there", and it is the one that is true whatever the
+        number.
+      - Six existing tests failed on the fixture not saying whose day it was, which is the
+        change doing its job.
+
+- [ ] **Phase 7c — the rest of outbound.** Three items. The two decisions I had put to you
+      are recorded here as made, so this can be executed without another round trip.
+      - **AMD should leave a message, and the decision is made.** Today it hangs up
+        silently, which I had defended as the safer option — but it is not: the recipient
+        sees a missed call from an unknown number and learns nothing, which is worse for
+        them and for the business than a ten-word message. The prompt document already
+        specifies the safe form of it verbatim, and the constraint that makes it safe is
+        that the message is composed from who we are, a brief reason and a callback number,
+        and **never** an amount, a balance, an account detail or anything else somebody
+        else in the room should not hear.
+      - **The AMD verdict needs to be durable before the false-positive rate can be
+        measured.** It reaches stdout and nothing else. The webhook arrives on a different
+        request from the media socket, so the per-socket recorder is out of scope and this
+        wants a by-carrier-id event write — `closeCallByCarrierId` is the precedent. That is
+        the piece of work, and it is why this is not in the commit above.
       - **A separate outbound prompt module** replacing the inbound OPENING section: state
         who you are and why in one breath, ask whether now is a good time, never ask an
         outbound recipient to verify anything. `prompts/` has no outbound layer.
       - **Outbound metrics**: connect rate, human-answer rate, DNC rate, average
         time-to-hangup. A rising DNC rate is the alarm and there is nothing to see it with.
-      - **The calling window is in WAT, not the recipient's local time.** Correct for every
-        Nigerian number and wrong for any other, and `mayCall` says `hourInWat` outright.
-        Worth fixing before anybody dials outside +234.
+      - **The window refusal should become a timezone lookup** the day somebody genuinely
+        needs to dial outside Nigeria. Not before: a partial table is worse than a refusal,
+        because it answers confidently for the countries it has and silently wrongly for
+        the ones it does not.
 
 - [ ] **Payment tools on outbound calls.** The brief asks for payment tools to be
       uncallable on an outbound call regardless of configuration. There is no payment

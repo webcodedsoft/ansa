@@ -7,6 +7,10 @@ const midday = new Date("2026-08-08T13:00:00Z");
 const granted = { grantedAt: new Date("2026-01-01T00:00:00Z"), revokedAt: null };
 
 const facts = (over: Partial<ConsentFacts> = {}): ConsentFacts => ({
+  /* A Nigerian number by default, because the calling window is in the recipient's day and
+     `hourInWat` can only place a +234 one in it. Every case below is about consent, hours
+     or suppression and would otherwise be refused for a reason it is not testing. */
+  to: "+2348030000001",
   consent: granted,
   suppressed: false,
   now: midday,
@@ -129,5 +133,50 @@ describe("an organisation's own consent policy", () => {
     expect(
       mayCall(facts({ now: new Date("2026-08-08T05:00:00Z"), earliestHour: 0 })),
     ).toMatchObject({ allowed: false });
+  });
+});
+
+describe("whose day the calling window is in", () => {
+  /**
+   * `hourInWat` is addition against a fixed offset. It is right for every +234 number all
+   * year and quietly wrong for any other: a London recipient at the start of our window is
+   * being rung at seven in the morning, and a New York one at two. There is no timezone
+   * table here, so instead there is a refusal.
+   */
+  it("clears a Nigerian number in international format", () => {
+    expect(mayCall(facts({ to: "+2348030000001" }))).toEqual({ allowed: true });
+  });
+
+  it("clears one in the national format an operator's own list holds", () => {
+    // The same person, and there is no other country it could be. Refusing this would fail
+    // closed on the commonest input rather than on an unusual one.
+    expect(mayCall(facts({ to: "08030000001" }))).toEqual({ allowed: true });
+  });
+
+  it("refuses a number whose local time it cannot work out", () => {
+    for (const to of ["+442071838750", "+12125550100", "+27115550100"]) {
+      const verdict = mayCall(facts({ to }));
+      expect(verdict.allowed).toBe(false);
+      expect(verdict.allowed === false && verdict.reason).toContain("local time");
+    }
+  });
+
+  it("refuses when nothing said which number it is", () => {
+    // Absent is unknown, and unknown refuses. Every other arm of this function fails closed
+    // and this one has the least excuse not to.
+    expect(mayCall(facts({ to: undefined })).allowed).toBe(false);
+  });
+
+  it("is not fooled by spacing an operator typed in", () => {
+    expect(mayCall(facts({ to: "+234 803 000 0001" }))).toEqual({ allowed: true });
+    expect(mayCall(facts({ to: "+44 (20) 7183-8750" })).allowed).toBe(false);
+  });
+
+  it("still lets suppression outrank it", () => {
+    /* Ordering matters for the reason it always does here: "they asked us not to" is a
+       better answer to give than "we could not work out the time there", and it is the one
+       that is true whatever the number. */
+    const verdict = mayCall(facts({ to: "+442071838750", suppressed: true }));
+    expect(verdict.allowed === false && verdict.reason).toContain("do-not-call");
   });
 });
