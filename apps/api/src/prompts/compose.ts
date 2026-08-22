@@ -1,4 +1,5 @@
 import { BASE_CONDUCT, identityLine } from "./base";
+import { EMOTIONAL_LAYER } from "./emotional";
 import { GUARANTEES_LAYER } from "./guarantees";
 import { LOCALE_LAYER } from "./locale";
 import { fenceOrganizationText, type OrganizationLayer } from "./organization-layer";
@@ -56,6 +57,9 @@ export const composeSystemPrompt = (input: CallPrompt): string =>
       ? [fenceOrganizationText(input.organization)]
       : []),
     taskLayer(input.tools, input.fields ?? []),
+    /* Before the guarantees, which must land last, and after the task layer, because how
+       to sound is a smaller instruction than what may be done. */
+    EMOTIONAL_LAYER,
     GUARANTEES_LAYER,
   ].join("\n\n");
 

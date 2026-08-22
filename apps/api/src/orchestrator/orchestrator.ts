@@ -29,6 +29,12 @@ import type { CallFactsStore, IdentifierField } from "../conversation/call-facts
 import type { CollectedField } from "../tenancy/captured-fields";
 import { createForm } from "./form";
 import { renderFacts } from "../conversation/facts-prompt";
+import {
+  createReadStripper,
+  parseRead,
+  renderRead,
+  type EmotionalRead,
+} from "../conversation/emotional-read";
 import { describeSituation, renderSituation } from "../conversation/situation";
 import type { Handoff } from "../handoff/handoff";
 import { createEscalationWatch, type EscalationTrigger } from "../handoff/triggers";
@@ -847,6 +853,18 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   /** Where the caller's current turn began, from the turn detector rather than guessed. */
   let callerTurnStartedMs: number | null = null;
 
+  /**
+   * How the caller sounded on the last two turns.
+   *
+   * Two rather than one because the trajectory is the useful part: the same caller at
+   * "frustrated" is a different call depending on whether they were calm or angry a minute
+   * ago. Both survive a malformed marker — a turn the model forgot to annotate keeps the
+   * pair it had rather than blanking it, which is what stops one bad line erasing the
+   * whole arc.
+   */
+  let read: EmotionalRead | null = null;
+  let previousRead: EmotionalRead | null = null;
+
   const speechGate = createSpeechGate();
   let speechMsSinceTranscript = 0;
 
@@ -1639,6 +1657,10 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
 
     mark("llm_first_token");
     const sentences = createSentenceBuffer();
+    /* Sits in front of the sentence buffer, not behind it. The marker has no terminal
+       punctuation, so the buffer would hold it to the end of the stream and then flush it
+       as the tail — straight to TTS, and the caller hears the angle brackets read out. */
+    const stripper = createReadStripper();
     // Empty until something is known, so turn one is byte-for-byte the prompt that was
     // sent before this existed.
     const known = deps.facts === undefined ? "" : renderFacts(deps.facts.facts);
@@ -1667,7 +1689,12 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
        where the call is, then how long this particular reply may be — each nearer the
        generation than the last, in the order they change. The instruction is the soft
        half; the word cap below is the half that holds. */
-    const system = [deps.systemPrompt, known, situation, budget.instruction]
+    /* Its own block rather than a line inside the situation, because its provenance is
+       different and the difference matters: everything in the situation block is computed
+       here and is therefore true, while this is the model's own guess about the caller
+       handed back to it. Keeping them apart stops the guess reading as a fact. */
+    const feeling = renderRead(read, previousRead) ?? "";
+    const system = [deps.systemPrompt, known, situation, feeling, budget.instruction]
       .filter((s) => s !== "")
       .join("\n\n");
     /**
@@ -1709,7 +1736,9 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         firstToken = false;
         measure("llm_first_token", { seq, provider: deps.llm.name });
       }
-      for (const sentence of sentences.push(token)) {
+      const speakable = stripper.push(token);
+      if (speakable === "") return;
+      for (const sentence of sentences.push(speakable)) {
         // Words, not tokens, and not sentences alone: one long sentence is still too
         // long. Enforced here rather than asked for in the prompt, because prompts can
         // be talked out of things and dispatch paths cannot.
@@ -1754,6 +1783,26 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     completion.onDone((full) => {
       if (turn?.seq !== seq) return;
       current.llmDone = true;
+      /* Anything the stripper held back that turned out not to be a marker — a stray `<`
+         at the very end of a reply. Pushed through the sentence buffer so the tail below
+         is assembled from the whole utterance rather than losing its last character. */
+      const held = stripper.flush();
+      if (held !== "") for (const sentence of sentences.push(held)) enqueue(current, sentence);
+
+      /* The read, parsed after the speech is already playing. This is the whole reason the
+         marker goes last: by the time it exists the caller has been listening for a
+         second, so nothing here is on any stage anybody measures. */
+      const parsed = parseRead(stripper.marker());
+      if (parsed !== null) {
+        previousRead = read;
+        read = parsed;
+      } else if (stripper.marker() !== null) {
+        /* A marker that arrived and did not parse. Worth a line, because the vocabularies
+           are shared between the prompt and the parser and this is what drift looks like:
+           the read silently stops updating and nothing else says why. */
+        log.debug("emotional read did not parse", { seq, marker: stripper.marker() });
+      }
+
       const tail = sentences.flush();
       // A tail with no terminal punctuation is a truncated fragment, not a sentence.
       // Speaking it means the caller hears the reply stop mid-word.

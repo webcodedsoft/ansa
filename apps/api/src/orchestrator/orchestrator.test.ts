@@ -1178,6 +1178,64 @@ describe("the prompt the call was configured with", () => {
     assertInvariants(h);
   });
 
+  /**
+   * The marker on a real turn.
+   *
+   * The unit tests cover the stripper; this covers the thing that actually breaks a call —
+   * whether the marker reaches the synthesiser. It sits on the token path of every turn,
+   * so getting it wrong is not a wrong label, it is the caller hearing angle brackets read
+   * out at the end of every sentence.
+   */
+  it("never synthesises the read, and feeds it back on the next turn", () => {
+    const h = setup();
+    // The greeting out of the way, so what follows is the reply and nothing else.
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("I've been waiting for weeks.");
+    h.llm.last().emit("I'm sorry about that.");
+    h.llm.last().emit("\n<<read: emotion=frustrated, energy=high, trust=low, urgency=high>>");
+    h.llm.last().finish();
+
+    // Nothing the caller hears carries any of it.
+    const spoken = h.tts.texts().join(" ");
+    expect(spoken).toContain("I'm sorry about that.");
+    expect(spoken).not.toContain("<<");
+    expect(spoken).not.toContain("read:");
+    expect(spoken).not.toContain("frustrated");
+
+    /* And it is in front of the model next turn. A substantive question rather than "yes
+       please": a bare affirmative is read as a confirmation, no completion is requested,
+       and `last()` would hand back the previous turn's prompt — which predates the read
+       and would make this pass for the wrong reason. */
+    const before = h.llm.completions.length;
+    h.listen.final("What are your opening hours?");
+    expect(h.llm.completions.length).toBeGreaterThan(before);
+
+    const system = h.llm.last().request.system;
+    expect(system).toContain("How they sound: frustrated");
+    expect(system).toContain("Trust low");
+    assertInvariants(h);
+  });
+
+  it("keeps the last good read when a turn's marker is malformed", () => {
+    /* The caller cannot hear this line. Blanking the read over a typo would throw away the
+       arc the next turn's guidance is written against. */
+    const h = setup();
+
+    h.listen.final("I've been waiting for weeks.");
+    h.llm.last().emit("Let me check.<<read: emotion=upset>>");
+    h.llm.last().finish();
+
+    h.listen.final("And what about the other one?");
+    h.llm.last().emit("One moment.<<read: emotion=annoyed>>");
+    h.llm.last().finish();
+
+    h.listen.final("What are your opening hours?");
+    expect(h.llm.last().request.system).toContain("How they sound: upset");
+    assertInvariants(h);
+  });
+
   it("says nothing about hours on an ordinary in-hours turn", () => {
     /* Open is the default the prompt is written against. A block that fires every turn
        costs prompt budget for something the model was going to assume anyway. */

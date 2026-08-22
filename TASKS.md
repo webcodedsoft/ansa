@@ -2852,7 +2852,33 @@ source of truth for the same fact.
       - `packages/db/src/caller-history.test.ts` drives it against the real database,
         including the same number calling two organisations — the row that would surface if
         RLS were not doing its job.
-- [ ] Phase 5 — emotional read appended after the spoken text, zero latency cost
+- [x] **Phase 5 — how the caller sounds, for nothing**. The model appends
+      `<<read: emotion=…, energy=…, trust=…, urgency=…>>` after everything it says. The
+      speech is already synthesised and already playing by the time the marker exists, so
+      parsing it lands on no stage anybody measures.
+      - **The stripper is the load-bearing part.** It sits *in front of* the sentence
+        buffer, not behind it: the marker carries no terminal punctuation, so the buffer
+        would hold it to end of stream and flush it as the tail — straight to TTS, and the
+        caller hears the angle brackets read out. It also holds back a lone trailing `<`,
+        because tokens split anywhere and the second `<` often arrives in the next one.
+      - A malformed marker keeps the previous read rather than blanking it, and logs. The
+        caller cannot hear this line; throwing away the arc over a typo in it would be the
+        worst trade available. An unknown word is dropped rather than coerced — deciding
+        `annoyed` means `frustrated` puts a word in the model's mouth that next turn's
+        guidance then keys off.
+      - `resigned` ranks with `angry` in the severity table, not with `calm`. It reads as
+        calm and is not: it is somebody who has given up on you, and scoring it as easing
+        would have the agent relax at the moment it should hand over. Trust counts toward
+        the trajectory too, so a caller who stops believing you while staying outwardly
+        calm still registers as worsening.
+      - The static half — the vocabularies and what to do about each state — is
+        `prompts/emotional.ts`, in the cached part of the prompt. It imports `EMOTIONS` and
+        `LEVELS` from the parser rather than restating them: two lists would drift, and the
+        failure is silent, because the model starts emitting a value the parser drops and
+        the read just stops updating.
+      - Rendered as its own block rather than a line in the situation block. Everything in
+        the situation block is computed here and is therefore true; this is the model's own
+        guess handed back to it, and keeping them apart stops the guess reading as a fact.
 - [ ] Phase 6 — pools instead of fixed artifacts (greetings, fillers, backchannels)
 - [ ] Phase 7 — outbound: AMD, DNC as a dial-time gate, consent basis, calling windows
 - [ ] Phase 8 — dialogue policy layer and the output guard
