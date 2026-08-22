@@ -12,6 +12,7 @@ import { loadApiConfig } from "./api-config";
 import { ConfigController } from "./config/config.controller";
 import { EndpointInterceptor } from "./http/endpoint.interceptor";
 import { ProblemFilter } from "./http/problem";
+import { OrganizationRateLimitGuard } from "./http/organization-rate-limit.guard";
 import { RateLimitGuard } from "./http/rate-limit.guard";
 import { RequestIdMiddleware } from "./http/request-id.middleware";
 import { KnowledgeController } from "./knowledge/knowledge.controller";
@@ -104,11 +105,14 @@ export const API_CONTROLLERS = [
     OrganizationContext,
     AuthService,
 
-    // Order matters, and only for the guards. The rate limiter runs first so that the
-    // endpoints it protects are throttled before they spend a hundred milliseconds of
-    // scrypt; ApiGuard then authenticates and authorises.
+    /* Order matters, and only for the guards. The anti-abuse limiter runs first so that the
+       endpoints it protects are throttled before they spend a hundred milliseconds of scrypt;
+       ApiGuard then authenticates and authorises; and the organisation quota runs last,
+       because it is the only one of the three that needs to know who is calling. Reversing
+       the first and second would let a guessing attack pay for scrypt on every attempt. */
     { provide: APP_GUARD, useClass: RateLimitGuard },
     { provide: APP_GUARD, useClass: ApiGuard },
+    { provide: APP_GUARD, useClass: OrganizationRateLimitGuard },
     { provide: APP_INTERCEPTOR, useClass: EndpointInterceptor },
     { provide: APP_FILTER, useClass: ProblemFilter },
   ],

@@ -121,9 +121,12 @@ export class TestCallController {
     body: testCall,
     response: placed,
     status: 202,
-    // A button somebody can hold down rings a real telephone. Keyed by address, which is
-    // all this can express; the consent record is what bounds *which* phone.
-    rateLimit: { limit: 10, windowMs: 10 * 60_000, by: "ip" },
+    /* A button somebody can hold down rings a real telephone, so the bound belongs on the
+       organisation doing the ringing rather than on the desk it is pressed from. Two people in
+       one office should share this budget and two organisations should not, which is the
+       opposite of what keying on an address gives you. The consent record still bounds *which*
+       phone; this bounds how many. R7.4. */
+    rateLimit: { limit: 10, windowMs: 10 * 60_000, by: "organization" },
   })
   async place(@FromBody() body: Infer<typeof testCall>): Promise<Infer<typeof placed>> {
     const current = await this.db.tx(async (scope) => {

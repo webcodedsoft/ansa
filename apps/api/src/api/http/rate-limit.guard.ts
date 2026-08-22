@@ -35,6 +35,10 @@ export class RateLimitGuard implements CanActivate {
   private keyFor(request: ApiRequest, rule: RateLimitRule, route: string): string {
     const address = clientAddress(request);
     if (rule.by === "ip") return `${route}|${address}`;
+    /* Unreachable: `canActivate` skips organisation rules, which belong to the guard that runs
+       after authentication. Present so this function stays total rather than falling through
+       to the email branch and silently keying a quota on an address. */
+    if (rule.by === "organization") return `${route}|${address}`;
 
     const body: unknown = request.body;
     const email =
@@ -53,6 +57,9 @@ export class RateLimitGuard implements CanActivate {
 
     const rule = specOf(context.getHandler())?.rateLimit;
     if (rule === undefined) return true;
+    /* Not this guard's. An organisation cannot be known before `ApiGuard` has run, and this
+       one runs first on purpose so that guessing attacks are stopped before scrypt. */
+    if (rule.by === "organization") return true;
 
     const route = `${request.method} ${request.originalUrl.split("?")[0] ?? ""}`;
     const verdict = this.limiter.check(this.keyFor(request, rule, route), rule);

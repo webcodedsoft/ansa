@@ -654,7 +654,11 @@ export class ToolsController {
     capability: "config:write",
     body: draftRun,
     response: sandboxResult,
-    rateLimit: { limit: 30, windowMs: 60_000, by: "ip" },
+    /* Per organisation, not per address. Every run is a real request to somebody's server, and
+       the thing worth bounding is one organisation's total — three colleagues each holding the
+       button down is the same load on the same endpoint, and three addresses under one office
+       NAT was never the unit anybody meant. R7.4. */
+    rateLimit: { limit: 30, windowMs: 60_000, by: "organization" },
   })
   async try(@FromBody() body: Infer<typeof draftRun>): Promise<Infer<typeof sandboxResult>> {
     const args = toArguments(body.argumentsJson);
@@ -716,9 +720,9 @@ export class ToolsController {
     capability: "config:write",
     body: sampleRequest,
     response: sampleResponse,
-    // A real outbound request to somebody else's server, from a button. The brake is on the
-    // held-down button rather than on a quota, same as the sandbox.
-    rateLimit: { limit: 30, windowMs: 60_000, by: "ip" },
+    // A real outbound request to somebody else's server, from a button. Per organisation, for
+    // the reason the sandbox is: the load lands on one endpoint however many people press it.
+    rateLimit: { limit: 30, windowMs: 60_000, by: "organization" },
   })
   async sample(@FromBody() body: Infer<typeof sampleRequest>): Promise<Infer<typeof sampleResponse>> {
     const stored = await this.db.tx(async (scope) => {
@@ -764,10 +768,10 @@ export class ToolsController {
     params: toolPath,
     body: sandboxRun,
     response: sandboxResult,
-    // Every run is a real request to the organisation's endpoint on a three-second budget.
-    // Keyed by address rather than by organisation, which is all `rateLimit` can express;
-    // it is a brake on a held-down button, not a quota.
-    rateLimit: { limit: 30, windowMs: 60_000, by: "ip" },
+    /* Every run is a real request to the organisation's endpoint on a three-second budget, and
+       it is keyed by organisation now — this comment used to say "which is all `rateLimit` can
+       express", and that stopped being true when the organisation mode was added. */
+    rateLimit: { limit: 30, windowMs: 60_000, by: "organization" },
   })
   async test(
     @FromPath() path: Infer<typeof toolPath>,

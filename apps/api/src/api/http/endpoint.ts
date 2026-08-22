@@ -23,8 +23,19 @@ export interface RateLimitRule {
    * `ip` alone is right for an endpoint anyone may call. `ip+email` additionally caps
    * attempts against a single account, so one address behind a shared NAT cannot be
    * brute-forced by exhausting nobody's quota but their own.
+   *
+   * `organization` is a different kind of limit and runs at a different time. The other two
+   * are anti-abuse: they guard endpoints anybody can reach and are enforced *before*
+   * authentication, so a guessing attack cannot make the process spend scrypt. An
+   * organisation's quota is about capacity rather than attack — a signed-in organisation
+   * calling a vendor on a loop — and cannot be applied before it is known who is calling. It
+   * is enforced by a second guard after `ApiGuard` (R7.4).
+   *
+   * Which means a route that needs both declares `organization` and gets exactly that. There
+   * is no combined mode, because the two limits protect different things and sharing one
+   * window would let a busy organisation exhaust the bucket that exists to stop guessing.
    */
-  readonly by: "ip" | "ip+email";
+  readonly by: "ip" | "ip+email" | "organization";
 }
 
 export interface EndpointSpec {
