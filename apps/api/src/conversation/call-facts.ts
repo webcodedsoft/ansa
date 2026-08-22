@@ -1,5 +1,4 @@
-import type { CallId, OrganizationId } from "@ansa/shared";
-import type { CallDirection } from "@ansa/telephony";
+import type { CallDirection, CallId, OrganizationId } from "@ansa/shared";
 
 /**
  * What the agent knows about this call, and how well it knows it.

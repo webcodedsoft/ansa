@@ -3124,14 +3124,33 @@ The brief asks for ~20 across five tags with the same behaviour.
         because it answers confidently for the countries it has and silently wrongly for
         the ones it does not.
 
-- [ ] **Payment tools on outbound calls.** The brief asks for payment tools to be
-      uncallable on an outbound call regardless of configuration. There is no payment
-      category in the registry — tools carry a risk tier, not a kind — so the faithful
-      version of this rule is broader than the brief's wording: nothing that changes an
-      account should fire on a call the recipient did not initiate and cannot be verified
-      on. That means blocking the `write` tier outright when `direction` is outbound,
-      enforced in the dispatcher beside the existing tier check. It needs `direction`
-      threaded into `ToolCall`, which is why it is not in the commit above.
+- [x] **Payment tools on outbound calls.** Done, and wider than the brief asks. There is no
+      payment category in the registry — tools carry a risk tier, not a kind — so the
+      faithful rule is that nothing changing an account fires on a call the recipient did not
+      make and cannot be verified on. The `write` tier is refused outright when `direction`
+      is outbound, in the dispatcher, beside the existing tier check.
+      - `direction` is required on `ToolCall`, not optional. An optional one defaults to
+        inbound, and the default is the permissive answer — a call site that forgot it would
+        silently buy back the permission the refusal removes.
+      - Above the identity gate, deliberately. That gate's remedy is to ask the caller for an
+        identifying detail, and asking an outbound recipient for one is precisely what the
+        outbound prompt prohibits. Below it, the refusal would arrive as "let me take that
+        detail from you", which is the scam script.
+      - Above the confirmation branch, so no confirmation id and no spoken yes reaches it. A
+        recipient's agreement is worth less here than usual, not more: they cannot verify who
+        they are agreeing with.
+      - The speech sends them to the number on the website. Never a transfer — handing an
+        unverified recipient to somebody who can act moves the problem rather than refusing
+        it, and keeps them on a call they did not make.
+      - `read` is untouched, and `irreversible` still transfers. Both asserted, so the rule
+        cannot quietly widen.
+      - `CallDirection` moved from `@ansa/telephony` to `@ansa/shared`. It stopped being a
+        telephony detail once the dispatcher had to branch on it, and `packages/tools` must
+        not depend on a carrier package to tell two strings apart.
+      - The sandbox passes `"inbound"`, which is a fiction and is commented as one. There is
+        no recipient and the operator is the organisation itself; saying "outbound" to be
+        cautious would make every write tool untestable from the console and move the first
+        encounter with the real refusal onto a real call.
 - [x] **Phase 8a — the output guard**. The half of Phase 8 that was missing entirely, and
       the one the brief is right to call the point: assume the prompt will be violated.
       - **Blocks one thing only.** A claim to have already done something — refunded,

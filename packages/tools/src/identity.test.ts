@@ -64,7 +64,7 @@ const setup = (identity: IdentityGate | undefined, definition: ToolDefinition = 
 };
 
 const run = (dispatcher: ReturnType<typeof setup>["dispatcher"], reference: unknown) =>
-  dispatcher.dispatch({ organizationId: ORGANIZATION, callId: CALL, name: "account_lookup", args: { reference } });
+  dispatcher.dispatch({ organizationId: ORGANIZATION, callId: CALL, direction: "inbound" as const, name: "account_lookup", args: { reference } });
 
 describe("a tool that identifies a person", () => {
   /** Every one of these is a value the caller never agreed to. */

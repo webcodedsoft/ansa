@@ -8,12 +8,13 @@ import {
   TELEPHONY_AUDIO,
   type AudioChunk,
   type AudioFormat,
+  type CallDirection,
   type CallId,
   type HandoffDestination,
   type Logger,
   type OrganizationId,
 } from "@ansa/shared";
-import type { CallDirection, CallMediaStream, TelephonyProvider } from "@ansa/telephony";
+import type { CallMediaStream, TelephonyProvider } from "@ansa/telephony";
 import type { LlmProvider } from "@ansa/llm";
 import {
   readCallerHistory,

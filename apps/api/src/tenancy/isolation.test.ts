@@ -461,12 +461,14 @@ describe("the tool registry is per call and per organisation", () => {
     const stolen = await dispatcher.dispatch({
       organizationId: asOrganizationId(ORGANIZATION_B),
       callId: asCallId("CA-isolation"),
+      direction: "inbound",
       name: "check_endorsement",
       args: { reference: "X" },
     });
     const absent = await dispatcher.dispatch({
       organizationId: asOrganizationId(ORGANIZATION_B),
       callId: asCallId("CA-isolation"),
+      direction: "inbound",
       name: "no_such_tool_at_all",
       args: {},
     });

@@ -187,6 +187,7 @@ describe("when the organization's endpoint misbehaves", () => {
     const outcome = await dispatcher.dispatch({
       organizationId: ORGANIZATION,
       callId: CALL,
+      direction: "inbound" as const,
       name: "order_status",
       args: { reference: "QT-1" },
     });
@@ -202,14 +203,14 @@ describe("when the organization's endpoint misbehaves", () => {
   it("refuses a response that is not JSON rather than reading markup aloud", async () => {
     const { dispatcher } = dispatcherFor("/html", "partner", withCredential);
     expect(
-      await dispatcher.dispatch({ organizationId: ORGANIZATION, callId: CALL, name: "order_status", args: {} }),
+      await dispatcher.dispatch({ organizationId: ORGANIZATION, callId: CALL, direction: "inbound" as const, name: "order_status", args: {} }),
     ).toMatchObject({ kind: "failed", reason: "adapter-error" });
   });
 
   it("will not fall back to an unauthenticated request when the credential is missing", async () => {
     const { dispatcher } = dispatcherFor("/anonymous", "partner", new Map());
     expect(
-      await dispatcher.dispatch({ organizationId: ORGANIZATION, callId: CALL, name: "order_status", args: {} }),
+      await dispatcher.dispatch({ organizationId: ORGANIZATION, callId: CALL, direction: "inbound" as const, name: "order_status", args: {} }),
     ).toMatchObject({ kind: "failed", reason: "adapter-error" });
   });
 
@@ -218,6 +219,7 @@ describe("when the organization's endpoint misbehaves", () => {
     await dispatcher.dispatch({
       organizationId: ORGANIZATION,
       callId: CALL,
+      direction: "inbound" as const,
       name: "order_status",
       args: { reference: "ZR/88/AA" },
     });
@@ -241,6 +243,7 @@ describe("a URL with a placeholder", () => {
     return dispatcher.dispatch({
       organizationId: ORGANIZATION,
       callId: CALL,
+      direction: "inbound" as const,
       name: "order_status",
       args,
     });
@@ -253,6 +256,7 @@ describe("a URL with a placeholder", () => {
     const outcome = await dispatcher.dispatch({
       organizationId: ORGANIZATION,
       callId: CALL,
+      direction: "inbound" as const,
       name: "order_status",
       args: { orderId: "QT-1" },
     });
@@ -270,6 +274,7 @@ describe("a URL with a placeholder", () => {
     const outcome = await dispatcher.dispatch({
       organizationId: ORGANIZATION,
       callId: CALL,
+      direction: "inbound" as const,
       name: "order_status",
       args: { orderId: "../../admin" },
     });
@@ -290,6 +295,7 @@ describe("a URL with a placeholder", () => {
     const outcome = await dispatcher.dispatch({
       organizationId: ORGANIZATION,
       callId: CALL,
+      direction: "inbound" as const,
       name: "order_status",
       args: { orderId: "QT-1" },
     });
@@ -347,6 +353,7 @@ describe("a URL with a placeholder", () => {
       const outcome = await dispatcher.dispatch({
         organizationId: ORGANIZATION,
         callId: CALL,
+        direction: "inbound" as const,
         name: "order_status",
         args: { orderId: climb },
       });
@@ -389,6 +396,7 @@ describe("the identity gate and a URL placeholder", () => {
     const outcome = await dispatcher.dispatch({
       organizationId: ORGANIZATION,
       callId: CALL,
+      direction: "inbound" as const,
       name: "order_status",
       args: { orderId: "QT-1" },
     });
@@ -407,6 +415,7 @@ describe("the identity gate and a URL placeholder", () => {
     const outcome = await dispatcher.dispatch({
       organizationId: ORGANIZATION,
       callId: CALL,
+      direction: "inbound" as const,
       name: "order_status",
       args: { orderId: "zr 88 aa" },
     });
@@ -425,6 +434,7 @@ describe("static headers on the way out", () => {
     const outcome = await dispatcher.dispatch({
       organizationId: ORGANIZATION,
       callId: CALL,
+      direction: "inbound" as const,
       name: "order_status",
       args: {},
     });
@@ -439,6 +449,7 @@ describe("static headers on the way out", () => {
     const outcome = await dispatcher.dispatch({
       organizationId: ORGANIZATION,
       callId: CALL,
+      direction: "inbound" as const,
       name: "order_status",
       args: {},
     });
@@ -463,6 +474,7 @@ describe("static headers on the way out", () => {
     const outcome = await dispatcher.dispatch({
       organizationId: ORGANIZATION,
       callId: CALL,
+      direction: "inbound" as const,
       name: "order_status",
       args: { reference: "QT-1" },
     });
@@ -487,6 +499,7 @@ describe("static headers on the way out", () => {
     const outcome = await dispatcher.dispatch({
       organizationId: ORGANIZATION,
       callId: CALL,
+      direction: "inbound" as const,
       name: "order_status",
       args: {},
     });
@@ -515,6 +528,7 @@ describe("a redirect off the configured host", () => {
     const outcome = await dispatcher.dispatch({
       organizationId: ORGANIZATION,
       callId: CALL,
+      direction: "inbound" as const,
       name: "order_status",
       args: {},
     });
@@ -533,6 +547,7 @@ describe("a redirect off the configured host", () => {
     const outcome = await dispatcher.dispatch({
       organizationId: ORGANIZATION,
       callId: CALL,
+      direction: "inbound" as const,
       name: "order_status",
       args: {},
     });

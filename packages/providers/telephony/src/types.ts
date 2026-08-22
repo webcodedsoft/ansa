@@ -1,4 +1,4 @@
-import type { AudioChunk, AudioFormat, CallId } from "@ansa/shared";
+import type { AudioChunk, AudioFormat, CallDirection, CallId } from "@ansa/shared";
 
 /**
  * An inbound call as the platform sees it. Carrier webhook payloads are parsed into
@@ -15,14 +15,6 @@ export interface InboundCall {
   readonly caller: string | null;
 }
 
-/**
- * Which way the call went.
- *
- * Present because the two lifecycles genuinely differ — an inbound call is answered by
- * definition, an outbound one can ring out, hit voicemail, or be rejected before any
- * audio exists. Not licence to enumerate further call kinds nobody has asked for.
- */
-export type CallDirection = "inbound" | "outbound";
 
 /** A call we are asking the carrier to place. */
 export interface PlaceCallRequest {

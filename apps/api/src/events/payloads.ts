@@ -1,4 +1,4 @@
-import type { CallDirection } from "@ansa/telephony";
+import type { CallDirection } from "@ansa/shared";
 import { redactPayload } from "@ansa/tools";
 
 import type { CallFacts, Fact } from "../conversation/call-facts";

@@ -166,6 +166,20 @@ export const runToolInSandbox = async (run: SandboxRun): Promise<SandboxResult |
   const outcome = await dispatcher.dispatch({
     organizationId: run.owner,
     callId: sandboxCallId(),
+    /*
+     * Inbound, and it is a fiction — there is no call here at all.
+     *
+     * The dispatcher refuses `write` tools on outbound calls because an outbound recipient
+     * cannot establish who they are. Neither half of that applies to a sandbox run: there is
+     * no recipient, and the person triggering it is the organisation itself, already
+     * authenticated by their session and acting on their own tools.
+     *
+     * Saying "outbound" to be cautious would be the worse answer, not the safer one. It
+     * would make every write tool untestable from the console — the operator would see a
+     * refusal written for a customer rather than their tool's behaviour — and the first
+     * time anybody met the real refusal would be on a real call to a real person.
+     */
+    direction: "inbound",
     name: run.name,
     args: run.args,
   });

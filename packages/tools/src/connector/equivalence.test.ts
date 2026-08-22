@@ -380,10 +380,10 @@ const bothRoutes = async (
   confirm?: (outcome: DispatchOutcome) => string | undefined,
 ): Promise<{ http: DispatchOutcome; mcp: DispatchOutcome }> => {
   const run = async (organizationId: OrganizationId): Promise<DispatchOutcome> => {
-    const first = await dispatcher.dispatch({ organizationId, callId: CALL, name, args });
+    const first = await dispatcher.dispatch({ organizationId, callId: CALL, direction: "inbound", name, args });
     const confirmationId = confirm?.(first);
     if (confirmationId === undefined) return first;
-    return dispatcher.dispatch({ organizationId, callId: CALL, name, args, confirmationId });
+    return dispatcher.dispatch({ organizationId, callId: CALL, direction: "inbound", name, args, confirmationId });
   };
   return { http: await run(HTTP_ORGANIZATION), mcp: await run(MCP_ORGANIZATION) };
 };
@@ -445,6 +445,7 @@ describe("the same backend, two routes, one dispatch path", () => {
     const asked = await dispatcher.dispatch({
       organizationId: HTTP_ORGANIZATION,
       callId: CALL,
+      direction: "inbound" as const,
       name: "update_contact",
       args: { reference: "QT-4471", contactNumber: "0805 000 0001" },
     });
@@ -453,6 +454,7 @@ describe("the same backend, two routes, one dispatch path", () => {
     const moved = await dispatcher.dispatch({
       organizationId: HTTP_ORGANIZATION,
       callId: CALL,
+      direction: "inbound" as const,
       name: "update_contact",
       args: { reference: "QT-4471", contactNumber: "0805 000 0002" },
       confirmationId: asked.confirmationId,
@@ -489,7 +491,7 @@ describe("the same backend, two routes, one dispatch path", () => {
     const stranger = asOrganizationId("33333333-3333-4333-8333-333333333333");
     expect(registry.resolve(stranger, "order_status")).toBeNull();
     expect(
-      await dispatcher.dispatch({ organizationId: stranger, callId: CALL, name: "order_status", args: {} }),
+      await dispatcher.dispatch({ organizationId: stranger, callId: CALL, direction: "inbound" as const, name: "order_status", args: {} }),
     ).toMatchObject({ kind: "failed", reason: "unknown-tool" });
   });
 
@@ -509,8 +511,8 @@ describe("the same backend, two routes, one dispatch path", () => {
     });
     backend.slowMs = 400;
     try {
-      const http = await slow.dispatch({ organizationId: HTTP_ORGANIZATION, callId: CALL, name: "order_status", args: { reference: "QT-4471" } });
-      const mcp = await slow.dispatch({ organizationId: MCP_ORGANIZATION, callId: CALL, name: "order_status", args: { reference: "QT-4471" } });
+      const http = await slow.dispatch({ organizationId: HTTP_ORGANIZATION, callId: CALL, direction: "inbound" as const, name: "order_status", args: { reference: "QT-4471" } });
+      const mcp = await slow.dispatch({ organizationId: MCP_ORGANIZATION, callId: CALL, direction: "inbound" as const, name: "order_status", args: { reference: "QT-4471" } });
       expect(http).toMatchObject({ kind: "failed", reason: "timeout" });
       expect(mcp).toMatchObject({ kind: "failed", reason: "timeout" });
       expect(http.speech).toBe(mcp.speech);

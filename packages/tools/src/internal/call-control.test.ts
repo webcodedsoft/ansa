@@ -53,7 +53,7 @@ const setup = (options: Partial<CallControlOptions> = {}) => {
   );
   const dispatcher = createToolDispatcher({ registry, log: silent() });
   const call = (name: string, args: Record<string, unknown> = {}) =>
-    dispatcher.dispatch({ organizationId: ORGANIZATION, callId: CALL, name, args });
+    dispatcher.dispatch({ organizationId: ORGANIZATION, callId: CALL, direction: "inbound", name, args });
 
   return { ended, registry, call };
 };

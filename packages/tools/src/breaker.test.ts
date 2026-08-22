@@ -133,7 +133,7 @@ describe("the breaker in the dispatch path", () => {
   it("stops calling a tool that keeps failing, and says so instead of going quiet", async () => {
     const breaker = createCircuitBreaker({ failureThreshold: 2, openMs: 60_000 });
     const { attempts, heard, dispatcher } = setup({ fails: true, breaker });
-    const call = { organizationId: ORGANIZATION_A, callId: CALL, name: "order_status", args: {} };
+    const call = { organizationId: ORGANIZATION_A, callId: CALL, direction: "inbound" as const, name: "order_status", args: {} };
 
     expect(await dispatcher.dispatch(call)).toMatchObject({ kind: "failed", reason: "adapter-error" });
     expect(await dispatcher.dispatch(call)).toMatchObject({ kind: "failed", reason: "adapter-error" });
@@ -153,13 +153,13 @@ describe("the breaker in the dispatch path", () => {
     const failing = setup({ fails: true, breaker });
     const working = setup({ fails: false, breaker });
 
-    await failing.dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "order_status", args: {} });
+    await failing.dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, direction: "inbound" as const, name: "order_status", args: {} });
     expect(
-      await failing.dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "order_status", args: {} }),
+      await failing.dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, direction: "inbound" as const, name: "order_status", args: {} }),
     ).toMatchObject({ reason: "circuit-open" });
 
     expect(
-      await working.dispatcher.dispatch({ organizationId: ORGANIZATION_B, callId: CALL, name: "order_status", args: {} }),
+      await working.dispatcher.dispatch({ organizationId: ORGANIZATION_B, callId: CALL, direction: "inbound" as const, name: "order_status", args: {} }),
     ).toMatchObject({ kind: "ok" });
   });
 });
@@ -198,6 +198,7 @@ describe("retry", () => {
     const outcome = await dispatcher.dispatch({
       organizationId: ORGANIZATION_A,
       callId: CALL,
+      direction: "inbound" as const,
       name: "order_status",
       args: {},
     });
@@ -224,6 +225,7 @@ describe("retry", () => {
     const asked = await dispatcher.dispatch({
       organizationId: ORGANIZATION_A,
       callId: CALL,
+      direction: "inbound" as const,
       name: "update_contact",
       args: { contactNumber: "0803 000 0000" },
     });
@@ -232,6 +234,7 @@ describe("retry", () => {
     const done = await dispatcher.dispatch({
       organizationId: ORGANIZATION_A,
       callId: CALL,
+      direction: "inbound" as const,
       name: "update_contact",
       args: { contactNumber: "0803 000 0000" },
       confirmationId: asked.confirmationId,
@@ -263,6 +266,7 @@ describe("retry", () => {
     const outcome = await dispatcher.dispatch({
       organizationId: ORGANIZATION_A,
       callId: CALL,
+      direction: "inbound" as const,
       name: "order_status",
       args: {},
     });
@@ -285,7 +289,7 @@ describe("retry", () => {
       log: silentLogger(),
       softTimeoutMs: 20,
       hardTimeoutMs: 3_000,
-    }).dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "order_status", args: {} });
+    }).dispatch({ organizationId: ORGANIZATION_A, callId: CALL, direction: "inbound" as const, name: "order_status", args: {} });
 
     expect(outcome).toMatchObject({ kind: "failed", reason: "timeout" });
     expect(Date.now() - started).toBeLessThan(1_000);

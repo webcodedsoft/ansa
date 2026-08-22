@@ -1,7 +1,7 @@
 import type { LlmProvider } from "@ansa/llm";
 import type { TranscriberSession } from "@ansa/transcriber";
 import type { TurnSession } from "@ansa/turn-detector";
-import type { AudioChunk, BusinessHours, Logger, OrganizationId } from "@ansa/shared";
+import type { AudioChunk, BusinessHours, CallDirection, Logger, OrganizationId } from "@ansa/shared";
 import type { CallMediaStream } from "@ansa/telephony";
 import { durationMs, type SynthesisStream, type TtsProvider } from "@ansa/tts";
 import {
@@ -24,7 +24,6 @@ import {
   type EntityKind,
 } from "./capture";
 import type { CallerHistory } from "@ansa/db";
-import type { CallDirection } from "@ansa/telephony";
 
 import type { CallFactsStore, IdentifierField } from "../conversation/call-facts";
 import type { CollectedField } from "../tenancy/captured-fields";
@@ -2199,6 +2198,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
           dispatcher.dispatch({
             organizationId,
             callId: stream.callId,
+            direction: deps.direction,
             name: call.name,
             args: call.args,
           }),
@@ -2756,6 +2756,11 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         .dispatch({
           organizationId,
           callId: stream.callId,
+          /* Carried on the redemption too, not just the first attempt. The dispatcher
+             refuses a write outbound before it ever looks at a confirmation id, so this is
+             belt and braces — but a redemption that quietly claimed to be inbound would be
+             exactly the hole the refusal exists to close. */
+          direction: deps.direction,
           name: awaiting.name,
           // The same arguments, deliberately. The dispatcher fingerprints them and refuses
           // a confirmation whose arguments moved after the caller heard them.

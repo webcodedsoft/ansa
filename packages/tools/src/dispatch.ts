@@ -121,6 +121,18 @@ const FAILURE_SPEECH: Readonly<Record<FailureReason, string>> = {
   // Not an apology for a fault, because nothing faulted. The caller is being asked for a
   // detail before their record is touched, which is a reasonable thing to hear.
   "unconfirmed-identity": "Before I check that, let me take that detail from you and read it back.",
+  /*
+   * Sends them to the published number, which is the one instruction that is safe to give a
+   * person who cannot tell whether this call is genuine.
+   *
+   * It does not apologise for a fault and it does not offer to take their details instead —
+   * taking details is the thing being refused. It also never suggests a person could do it
+   * on this call, because a transfer keeps somebody on a call they did not make and puts an
+   * unverified recipient in front of somebody who can act. The whole point is that this
+   * change happens somewhere the caller chose to ring.
+   */
+  "outbound-write-refused":
+    "I'm not able to make changes on a call I've placed to you. Please ring us on the number on our website and we'll sort it out there.",
 };
 
 const TRANSFER_SPEECH =
@@ -321,6 +333,27 @@ export const createToolDispatcher = (options: DispatcherOptions): ToolDispatcher
           args,
         });
         return outcome;
+      }
+
+      /*
+       * We rang them, so nothing may change their account.
+       *
+       * Above the identity gate deliberately. That gate's remedy is to ask the caller for an
+       * identifying detail, and asking an outbound recipient for one is precisely what the
+       * outbound prompt prohibits — a stranger who telephones somebody and asks for a date of
+       * birth is what a scam sounds like. Refusing here means the request dies before
+       * anything can decide the fix is to interrogate them.
+       *
+       * Above the confirmation branch for the reason the irreversible branch is: no
+       * confirmation id, however well formed, and no spoken yes, buys this back. The
+       * recipient's yes is worth less than usual here, not more — they cannot verify who
+       * they are agreeing with.
+       *
+       * `read` is untouched. Looking something up changes nothing, and an outbound call that
+       * cannot answer a question is useless rather than merely careful.
+       */
+      if (tier === "write" && call.direction === "outbound") {
+        return fail("outbound-write-refused", tier, "write tools do not run on outbound calls");
       }
 
       /**

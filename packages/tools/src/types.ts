@@ -1,4 +1,4 @@
-import type { CallId, OrganizationId } from "@ansa/shared";
+import type { CallDirection, CallId, OrganizationId } from "@ansa/shared";
 
 /**
  * R5.3. The tier is a required field on every registered tool and the only thing the
@@ -109,6 +109,16 @@ export interface ToolCall {
   readonly name: string;
   readonly args: ToolArgs;
   /**
+   * Which way the call went, and required rather than defaulted for the same reason
+   * `organizationId` is.
+   *
+   * An optional direction would default to inbound, and the default is the dangerous one:
+   * the dispatcher refuses account changes on outbound calls, so a call site that forgot to
+   * pass this would silently buy back the permission the refusal exists to remove. A missing
+   * field must not be the permissive answer.
+   */
+  readonly direction: CallDirection;
+  /**
    * Issued by a previous `confirm` outcome and quoted back once the caller has said yes.
    * Absent on a write tool means the write has not been agreed to and will not fire.
    */
@@ -127,7 +137,22 @@ export type FailureReason =
   /** The id is good but the arguments moved since the caller heard them. */
   | "confirmation-mismatch"
   /** The tool identifies a person and the caller has not confirmed who they are. */
-  | "unconfirmed-identity";
+  | "unconfirmed-identity"
+  /**
+   * A `write` tool on an outbound call. Never executes, and no configuration reaches this.
+   *
+   * We rang them. They cannot know who we are, and the outbound prompt forbids asking for
+   * anything that would establish who they are — a stranger who telephones somebody and
+   * asks for a date of birth is what a scam sounds like. So an outbound call cannot verify
+   * its recipient even in principle, and a change made on one is a change made for whoever
+   * happened to pick up the phone.
+   *
+   * Broader than the brief, which asks only for payment tools. Tools carry a risk tier and
+   * not a kind, so there is no payment category to block; and the honest rule is the wider
+   * one anyway, because "change their address" and "cancel their policy" are not safer than
+   * "take a payment" on a call the recipient did not make.
+   */
+  | "outbound-write-refused";
 
 interface OutcomeBase {
   readonly name: string;

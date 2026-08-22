@@ -52,6 +52,7 @@ describe("the worked internal tool set", () => {
     const outcome = await dispatcher.dispatch({
       organizationId: ORGANIZATION_A,
       callId: CALL,
+      direction: "inbound" as const,
       name: "policy_lookup",
       args: { policyNumber: "axa 4421" },
     });
@@ -70,6 +71,7 @@ describe("the worked internal tool set", () => {
     const outcome = await dispatcher.dispatch({
       organizationId: ORGANIZATION_A,
       callId: CALL,
+      direction: "inbound" as const,
       name: "policy_lookup",
       args: { policyNumber: "LEAD9001" },
     });
@@ -85,6 +87,7 @@ describe("the worked internal tool set", () => {
     const outcome = await dispatcher.dispatch({
       organizationId: ORGANIZATION_A,
       callId: CALL,
+      direction: "inbound" as const,
       name: "policy_lookup",
       args: {},
     });
@@ -98,6 +101,7 @@ describe("the worked internal tool set", () => {
     const call = {
       organizationId: ORGANIZATION_A,
       callId: CALL,
+      direction: "inbound" as const,
       name: "update_contact_number",
       args: { policyNumber: "AXA4421", contactNumber: "07061234567" },
     };
@@ -120,6 +124,7 @@ describe("the worked internal tool set", () => {
     const outcome = await dispatcher.dispatch({
       organizationId: ORGANIZATION_A,
       callId: CALL,
+      direction: "inbound" as const,
       name: "cancel_policy",
       args: { policyNumber: "AXA4421" },
     });

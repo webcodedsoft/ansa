@@ -94,6 +94,7 @@ describe("read tier", () => {
     const outcome = await dispatcher.dispatch({
       organizationId: ORGANIZATION_A,
       callId: CALL,
+      direction: "inbound" as const,
       name: "policy_lookup",
       args: { policyNumber: "AXA4421" },
     });
@@ -112,6 +113,7 @@ describe("read tier", () => {
     const outcome = await createToolDispatcher({ registry, log }).dispatch({
       organizationId: ORGANIZATION_A,
       callId: CALL,
+      direction: "inbound" as const,
       name: "policy_lookup",
       args: {},
     });
@@ -139,7 +141,7 @@ describe("the result observer", () => {
       registry: registryWith([LOOKUP], okAdapter),
       log,
       onResult: (_call, result) => seen.push(result),
-    }).dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "policy_lookup", args: {} });
+    }).dispatch({ organizationId: ORGANIZATION_A, callId: CALL, direction: "inbound" as const, name: "policy_lookup", args: {} });
 
     expect(seen).toEqual([{ status: "active" }]);
     expect(outcome).toMatchObject({ kind: "ok", speech: "The policy is active." });
@@ -155,10 +157,11 @@ describe("the result observer", () => {
     });
 
     // Irreversible: transferred. Write with no confirmation: read back, not fired.
-    await dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "cancel_policy", args: {} });
+    await dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, direction: "inbound" as const, name: "cancel_policy", args: {} });
     await dispatcher.dispatch({
       organizationId: ORGANIZATION_A,
       callId: CALL,
+      direction: "inbound" as const,
       name: "update_number",
       args: { phone: "+10000000000" },
     });
@@ -175,7 +178,7 @@ describe("the result observer", () => {
       onResult: () => {
         throw new Error("the observer is broken");
       },
-    }).dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "policy_lookup", args: {} });
+    }).dispatch({ organizationId: ORGANIZATION_A, callId: CALL, direction: "inbound" as const, name: "policy_lookup", args: {} });
 
     expect(outcome).toMatchObject({ kind: "ok", speech: "The policy is active." });
     expect(lines.some((line) => line.message.includes("observer threw"))).toBe(true);
@@ -198,7 +201,7 @@ describe("holding speech", () => {
     };
 
     const dispatcher = createToolDispatcher({ registry: registryWith([LOOKUP], adapter), log, holding });
-    const pending = dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "policy_lookup", args: {} });
+    const pending = dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, direction: "inbound" as const, name: "policy_lookup", args: {} });
 
     gate.resolve({ status: "active" });
     await pending;
@@ -220,7 +223,7 @@ describe("holding speech", () => {
       softTimeoutMs: 1,
       hardTimeoutMs: 2000,
     });
-    const pending = dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "policy_lookup", args: {} });
+    const pending = dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, direction: "inbound" as const, name: "policy_lookup", args: {} });
 
     await new Promise((resolve) => setTimeout(resolve, 20));
     gate.resolve({ status: "active" });
@@ -235,9 +238,9 @@ describe("holding speech", () => {
     const registry = registryWith([LOOKUP, UPDATE, CANCEL], okAdapter);
     const dispatcher = createToolDispatcher({ registry, log, holding });
 
-    await dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "cancel_policy", args: {} });
-    await dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "update_number", args: { contactNumber: "08031112222" } });
-    await dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "no_such_tool", args: {} });
+    await dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, direction: "inbound" as const, name: "cancel_policy", args: {} });
+    await dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, direction: "inbound" as const, name: "update_number", args: { contactNumber: "08031112222" } });
+    await dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, direction: "inbound" as const, name: "no_such_tool", args: {} });
 
     expect(events).toEqual([]);
   });
@@ -256,7 +259,7 @@ describe("write tier", () => {
     return createToolDispatcher({ registry: registryWith([UPDATE, CANCEL], adapter), log, now });
   };
 
-  const call = { organizationId: ORGANIZATION_A, callId: CALL, name: "update_number", args: { contactNumber: "08031112222" } };
+  const call = { organizationId: ORGANIZATION_A, callId: CALL, direction: "inbound" as const, name: "update_number", args: { contactNumber: "08031112222" } };
 
   it("does not fire before the caller has heard the values back", async () => {
     const executed: string[] = [];
@@ -363,10 +366,11 @@ describe("irreversible tier", () => {
     const { log } = recordingLogger();
     const dispatcher = createToolDispatcher({ registry: registryWith([CANCEL], adapter), log });
 
-    const plain = await dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "cancel_policy", args: {} });
+    const plain = await dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, direction: "inbound" as const, name: "cancel_policy", args: {} });
     const forced = await dispatcher.dispatch({
       organizationId: ORGANIZATION_A,
       callId: CALL,
+      direction: "inbound" as const,
       name: "cancel_policy",
       args: {},
       confirmationId: "anything-at-all",
@@ -399,7 +403,7 @@ describe("failure", () => {
       softTimeoutMs: 1,
       hardTimeoutMs: 10,
     });
-    const outcome = await dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "policy_lookup", args: {} });
+    const outcome = await dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, direction: "inbound" as const, name: "policy_lookup", args: {} });
     gate.resolve(null);
 
     expect(outcome).toMatchObject({ kind: "failed", reason: "timeout" });
@@ -419,7 +423,7 @@ describe("failure", () => {
     const outcome = await createToolDispatcher({
       registry: registryWith([LOOKUP], adapter),
       log,
-    }).dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "policy_lookup", args: {} });
+    }).dispatch({ organizationId: ORGANIZATION_A, callId: CALL, direction: "inbound" as const, name: "policy_lookup", args: {} });
 
     expect(outcome).toMatchObject({ kind: "failed", reason: "adapter-error" });
     expect(modelMessage(outcome)).toMatch(/FAILED/);
@@ -449,11 +453,12 @@ describe("one dispatch path", () => {
 
     const dispatcher = createToolDispatcher({ registry, log });
 
-    const viaInternal = await dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "policy_lookup", args: {} });
-    const viaHttp = await dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, name: "organization_lookup", args: {} });
+    const viaInternal = await dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, direction: "inbound" as const, name: "policy_lookup", args: {} });
+    const viaHttp = await dispatcher.dispatch({ organizationId: ORGANIZATION_A, callId: CALL, direction: "inbound" as const, name: "organization_lookup", args: {} });
     const httpWrite = await dispatcher.dispatch({
       organizationId: ORGANIZATION_A,
       callId: CALL,
+      direction: "inbound" as const,
       name: "organization_update",
       args: { contactNumber: "08031112222" },
     });
@@ -474,6 +479,7 @@ describe("one dispatch path", () => {
     const outcome = await createToolDispatcher({ registry, log }).dispatch({
       organizationId: ORGANIZATION_B,
       callId: CALL,
+      direction: "inbound" as const,
       name: "organization_a_secret",
       args: {},
     });
@@ -491,6 +497,7 @@ describe("logging", () => {
     await dispatcher.dispatch({
       organizationId: ORGANIZATION_A,
       callId: CALL,
+      direction: "inbound" as const,
       name: "policy_lookup",
       args: { policyNumber: "AXA4421", apiKey: "sk-live-do-not-log-me" },
     });
@@ -558,5 +565,125 @@ describe("where our words stop and an endpoint's begin", () => {
       reason: "timeout",
     } as never);
     expect(failed).not.toContain("<<<tool-result");
+  });
+});
+
+/**
+ * We rang them, so nothing may change their account.
+ *
+ * The rule is not about payment tools, though that is where the brief starts. Tools carry a
+ * risk tier and not a kind, so there is no payment category to block — and the honest rule
+ * is wider anyway: changing somebody's address or cancelling their policy is not safer than
+ * taking their money on a call they did not make.
+ *
+ * What makes an outbound call different is that it cannot verify who answered, even in
+ * principle. The outbound prompt forbids asking a recipient for a date of birth, an ID, a
+ * BVN or anything else that would establish identity, because a stranger who telephones you
+ * and asks those things is what a scam sounds like. So the recipient is permanently
+ * unverifiable, and a write on that call is a write for whoever picked up the phone.
+ */
+describe("write tier on an outbound call", () => {
+  const outbound = {
+    organizationId: ORGANIZATION_A,
+    callId: CALL,
+    direction: "outbound" as const,
+    name: "update_number",
+    args: { contactNumber: "08031112222" },
+  };
+
+  const dispatcherFor = (executed: string[], definitions: readonly ToolDefinition[] = [UPDATE]) => {
+    const adapter: ToolAdapter = {
+      route: "internal",
+      execute: async (call) => {
+        executed.push(call.name);
+        return { status: "active" };
+      },
+    };
+    const { log } = recordingLogger();
+    return createToolDispatcher({ registry: registryWith(definitions, adapter), log });
+  };
+
+  it("refuses, and the adapter is never reached", async () => {
+    const executed: string[] = [];
+    const outcome = await dispatcherFor(executed).dispatch(outbound);
+
+    expect(outcome).toMatchObject({ kind: "failed", reason: "outbound-write-refused", tier: "write" });
+    expect(executed).toEqual([]);
+  });
+
+  it("does not offer the readback, so nothing is ever agreed to", async () => {
+    /* The refusal has to land instead of the confirmation, not after it. A recipient who is
+       read the change and says yes has agreed to something we were never going to do, and
+       the call ends with them believing their number was updated. */
+    const outcome = await dispatcherFor([]).dispatch(outbound);
+    expect(outcome.kind).not.toBe("confirm");
+    expect(outcome.speech).not.toContain("08031112222");
+  });
+
+  it("cannot be bought back with a confirmation id", async () => {
+    /* Earned honestly on an inbound call and replayed on an outbound one. No spoken yes
+       reaches this — the recipient's agreement is worth less here than usual, not more,
+       because they cannot verify who they are agreeing with. */
+    const executed: string[] = [];
+    const dispatcher = dispatcherFor(executed);
+
+    const asked = await dispatcher.dispatch({ ...outbound, direction: "inbound" });
+    if (asked.kind !== "confirm") throw new Error("expected a confirmation");
+    const replayed = await dispatcher.dispatch({ ...outbound, confirmationId: asked.confirmationId });
+
+    expect(replayed).toMatchObject({ kind: "failed", reason: "outbound-write-refused" });
+    expect(executed).toEqual([]);
+  });
+
+  it("sends them to the published number instead of a colleague", async () => {
+    /* Never a transfer. Handing an unverified recipient to somebody who can act keeps them
+       on a call they did not make and moves the problem rather than refusing it. The one
+       safe instruction for a person who cannot tell whether this call is genuine is to ring
+       the number they can look up themselves. */
+    const outcome = await dispatcherFor([]).dispatch(outbound);
+    expect(outcome.kind).not.toBe("transfer");
+    expect(outcome.speech).toContain("website");
+    expect(outcome.speech).not.toMatch(/colleague|put you through/i);
+  });
+
+  it("refuses before the identity gate, rather than interrogating them", async () => {
+    /* The ordering that matters. The identity gate's remedy is to ask for an identifying
+       detail, and asking an outbound recipient for one is the exact thing the outbound
+       prompt prohibits. If this ran first the refusal would arrive as "let me take that
+       detail from you", which is the scam script. */
+    const gated: ToolDefinition = { ...UPDATE, identifiers: { contactNumber: "policyNumber" } };
+    const outcome = await dispatcherFor([], [gated]).dispatch(outbound);
+
+    expect(outcome).toMatchObject({ reason: "outbound-write-refused" });
+    expect(outcome.speech).not.toContain("read it back");
+  });
+
+  it("leaves reads alone", async () => {
+    /* Looking something up changes nothing, and an outbound agent that cannot answer a
+       question is useless rather than careful. */
+    const executed: string[] = [];
+    const outcome = await dispatcherFor(executed, [LOOKUP]).dispatch({
+      ...outbound,
+      name: "policy_lookup",
+      args: {},
+    });
+
+    expect(outcome.kind).toBe("ok");
+    expect(executed).toEqual(["policy_lookup"]);
+  });
+
+  it("still transfers an irreversible tool, which was already never executing", async () => {
+    /* Unchanged by this rule and asserted so it stays that way. An irreversible tool never
+       runs in either direction, so the outbound refusal has nothing to add — and a person is
+       the right destination when the alternative is an action that cannot be undone. */
+    const executed: string[] = [];
+    const outcome = await dispatcherFor(executed, [CANCEL]).dispatch({
+      ...outbound,
+      name: "cancel_policy",
+      args: {},
+    });
+
+    expect(outcome.kind).toBe("transfer");
+    expect(executed).toEqual([]);
   });
 });

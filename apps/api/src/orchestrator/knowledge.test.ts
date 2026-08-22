@@ -70,7 +70,13 @@ const setup = (
   });
 
   const call = (args: Record<string, unknown> = { query: "do you deliver to Ibadan" }) =>
-    dispatcher.dispatch({ organizationId: ORGANIZATION, callId: CALL, name: KNOWLEDGE_TOOL_NAME, args });
+    dispatcher.dispatch({
+      organizationId: ORGANIZATION,
+      callId: CALL,
+      direction: "inbound",
+      name: KNOWLEDGE_TOOL_NAME,
+      args,
+    });
 
   return { asked, availability, registry, results, call };
 };
