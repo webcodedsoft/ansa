@@ -52,6 +52,15 @@ export interface AppConfig {
    * are uuids, so nothing can catch a mismatch by inspection; the wrong one is refused on
    * the first turn of the first call.
    */
+  /**
+   * Small noises while the caller is still talking. Off unless a deployment says otherwise.
+   *
+   * Their absence is a real part of why calls feel like walkie-talkie exchanges, and the
+   * failure mode when the gate around them is wrong is the agent reacting to its own noise
+   * — the barge-in defect Phase 2 removed, rebuilt by the feature meant to fix the feel of
+   * a call. Off until somebody has heard it on a phone.
+   */
+  readonly backchannel: boolean;
   readonly ttsProvider: string;
   /** Required only when `TTS_PROVIDER=cartesia`, and checked at boot rather than on a call. */
   readonly cartesiaApiKey: string | undefined;
@@ -236,6 +245,7 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
     elevenLabsStyle: optionalNumber(env, "ELEVENLABS_STYLE"),
     elevenLabsSpeakerBoost: optionalFlag(env, "ELEVENLABS_SPEAKER_BOOST"),
     elevenLabsSpeed: optionalNumber(env, "ELEVENLABS_SPEED"),
+    backchannel: optionalFlag(env, "BACKCHANNEL") ?? false,
     ttsProvider: speaker(env),
     cartesiaApiKey: optional(env, "CARTESIA_API_KEY"),
     cartesiaBaseUrl: optional(env, "CARTESIA_BASE_URL"),

@@ -52,6 +52,7 @@ const setup = (
     organizationId?: OrganizationId | null;
     makeTools?: OrchestratorDeps["makeTools"];
     speakingRate?: number;
+    backchannel?: OrchestratorDeps["backchannel"];
     direction?: OrchestratorDeps["direction"];
     businessHours?: OrchestratorDeps["businessHours"];
     recordDoNotCall?: OrchestratorDeps["recordDoNotCall"];
@@ -1473,6 +1474,126 @@ describe("the prompt the call was configured with", () => {
        assertion was about nothing. */
     const system = h.llm.last().request.system;
     expect(system.startsWith(`${DEFAULT_SYSTEM_PROMPT}\n\n${OUTBOUND_LAYER}`)).toBe(true);
+  });
+
+  /**
+   * Small noises while the caller is still talking.
+   *
+   * Off unless a deployment turns it on, because the failure mode when the gate is wrong
+   * is the agent reacting to its own noise — the barge-in defect Phase 2 removed, rebuilt
+   * by the feature meant to make calls feel warmer.
+   */
+  describe("backchannels", () => {
+    const LONG = "so what happened was I ordered the thing last week and it never turned up";
+
+    const listening = (over: Parameters<typeof setup>[0] = {}) => {
+      const h = setup({ ...fillerSetup(), ...over });
+      // Greeting played and heard, so nothing of ours is speaking.
+      h.tts.last().done();
+      h.stream.ackAll();
+      return h;
+    };
+
+    it("says nothing at all unless a deployment turned it on", () => {
+      const h = listening();
+      const before = h.stream.bytesSent();
+
+      h.listen.interim(LONG);
+
+      expect(h.stream.bytesSent()).toBe(before);
+      assertInvariants(h);
+    });
+
+    it("makes a noise once the caller has been going a while", () => {
+      const h = listening({ backchannel: true });
+      const before = h.stream.bytesSent();
+
+      h.listen.interim(LONG);
+
+      expect(h.stream.bytesSent()).toBeGreaterThan(before);
+      assertInvariants(h);
+    });
+
+    it("stays quiet over somebody's first few words", () => {
+      // A noise there is not listening, it is barging in.
+      const h = listening({ backchannel: true });
+      const before = h.stream.bytesSent();
+
+      h.listen.interim("hello I wanted to ask");
+
+      expect(h.stream.bytesSent()).toBe(before);
+    });
+
+    it("does not make one every time a partial arrives", () => {
+      /* Interim transcripts land several times a second. Overdone, this is far worse than
+         silence, so the rate limit is the difference between listening and gibbering. */
+      const h = listening({ backchannel: true });
+      h.listen.interim(LONG);
+      const afterFirst = h.stream.bytesSent();
+
+      h.listen.interim(`${LONG} and I have been waiting since`);
+      h.listen.interim(`${LONG} and I have been waiting since then for it`);
+
+      expect(h.stream.bytesSent()).toBe(afterFirst);
+    });
+
+    it("never makes one over its own sentence", () => {
+      /* Over our own audio this is not a backchannel, it is the agent clashing with
+         itself. The caller's transcript can arrive while the agent is still speaking —
+         the echo guard suppresses the speech start, not the transcript behind it. */
+      const h = setup({ ...fillerSetup(), backchannel: true });
+      // The greeting is still playing: nothing acked, so the agent has a turn.
+      const before = h.stream.bytesSent();
+
+      h.listen.interim(LONG);
+
+      expect(h.stream.bytesSent()).toBe(before);
+    });
+
+    it("does not file the caller's turn as starting at its own noise", async () => {
+      /**
+       * The gate, and the whole reason this is safe to switch on.
+       *
+       * The existing echo guard cannot catch this: it is anchored on `sentenceAudioAt`,
+       * which exists only while the agent has a turn, and a backchannel plays precisely
+       * when it does not. Ungated, our "mm-hm" comes back through the handset as a speech
+       * start and stamps the caller's turn there — the same defect the comment on that
+       * guard records, one layer down.
+       *
+       * An earlier version of this asserted no completion was requested, which was true
+       * with the gate removed as well, so it proved nothing.
+       */
+      const turns: { speaker: string; startedOffsetMs: number }[] = [];
+      const h = listening({
+        backchannel: true,
+        recorder: {
+          started: () => undefined,
+          event: () => undefined,
+          transcript: () => undefined,
+          turn: (t: { speaker: string; startedOffsetMs: number }) => turns.push(t),
+          latency: () => undefined,
+          ended: () => undefined,
+        } as unknown as CallRecorder,
+      });
+
+      h.listen.interim(LONG);
+      // Our own noise returning, immediately.
+      h.listen.speechStart(1_000);
+
+      /* Real time, because the gate is wall-clock — our audio physically comes back
+         through the handset, which is a duration and not a stream offset. Firing both
+         starts on the same tick puts them both inside the window, which is what the first
+         version of this test did. The wait has to clear the audio's own length as well as
+         the tail, which is why it is not 150ms. */
+      await new Promise((resolve) => setTimeout(resolve, 1_200));
+
+      // The caller, genuinely, once our noise is long finished.
+      h.listen.speechStart(9_000);
+      h.listen.final("so it never turned up", 11_000);
+
+      const caller = turns.filter((t) => t.speaker === "caller");
+      expect(caller.map((t) => t.startedOffsetMs)).toEqual([9_000]);
+    });
   });
 
   it("says nothing about hours on an ordinary in-hours turn", () => {

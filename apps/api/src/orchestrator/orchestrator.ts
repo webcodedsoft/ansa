@@ -12,7 +12,7 @@ import {
   type ToolRegistry,
 } from "@ansa/tools";
 
-import { createFillerPicker } from "../telephony/filler";
+import { ACKNOWLEDGEMENTS, createFillerPicker } from "../telephony/filler";
 import { classify } from "./action";
 import {
   advance,
@@ -234,6 +234,16 @@ export interface OrchestratorDeps {
    * instructions — one that asks a stranger to confirm their date of birth. That is the
    * single worst thing this codebase can do, so it is not a wire anybody may forget.
    */
+  /**
+   * Whether to make small noises while the caller is still talking.
+   *
+   * Off unless a deployment turns it on, and that default is deliberate rather than
+   * cautious boilerplate. Their absence is a real part of why calls feel like walkie-talkie
+   * exchanges — but the failure mode when the gate below is wrong is the agent reacting to
+   * its own noise, which is the barge-in defect Phase 2 removed, rebuilt by the feature
+   * meant to make calls warmer. It is off until somebody has heard it on a phone.
+   */
+  readonly backchannel?: boolean;
   readonly direction: CallDirection;
   readonly businessHours: BusinessHours | null;
   /**
@@ -389,6 +399,16 @@ interface AgentTurn {
  * dropped call, which is the thing R6.2 exists to prevent.
  */
 const FALSE_INTERRUPTION_MS = 1000;
+
+/**
+ * A noise over somebody's first four words is not listening, it is barging in. Twelve is
+ * roughly where a caller has committed to explaining something rather than answering.
+ */
+const BACKCHANNEL_AFTER_WORDS = 12;
+/** Overdone, this is far worse than silence. One every few seconds at most. */
+const BACKCHANNEL_GAP_MS = 4000;
+/** Our own audio takes a moment to come back through the handset. */
+const BACKCHANNEL_GATE_TAIL_MS = 150;
 
 /**
  * The tools the model is shown, once the policy layer has had its say.
@@ -681,6 +701,8 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   const pickFiller = createFillerPicker();
   /** Same picker, same reason: random, but never the same line twice running. */
   const pickRecovery = createFillerPicker();
+  /** Its own, so a backchannel and a thinking filler do not exhaust each other. */
+  const pickBackchannel = createFillerPicker();
 
   let watchdog: ReturnType<typeof setTimeout> | null = null;
   const cancelWatchdog = (): void => {
@@ -749,6 +771,67 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     // anything it should be held to.
     spokenWindow = `${spokenWindow} ${phrase}`.slice(-400);
     log.debug("played thinking filler", { phrase });
+  };
+
+  /**
+   * Small noises while the caller is still speaking.
+   *
+   * A person listening makes them; their absence is a large part of why an agent feels
+   * like it is taking turns rather than having a conversation. Nothing about them comes
+   * from the model — it only speaks on its own turn — so this is a separate path that
+   * plays a pre-rendered acknowledgement and remembers nothing.
+   *
+   * Three conditions, each earning its place. Only while nothing is being said by us, or
+   * the "noise" is the agent interrupting its own sentence. Only once every few seconds,
+   * because overdone this is far worse than silence. And only once the caller has been
+   * going for a while, because a noise over somebody's first four words is not listening,
+   * it is barging in.
+   */
+  let lastBackchannelAt = 0;
+  /**
+   * Until when a speech start is our own backchannel coming back.
+   *
+   * The existing echo guard cannot cover this: it is anchored on `sentenceAudioAt`, which
+   * only exists while the agent has a turn, and a backchannel plays precisely when it does
+   * not. Without this the turn detector hears our "mm-hm", and the transcriber offers it
+   * back as something the caller said.
+   */
+  let backchannelUntilMs = 0;
+
+  const maybeBackchannel = (text: string): void => {
+    if (deps.backchannel !== true) return;
+    // Only while listening. Over our own sentence this is not a backchannel, it is a clash.
+    if (turn !== null) return;
+
+    const words = text.trim().split(/\s+/).filter((w) => w.length > 0).length;
+    if (words < BACKCHANNEL_AFTER_WORDS) return;
+
+    const at = Date.now();
+    if (at - lastBackchannelAt < BACKCHANNEL_GAP_MS) return;
+
+    const rendered = deps.fillers;
+    if (rendered === undefined || rendered.size === 0) return;
+    const available = ACKNOWLEDGEMENTS.filter((phrase) => rendered.has(phrase));
+    const phrase = pickBackchannel.next(available);
+    if (phrase === null) return;
+    const chunks = rendered.get(phrase);
+    if (chunks === undefined) return;
+
+    let bytes = 0;
+    for (const chunk of chunks) {
+      stream.send(chunk);
+      bytes += chunk.data.length;
+    }
+    lastBackchannelAt = at;
+    /* The gate, and the whole reason this is safe to switch on. Our own audio takes a
+       moment to come back through the handset, so anything the turn detector reports
+       inside it plus a beat is us. */
+    backchannelUntilMs = at + durationMs(bytes, stream.format) + BACKCHANNEL_GATE_TAIL_MS;
+    /* Into the spoken window as well, so the transcript filter recognises the words coming
+       back. Never into bytesSent, never marked, never remembered: the agent has not said
+       anything it can be held to. */
+    spokenWindow = `${spokenWindow} ${phrase}`.slice(-400);
+    log.debug("played a backchannel", { phrase, words });
   };
 
   const armFiller = (): void => {
@@ -1381,6 +1464,16 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   });
 
   deps.listen.turns.onSpeechStart((event) => {
+    /* Our own backchannel returning. Checked before the guard below, which cannot help
+       here: that one is anchored on an agent turn, and a backchannel plays precisely when
+       there is none. Without this the agent reacts to its own "mm-hm", which is the
+       barge-in defect Phase 2 removed, rebuilt by the feature meant to make calls warmer. */
+    if (Date.now() < backchannelUntilMs) {
+      echoSegments.add(event.offsetMs);
+      log.debug("ignored speech start inside the backchannel gate");
+      return;
+    }
+
     const current = turn;
     if (current !== null && current.sentenceAudioAt !== null) {
       const speakingFor = Date.now() - current.sentenceAudioAt;
@@ -2445,6 +2538,11 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   // moved the conversation.
   deps.listen.transcripts.onInterim((transcript) => {
     record.event("stt_partial", { chars: transcript.text.length }, transcript.offsetMs);
+
+    /* Somebody is part-way through explaining something. This is where a person would make
+       a noise, and it is the only place we can: a final transcript arrives when they have
+       already stopped, which is too late to be listening. */
+    maybeBackchannel(transcript.text);
 
     /* Somebody is actually talking, so stop counting down to "nobody said anything".
      *

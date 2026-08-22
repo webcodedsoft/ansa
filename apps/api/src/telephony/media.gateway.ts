@@ -776,6 +776,8 @@ export class MediaGateway implements OnApplicationShutdown {
       fields: settings.capturedFields,
       listen,
       facts,
+      // Off unless the deployment turned it on. See `AppConfig.backchannel`.
+      backchannel: this.config.backchannel,
       /* The same `direction` the recorder is given, so what the agent is told and what the
          call is written down as cannot disagree. Outbound loads a layer of prohibitions
          inbound does not — chiefly that a stranger must never be asked to verify

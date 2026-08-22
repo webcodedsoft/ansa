@@ -2932,12 +2932,20 @@ The brief asks for ~20 across five tags with the same behaviour.
       - The ingress wiring is asserted by scanning the controller's source, the pattern
         `numbers/environment.test.ts` already uses — including that the call is not awaited.
 
-- [ ] **Backchannel production**, split out of 6b. Playing "mm-hm" while the caller is still
-      talking, on interim transcripts, rate-limited to one per four seconds. The brief flags
-      the hazard itself: the turn detector has to be gated for the backchannel's duration
-      plus a beat, or the agent interrupts itself with its own noise — which is the Phase 2
-      defect reintroduced by the feature meant to make calls feel warmer. Worth doing once
-      the barge-in work has been heard on a real call, and not before.
+- [x] **Backchannel production**, and it ships **off**. `BACKCHANNEL=true` turns it on.
+      - Four conditions, each mutation-tested: only while nothing of ours is playing (over
+        our own sentence it is a clash, not a backchannel), only once every four seconds,
+        only after twelve words (a noise over somebody's first four is barging in), and
+        only from the pre-rendered acknowledgements, with their own picker so a backchannel
+        and a thinking filler do not exhaust each other.
+      - **The gate is the reason this is safe to switch on, and the existing echo guard
+        could not have been reused.** That one is anchored on `sentenceAudioAt`, which
+        exists only while the agent has a turn — and a backchannel plays precisely when it
+        does not. Ungated, our own "mm-hm" returns through the handset as a speech start and
+        the caller's turn is filed as beginning there.
+      - Off by default because the failure mode is the Phase 2 defect rebuilt by the feature
+        meant to make calls feel warmer, and nothing here has been heard on a phone.
+
 - [x] **Phase 6c — the sentences the agent says to everybody**. `GET /api/v1/calls/catchphrases`.
       - **Nothing was added to the call path.** Every agent utterance has been recorded as an
         `agent said` event carrying its text since the event log existed, and
