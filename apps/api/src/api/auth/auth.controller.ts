@@ -27,13 +27,38 @@ import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from "./password";
  * saving a round trip on a screen a person visits once a week.
  */
 
-const password = () => text({ minLength: MIN_PASSWORD_LENGTH, maxLength: MAX_PASSWORD_LENGTH, format: "password" });
+/**
+ * A password being *chosen*. The minimum belongs here and only here.
+ */
+const newPassword = () =>
+  text({ minLength: MIN_PASSWORD_LENGTH, maxLength: MAX_PASSWORD_LENGTH, format: "password" });
 
-const credentials = object({ email: email(), password: password() });
+/**
+ * A password being *offered*, which is a different question and must not carry the minimum.
+ *
+ * Enforcing a length on the way in looks like defence and is the opposite of it, three times
+ * over:
+ *
+ * - It locks people out. Anyone whose password is shorter than today's minimum — set before
+ *   the rule, or by any path that ever differed — cannot sign in at all, and the message they
+ *   get reads like a typo hint rather than "your password can never be accepted again".
+ * - It is an oracle. `POST /auth/organisations` promises in its own description to answer an
+ *   empty list for a wrong password and for an address with no account, "and takes the same
+ *   time to do it". A 422 for a short password answers differently and instantly, which tells
+ *   a guesser whether their attempt was even worth making.
+ * - It short-circuits the constant cost. Sign-in hashes before it decides, deliberately; a
+ *   length check in front of that returns without hashing and puts the timing back.
+ *
+ * The maximum stays, and is the half that is genuinely defensive: scrypt will happily chew
+ * through a megabyte of "password" if somebody posts one.
+ */
+const offeredPassword = () => text({ minLength: 1, maxLength: MAX_PASSWORD_LENGTH, format: "password" });
+
+const credentials = object({ email: email(), password: offeredPassword() });
 
 const signIn = object({
   email: email(),
-  password: password(),
+  password: offeredPassword(),
   organisationId: uuid(),
 });
 
@@ -59,7 +84,7 @@ const signUp = object({
   organisationName: text({ minLength: 1, maxLength: 120 }),
   displayName: text({ minLength: 1, maxLength: 200 }),
   email: email(),
-  password: password(),
+  password: newPassword(),
 });
 
 const signedUp = object({

@@ -5774,7 +5774,7 @@
                   "password": {
                     "type": "string",
                     "format": "password",
-                    "minLength": 12,
+                    "minLength": 1,
                     "maxLength": 256
                   }
                 },
@@ -5903,7 +5903,7 @@
                   "password": {
                     "type": "string",
                     "format": "password",
-                    "minLength": 12,
+                    "minLength": 1,
                     "maxLength": 256
                   },
                   "organisationId": {
