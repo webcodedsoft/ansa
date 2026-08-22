@@ -11251,6 +11251,60 @@
             }
           }
         }
+      },
+      "delete": {
+        "operationId": "organization.close",
+        "tags": [
+          "organization"
+        ],
+        "summary": "Close this organisation",
+        "description": "Soft. The organisation stops resolving at ingress, so a call to a number that still routes here is answered by nobody rather than by a closed account's agent, and every session ends immediately. Calls, transcripts and recordings are untouched and keep their own retention windows — closing an account is not a way to make evidence disappear on demand. The numbers stay registered to it; releasing one is an operator's act, because whoever is onboarded onto it next inherits whatever is left behind. There is no undo on this surface.",
+        "x-ansa-capability": "members:write",
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold members:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/organization/hours": {

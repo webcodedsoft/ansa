@@ -2909,6 +2909,36 @@ What to listen for, in order of what is actually in doubt:
       publish form, which would have carried every field along with it, and it redirects to the
       agent list because the page it was pressed on is now about an agent that does not answer.
 
+- [x] **Closing an organisation is reachable (2026-08-22).** `DELETE /organization`, owner-only
+      via `members:write` — an admin configures the agent, an owner decides the account exists.
+      `organizations.deleted_at` has existed since 0032 with nothing able to set it: the string
+      appeared zero times in `apps/api/src` and `apps/web/src`, so four functions written to
+      honour it guarded a state no code path could produce.
+      Closing revokes every session in the same transaction, because a token authenticating
+      against a row every reader now hides is a confusing 500 rather than a clean 401. Calls,
+      transcripts and recordings are untouched and keep their own retention windows — closing
+      an account is not a way to make evidence disappear on demand. Numbers stay registered;
+      releasing one is an operator's act, because whoever is onboarded onto it next inherits
+      whatever is left behind.
+
+- [x] **Invitation email (2026-08-22).** `apps/api/src/mail/mailer.ts`, wired into
+      `POST /invitations`. Mailjet and Mailgun, chosen by `MAIL_PROVIDER`.
+      - **It uses the one HTTP client.** `transport.ts` says there is no second one in this
+        product because `fetch` cannot pin the address a connection goes to. A vendor host is
+        not organisation-supplied so the SSRF argument is weaker, but weaker is a poor reason
+        to add the client the codebase went out of its way not to have. The egress guard gets
+        an allowlist of exactly the mail host.
+      - **A missing key is not an error.** No provider means the message is logged as not sent
+        and the caller carries on. The token therefore stays in the API response: removing it,
+        which the README's end state calls for, would make a working flow depend on a
+        credential a deployment may not have.
+      - **The body is never logged**, only recipient and subject. The body carries the
+        redemption token, and hashing tokens in the database would be undone by printing one.
+      - **Neither account works yet.** Mailjet answers "your account has been temporarily
+        blocked"; Mailgun answers "please activate your Mailgun account". Both were verified
+        against the live API. Both providers are implemented so whichever is unblocked first
+        works with no code change. **Delivery is unproven.**
+
 - [ ] **Twilio numbers under the platform's own account, as part of a subscription.** Deferred
       by the user on 2026-08-22. Assignment to an agent needs no change when it lands — the
       picker reads `organization_numbers` and does not care how a row got there — and neither

@@ -3,6 +3,7 @@ import { createLogger, type Logger } from "@ansa/shared";
 import { Module, type MiddlewareConsumer, type NestModule } from "@nestjs/common";
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 
+import { createMailer, MAILER, type Mailer } from "../mail/mailer";
 import { ApiGuard } from "./auth/api.guard";
 import { AgentsController } from "./agents/agents.controller";
 import { AuthController } from "./auth/auth.controller";
@@ -104,6 +105,17 @@ export const API_CONTROLLERS = [
     OrganizationGateway,
     OrganizationContext,
     AuthService,
+
+    /* One mailer for the process. It resolves its provider from the environment at
+       construction, so a deployment with no keys gets the logging one and every send reports
+       "not sent" rather than throwing — see `mailer.ts` for why that is the right default. */
+    {
+      provide: MAILER,
+      /* Its own logger, named for what it is. There is no LOGGER token in this module — the
+         call path has one, and reaching across for it would couple the dashboard's mail to
+         telephony's wiring for nothing. */
+      useFactory: (): Mailer => createMailer(createLogger({ component: "api-mail" })),
+    },
 
     /* Order matters, and only for the guards. The anti-abuse limiter runs first so that the
        endpoints it protects are throttled before they spend a hundred milliseconds of scrypt;

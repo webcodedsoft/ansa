@@ -1602,6 +1602,13 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       }>(options, "PATCH", `/api/v1/organization`, input),
 
     /**
+     * Close this organisation
+     * Soft. The organisation stops resolving at ingress, so a call to a number that still routes here is answered by nobody rather than by a closed account's agent, and every session ends immediately. Calls, transcripts and recordings are untouched and keep their own retention windows — closing an account is not a way to make evidence disappear on demand. The numbers stay registered to it; releasing one is an operator's act, because whoever is onboarded onto it next inherits whatever is left behind. There is no undo on this surface.
+     */
+    close: () =>
+      send<void>(options, "DELETE", `/api/v1/organization`, {}),
+
+    /**
      * When this organisation counts as open
      * Shared by every agent this organisation runs, and applied immediately — there is no version to publish because hours have never been part of one. Send `businessHours: null` for a line that is always open; the three fields travel together or not at all, because two thirds of a window cannot be reasoned about. A window that wraps past midnight is refused by the database, not tolerated: `22 to 2` is either a night shift or a typo and the row cannot tell which.
      */

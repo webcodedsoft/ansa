@@ -139,6 +139,46 @@ export const renameOrganization = async (
   return readOrganization(scope);
 };
 
+/**
+ * Closing an organisation.
+ *
+ * Soft, and the columns to honour it have existed since migration 0032 with nothing able to
+ * set them: `deleted_at` appeared nowhere in `apps/api` or `apps/web`, so four functions built
+ * to respect it guarded a state no code path could produce. Reaching it needed an operator and
+ * a psql prompt.
+ *
+ * What closing does, and it is worth being exact because the word invites the wrong
+ * assumptions:
+ *
+ * - The organisation stops resolving at ingress. `app.organization_for_number` and
+ *   `app.organization_for_claim_token` both filter on `deleted_at`, so a call to a number that
+ *   still routes here is answered by nobody rather than by a closed account's agent.
+ * - Every session ends. `app.credentials_for_email` and `organisations_for_user` stop
+ *   returning it, so nobody signs back in — which is why the sessions are revoked here in the
+ *   same transaction rather than left to expire.
+ * - **The calls are untouched, deliberately.** Transcripts, recordings and the event log stay
+ *   exactly as long as their retention windows say. Closing an account is not a way to make
+ *   evidence disappear on demand, and the two clocks are separate on purpose.
+ * - The numbers stay registered. `organization_numbers` still holds them so the carrier's
+ *   record and ours agree; releasing one is an operator's act, because whoever is onboarded
+ *   onto it next inherits whatever is left behind.
+ */
+export const closeOrganization = async (scope: OrganizationScope): Promise<boolean> => {
+  const closed = await scope.mutate<{ id: string }>(
+    "update organizations set deleted_at = now() where deleted_at is null returning id",
+  );
+  if (closed.length === 0) return false;
+
+  /* Sessions last, and inside the same scope. A session outliving its organisation is a token
+     that authenticates against a row every reader now hides, which is a confusing 500 rather
+     than a clean 401. */
+  await scope.mutate(
+    "update sessions set revoked_at = now() where organization_id = $1 and revoked_at is null",
+    [scope.organizationId],
+  );
+  return true;
+};
+
 /** One number this organisation holds, and which of its agents answers it. */
 export interface HeldNumber {
   readonly number: string;

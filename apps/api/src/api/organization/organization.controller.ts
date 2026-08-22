@@ -1,5 +1,10 @@
-import { readOrganization, renameOrganization, setOrganizationHours } from "@ansa/db";
-import { Controller, Get, Inject, NotFoundException, Patch, Put } from "@nestjs/common";
+import {
+  closeOrganization,
+  readOrganization,
+  renameOrganization,
+  setOrganizationHours,
+} from "@ansa/db";
+import { Controller, Delete, Get, Inject, NotFoundException, Patch, Put } from "@nestjs/common";
 
 import { Endpoint } from "../http/endpoint";
 import { apiRoute, FromBody } from "../http/request";
@@ -125,6 +130,31 @@ export class OrganizationController {
     const saved = await this.db.tx((scope) => renameOrganization(scope, body.name));
     if (saved === null) throw new NotFoundException();
     return saved;
+  }
+
+  @Delete()
+  @Endpoint({
+    summary: "Close this organisation",
+    description:
+      "Soft. The organisation stops resolving at ingress, so a call to a number that still " +
+      "routes here is answered by nobody rather than by a closed account's agent, and every " +
+      "session ends immediately. Calls, transcripts and recordings are untouched and keep " +
+      "their own retention windows — closing an account is not a way to make evidence " +
+      "disappear on demand. The numbers stay registered to it; releasing one is an operator's " +
+      "act, because whoever is onboarded onto it next inherits whatever is left behind. There " +
+      "is no undo on this surface.",
+    /* `members:write` is the owner-only capability — see `capability.ts`, where `admin` has
+       `config:write` and not this. Closing the organisation is the most destructive act the
+       API offers and it belongs with "who may be here" rather than with "what the agent
+       says": an admin configures the agent, an owner decides the account exists. */
+    capability: "members:write",
+    status: 204,
+  })
+  async close(): Promise<void> {
+    const closed = await this.db.tx((scope) => closeOrganization(scope));
+    // Already closed, or gone. Both are "there is nothing here to close", which is a 404
+    // rather than an error — the caller's intent is satisfied either way.
+    if (!closed) throw new NotFoundException();
   }
 
   @Put("hours")

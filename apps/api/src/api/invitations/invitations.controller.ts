@@ -13,6 +13,8 @@ import { AuthService, INVITATION_TTL_MS } from "../auth/auth.service";
 import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from "../auth/password";
 import { Caller, type Principal } from "../auth/principal";
 import { mintInvitationToken } from "../auth/tokens";
+import { MAILER, type Mailer } from "../../mail/mailer";
+import { loadApiConfig } from "../api-config";
 import { Endpoint } from "../http/endpoint";
 import { pageQuery, pageResponse, toPageBody, toPageRequest } from "../http/pagination";
 import { apiRoute, FromBody, FromPath, FromQuery } from "../http/request";
@@ -83,6 +85,7 @@ export class InvitationsController {
   constructor(
     @Inject(OrganizationContext) private readonly db: OrganizationContext,
     @Inject(AuthService) private readonly auth: AuthService,
+    @Inject(MAILER) private readonly mailer: Mailer,
   ) {}
 
   /**
@@ -143,6 +146,31 @@ export class InvitationsController {
         now,
       ),
     );
+    /* Sent, and not awaited into the response. An invitation exists the moment the row does;
+       whether a vendor accepted the message is a separate fact, and a caller who watched the
+       API hang on Mailjet — or fail because of it — would be worse off than one who has the
+       link on screen. The console shows that link either way, which is what makes this safe
+       to add before mail has ever been proven.
+
+       The token stays in the response for the same reason. The README's end state is that it
+       moves into the email and out of here; taking it out today would make a working flow
+       depend on a credential a deployment may not have set. */
+    /* `loadApiConfig`, not `AppConfig`. That one demands a carrier token and a speech key and
+       throws at boot without them, which is what lets `ApiModule` boot on its own with nothing
+       but a database — injecting it here took the whole dashboard down. The dashboard's own
+       config answers null when no address is set, and no address means no absolute link worth
+       sending. */
+    const base = loadApiConfig().publicBaseUrl;
+    if (base !== null) {
+      void this.mailer
+        .send({
+          to: created.email,
+          subject: "You have been invited to an organisation on Ansa",
+          text: invitationMessage(`${base}/accept-invitation?token=${minted.token}`),
+        })
+        .catch(() => false);
+    }
+
     return { invitation: created, token: minted.token };
   }
 
@@ -169,3 +197,25 @@ export class InvitationsController {
     if (!revoked) throw new NotFoundException();
   }
 }
+
+/**
+ * What the invitation says.
+ *
+ * Short, plain, and no HTML. It carries a bearer credential in a URL, so it says what the link
+ * is for and that it expires — somebody who receives one unexpectedly should be able to tell
+ * at a glance whether to ignore it, and a message that reads like marketing makes that harder.
+ *
+ * It deliberately does not name the person who sent it or repeat the recipient's role. Both
+ * are knowable from the console after joining, and neither is worth putting in a message that
+ * may be forwarded.
+ */
+const invitationMessage = (link: string): string =>
+  [
+    "You have been invited to join an organisation on Ansa.",
+    "",
+    "Open this link to set a password and join:",
+    link,
+    "",
+    "The link works once and expires in seven days. If you were not expecting this, ignore it —",
+    "nothing happens until somebody opens it.",
+  ].join("\n");
