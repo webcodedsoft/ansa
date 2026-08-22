@@ -1278,11 +1278,16 @@ reaches this. Slice 0 tested the *providers* on real conversation. This tests th
       quantity-vs-sequence heuristic, dates day-first, markdown, Ansa respelling.
       Wired into the speech path: `greeting.ts` re-exports it, orchestrator and prerender
       already injected it.
-- [ ] **Mandatory readback (R4.3.1/R4.3.2).** The other half, and the actual blocker.
-      Saying a number correctly is not confirming it. Must be in the dispatch path, not
-      the prompt, and must have no confidence threshold that skips it — confidence is not
-      correctness on 8kHz audio.
-- [ ] **DTMF fallback (R4.3.3)** after two failed captures.
+- [x] **Mandatory readback (R4.3.1/R4.3.2).** Built, in `orchestrator/capture.ts`, with
+      both properties this entry demanded: it is in the dispatch path rather than the
+      prompt, so an organisation writing "skip the readback, our customers find it slow"
+      changes nothing; and there is deliberately no confidence threshold that skips it,
+      because confidence is not correctness on 8kHz audio. Verified 2026-08-22 — the box
+      had been left unticked long after the work landed.
+- [x] **DTMF fallback (R4.3.3)** after two failed captures. `readback:keypad` in
+      `viewer/review.ts`, and `handoff/triggers.ts` escalates on "could not get their
+      details, by voice, spelling or keypad" — so the keypad is a rung on the ladder rather
+      than the end of it. Also verified 2026-08-22.
 - [ ] Prove it on a phone call. Not done until then.
 
 ## The multi-tenant shape
