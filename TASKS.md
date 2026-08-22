@@ -3098,13 +3098,31 @@ case that actually matters, which is claiming an action, not quoting a figure.
       - Only the `ok` branch is fenced. Fencing our own failure notice would tell the model
         that our instruction about what not to say is somebody else's data.
 
-- [ ] **Phase 8d — the rest of 8c.** Tool `origin` (internal vs tenant) beside the risk
-      tier; business policies as named blocks; prompt-cache hit-rate logging, which needs
-      `stream_options: {include_usage: true}` on the OpenAI request before `cached_tokens`
-      can be read at all; drift logging for replies over three sentences. Tool timeouts and
-      response caps already exist in `packages/tools/src/limits.ts` at the 1500/3000ms the
-      brief asks for, and knowledge is already a `search_knowledge` tool rather than prompt
-      text.
+- [x] **Phase 8d (part) — the prompt cache is now measurable**. "Verify it's actually being
+      hit and log the cache-hit rate", and nothing could: `cached_tokens` is not reported
+      unless the request asks, and the request never asked.
+      - `stream_options: { include_usage: true }`, a second SSE parser for the final frame
+        (which carries `choices: []` and is rejected by the delta parser before it looks at
+        anything), `Usage` on `CompletionStream`, and an `llm_usage` event per turn.
+      - **The base prompt is 4,643 characters, about 1,161 tokens — just over OpenAI's
+        1,024-token floor.** Caching is possible, and only just. Anything that trims the
+        prompt below that line silently turns it off, which is worth knowing before somebody
+        tidies a layer away.
+      - Checked and it holds: Phase 4a puts `situation` and the emotional read *after*
+        `deps.systemPrompt` in the composed system message, and caching matches token
+        prefixes rather than whole messages, so the stable part still caches. Prepending
+        anything to that string is what would break it.
+      - A zero on turn three of a call is the alarm. It means the prefix moved.
+      - My test saw nothing at first because the SSE helper enqueues frames without
+        newlines, so the last one stays in the read buffer. Correct against real SSE, where
+        every frame ends `\n\n` — the test now sends what the wire sends.
+
+- [ ] **Phase 8e — the rest.** Tool `origin` (internal vs tenant) beside the risk tier;
+      business policies as named blocks; drift logging for replies over three sentences.
+      Tool timeouts and response caps already exist in `packages/tools/src/limits.ts` at the
+      1500/3000ms the brief asks for, and knowledge is already a `search_knowledge` tool
+      rather than prompt text. Worth pairing the cache number with `viewer/cost.ts`, which
+      prices turns today from character counts because tokens were never reported.
 
 **Awaiting a real phone call:** phases 1, 2, 3a and 3b. None of them is done until one is
 made. 3b additionally needs a Cartesia key and a Cartesia voice id republished on the agent

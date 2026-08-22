@@ -3,6 +3,7 @@ import type {
   CompletionStream,
   LlmProvider,
   ToolInvocation,
+  Usage,
 } from "../types";
 
 export interface OpenAiLlmOptions {
@@ -30,6 +31,7 @@ interface Emitters {
   readonly done: ((full: string) => void)[];
   readonly toolCall: ((calls: readonly ToolInvocation[]) => void)[];
   readonly error: ((error: Error) => void)[];
+  readonly usage: ((usage: Usage) => void)[];
 }
 
 /**
@@ -113,6 +115,49 @@ const fragmentsFrom = (delta: Record<string, unknown>): readonly ToolCallFragmen
  * Decodes one server-sent-event frame. Returns null for anything that carries neither —
  * keepalives, role announcements, the terminating [DONE].
  */
+/**
+ * The final chunk, which carries what the turn cost.
+ *
+ * A separate parser rather than a branch inside `parseSseDelta`, because the two frames
+ * have nothing in common: this one has `choices: []` and a `usage` object, and the delta
+ * parser rejects it on the empty array before it ever looks. Returns null for every
+ * ordinary frame, which is all of them but one.
+ *
+ * `cached_tokens` is the number worth having. It is absent on vendors and deployments that
+ * do not cache, and absent is nought rather than unknown — a prefix that was not served
+ * from cache was paid for in full, which is what the caller is being told.
+ */
+export const parseSseUsage = (line: string): Usage | null => {
+  if (!line.startsWith("data:")) return null;
+  const payload = line.slice(5).trim();
+  if (payload.length === 0 || payload === "[DONE]") return null;
+
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(payload);
+  } catch {
+    return null;
+  }
+  if (typeof decoded !== "object" || decoded === null) return null;
+
+  const usage = (decoded as { usage?: unknown }).usage;
+  if (typeof usage !== "object" || usage === null) return null;
+
+  const fields = usage as Record<string, unknown>;
+  const details = fields["prompt_tokens_details"];
+  const cached =
+    typeof details === "object" && details !== null
+      ? (details as Record<string, unknown>)["cached_tokens"]
+      : undefined;
+
+  const count = (value: unknown): number => (typeof value === "number" ? value : 0);
+  return {
+    promptTokens: count(fields["prompt_tokens"]),
+    cachedTokens: count(cached),
+    completionTokens: count(fields["completion_tokens"]),
+  };
+};
+
 export const parseSseDelta = (line: string): SseDelta | null => {
   if (!line.startsWith("data:")) return null;
   const payload = line.slice(5).trim();
@@ -155,7 +200,7 @@ export const createOpenAiLlm = (options: OpenAiLlmOptions): LlmProvider => {
     name: "openai",
 
     complete(request: CompletionRequest): CompletionStream {
-      const listeners: Emitters = { delta: [], done: [], toolCall: [], error: [] };
+      const listeners: Emitters = { delta: [], done: [], toolCall: [], error: [], usage: [] };
       const controller = new AbortController();
       let settled = false;
       let cancelled = false;
@@ -165,6 +210,7 @@ export const createOpenAiLlm = (options: OpenAiLlmOptions): LlmProvider => {
         onDone: (l) => listeners.done.push(l),
         onToolCall: (l) => listeners.toolCall.push(l),
         onError: (l) => listeners.error.push(l),
+        onUsage: (l) => listeners.usage.push(l),
         cancel: () => {
           if (settled) return;
           cancelled = true;
@@ -189,6 +235,11 @@ export const createOpenAiLlm = (options: OpenAiLlmOptions): LlmProvider => {
             body: JSON.stringify({
               model,
               stream: true,
+              /* Without this every chunk reports `usage: null` and there is no cache-hit
+                 number to read. The system prompt is resent on every turn, so whether the
+                 vendor is serving that prefix from cache is worth knowing — and it is not
+                 reported unless asked for. */
+              stream_options: { include_usage: true },
               max_tokens: request.maxTokens ?? 120,
               // Offered, never assumed. An empty list is omitted rather than sent: some
               // deployments reject `tools: []`, and a call with no tools registered must
@@ -242,6 +293,13 @@ export const createOpenAiLlm = (options: OpenAiLlmOptions): LlmProvider => {
             buffer = lines.pop() ?? "";
 
             for (const line of lines) {
+              /* Checked first and separately: the usage frame carries `choices: []`, which
+                 the delta parser rejects before reading anything. Not gated on `cancelled`
+                 — a barge-in still costs what it cost, and hiding that would make the
+                 cheapest-looking calls the ones nobody finished. */
+              const spent = parseSseUsage(line);
+              if (spent !== null) for (const l of listeners.usage) l(spent);
+
               const frame = parseSseDelta(line);
               if (frame === null) continue;
 

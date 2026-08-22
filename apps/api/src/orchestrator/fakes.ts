@@ -170,6 +170,8 @@ export interface FakeCompletion {
   finish(): void;
   /** The model asking for tools instead of speaking. Mutually exclusive with finish(). */
   callTools(calls: readonly ToolInvocation[]): void;
+  /** What the vendor said the turn cost. Arrives after the last token, or never. */
+  reportUsage(usage: { promptTokens: number; cachedTokens: number; completionTokens: number }): void;
   fail(message: string): void;
 }
 
@@ -200,6 +202,7 @@ export const fakeLlm = (): FakeLlm => {
       const dones: ((f: string) => void)[] = [];
       const toolCalls: ((c: readonly ToolInvocation[]) => void)[] = [];
       const errors: ((e: Error) => void)[] = [];
+      const usages: ((u: { promptTokens: number; cachedTokens: number; completionTokens: number }) => void)[] = [];
       let full = "";
       const c: FakeCompletion = {
         request,
@@ -221,6 +224,7 @@ export const fakeLlm = (): FakeLlm => {
           if (c.cancelled) return;
           errors.forEach((l) => l(new Error(m)));
         },
+        reportUsage: (usage) => usages.forEach((l) => l(usage)),
       };
       completions.push(c);
       const stream: CompletionStream = {
@@ -228,6 +232,7 @@ export const fakeLlm = (): FakeLlm => {
         onDone: (l) => dones.push(l),
         onToolCall: (l) => toolCalls.push(l),
         onError: (l) => errors.push(l),
+        onUsage: (l) => usages.push(l),
         cancel: () => {
           c.cancelled = true;
         },

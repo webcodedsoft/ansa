@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createOpenAiLlm, parseSseDelta, parseSseLine } from "./openai-llm.provider";
+import { createOpenAiLlm, parseSseDelta, parseSseLine, parseSseUsage } from "./openai-llm.provider";
 
 const sse = (chunks: readonly string[], holdOpen = false): Response =>
   new Response(
@@ -291,5 +291,70 @@ describe("createOpenAiLlm", () => {
       expect(done).not.toHaveBeenCalled();
       expect(errored).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("what the turn cost", () => {
+  /**
+   * The system prompt is a little over a thousand tokens and is resent on every turn of
+   * every call. Whether the vendor serves that prefix from cache is the difference between
+   * paying for it once per call and once per turn, in money and in time-to-first-token —
+   * and it is not reported unless the request asks, so until it asked there was no way to
+   * know whether caching worked at all.
+   */
+  it("asks for usage, or there is no cache-hit number to read", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(sse(['data: {"choices":[{"delta":{"content":"hi"}}]}']));
+    const llm = createOpenAiLlm({ apiKey: "k", fetchImpl: fetchImpl as typeof fetch });
+
+    const stream = llm.complete({ system: "s", messages: [{ role: "user", content: "q" }] });
+    await new Promise<void>((resolve) => stream.onDone(() => resolve()));
+
+    const [, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toMatchObject({
+      stream_options: { include_usage: true },
+    });
+  });
+
+  it("reads the final frame the delta parser throws away", () => {
+    /* The usage frame carries `choices: []`, which `parseSseDelta` rejects before it looks
+       at anything — hence a second parser rather than a branch. */
+    const usage = parseSseUsage(
+      'data: {"choices":[],"usage":{"prompt_tokens":1200,"completion_tokens":30,"prompt_tokens_details":{"cached_tokens":1152}}}',
+    );
+    expect(usage).toEqual({ promptTokens: 1200, cachedTokens: 1152, completionTokens: 30 });
+  });
+
+  it("treats an absent cache count as nothing cached", () => {
+    // Absent is nought rather than unknown: a prefix not served from cache was paid for.
+    const usage = parseSseUsage('data: {"choices":[],"usage":{"prompt_tokens":40,"completion_tokens":5}}');
+    expect(usage?.cachedTokens).toBe(0);
+  });
+
+  it("ignores every ordinary frame", () => {
+    expect(parseSseUsage('data: {"choices":[{"delta":{"content":"hi"}}]}')).toBeNull();
+    expect(parseSseUsage("data: [DONE]")).toBeNull();
+    expect(parseSseUsage(": keep-alive")).toBeNull();
+  });
+
+  it("hands the count to whoever asked", async () => {
+    /* Frames terminated as the wire terminates them. The read loop keeps the trailing
+       partial line back until the rest of it arrives, so a frame with no newline after it
+       is never parsed — which is correct against real SSE, where every frame ends `\n\n`,
+       and is what made the first version of this test see nothing. */
+    const fetchImpl = vi.fn().mockResolvedValue(
+      sse([
+        'data: {"choices":[{"delta":{"content":"hi"}}]}\n\n',
+        'data: {"choices":[],"usage":{"prompt_tokens":1200,"completion_tokens":3,"prompt_tokens_details":{"cached_tokens":1152}}}\n\n',
+        "data: [DONE]\n\n",
+      ]),
+    );
+    const llm = createOpenAiLlm({ apiKey: "k", fetchImpl: fetchImpl as typeof fetch });
+
+    const seen: number[] = [];
+    const stream = llm.complete({ system: "s", messages: [{ role: "user", content: "q" }] });
+    stream.onUsage((u) => seen.push(u.cachedTokens));
+    await new Promise<void>((resolve) => stream.onDone(() => resolve()));
+
+    expect(seen).toEqual([1152]);
   });
 });

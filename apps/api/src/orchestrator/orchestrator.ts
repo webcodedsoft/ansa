@@ -1822,6 +1822,34 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       completion.cancel();
     };
 
+    /**
+     * What the turn cost, once the vendor says so.
+     *
+     * After the last token, so it is on no measured stage and nothing waits for it. The
+     * number that matters is `cachedTokens`: the system prompt is a little over a thousand
+     * tokens and is resent on every turn of every call, and whether the vendor serves that
+     * prefix from cache is the difference between paying for it once per call and once per
+     * turn — in money and in the time-to-first-token the caller sits through.
+     *
+     * A zero here on turn three of a call is the alarm. It means the prefix moved, and the
+     * likeliest cause is something new being prepended to the system prompt rather than
+     * appended after it.
+     */
+    completion.onUsage((usage) => {
+      log.info("llm usage", {
+        seq,
+        promptTokens: usage.promptTokens,
+        cachedTokens: usage.cachedTokens,
+        completionTokens: usage.completionTokens,
+      });
+      record.event("llm_usage", {
+        seq,
+        promptTokens: usage.promptTokens,
+        cachedTokens: usage.cachedTokens,
+        completionTokens: usage.completionTokens,
+      });
+    });
+
     let firstToken = true;
     let sentencesSpoken = 0;
     let wordsSpoken = 0;

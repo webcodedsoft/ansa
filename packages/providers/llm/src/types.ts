@@ -49,6 +49,23 @@ export interface CompletionRequest {
   readonly tools?: readonly ToolSpec[];
 }
 
+/**
+ * What the turn cost, as the vendor counts it.
+ *
+ * `cachedTokens` is the number this exists for. The system prompt is a little over a
+ * thousand tokens and is resent on every turn of every call, so whether the vendor is
+ * serving that prefix from cache is the difference between paying for it once per call and
+ * paying for it once per turn — in money, and in the time-to-first-token the caller sits
+ * through. It is not reported unless the request asks for it, so until something asked,
+ * there was no way to know whether caching was working at all.
+ */
+export interface Usage {
+  readonly promptTokens: number;
+  /** Of `promptTokens`, how many were served from the vendor's cache. */
+  readonly cachedTokens: number;
+  readonly completionTokens: number;
+}
+
 export interface CompletionStream {
   /** Fires per token group. The orchestrator forwards these to TTS as they arrive. */
   onDelta(listener: (text: string) => void): void;
@@ -63,6 +80,14 @@ export interface CompletionStream {
    */
   onToolCall(listener: (calls: readonly ToolInvocation[]) => void): void;
   onError(listener: (error: Error) => void): void;
+  /**
+   * Fires once, after the last token, when the vendor reported what the turn cost.
+   *
+   * May never fire — a cancelled turn has no final chunk, and a vendor that does not report
+   * usage simply does not. Nothing may wait on it, and nothing about the conversation may
+   * depend on it: this is measurement, arriving after the caller has already been answered.
+   */
+  onUsage(listener: (usage: Usage) => void): void;
   /**
    * Barge-in, or a turn that resumed after an eager end-of-turn. Must stop delta
    * delivery immediately: text produced after the caller interrupted describes a reply
