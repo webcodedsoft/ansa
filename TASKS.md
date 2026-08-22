@@ -2790,6 +2790,26 @@ What to listen for, in order of what is actually in doubt:
       and the workspace at `/agents/[agentId]` both publish through `config.publish`, so
       today they would edit whichever agent that function picks. Make them agent-scoped
       before wiring a create form to `POST /agents`.
+
+      **Groundwork done, the routes are not (2026-08-22).** Scoping this work turned up a
+      latent isolation hole and it had to be closed first: `app.agent_config_for_id` is
+      SECURITY DEFINER, filters on `where a.id = agent` and nothing else, returns the
+      organisation's `organization_credentials` in its result, and was granted to `ansa_app`
+      with no TypeScript caller. Making `config.*` agent-scoped means handing a request's
+      agent id to a configuration reader — that reader — so the hole would have opened as a
+      side effect of a change nobody would have called an isolation change. Migration 0050
+      revokes it and adds `app.agent_config_for_agent`, which refuses an agent outside the
+      current scope and answers "absent" rather than "forbidden" so an id is never confirmed.
+      Five adversarial tests in `agent-config-scope.test.ts`, mutation-verified.
+
+      What is left is smaller than it looked. The draft functions — `save_agent_draft`,
+      `stage_agent_draft_selection`, `discard_agent_draft`, `load_agent_draft` — already take
+      an agent id; only the controller throws it away and calls `liveAgentId(scope)` instead.
+      So the remaining work is: an agent-scoped `publish_agent_config`, moving the eleven
+      `config.*` routes under `/agents/:agentId/config/...` (the shape the agents controller
+      already uses for `behaviour`, `tools`, `knowledge` and `fields`), and passing the id
+      through the twelve one-line wrappers in `agents.service.ts` that the console funnels
+      everything through.
 - [x] The agents surface is exercised over HTTP — `apps/api/src/api/agents/agents.test.ts`,
       eight tests against a real database. This entry used to say only `GET /agents` was
       covered; nothing was, across all nine routes.
