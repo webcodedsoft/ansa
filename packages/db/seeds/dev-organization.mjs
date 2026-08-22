@@ -203,7 +203,6 @@ const { rows } = await client.query(
      $4,                    -- p_persona
      $5,                    -- p_instructions
      $6,                    -- p_keyterms
-     8, 17, '{1,2,3,4,5}',  -- business hours: the organisation's, not the agent's
      null, null,            -- p_tool_config, p_event_config
      null, null, null,      -- escalation: falls back to the platform number
      $7,                    -- p_note

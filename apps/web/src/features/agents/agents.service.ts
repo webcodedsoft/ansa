@@ -42,11 +42,21 @@ export const createAgent = async (body: {
   readonly dialledNumber?: string | null;
 }) => (await api()).agents.create({ body });
 
-/* No wrapper for `PATCH /agents/{agentId}`. The behaviour switches were the last thing the
-   console sent it, and they stage now — every other field it accepts is a publish-form field
-   that reaches the agent by being published. The endpoint still exists and still writes those
-   fields live, which is the same hole in a different wall; `TASKS.md` records it. A wrapper
-   sitting here unused is an invitation to reach for it. */
+/**
+ * Move which of this organisation's numbers an agent answers.
+ *
+ * There was no wrapper here, and the note explaining that has stopped being true. It said the
+ * endpoint still wrote publish-form fields live — a hole worth not reaching for — but
+ * `agentEdit` was narrowed to routing alone, so `dialledNumber` is now the only thing it
+ * accepts. Everything an agent *says* is published; which line reaches it is not.
+ *
+ * Applies immediately, like the organisation's hours and for the same reason: routing has
+ * never been part of a configuration version, so there is nothing to stage it into. Null
+ * unroutes the agent, which is a real state — an agent can be written and reviewed before it
+ * is given a line.
+ */
+export const routeAgent = async (agentId: string, dialledNumber: string | null) =>
+  (await api()).agents.update({ path: { agentId }, body: { dialledNumber } });
 
 /**
  * Stage a behaviour switch. Nothing about a live call changes until somebody publishes.

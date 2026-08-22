@@ -1594,39 +1594,6 @@
                           },
                           "maxItems": 100
                         },
-                        "businessHours": {
-                          "type": [
-                            "object",
-                            "null"
-                          ],
-                          "properties": {
-                            "opensAtHour": {
-                              "type": "integer",
-                              "minimum": 0,
-                              "maximum": 23
-                            },
-                            "closesAtHour": {
-                              "type": "integer",
-                              "minimum": 1,
-                              "maximum": 24
-                            },
-                            "openDays": {
-                              "type": "array",
-                              "items": {
-                                "type": "integer",
-                                "minimum": 1,
-                                "maximum": 7
-                              },
-                              "maxItems": 7
-                            }
-                          },
-                          "required": [
-                            "opensAtHour",
-                            "closesAtHour",
-                            "openDays"
-                          ],
-                          "additionalProperties": false
-                        },
                         "escalation": {
                           "type": [
                             "object",
@@ -1668,7 +1635,6 @@
                         "persona",
                         "instructions",
                         "keyterms",
-                        "businessHours",
                         "escalation"
                       ],
                       "additionalProperties": false
@@ -2064,39 +2030,6 @@
                               },
                               "maxItems": 100
                             },
-                            "businessHours": {
-                              "type": [
-                                "object",
-                                "null"
-                              ],
-                              "properties": {
-                                "opensAtHour": {
-                                  "type": "integer",
-                                  "minimum": 0,
-                                  "maximum": 23
-                                },
-                                "closesAtHour": {
-                                  "type": "integer",
-                                  "minimum": 1,
-                                  "maximum": 24
-                                },
-                                "openDays": {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "integer",
-                                    "minimum": 1,
-                                    "maximum": 7
-                                  },
-                                  "maxItems": 7
-                                }
-                              },
-                              "required": [
-                                "opensAtHour",
-                                "closesAtHour",
-                                "openDays"
-                              ],
-                              "additionalProperties": false
-                            },
                             "escalation": {
                               "type": [
                                 "object",
@@ -2138,7 +2071,6 @@
                             "persona",
                             "instructions",
                             "keyterms",
-                            "businessHours",
                             "escalation"
                           ],
                           "additionalProperties": false
@@ -2617,39 +2549,6 @@
                               },
                               "maxItems": 100
                             },
-                            "businessHours": {
-                              "type": [
-                                "object",
-                                "null"
-                              ],
-                              "properties": {
-                                "opensAtHour": {
-                                  "type": "integer",
-                                  "minimum": 0,
-                                  "maximum": 23
-                                },
-                                "closesAtHour": {
-                                  "type": "integer",
-                                  "minimum": 1,
-                                  "maximum": 24
-                                },
-                                "openDays": {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "integer",
-                                    "minimum": 1,
-                                    "maximum": 7
-                                  },
-                                  "maxItems": 7
-                                }
-                              },
-                              "required": [
-                                "opensAtHour",
-                                "closesAtHour",
-                                "openDays"
-                              ],
-                              "additionalProperties": false
-                            },
                             "escalation": {
                               "type": [
                                 "object",
@@ -2691,7 +2590,6 @@
                             "persona",
                             "instructions",
                             "keyterms",
-                            "businessHours",
                             "escalation"
                           ],
                           "additionalProperties": false
@@ -3057,39 +2955,6 @@
                     },
                     "maxItems": 100
                   },
-                  "businessHours": {
-                    "type": [
-                      "object",
-                      "null"
-                    ],
-                    "properties": {
-                      "opensAtHour": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 23
-                      },
-                      "closesAtHour": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 24
-                      },
-                      "openDays": {
-                        "type": "array",
-                        "items": {
-                          "type": "integer",
-                          "minimum": 1,
-                          "maximum": 7
-                        },
-                        "maxItems": 7
-                      }
-                    },
-                    "required": [
-                      "opensAtHour",
-                      "closesAtHour",
-                      "openDays"
-                    ],
-                    "additionalProperties": false
-                  },
                   "escalation": {
                     "type": [
                       "object",
@@ -3131,7 +2996,6 @@
                   "persona",
                   "instructions",
                   "keyterms",
-                  "businessHours",
                   "escalation"
                 ],
                 "additionalProperties": false
@@ -3260,39 +3124,6 @@
                           },
                           "maxItems": 100
                         },
-                        "businessHours": {
-                          "type": [
-                            "object",
-                            "null"
-                          ],
-                          "properties": {
-                            "opensAtHour": {
-                              "type": "integer",
-                              "minimum": 0,
-                              "maximum": 23
-                            },
-                            "closesAtHour": {
-                              "type": "integer",
-                              "minimum": 1,
-                              "maximum": 24
-                            },
-                            "openDays": {
-                              "type": "array",
-                              "items": {
-                                "type": "integer",
-                                "minimum": 1,
-                                "maximum": 7
-                              },
-                              "maxItems": 7
-                            }
-                          },
-                          "required": [
-                            "opensAtHour",
-                            "closesAtHour",
-                            "openDays"
-                          ],
-                          "additionalProperties": false
-                        },
                         "escalation": {
                           "type": [
                             "object",
@@ -3334,7 +3165,6 @@
                         "persona",
                         "instructions",
                         "keyterms",
-                        "businessHours",
                         "escalation"
                       ],
                       "additionalProperties": false
@@ -4095,39 +3925,6 @@
                     },
                     "maxItems": 100
                   },
-                  "businessHours": {
-                    "type": [
-                      "object",
-                      "null"
-                    ],
-                    "properties": {
-                      "opensAtHour": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 23
-                      },
-                      "closesAtHour": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 24
-                      },
-                      "openDays": {
-                        "type": "array",
-                        "items": {
-                          "type": "integer",
-                          "minimum": 1,
-                          "maximum": 7
-                        },
-                        "maxItems": 7
-                      }
-                    },
-                    "required": [
-                      "opensAtHour",
-                      "closesAtHour",
-                      "openDays"
-                    ],
-                    "additionalProperties": false
-                  },
                   "escalation": {
                     "type": [
                       "object",
@@ -4174,7 +3971,6 @@
                   "persona",
                   "instructions",
                   "keyterms",
-                  "businessHours",
                   "escalation",
                   "note"
                 ],
@@ -4323,39 +4119,6 @@
                               },
                               "maxItems": 100
                             },
-                            "businessHours": {
-                              "type": [
-                                "object",
-                                "null"
-                              ],
-                              "properties": {
-                                "opensAtHour": {
-                                  "type": "integer",
-                                  "minimum": 0,
-                                  "maximum": 23
-                                },
-                                "closesAtHour": {
-                                  "type": "integer",
-                                  "minimum": 1,
-                                  "maximum": 24
-                                },
-                                "openDays": {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "integer",
-                                    "minimum": 1,
-                                    "maximum": 7
-                                  },
-                                  "maxItems": 7
-                                }
-                              },
-                              "required": [
-                                "opensAtHour",
-                                "closesAtHour",
-                                "openDays"
-                              ],
-                              "additionalProperties": false
-                            },
                             "escalation": {
                               "type": [
                                 "object",
@@ -4397,7 +4160,6 @@
                             "persona",
                             "instructions",
                             "keyterms",
-                            "businessHours",
                             "escalation"
                           ],
                           "additionalProperties": false
@@ -4681,39 +4443,6 @@
                           },
                           "maxItems": 100
                         },
-                        "businessHours": {
-                          "type": [
-                            "object",
-                            "null"
-                          ],
-                          "properties": {
-                            "opensAtHour": {
-                              "type": "integer",
-                              "minimum": 0,
-                              "maximum": 23
-                            },
-                            "closesAtHour": {
-                              "type": "integer",
-                              "minimum": 1,
-                              "maximum": 24
-                            },
-                            "openDays": {
-                              "type": "array",
-                              "items": {
-                                "type": "integer",
-                                "minimum": 1,
-                                "maximum": 7
-                              },
-                              "maxItems": 7
-                            }
-                          },
-                          "required": [
-                            "opensAtHour",
-                            "closesAtHour",
-                            "openDays"
-                          ],
-                          "additionalProperties": false
-                        },
                         "escalation": {
                           "type": [
                             "object",
@@ -4755,7 +4484,6 @@
                         "persona",
                         "instructions",
                         "keyterms",
-                        "businessHours",
                         "escalation"
                       ],
                       "additionalProperties": false
@@ -4987,39 +4715,6 @@
                           },
                           "maxItems": 100
                         },
-                        "businessHours": {
-                          "type": [
-                            "object",
-                            "null"
-                          ],
-                          "properties": {
-                            "opensAtHour": {
-                              "type": "integer",
-                              "minimum": 0,
-                              "maximum": 23
-                            },
-                            "closesAtHour": {
-                              "type": "integer",
-                              "minimum": 1,
-                              "maximum": 24
-                            },
-                            "openDays": {
-                              "type": "array",
-                              "items": {
-                                "type": "integer",
-                                "minimum": 1,
-                                "maximum": 7
-                              },
-                              "maxItems": 7
-                            }
-                          },
-                          "required": [
-                            "opensAtHour",
-                            "closesAtHour",
-                            "openDays"
-                          ],
-                          "additionalProperties": false
-                        },
                         "escalation": {
                           "type": [
                             "object",
@@ -5061,7 +4756,6 @@
                         "persona",
                         "instructions",
                         "keyterms",
-                        "businessHours",
                         "escalation"
                       ],
                       "additionalProperties": false
@@ -10737,6 +10431,28 @@
                               "operator"
                             ]
                           },
+                          "answeredBy": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "agentId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                              },
+                              "name": {
+                                "type": "string",
+                                "maxLength": 200
+                              }
+                            },
+                            "required": [
+                              "agentId",
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          },
                           "carrierWebhook": {
                             "type": "object",
                             "properties": {
@@ -10785,6 +10501,7 @@
                           "number",
                           "use",
                           "managedBy",
+                          "answeredBy",
                           "carrierWebhook"
                         ],
                         "additionalProperties": false
@@ -11035,6 +10752,39 @@
                       "type": "integer",
                       "minimum": 1
                     },
+                    "businessHours": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "opensAtHour": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 23
+                        },
+                        "closesAtHour": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 24
+                        },
+                        "openDays": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 7
+                          },
+                          "maxItems": 7
+                        }
+                      },
+                      "required": [
+                        "opensAtHour",
+                        "closesAtHour",
+                        "openDays"
+                      ],
+                      "additionalProperties": false
+                    },
                     "consent": {
                       "type": "object",
                       "properties": {
@@ -11081,6 +10831,7 @@
                     "createdAt",
                     "audioRetentionDays",
                     "transcriptRetentionDays",
+                    "businessHours",
                     "consent"
                   ],
                   "additionalProperties": false
@@ -11187,6 +10938,39 @@
                       "type": "integer",
                       "minimum": 1
                     },
+                    "businessHours": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "opensAtHour": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 23
+                        },
+                        "closesAtHour": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 24
+                        },
+                        "openDays": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 7
+                          },
+                          "maxItems": 7
+                        }
+                      },
+                      "required": [
+                        "opensAtHour",
+                        "closesAtHour",
+                        "openDays"
+                      ],
+                      "additionalProperties": false
+                    },
                     "consent": {
                       "type": "object",
                       "properties": {
@@ -11233,6 +11017,234 @@
                     "createdAt",
                     "audioRetentionDays",
                     "transcriptRetentionDays",
+                    "businessHours",
+                    "consent"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/organization/hours": {
+      "put": {
+        "operationId": "organization.setHours",
+        "tags": [
+          "organization"
+        ],
+        "summary": "When this organisation counts as open",
+        "description": "Shared by every agent this organisation runs, and applied immediately — there is no version to publish because hours have never been part of one. Send `businessHours: null` for a line that is always open; the three fields travel together or not at all, because two thirds of a window cannot be reasoned about. A window that wraps past midnight is refused by the database, not tolerated: `22 to 2` is either a night shift or a typo and the row cannot tell which.",
+        "x-ansa-capability": "config:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "businessHours": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "opensAtHour": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 23
+                      },
+                      "closesAtHour": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 24
+                      },
+                      "openDays": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 7
+                        },
+                        "maxItems": 7
+                      }
+                    },
+                    "required": [
+                      "opensAtHour",
+                      "closesAtHour",
+                      "openDays"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "businessHours"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "organizationId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "audioRetentionDays": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "transcriptRetentionDays": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "businessHours": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "opensAtHour": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 23
+                        },
+                        "closesAtHour": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 24
+                        },
+                        "openDays": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 7
+                          },
+                          "maxItems": 7
+                        }
+                      },
+                      "required": [
+                        "opensAtHour",
+                        "closesAtHour",
+                        "openDays"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "consent": {
+                      "type": "object",
+                      "properties": {
+                        "policy": {
+                          "type": "string",
+                          "maxLength": 64
+                        },
+                        "basis": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 500
+                        },
+                        "callingEarliestHour": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 23
+                        },
+                        "callingLatestHour": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 24
+                        }
+                      },
+                      "required": [
+                        "policy",
+                        "basis",
+                        "callingEarliestHour",
+                        "callingLatestHour"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "organizationId",
+                    "name",
+                    "createdAt",
+                    "audioRetentionDays",
+                    "transcriptRetentionDays",
+                    "businessHours",
                     "consent"
                   ],
                   "additionalProperties": false

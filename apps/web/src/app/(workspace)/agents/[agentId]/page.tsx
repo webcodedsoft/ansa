@@ -10,6 +10,7 @@ import {
   readTools,
 } from "@/features/agents/agents.service";
 import { AgentWorkspace } from "@/features/agents/components/agent-workspace";
+import { listNumbers } from "@/features/connect/connect.service";
 import type {
   AgentStats,
   AttentionItem,
@@ -106,7 +107,8 @@ const AgentWorkspacePage = async ({
   const since = new Date(now - WINDOW_DAYS * DAY_MS).toISOString();
   const previousStart = new Date(now - 2 * WINDOW_DAYS * DAY_MS).toISOString();
 
-  const [liveConfiguration, unpublished, tools, knowledge, readiness, versionPage] = await Promise.all([
+  const [liveConfiguration, unpublished, tools, knowledge, readiness, versionPage, numbers] =
+    await Promise.all([
     /* The id from the URL, at last. This page used to read whichever agent the database
        picked and render it under whatever id the reader had navigated to — the same document
        on every agent's page. */
@@ -118,6 +120,9 @@ const AgentWorkspacePage = async ({
     readKnowledge(),
     readinessReport(agentId),
     listVersions(agentId),
+    /* Every number the organisation holds, so the routing picker can show what is free and
+       what another agent already answers. */
+    listNumbers(),
   ]);
 
   /* Counts and signals are decoration relative to the agent itself, and none of them may
@@ -208,6 +213,7 @@ const AgentWorkspacePage = async ({
   return (
     <AgentWorkspace
       agent={agent}
+      held={numbers.items}
       liveConfiguration={liveConfiguration}
       draft={unpublished.draft}
       tools={tools}

@@ -21,7 +21,6 @@ const base: AgentConfigFields = {
   instructions: null,
   policyBlocks: null,
   keyterms: [],
-  businessHours: null,
   escalation: null,
 };
 
@@ -96,33 +95,20 @@ describe("two versions of a configuration", () => {
     expect(diff.fields).toEqual([{ field: "greeting", before: "Hello.", after: "" }]);
   });
 
-  it("descends into business hours rather than reporting an object", () => {
-    const hours = { opensAtHour: 9, closesAtHour: 17, openDays: [1, 2, 3, 4, 5] };
-    const diff = diffConfigurations(
-      changed({ businessHours: hours }),
-      changed({ businessHours: { ...hours, closesAtHour: 18 } }),
-    );
-    expect(diff.fields).toEqual([
-      { field: "businessHours.closesAtHour", before: "17", after: "18" },
-    ]);
-  });
-
-  /**
-   * Turning hours off is three fields clearing, not one shape change. The reader is
-   * answering "why is the agent answering at nine at night", and "businessHours: null" is
-   * one step further from that answer than the hours themselves.
+  /*
+   * The two hours tests that were here are gone with the fields they covered.
+   *
+   * They asserted that a diff descends into `businessHours` rather than reporting an object,
+   * and that turning hours off reads as three fields clearing. Both were true of the shape and
+   * neither was ever reachable: `CONFIG_COLUMNS` has never snapshotted hours, so a version
+   * loaded from `agent_prompt_versions` always had them null on both sides and the rows could
+   * only ever say "unchanged". Migration 0053 took hours out of the configuration document
+   * altogether — they are the organisation's and are set through `PUT /organization/hours`,
+   * which is not versioned and has no diff.
+   *
+   * Deleted rather than skipped. A passing test for a field that cannot appear is worse than
+   * no test: it reads as coverage of the diff and covers nothing.
    */
-  it("reads hours being turned off as every one of their fields clearing", () => {
-    const diff = diffConfigurations(
-      changed({ businessHours: { opensAtHour: 8, closesAtHour: 20, openDays: [1, 7] } }),
-      base,
-    );
-    expect(diff.fields).toEqual([
-      { field: "businessHours.opensAtHour", before: "8", after: null },
-      { field: "businessHours.closesAtHour", before: "20", after: null },
-      { field: "businessHours.openDays", before: "1, 7", after: null },
-    ]);
-  });
 
   it("does the same for escalation, in both directions", () => {
     const escalation = { toNumber: "+10000000001", fromNumber: "+10000000002", ringSeconds: null };

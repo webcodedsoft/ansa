@@ -21,6 +21,7 @@ import {
 } from "./agents.schema";
 import {
   createAgent,
+  routeAgent,
   diffVersions,
   discardDraft,
   saveDraft,
@@ -857,6 +858,40 @@ export const saveKnowledgeUnitsAction = async (
       { sourceId },
       `Saved ${saved.unitCount} piece${saved.unitCount === 1 ? "" : "s"}.`,
     );
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+};
+
+/**
+ * Which number reaches this agent.
+ *
+ * The organisation chooses among the numbers it already holds; it cannot add one. That split
+ * is the point of migration 0019 — `organization_numbers` is written by an operator and
+ * `ansa_app` has SELECT on it and nothing else — because an organisation that could claim a
+ * number would be claiming one somebody else controls at their carrier.
+ *
+ * Empty means unrouted, which is a state rather than a mistake: an agent can be written and
+ * reviewed before it is given a line.
+ */
+export type RoutingState = FormState<{ readonly dialledNumber: string | null }>;
+
+export const setRouting = async (
+  _previous: RoutingState,
+  form: FormData,
+): Promise<RoutingState> => {
+  const agentId = agentFrom(form);
+  if (agentId === null) return failedForm("This form does not say which agent it is for.");
+
+  const raw = form.get("dialledNumber");
+  const dialledNumber = typeof raw === "string" && raw.trim() !== "" ? raw.trim() : null;
+
+  try {
+    await routeAgent(agentId, dialledNumber);
+    /* The whole workspace tree: the agents list shows which number each answers, and the
+       numbers page shows which agent answers each. One write, two screens. */
+    revalidatePath("/", "layout");
+    return succeededForm({ dialledNumber });
   } catch (error) {
     return failedForm(failureMessage(error));
   }

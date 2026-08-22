@@ -1,6 +1,7 @@
-import { liveAgentId, loadOnboardingFacts } from "@ansa/db";
+import { listHeldNumbers } from "@ansa/db";
 import { Controller, Get, Inject } from "@nestjs/common";
 
+import { uuid } from "../schemas";
 import { Endpoint } from "../http/endpoint";
 import { apiRoute } from "../http/request";
 import { choice, flag, list, nullable, object, text, type Infer } from "../http/schema";
@@ -74,16 +75,23 @@ const attachedNumber = object({
   use: choice(["inbound"]),
   /** Who may change the attachment. See the file comment for why it is never the organisation. */
   managedBy: choice(["operator"]),
+  /**
+   * Which agent answers this number, or null when the organisation holds it and nothing does.
+   *
+   * The null is the useful half. A number attached at the carrier that no agent answers rings
+   * nowhere, and it is invisible from every other screen — the agent list shows agents, not
+   * spare numbers.
+   */
+  answeredBy: nullable(object({ agentId: uuid(), name: text({ maxLength: 200 }) })),
   carrierWebhook,
 });
 
 /**
  * Not a keyset page, and not by oversight.
  *
- * A page exists because a list is long and written to constantly, and one number per
- * organisation is neither. `organizations.dialled_number` is a single column; a cursor over it
- * would be a contract promising growth this schema cannot deliver, and it would have to be
- * broken on the day a numbers table arrives anyway.
+ * A page exists because a list is long and written to constantly, and an operator-assigned
+ * number list is neither: it changes when somebody at the carrier changes it, which is rarely
+ * and by hand. A cursor here would be a contract promising growth this table will not deliver.
  */
 const numberList = object({ items: list(attachedNumber) });
 
@@ -130,41 +138,42 @@ export class NumbersController {
     response: numberList,
   })
   async list(): Promise<Infer<typeof numberList>> {
-    /* Organisation-scoped, so it resolves rather than naming an agent — and `liveAgentId`
-       raises on two rather than picking one (migration 0047). Worth saying plainly what this
-       leaves owed: the endpoint describes itself as the organisation's numbers and answers
-       with one agent's, which is the same shape of wrong that `config.*` had before it was
-       made agent-scoped. The real source is `organization_numbers`, and moving it there is a
-       change to what this returns rather than to how it resolves. */
-    const number = await this.db.tx(async (scope) => {
-      const agentId = await liveAgentId(scope);
-      if (agentId === null) return null;
-      const facts = await loadOnboardingFacts(scope, agentId);
-      return facts?.dialledNumber ?? null;
-    });
-    if (number === null) return { items: [] };
+    /* `organization_numbers`, which is what the endpoint's name has always claimed. It used
+       to read one agent's `dialled_number` through the readiness facts — so an organisation
+       holding three numbers saw one, and a number attached at the carrier that no agent
+       answers yet appeared nowhere at all. That last state is the one an operator most needs
+       during onboarding, and it was the one the old query could not express. */
+    const held = await this.db.tx((scope) => listHeldNumbers(scope));
+    if (held.length === 0) return { items: [] };
 
     const environment = loadNumbersEnvironment();
-    const webhook = await probeCarrierWebhook(
-      environment,
-      number,
-      carrierDirectoryFor(environment),
+    const directory = carrierDirectoryFor(environment);
+    /* One probe per number, together. They are independent reads against the carrier and
+       running them in series would put one timeout behind another on a page somebody is
+       watching — the same reason the readiness probes run in parallel. */
+    const webhooks = await Promise.all(
+      held.map((entry) => probeCarrierWebhook(environment, entry.number, directory)),
     );
 
     return {
-      items: [
-        {
-          number: clamp(number, NUMBER_LIMIT),
-          use: "inbound",
-          managedBy: "operator",
+      items: held.map((entry, index) => {
+        const webhook = webhooks[index];
+        return {
+          number: clamp(entry.number, NUMBER_LIMIT),
+          use: "inbound" as const,
+          managedBy: "operator" as const,
+          answeredBy:
+            entry.agentId === null || entry.agentName === null
+              ? null
+              : { agentId: entry.agentId, name: clamp(entry.agentName, 200) },
           carrierWebhook: {
-            state: webhook.state,
-            expected: webhook.expected === null ? null : clamp(webhook.expected, URL_LIMIT),
-            observed: webhook.observed === null ? null : clamp(webhook.observed, URL_LIMIT),
-            reason: webhook.reason,
+            state: webhook?.state ?? "unchecked",
+            expected: webhook?.expected == null ? null : clamp(webhook.expected, URL_LIMIT),
+            observed: webhook?.observed == null ? null : clamp(webhook.observed, URL_LIMIT),
+            reason: webhook?.reason ?? null,
           },
-        },
-      ],
+        };
+      }),
     };
   }
 

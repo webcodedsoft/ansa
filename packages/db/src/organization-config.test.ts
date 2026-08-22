@@ -10,6 +10,7 @@ import {
   loadCurrentAgentConfig,
   loadAgentConfigVersion,
   publishAgentConfig,
+  setOrganizationHours,
   type AgentConfigFields,
 } from "./organization-config";
 import { loadDotEnv } from "./test-env";
@@ -74,7 +75,6 @@ const fields = (overrides: Partial<AgentConfigFields> = {}): AgentConfigFields =
   // Null is "they wrote none", which is every organisation until one does.
   policyBlocks: null,
   keyterms: [],
-  businessHours: null,
   escalation: null,
   ...overrides,
 });
@@ -135,39 +135,23 @@ describe("publishing a version", () => {
         fields({
           greeting: "Good afternoon.",
           keyterms: ["Renewal Notice"],
-          businessHours: { opensAtHour: 9, closesAtHour: 17, openDays: [1, 2, 3, 4, 5] },
           escalation: { toNumber: "+2348000000001", fromNumber: "+2348000000002", ringSeconds: 30 },
         }),
-        "opening hours and a transfer target",
+        "a greeting and a transfer target",
       ),
     );
 
     const current = await withOrganization(ds, A, async (scope) => loadCurrentAgentConfig(scope, await theAgent(scope)));
     expect(current?.version).toBe(published);
     expect(current?.config.greeting).toBe("Good afternoon.");
-    expect(current?.published?.note).toBe("opening hours and a transfer target");
+    expect(current?.published?.note).toBe("a greeting and a transfer target");
 
     const snapshot = await withOrganization(ds, A, async (scope) =>
       loadAgentConfigVersion(scope, await theAgent(scope), published),
     );
-    // Everything the snapshot does carry matches what is live, except the hours.
+    // What the snapshot carries matches what is live.
     expect(snapshot?.config.greeting).toEqual(current?.config.greeting);
     expect(snapshot?.config.keyterms).toEqual(current?.config.keyterms);
-
-    /* Opening hours are the organisation's since migration 0027, and the organisation is
-       not versioned — so an agent's snapshot does not carry them, and says null rather
-       than reporting today's hours as though they were that version's. The live read gets
-       them from the organisation, which is why `current` has them and this does not.
-
-       That is a real loss: a call from three weeks ago can no longer be explained in terms
-       of the hours it ran under. Versioning the organisation is the fix, and it is not
-       built. Asserted here so the gap is a decision on the record rather than a surprise. */
-    expect(snapshot?.config.businessHours).toBeNull();
-    expect(current?.config.businessHours).toEqual({
-      opensAtHour: 9,
-      closesAtHour: 17,
-      openDays: [1, 2, 3, 4, 5],
-    });
     expect(snapshot?.config.escalation).toEqual({
       toNumber: "+2348000000001",
       fromNumber: "+2348000000002",
@@ -360,6 +344,62 @@ describe("policies a screen cannot edit", () => {
     );
 
     expect(await livePolicies()).toEqual([]);
+  });
+});
+
+describe("opening hours belong to the organisation", () => {
+  /**
+   * The bug migration 0053 closed, from both directions.
+   *
+   * Hours are columns on `organizations`, shared by every agent, and a publish used to rewrite
+   * all three from the agent workspace's form. With one agent nobody could see it. With two,
+   * publishing agent B moved agent A's opening times, with no version recording it — and no
+   * version *could* record it, because `CONFIG_COLUMNS` has never snapshotted hours.
+   */
+  const readHours = (): Promise<Record<string, unknown> | undefined> =>
+    withOrganization(ds, A, async (scope) => {
+      const rows = await scope.query<Record<string, unknown>>(
+        `select business_open_hour, business_close_hour, business_days
+           from organizations where id = $1`,
+        [A],
+      );
+      return rows[0];
+    });
+
+  it("is set through its own writer", async () => {
+    await withOrganization(ds, A, (scope) =>
+      setOrganizationHours(scope, { opensAtHour: 8, closesAtHour: 18, openDays: [1, 2, 3] }),
+    );
+    expect(await readHours()).toMatchObject({
+      business_open_hour: 8,
+      business_close_hour: 18,
+      business_days: [1, 2, 3],
+    });
+  });
+
+  it("is not touched by publishing an agent", async () => {
+    /* The assertion that would have failed before 0053, and the whole reason for the change:
+       a publish carrying no hours must leave the ones somebody set. */
+    await withOrganization(ds, A, (scope) =>
+      setOrganizationHours(scope, { opensAtHour: 8, closesAtHour: 18, openDays: [1, 2, 3] }),
+    );
+    await withOrganization(ds, A, async (scope) =>
+      publishAgentConfig(scope, await theAgent(scope), fields({ greeting: "Unrelated." }), "a publish"),
+    );
+    expect(await readHours()).toMatchObject({
+      business_open_hour: 8,
+      business_close_hour: 18,
+      business_days: [1, 2, 3],
+    });
+  });
+
+  it("clears to always-open, which is a setting rather than an absence", async () => {
+    await withOrganization(ds, A, (scope) => setOrganizationHours(scope, null));
+    expect(await readHours()).toMatchObject({
+      business_open_hour: null,
+      business_close_hour: null,
+      business_days: null,
+    });
   });
 });
 

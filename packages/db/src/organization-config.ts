@@ -1,5 +1,3 @@
-import type { BusinessHours } from "@ansa/shared";
-
 import {
   TOTAL_COLUMN,
   pageOrder,
@@ -210,7 +208,7 @@ export const publishConfiguration = async (
      publish into somebody else's organisation — see migration 0052. */
   const rows = await scope.query<{ version: number }>(
     `select app.publish_agent_config_for_agent(
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
      ) as version`,
     [
       agentId,
@@ -221,9 +219,8 @@ export const publishConfiguration = async (
       next.persona,
       next.instructions,
       [...next.keyterms],
-      next.businessOpenHour,
-      next.businessCloseHour,
-      next.businessDays === null ? null : [...next.businessDays],
+      /* No hours. They are the organisation's and a publish no longer writes them — see
+         migration 0053. `setOrganizationHours` is the only writer. */
       asJsonb(next.toolConfig),
       asJsonb(next.eventConfig),
       next.escalationToNumber,
@@ -239,6 +236,41 @@ export const publishConfiguration = async (
   const published = rows[0];
   if (published === undefined) throw new Error("publish_agent_config_for_agent returned no version");
   return Number(published.version);
+};
+
+/**
+ * When the organisation counts as open.
+ *
+ * Its own writer since migration 0053, because a publish used to be the only way to change
+ * these and a publish belongs to one agent. Three columns that travel together or not at all,
+ * matching the CHECK constraint in 0012: null for all three is "always open", which is a
+ * setting rather than an absence.
+ *
+ * A plain UPDATE rather than a SECURITY DEFINER function. `organizations` is writable by
+ * `ansa_app` under RLS, so the organisation check is the policy, and wrapping it would mean
+ * writing that check a second time by hand — which is exactly what 0050 had to unpick.
+ */
+export const setOrganizationHours = async (
+  scope: OrganizationScope,
+  hours: { readonly opensAtHour: number; readonly closesAtHour: number; readonly openDays: readonly number[] } | null,
+): Promise<boolean> => {
+  const changed = await scope.mutate<{ id: string }>(
+    `update organizations
+        set business_open_hour  = $1,
+            business_close_hour = $2,
+            business_days       = $3
+      where deleted_at is null
+      returning id`,
+    [
+      hours?.opensAtHour ?? null,
+      hours?.closesAtHour ?? null,
+      hours === null ? null : [...hours.openDays],
+    ],
+  );
+  /* `mutate`, not `query`: an update with `returning` comes back as `[rows, count]`, so a
+     length check against `query` is always false. The third instance of that mistake in this
+     package is why `renameOrganization` carries the same note. */
+  return changed.length > 0;
 };
 
 /** Where a transfer goes when the agent gives up (R6.5, migration 0015). */
@@ -276,7 +308,9 @@ export interface AgentConfigFields {
    */
   readonly policyBlocks?: unknown;
   readonly keyterms: readonly string[];
-  readonly businessHours: BusinessHours | null;
+  /* No `businessHours`. They are the organisation's, they were never in a version snapshot,
+     and since migration 0053 a publish neither carries nor writes them — `setOrganizationHours`
+     is the only writer. */
   readonly escalation: EscalationConfig | null;
 }
 
@@ -382,14 +416,6 @@ interface ConfigColumns {
  * be reasoned about, and a database whose migration has not been applied returns the row
  * without these columns at all.
  */
-const toBusinessHours = (row: ConfigColumns): BusinessHours | null => {
-  const opens = row.business_open_hour;
-  const closes = row.business_close_hour;
-  const days = row.business_days;
-  if (opens == null || closes == null || days == null) return null;
-  return { opensAtHour: opens, closesAtHour: closes, openDays: days };
-};
-
 /** Both numbers or neither, matching the CHECK constraint in migration 0015. */
 const toEscalation = (row: ConfigColumns): EscalationConfig | null => {
   const to = row.escalation_to_number;
@@ -407,7 +433,6 @@ const toFields = (row: ConfigColumns): AgentConfigFields => ({
   instructions: row.instructions,
   policyBlocks: row.policy_blocks ?? null,
   keyterms: row.keyterms ?? [],
-  businessHours: toBusinessHours(row),
   escalation: toEscalation(row),
 });
 
@@ -649,7 +674,6 @@ export const publishAgentConfig = async (
     throw new Error("no organization row is visible in this scope");
   }
 
-  const hours = fields.businessHours;
   const escalation = fields.escalation;
 
   // Only the columns an organisation sets through the configuration API. `toolConfig` and
@@ -672,9 +696,6 @@ export const publishAgentConfig = async (
          function's own coalesce leaves stored policies alone. */
       policyBlocks: fields.policyBlocks,
       keyterms: fields.keyterms,
-      businessOpenHour: hours?.opensAtHour ?? null,
-      businessCloseHour: hours?.closesAtHour ?? null,
-      businessDays: hours === null || hours === undefined ? null : hours.openDays,
       escalationToNumber: escalation?.toNumber ?? null,
       escalationFromNumber: escalation?.fromNumber ?? null,
       escalationRingSeconds: escalation?.ringSeconds ?? null,

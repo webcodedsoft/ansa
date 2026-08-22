@@ -691,11 +691,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly escalateWhen: readonly (string)[];
       })[] | null;
         readonly keyterms: readonly (string)[];
-        readonly businessHours: {
-        readonly opensAtHour: number;
-        readonly closesAtHour: number;
-        readonly openDays: readonly (number)[];
-      } | null;
         readonly escalation: {
         readonly toNumber: string;
         readonly fromNumber: string;
@@ -759,11 +754,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly escalateWhen: readonly (string)[];
       })[] | null;
         readonly keyterms: readonly (string)[];
-        readonly businessHours: {
-        readonly opensAtHour: number;
-        readonly closesAtHour: number;
-        readonly openDays: readonly (number)[];
-      } | null;
         readonly escalation: {
         readonly toNumber: string;
         readonly fromNumber: string;
@@ -837,11 +827,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly escalateWhen: readonly (string)[];
       })[] | null;
         readonly keyterms: readonly (string)[];
-        readonly businessHours: {
-        readonly opensAtHour: number;
-        readonly closesAtHour: number;
-        readonly openDays: readonly (number)[];
-      } | null;
         readonly escalation: {
         readonly toNumber: string;
         readonly fromNumber: string;
@@ -892,11 +877,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
           readonly escalateWhen: readonly (string)[];
         })[] | null;
           readonly keyterms: readonly (string)[];
-          readonly businessHours: {
-          readonly opensAtHour: number;
-          readonly closesAtHour: number;
-          readonly openDays: readonly (number)[];
-        } | null;
           readonly escalation: {
           readonly toNumber: string;
           readonly fromNumber: string;
@@ -920,11 +900,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly escalateWhen: readonly (string)[];
       })[] | null;
         readonly keyterms: readonly (string)[];
-        readonly businessHours: {
-        readonly opensAtHour: number;
-        readonly closesAtHour: number;
-        readonly openDays: readonly (number)[];
-      } | null;
         readonly escalation: {
         readonly toNumber: string;
         readonly fromNumber: string;
@@ -1029,11 +1004,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
           readonly escalateWhen: readonly (string)[];
         })[] | null;
           readonly keyterms: readonly (string)[];
-          readonly businessHours: {
-          readonly opensAtHour: number;
-          readonly closesAtHour: number;
-          readonly openDays: readonly (number)[];
-        } | null;
           readonly escalation: {
           readonly toNumber: string;
           readonly fromNumber: string;
@@ -1063,11 +1033,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly escalateWhen: readonly (string)[];
       })[] | null;
         readonly keyterms: readonly (string)[];
-        readonly businessHours: {
-        readonly opensAtHour: number;
-        readonly closesAtHour: number;
-        readonly openDays: readonly (number)[];
-      } | null;
         readonly escalation: {
         readonly toNumber: string;
         readonly fromNumber: string;
@@ -1112,11 +1077,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly escalateWhen: readonly (string)[];
       })[] | null;
         readonly keyterms: readonly (string)[];
-        readonly businessHours: {
-        readonly opensAtHour: number;
-        readonly closesAtHour: number;
-        readonly openDays: readonly (number)[];
-      } | null;
         readonly escalation: {
         readonly toNumber: string;
         readonly fromNumber: string;
@@ -1151,11 +1111,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly escalateWhen: readonly (string)[];
       })[] | null;
         readonly keyterms: readonly (string)[];
-        readonly businessHours: {
-        readonly opensAtHour: number;
-        readonly closesAtHour: number;
-        readonly openDays: readonly (number)[];
-      } | null;
         readonly escalation: {
         readonly toNumber: string;
         readonly fromNumber: string;
@@ -1533,6 +1488,10 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly number: string;
         readonly use: "inbound";
         readonly managedBy: "operator";
+        readonly answeredBy: {
+        readonly agentId: string;
+        readonly name: string;
+      } | null;
         readonly carrierWebhook: {
         readonly state: "matches" | "points-elsewhere" | "not-set" | "not-in-carrier-account" | "unchecked";
         readonly expected: string | null;
@@ -1579,6 +1538,11 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly createdAt: string;
         readonly audioRetentionDays: number;
         readonly transcriptRetentionDays: number;
+        readonly businessHours: {
+        readonly opensAtHour: number;
+        readonly closesAtHour: number;
+        readonly openDays: readonly (number)[];
+      } | null;
         readonly consent: {
         readonly policy: string;
         readonly basis: string | null;
@@ -1602,6 +1566,11 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly createdAt: string;
         readonly audioRetentionDays: number;
         readonly transcriptRetentionDays: number;
+        readonly businessHours: {
+        readonly opensAtHour: number;
+        readonly closesAtHour: number;
+        readonly openDays: readonly (number)[];
+      } | null;
         readonly consent: {
         readonly policy: string;
         readonly basis: string | null;
@@ -1609,6 +1578,38 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly callingLatestHour: number | null;
       };
       }>(options, "PATCH", `/api/v1/organization`, input),
+
+    /**
+     * When this organisation counts as open
+     * Shared by every agent this organisation runs, and applied immediately — there is no version to publish because hours have never been part of one. Send `businessHours: null` for a line that is always open; the three fields travel together or not at all, because two thirds of a window cannot be reasoned about. A window that wraps past midnight is refused by the database, not tolerated: `22 to 2` is either a night shift or a typo and the row cannot tell which.
+     */
+    setHours: (input: {
+        readonly body: {
+          readonly businessHours: {
+          readonly opensAtHour: number;
+          readonly closesAtHour: number;
+          readonly openDays: readonly (number)[];
+        } | null;
+        };
+      }) =>
+      send<{
+        readonly organizationId: string;
+        readonly name: string;
+        readonly createdAt: string;
+        readonly audioRetentionDays: number;
+        readonly transcriptRetentionDays: number;
+        readonly businessHours: {
+        readonly opensAtHour: number;
+        readonly closesAtHour: number;
+        readonly openDays: readonly (number)[];
+      } | null;
+        readonly consent: {
+        readonly policy: string;
+        readonly basis: string | null;
+        readonly callingEarliestHour: number | null;
+        readonly callingLatestHour: number | null;
+      };
+      }>(options, "PUT", `/api/v1/organization/hours`, input),
   },
 
   readiness: {

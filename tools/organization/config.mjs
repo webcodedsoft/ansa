@@ -224,14 +224,13 @@ if (command === "show") {
   if (!note) throw new Error("pass a note — a version with no reason explains nothing later");
 
   const config = JSON.parse(readFileSync(file, "utf8"));
-  // Absent and explicitly null mean the same thing: this organization has not told us their
-  // hours. The three columns travel together because two thirds of a window cannot be
-  // reasoned about, and the CHECK constraint in 0012 says so too.
-  const hours = config.businessHours ?? {};
-  // Same rule as the hours: both numbers travel together or neither does, because a
-  // destination with no origination cannot be dialled and the CHECK constraint in 0015
-  // says so too. A typo therefore fails here rather than at the carrier, one second after
-  // a caller has been told they are being put through.
+  // Both numbers travel together or neither does: a destination with no origination cannot be
+  // dialled, and the CHECK constraint in 0015 says so too. A typo therefore fails here rather
+  // than at the carrier, one second after a caller has been told they are being put through.
+  //
+  // A `businessHours` key in the file is ignored rather than refused, and that is worth
+  // knowing before somebody edits one: hours left this document in migration 0053 and belong
+  // to the organisation now.
   const escalation = config.escalation ?? {};
   /*
    * Sixteen arguments went to a function that takes seventeen, and had since migration 0035
@@ -254,16 +253,13 @@ if (command === "show") {
        $6,  -- p_persona
        $7,  -- p_instructions
        $8,  -- p_keyterms
-       $9,  -- p_open_hour
-       $10, -- p_close_hour
-       $11, -- p_business_days
-       $12, -- p_tool_config
-       $13, -- p_event_config
-       $14, -- p_escalation_to
-       $15, -- p_escalation_from
-       $16, -- p_escalation_ring
-       $17, -- p_note
-       $18  -- p_policy_blocks
+       $9,  -- p_tool_config
+       $10, -- p_event_config
+       $11, -- p_escalation_to
+       $12, -- p_escalation_from
+       $13, -- p_escalation_ring
+       $14, -- p_note
+       $15  -- p_policy_blocks
      ) as version`,
     [
       organizationId,
@@ -277,9 +273,10 @@ if (command === "show") {
       config.persona ?? null,
       config.instructions ?? null,
       config.keyterms ?? [],
-      hours.opensAtHour ?? null,
-      hours.closesAtHour ?? null,
-      hours.openDays ?? null,
+      /* No hours. They are the organisation's and a publish stopped carrying them in
+         migration 0053 — a configuration version has never recorded them, and writing them
+         from here meant one agent's document setting every agent's opening times. Set them
+         with `PUT /organization/hours` or on the organisation page. */
       // Whole config, never a patch: omitting `tools` publishes a version with no organization
       // tools, which is the same rule voice_id and greeting already follow. It is not a
       // way to leave the last one in place.

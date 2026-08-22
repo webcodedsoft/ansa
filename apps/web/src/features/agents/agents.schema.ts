@@ -107,11 +107,6 @@ const CONFIG_SHAPE = {
   instructions: optionalText(2000, "The instructions"),
   keyterms,
 
-  hoursEnabled: z.boolean(),
-  opensAtHour: z.coerce.number().int().min(0).max(23),
-  closesAtHour: z.coerce.number().int().min(1).max(24),
-  openDays: z.array(z.coerce.number().int().min(1).max(7)),
-
   escalationEnabled: z.boolean(),
   toNumber: z.string().trim(),
   fromNumber: z.string().trim(),
@@ -146,13 +141,8 @@ const draftForm = z.object({ ...CONFIG_SHAPE });
 type ConfigShape = z.infer<z.ZodObject<typeof CONFIG_SHAPE>>;
 
 const checkSections = (value: ConfigShape, context: z.RefinementCtx): void => {
-  if (value.hoursEnabled && value.openDays.length === 0) {
-    context.addIssue({
-      code: "custom",
-      path: ["openDays"],
-      message: "Pick at least one day, or turn off the hours restriction.",
-    });
-  }
+  /* No hours check any more: they left this document in migration 0053 and are set through
+     the organisation, which validates them itself. */
   if (!value.escalationEnabled) return;
   if (!E164.test(value.toNumber)) {
     context.addIssue({ code: "custom", path: ["toNumber"], message: E164_MESSAGE });
@@ -171,9 +161,6 @@ const toDocument = (value: ConfigShape) => ({
   persona: value.persona,
   instructions: value.instructions,
   keyterms: value.keyterms,
-  businessHours: value.hoursEnabled
-    ? { opensAtHour: value.opensAtHour, closesAtHour: value.closesAtHour, openDays: value.openDays }
-    : null,
   escalation: value.escalationEnabled
     ? {
         toNumber: value.toNumber,
@@ -208,11 +195,6 @@ export const publishFormInput = (form: FormData) => ({
   persona: form.get("persona") ?? "",
   instructions: form.get("instructions") ?? "",
   keyterms: form.get("keyterms") ?? "",
-
-  hoursEnabled: form.get("hoursEnabled") !== null,
-  opensAtHour: form.get("opensAtHour") ?? 9,
-  closesAtHour: form.get("closesAtHour") ?? 17,
-  openDays: form.getAll("openDays"),
 
   escalationEnabled: form.get("escalationEnabled") !== null,
   toNumber: form.get("toNumber") ?? "",

@@ -59,6 +59,14 @@ export const organisation = async () => (await api()).organization.read();
 
 export type Organisation = Awaited<ReturnType<typeof organisation>>;
 
+/** When this organisation counts as open. Null is always open — a setting, not an absence. */
+export const setOrganizationHours = async (
+  businessHours: { readonly opensAtHour: number; readonly closesAtHour: number; readonly openDays: readonly number[] } | null,
+) =>
+  (await api()).organization.setHours({
+    body: { businessHours: businessHours === null ? null : { ...businessHours, openDays: [...businessHours.openDays] } },
+  });
+
 export type MemberPage = Awaited<ReturnType<typeof listMembers>>;
 export type MemberSummary = MemberPage["items"][number];
 export type InvitationPage = Awaited<ReturnType<typeof listInvitations>>;

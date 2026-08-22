@@ -106,15 +106,6 @@ const MAX_NOTE_CHARS = 500;
  * the same thing at the other end, and additionally refuses a window that wraps past
  * midnight — `22 to 2` is either a night shift or a typo and the row cannot tell you which.
  */
-const businessHours = object({
-  /** WAT, inclusive. */
-  opensAtHour: integer({ minimum: 0, maximum: 23 }),
-  /** WAT, exclusive, so a line that shuts at five holds 17. */
-  closesAtHour: integer({ minimum: 1, maximum: 24 }),
-  /** ISO weekdays: 1 is Monday, 7 is Sunday. */
-  openDays: list(integer({ minimum: 1, maximum: 7 }), { maxItems: 7 }),
-});
-
 /** Both numbers or neither, for the same structural reason, and matching migration 0015. */
 const escalation = object({
   toNumber: phoneNumber(),
@@ -176,7 +167,6 @@ const CONFIG_FIELDS = {
    */
   policyBlocks: optional(nullable(list(policyBlock, { maxItems: MAX_POLICY_BLOCKS }))),
   keyterms: list(text({ minLength: 1, maxLength: MAX_KEYTERM_CHARS }), { maxItems: MAX_KEYTERMS }),
-  businessHours: nullable(businessHours),
   escalation: nullable(escalation),
 };
 
@@ -400,10 +390,6 @@ const toConfigBody = (config: AgentConfigFields): Infer<typeof configFields> => 
      second definition of what a policy is. */
   policyBlocks: (config.policyBlocks ?? null) as Infer<typeof configFields>["policyBlocks"],
   keyterms: [...config.keyterms],
-  businessHours:
-    config.businessHours === null
-      ? null
-      : { ...config.businessHours, openDays: [...config.businessHours.openDays] },
   escalation: config.escalation,
 });
 

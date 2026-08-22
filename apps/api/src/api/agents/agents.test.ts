@@ -180,7 +180,8 @@ const configuration = {
   persona: null,
   instructions: null,
   keyterms: [],
-  businessHours: null,
+  /* No hours: they left the configuration document in migration 0053 and are the
+     organisation's, set through `PUT /organization/hours`. */
   escalation: null,
 };
 

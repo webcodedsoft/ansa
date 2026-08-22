@@ -1,21 +1,15 @@
-import { Card, CheckboxField, CheckboxGroup, FieldError, NumberField, Notice, Stack, Td, TextField } from "@/components/ui";
+import Link from "next/link";
+
+import { Card, CheckboxField, Notice, NumberField, Stack, Td, TextField } from "@/components/ui";
 
 import type { LiveConfiguration } from "../agents.service";
+import { RoutingCard, type HeldNumber } from "./routing-card";
 import { SaveBar } from "./save-bar";
 
-const DAYS = [
-  { value: 1, label: "Mon" },
-  { value: 2, label: "Tue" },
-  { value: 3, label: "Wed" },
-  { value: 4, label: "Thu" },
-  { value: 5, label: "Fri" },
-  { value: 6, label: "Sat" },
-  { value: 7, label: "Sun" },
-] as const;
-
-const DEFAULT_OPEN_DAYS: readonly number[] = [1, 2, 3, 4, 5];
-
 interface RoutingTabProps {
+  readonly agentId: string;
+  /** Every number the organisation holds, so the picker can show what is taken and by whom. */
+  readonly held: readonly HeldNumber[];
   readonly config: LiveConfiguration["config"];
   readonly operatorManaged: LiveConfiguration["operatorManaged"];
   readonly errors: Readonly<Record<string, string>>;
@@ -24,10 +18,8 @@ interface RoutingTabProps {
 }
 
 /** When the organisation counts as open, where a call hands over, and what the operator controls. */
-export const RoutingTab = ({ config, operatorManaged, errors, publishForm, savingDraft }: RoutingTabProps) => {
-  const hours = config.businessHours;
+export const RoutingTab = ({ agentId, held, config, operatorManaged, errors, publishForm, savingDraft }: RoutingTabProps) => {
   const escalation = config.escalation;
-  const openDays = hours?.openDays ?? DEFAULT_OPEN_DAYS;
   const { consent } = operatorManaged;
   const callingHours =
     consent.callingEarliestHour === null || consent.callingLatestHour === null
@@ -37,40 +29,29 @@ export const RoutingTab = ({ config, operatorManaged, errors, publishForm, savin
   return (
     <Stack>
       {/*
-        Named for the organisation, not for the agent, because that is where they are stored.
-        `publish_agent_config` writes `business_open_hour`, `business_close_hour` and
-        `business_days` onto `organizations` — so these hours are shared, and publishing them
-        from one agent's workspace moves them for every agent the organisation has.
+        The hours card used to live here and does not any more.
 
-        Indistinguishable from a per-agent setting today, since no organisation has a second
-        live agent and migration 0047 refuses to resolve one if they do. It stops being
-        indistinguishable the moment that changes, and the failure would be silent: an
-        operator sets Saturday hours on the agent they have open and quietly opens the other
-        one too. Saying so costs a sentence; whether hours should become per-agent is a
-        product decision, and one this label does not pre-empt.
+        It was editing the organisation's opening hours from inside one agent's workspace, and
+        publishing that agent wrote all three columns. With two agents that is one agent's form
+        silently moving every other agent's opening times — the same shape of bug 0047 and 0052
+        closed elsewhere. Hours were never in a configuration version either: the snapshot has
+        no columns for them, so a diff always said "unchanged" and a rollback could never
+        restore one. Migration 0053 moved them out of the publish document entirely and onto
+        `PUT /organization/hours`, which applies immediately because there is no version for
+        them to wait for.
       */}
-      <Card
-        title="Business hours"
-        description="When the organisation counts as open. Shared by every agent it runs, so publishing here changes them all. Unchecked means always open."
-      >
-        <Stack>
-          <CheckboxField label="Restrict to set hours" name="hoursEnabled" defaultChecked={hours !== null} />
+      <Notice tone="ok">
+        Opening hours are the organisation&apos;s and are shared by every agent it runs, so they
+        are set on <Link href="/organisation" className="underline">the organisation page</Link>{" "}
+        rather than here. Changing them there takes effect on the next call — there is no
+        version to publish.
+      </Notice>
 
-          <div className="grid gap-3.5 sm:grid-cols-2">
-            <NumberField label="Opens at" name="opensAtHour" min={0} max={23} defaultValue={hours?.opensAtHour ?? 9} error={errors["opensAtHour"]} />
-            <NumberField label="Closes at" name="closesAtHour" min={1} max={24} defaultValue={hours?.closesAtHour ?? 17} error={errors["closesAtHour"]} />
-          </div>
-
-          <div>
-            <CheckboxGroup legend="Open days">
-              {DAYS.map((day) => (
-                <CheckboxField key={day.value} label={day.label} name="openDays" value={day.value} defaultChecked={openDays.includes(day.value)} />
-              ))}
-            </CheckboxGroup>
-            {errors["openDays"] !== undefined && <FieldError>{errors["openDays"]}</FieldError>}
-          </div>
-        </Stack>
-      </Card>
+      <RoutingCard
+        agentId={agentId}
+        dialledNumber={operatorManaged.dialledNumber}
+        held={held}
+      />
 
       <Card title="Escalation" description="Where a call goes when the agent hands over to a person.">
         <Stack>
@@ -103,10 +84,9 @@ export const RoutingTab = ({ config, operatorManaged, errors, publishForm, savin
       <Card title="Set by the operator" description="Not editable here. Ask whoever runs the platform to change these.">
         <table className="w-full border-collapse text-sm">
           <tbody>
-            <tr>
-              <Td className="text-[var(--ink-3)]">Number</Td>
-              <Td className="font-mono text-[13px]">{operatorManaged.dialledNumber ?? "not assigned"}</Td>
-            </tr>
+            {/* The number moved to its own card above. Which numbers this organisation holds
+                is the operator's; which agent answers one of them is not, and showing it here
+                said the opposite. */}
             <tr>
               <Td className="text-[var(--ink-3)]">Audio retention</Td>
               <Td>{operatorManaged.audioRetentionDays} days</Td>

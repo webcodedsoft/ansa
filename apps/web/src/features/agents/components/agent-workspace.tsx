@@ -31,6 +31,7 @@ import { DataCapturedTab } from "./data-captured-tab";
 import { FlowCanvas } from "./flow-canvas";
 import { OverviewTab, type AgentStats, type AttentionItem } from "./overview-tab";
 import { PolicyTab } from "./policy-tab";
+import type { HeldNumber } from "./routing-card";
 import { RoutingTab } from "./routing-tab";
 import { KnowledgeTab } from "./knowledge-tab";
 import { ToolsTab } from "./tools-tab";
@@ -127,6 +128,8 @@ interface AgentWorkspaceProps {
    * "what is actually answering the phone" belongs.
    */
   readonly draft: AgentDraft | null;
+  /** Every number the organisation holds, for the routing picker. */
+  readonly held: readonly HeldNumber[];
   readonly tools: Awaited<ReturnType<typeof readTools>>;
   readonly knowledge: KnowledgeDocument;
   readonly versions: readonly VersionRow[];
@@ -149,6 +152,7 @@ interface AgentWorkspaceProps {
  * those act through their Server Action's dispatch function directly instead.
  */
 export const AgentWorkspace = ({
+  held,
   agent,
   liveConfiguration,
   draft,
@@ -371,7 +375,7 @@ export const AgentWorkspace = ({
             },
             { id: "voice", label: "Voice", problem: problemTabs.has("voice"), panel: <VoiceTab key={shownAs(config)} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
             { id: "policies", label: "Policies", problem: problemTabs.has("policies"), panel: <PolicyTab key={shownAs(config)} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
-            { id: "routing", label: "Routing & hours", problem: problemTabs.has("routing"), panel: <RoutingTab key={shownAs(config)} config={config} operatorManaged={operatorManaged} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
+            { id: "routing", label: "Routing & hours", problem: problemTabs.has("routing"), panel: <RoutingTab key={shownAs(config)} agentId={agent.agentId} held={held} config={config} operatorManaged={operatorManaged} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
             { id: "versions", label: "Versions", panel: <VersionsTab agentId={agent.agentId} versions={versions} liveVersion={agent.configVersion} /> },
           ]}
         />

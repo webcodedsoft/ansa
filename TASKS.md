@@ -2731,32 +2731,70 @@ What to listen for, in order of what is actually in doubt:
       on the create page is gone, replaced by the field itself and a line saying it can be
       edited later. Verified against the database: create, patch and the call path all
       carry it.
-- [~] The Routing & hours tab edits hours as though they were the agent's. They are the
-      organisation's — `publish_agent_config` writes `business_open_hour`,
-      `business_close_hour` and `business_days` onto `organizations`.
-      **The lie is fixed, the move is not (2026-08-22).** The card now says the hours belong
-      to the organisation and that publishing them from one agent's workspace changes them
-      for every agent it runs. That is the whole of the present harm: the setting is
-      indistinguishable from a per-agent one while no organisation has a second live agent,
-      and 0047 refuses to resolve one if it does — but the moment that changes an operator
-      sets Saturday hours on the agent they have open and silently opens the other.
-      **Still to do, and blocked on a decision rather than on work (checked 2026-08-22).**
-      Moving the card needs hours to have their own endpoint, and the obvious cheap version
-      does not exist: "null means leave alone", the trick `policyBlocks` uses, is unavailable
-      because `businessHours: null` already means *always open*. One value cannot mean both
-      "no restriction" and "unchanged", so an organisation screen writing hours and a publish
-      carrying them would overwrite each other with whatever the agent workspace last
-      rendered.
+- [x] **Routing & hours moved (2026-08-22).** Hours are the organisation's, live on
+      `organizations`, and are set through `PUT /organization/hours` and the new
+      `/organisation` page. They are out of the agent's publish document entirely
+      (migration 0053).
 
-      The real move is to drop `businessHours` from the publish document and give it a
-      dedicated organisation endpoint — which stops hours being versioned. That is arguably
-      right, since they are operational rather than script and organisation-wide rather than
-      an agent's, but it is a decision about what a configuration version means and not a
-      refactor. `agent_prompt_versions` keeps its hours columns either way; they become
-      history rather than the source.
+      The recorded blocker was wrong and checking it settled the design. It said moving hours
+      would stop them being versioned — but `CONFIG_COLUMNS` has never snapshotted them and
+      `agent_prompt_versions` has no `business_*` columns at all, so hours have never been in a
+      version, never appeared in a diff, and could never be restored by a rollback. Two diff
+      tests covering hours were passing over fields that could not appear, and are deleted
+      rather than skipped.
 
-      Not done unilaterally. The card says what it does in the meantime, which removes the
-      lie without pre-empting the answer.
+      What was actually wrong was the write. A publish rewrote all three columns from whatever
+      the agent workspace last rendered, so with two agents publishing one moved the other's
+      opening times — silently, with no version recording it. That is the bug the new tests
+      pin: set hours, publish an unrelated change, hours unmoved. Mutation-verified by putting
+      the write back.
+
+      Applied rather than staged, and the absence of Save-then-Publish is the design: a draft
+      exists so an agent's words can change without a caller hearing them half-written, and
+      hours have no half-written state and nowhere to wait.
+
+      Both hand-run publish tools moved with the signature — the dev seed and
+      `tools/organization/config.mjs`. A `businessHours` key in a CLI config file is now
+      ignored rather than refused, which the file says.
+
+- [x] **Routing is the agent's, and editable (2026-08-22).** The number an agent answers moved
+      out of the read-only "Set by the operator" card and into its own card with a picker over
+      the organisation's held numbers. `PATCH /agents/:agentId` has accepted `dialledNumber`
+      all along; the console just never sent it, behind a note saying a wrapper would be an
+      invitation to reach for an endpoint that wrote publish-form fields live. That note had
+      gone stale — `agentEdit` was narrowed to routing alone, so `dialledNumber` is the only
+      field it takes.
+      - A number another agent answers is shown and disabled rather than hidden. "Answered by
+        Support" is the answer somebody is looking for; omitting it makes a number they know
+        they own look as though it vanished.
+      - Applied immediately, like the organisation's hours: routing has never been in a
+        configuration version, so there is nothing to stage it into.
+      - Ownership stays the operator's. An organisation picks among lines it holds and cannot
+        add one, which is the whole of migration 0019 — `ansa_app` has SELECT on
+        `organization_numbers` and nothing else.
+
+- [ ] **Numbers page: add or import a number (planned 2026-08-22).** A screen where an
+      organisation brings a number it already holds at another provider, or takes one from
+      Twilio under the platform's own account as part of its subscription. Assignment to an
+      agent is already built — see the entry above — and needs no change when this lands,
+      because the picker reads `organization_numbers` and does not care how a row got there.
+
+      What has to change with it: `GET /numbers/provisioning` currently answers
+      `claim.available: false` with `no-nigerian-inventory` and `attach.selfService: false`
+      with `operator-owned-ingress`, and both messages are written as permanent facts rather
+      than as today's state. The second one carries a real constraint that survives the
+      change — nothing proves an organisation controls a number it names, and the attached
+      number is the ingress routing table for the whole deployment — so importing somebody
+      else's number has to be gated on proving control of it, not just on asking.
+
+- [x] **`GET /numbers` reads the numbers table (2026-08-22).** It described itself as the
+      organisation's numbers and answered with one agent's `dialled_number`, read through the
+      readiness facts. An organisation holding three numbers saw one, and a number attached at
+      the carrier that no agent answers appeared nowhere — which is the state an operator most
+      needs during onboarding. It lists `organization_numbers` now, left joined to the agent
+      that answers each, so an unrouted number shows with a null `answeredBy` instead of
+      vanishing. One carrier probe per number, in parallel.
+
 - [x] ~~`conversation-preview.tsx` and `field-builder.tsx` duplicate the sample values and
       read-back wording.~~ **Already done, and recorded twice.** "One preview" further up
       this file is the entry that did it; both import `heardAs`, `readBackOf` and

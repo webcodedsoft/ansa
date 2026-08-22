@@ -59,10 +59,6 @@ export interface ConfigDiff {
 const render = (value: string | number | null | undefined): string | null =>
   value === null || value === undefined ? null : String(value);
 
-/** ISO weekdays, in the order they were stored. Rendered as one field, because they are one. */
-const renderDays = (days: readonly number[] | undefined): string | null =>
-  days === undefined ? null : days.join(", ");
-
 /**
  * The leaves of one configuration, flattened to the paths the diff reports.
  *
@@ -93,9 +89,10 @@ const leaves = (config: AgentConfigFields): Readonly<Record<string, string | nul
    * edited, and the version snapshot beside it says exactly how.
    */
   policyBlocks: config.policyBlocks == null ? null : JSON.stringify(config.policyBlocks),
-  "businessHours.opensAtHour": render(config.businessHours?.opensAtHour),
-  "businessHours.closesAtHour": render(config.businessHours?.closesAtHour),
-  "businessHours.openDays": renderDays(config.businessHours?.openDays),
+  /* No `businessHours` rows. They left the configuration document in migration 0053, and
+     they were never in a version before that — `CONFIG_COLUMNS` has never snapshotted them,
+     so both sides of every diff read null and the three rows could only ever say "unchanged".
+     Hours change through the organisation endpoint, which is not versioned. */
   "escalation.toNumber": render(config.escalation?.toNumber),
   "escalation.fromNumber": render(config.escalation?.fromNumber),
   "escalation.ringSeconds": render(config.escalation?.ringSeconds),
