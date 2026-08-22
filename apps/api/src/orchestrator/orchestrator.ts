@@ -38,6 +38,7 @@ import {
 import { describeSituation, renderSituation } from "../conversation/situation";
 import { asksToNotBeCalled } from "../outbound/stop-calling";
 import { computeConstraints, type TurnConstraints } from "./dialogue-policy";
+import { driftIn } from "./drift";
 import { guardOutput, HOLDING_LINE } from "./output-guard";
 import type { Handoff } from "../handoff/handoff";
 import { createEscalationWatch, type EscalationTrigger } from "../handoff/triggers";
@@ -1948,6 +1949,28 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       // caller turn present and no reply to any of them, which is not a conversation
       // anyone can review.
       record.event("agent said", { seq, text: full.trim(), action: budget.action });
+
+      /* Written down, not acted on. The normalizer has already stripped the formatting and
+         the budget has already capped the words, so the caller heard a fine turn either
+         way — what was missing is any record that the prompt had to be rescued. `seq` is
+         the point: a handful of these scattered through a call is a model having a moment,
+         and a cluster after turn fifteen is the history growing past what it can follow,
+         which is a different fix from rewording anything. */
+      const drift = driftIn(full);
+      if (drift.drifted) {
+        log.info("reply drifted from the prompt", {
+          seq,
+          sentences: drift.sentences,
+          tooLong: drift.tooLong,
+          screenFormatting: drift.screenFormatting,
+        });
+        record.event("drift", {
+          seq,
+          sentences: drift.sentences,
+          tooLong: drift.tooLong,
+          screenFormatting: drift.screenFormatting,
+        });
+      }
       // A turn ending in a question mark is a question by construction, so this is a
       // code-side rule and not a prompt one: the model does not have to cooperate for the
       // agent to know what it is still waiting on. The last question in the turn is the

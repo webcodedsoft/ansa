@@ -1346,6 +1346,40 @@ describe("the prompt the call was configured with", () => {
     assertInvariants(h);
   });
 
+  it("writes down a reply that drifted, with the turn it happened on", () => {
+    /* The signal is write-only unless a real turn reaches it, and it changes nothing the
+       caller hears — the normalizer strips the formatting either way — so this is the only
+       thing that proves it exists at all. */
+    const seen: { kind: string; detail: Record<string, unknown> }[] = [];
+    const h = setup({
+      recorder: {
+        started: () => undefined,
+        event: (kind: string, detail?: Record<string, unknown>) =>
+          seen.push({ kind, detail: detail ?? {} }),
+        transcript: () => undefined,
+        turn: () => undefined,
+        latency: () => undefined,
+        ended: () => undefined,
+      } as unknown as CallRecorder,
+    });
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("What are your opening hours?");
+    /* Screen formatting rather than an over-long reply, and the difference matters. A reply
+       long enough to trip `tooLong` also trips the turn budget, which cuts the turn — and a
+       cut turn nulls `turn`, so `onDone` returns before ever reaching the drift check. The
+       formatting signal is the one observable on a turn that completes. See TASKS.md. */
+    h.llm.last().emit("That's **important** to know.");
+    h.llm.last().finish();
+
+    const drift = seen.find((e) => e.kind === "drift");
+    expect(drift?.detail["screenFormatting"]).toBe(true);
+    // The turn number is the point: a cluster after turn fifteen is a different problem.
+    expect(drift?.detail["seq"]).toEqual(expect.any(Number));
+    assertInvariants(h);
+  });
+
   it("says nothing about hours on an ordinary in-hours turn", () => {
     /* Open is the default the prompt is written against. A block that fires every turn
        costs prompt budget for something the model was going to assume anyway. */

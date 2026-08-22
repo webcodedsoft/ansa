@@ -587,6 +587,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly transferRate: string | null;
         readonly abandonmentRate: string | null;
         readonly hallucinationsDiscarded: number;
+        readonly driftedTurns: number;
         readonly recoveryLines: number;
         readonly recoveryRate: string | null;
         readonly toolCalls: number;

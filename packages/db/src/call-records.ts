@@ -47,6 +47,10 @@ const METRIC_EVENT_KINDS: readonly string[] = [
   "tts_start",
   "llm_start",
   "agent said",
+  /* Replies that had to be rescued — too long, or carrying screen-only formatting. Listed
+     here or `readCallRecords` silently drops them and every consumer reads zero, which is
+     the failure this list's own comment records. */
+  "drift",
   // The post-call review scan (review.ts). `agent said` above carries the readback reason
   // that says capture fell through to spelling or the keypad, so it is not repeated here.
   "tts_sentence_dropped",

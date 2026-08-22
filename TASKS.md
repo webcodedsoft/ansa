@@ -3117,8 +3117,34 @@ case that actually matters, which is claiming an action, not quoting a figure.
         newlines, so the last one stays in the read buffer. Correct against real SSE, where
         every frame ends `\n\n` — the test now sends what the wire sends.
 
-- [ ] **Phase 8e — the rest.** Tool `origin` (internal vs tenant) beside the risk tier;
-      business policies as named blocks; drift logging for replies over three sentences.
+- [x] **Phase 8e (part) — drift is written down**. "Responses over 3 sentences, and
+      responses that needed stripping, logged with turn number. If violations cluster after
+      turn 15, I need to know." Neither was recorded anywhere.
+      - Changes nothing the caller hears: the normalizer already strips the formatting and
+        `turn-budget` already caps the words. What was missing is any record that they had
+        to. `seq` travels with each one, which is what makes "clusters after turn fifteen"
+        answerable — and that is a different fix from rewording anything, because it means
+        the history has grown past what the model can follow.
+      - Asked as a question about the raw reply rather than by diffing against `forSpeech`.
+        The obvious implementation was the diff, and it would have reported every reply
+        containing a number, because expanding those is also that function's job.
+      - Counted per agent turn in `scoreCalls` as `driftedTurns` and exposed on
+        `/api/v1/calls/metrics`, so it is not write-only.
+
+**A limitation found while testing it, not designed in.** The `tooLong` signal
+under-reports on exactly the turns it is about. A reply long enough to exceed three
+sentences also exceeds the turn budget, which cuts the turn — and a cut turn fails the
+`turn?.seq !== seq` guard at the top of `onDone`, so the drift check is never reached. The
+formatting signal is unaffected, and the length one only fires on replies that were long
+but not long enough to be cut. Fixing it means either moving the check above that guard or
+recording it where the budget does the cutting; both are real changes to the turn teardown
+path and neither belongs in a commit about logging.
+
+- [ ] **Phase 8f — the rest.** Tool `origin` (internal vs tenant) beside the risk tier —
+      worth noting it would be a field nothing branches on today, because the guards it is
+      meant to gate (hard timeout, response cap, treating output as data) already apply to
+      every tool regardless of who registered it. Business policies as named blocks. And
+      the `tooLong` gap above.
       Tool timeouts and response caps already exist in `packages/tools/src/limits.ts` at the
       1500/3000ms the brief asks for, and knowledge is already a `search_knowledge` tool
       rather than prompt text. Worth pairing the cache number with `viewer/cost.ts`, which

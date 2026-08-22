@@ -3713,6 +3713,10 @@
                       "type": "integer",
                       "minimum": 0
                     },
+                    "driftedTurns": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
                     "recoveryLines": {
                       "type": "integer",
                       "minimum": 0
@@ -3752,6 +3756,7 @@
                     "transferRate",
                     "abandonmentRate",
                     "hallucinationsDiscarded",
+                    "driftedTurns",
                     "recoveryLines",
                     "recoveryRate",
                     "toolCalls",

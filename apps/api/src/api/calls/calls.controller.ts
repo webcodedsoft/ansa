@@ -292,6 +292,8 @@ const quality = object({
   /** Transcripts the speech gate threw away as invented. Not a rate: any at all is news. */
   hallucinationsDiscarded: integer({ minimum: 0 }),
   /** Turns that produced nothing and had to be covered with an apology. */
+  /** Turns the prompt lost: too long, or carrying formatting a voice reads out loud. */
+  driftedTurns: integer({ minimum: 0 }),
   recoveryLines: integer({ minimum: 0 }),
   recoveryRate: ratio(),
 
@@ -536,6 +538,7 @@ export class CallsController {
       transferRate: asRatio(scored.transferRate),
       abandonmentRate: asRatio(scored.abandonmentRate),
       hallucinationsDiscarded: scored.hallucinationsDiscarded,
+      driftedTurns: scored.driftedTurns,
       recoveryLines: scored.recoveryLines,
       recoveryRate: asRatio(scored.recoveryRate),
       toolCalls: scored.toolCalls,

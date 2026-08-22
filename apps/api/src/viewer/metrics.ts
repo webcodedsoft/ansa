@@ -87,6 +87,14 @@ export interface QualityMetrics {
    * it actionable: a run of `no transcript` is a listening problem and a run of `llm failed`
    * is not.
    */
+  /**
+   * Turns the prompt lost: too long, or carrying screen-only formatting.
+   *
+   * A count rather than a rate, and against agent turns rather than calls, because the
+   * question it answers is "how often does this happen" and the useful follow-up is *when*
+   * — which is in the events themselves, each carrying its turn number.
+   */
+  readonly driftedTurns: number;
   readonly recoveryLines: number;
   /** Recovery lines over caller turns. A caller who had to be apologised to for asking. */
   readonly recoveryRate: number | null;
@@ -210,6 +218,7 @@ export const scoreCalls = (records: readonly CallRecord[]): QualityMetrics => {
   let transferred = 0;
   let abandoned = 0;
   let hallucinations = 0;
+  let driftedTurns = 0;
   let recoveryLines = 0;
   let toolCalls = 0;
   let toolFailures = 0;
@@ -257,6 +266,9 @@ export const scoreCalls = (records: readonly CallRecord[]): QualityMetrics => {
         case "hallucination discarded":
           hallucinations += 1;
           break;
+        case "drift":
+          driftedTurns += 1;
+          break;
         case "recovery_line":
           recoveryLines += 1;
           break;
@@ -288,6 +300,7 @@ export const scoreCalls = (records: readonly CallRecord[]): QualityMetrics => {
     transferRate: rate(transferred, records.length),
     abandonmentRate: rate(abandoned, records.length),
     hallucinationsDiscarded: hallucinations,
+    driftedTurns,
     recoveryLines,
     recoveryRate: rate(recoveryLines, callerTurns),
     toolCalls,
