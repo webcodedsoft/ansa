@@ -2976,7 +2976,46 @@ The brief asks for ~20 across five tags with the same behaviour.
       on. That means blocking the `write` tier outright when `direction` is outbound,
       enforced in the dispatcher beside the existing tier check. It needs `direction`
       threaded into `ToolCall`, which is why it is not in the commit above.
-- [ ] Phase 8 — dialogue policy layer and the output guard
+- [x] **Phase 8a — the output guard**. The half of Phase 8 that was missing entirely, and
+      the one the brief is right to call the point: assume the prompt will be violated.
+      - **Blocks one thing only.** A claim to have already done something — refunded,
+        cancelled, approved, booked — with no tool call behind it on that exchange. The
+        caller hears a holding line and the call goes to a person. Over-blocking is its own
+        failure, so nothing else blocks.
+      - The rule is enforceable rather than another prompt line because `toolRanThisExchange`
+        is a fact the orchestrator holds and the model cannot influence. It is per *exchange*
+        and not per turn: a tool result comes back as a caller message and starts a new
+        agent turn, so reading it per turn would block the very sentence entitled to be
+        said.
+      - Offers are never blocked. "I'll cancel that" is what helping sounds like, and an
+        agent that cannot promise anything cannot do anything.
+      - **Banned phrases are flagged, never blocked.** One "certainly" does not ruin a call;
+        the same one across most of a week is a catchphrase the prompt needs fixing for, and
+        that belongs in a log rather than in an interruption.
+      - **The brief's markdown stripping already existed** in `@ansa/normalizer`, and is
+        better than a second implementation would be. Emoji did not: `forSpeech("Done ✅")`
+        reached the voice as "Done white heavy check mark" for as long as this has shipped.
+        Fixed where markdown already lives, not in the guard — text becoming speakable text
+        is one concern and whether to say it at all is another.
+
+**Deliberately not built, and this one is a disagreement with the brief.** It also asks the
+guard to block dates and currency amounts absent from a tool result. That over-blocks badly:
+an agent repeating a date the caller just gave, or quoting a price from the organisation's
+own published rules, trips it — and an agent that goes silent on every price is a worse
+product than one that occasionally gets a price wrong. The commitment check catches the
+case that actually matters, which is claiming an action, not quoting a figure.
+
+- [ ] **Phase 8b — the dialogue policy layer.** `TurnConstraints` computed before each LLM
+      call: when escalation is required the tool list collapses to escalation only, so the
+      agent is physically unable to do anything else. Most of the inputs now exist —
+      `failedTurns`, the emotional read, `contactsThisWeek` — and the enforcement point is
+      the dispatcher, beside the existing tier check. The remaining design question is
+      whether constraints filter the list offered to the model, refuse at dispatch, or both.
+- [ ] **Phase 8c — the rest.** Tool `origin` (internal vs tenant) beside the risk tier;
+      business policies as named blocks; prompt-cache hit-rate logging; drift logging for
+      replies over three sentences. Tool timeouts and response caps already exist in
+      `packages/tools/src/limits.ts` at the 1500/3000ms the brief asks for, and knowledge is
+      already a `search_knowledge` tool rather than prompt text.
 
 **Awaiting a real phone call:** phases 1, 2, 3a and 3b. None of them is done until one is
 made. 3b additionally needs a Cartesia key and a Cartesia voice id republished on the agent

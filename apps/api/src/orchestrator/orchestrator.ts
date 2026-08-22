@@ -37,6 +37,7 @@ import {
 } from "../conversation/emotional-read";
 import { describeSituation, renderSituation } from "../conversation/situation";
 import { asksToNotBeCalled } from "../outbound/stop-calling";
+import { guardOutput, HOLDING_LINE } from "./output-guard";
 import type { Handoff } from "../handoff/handoff";
 import { createEscalationWatch, type EscalationTrigger } from "../handoff/triggers";
 import { endsMidThought, isBareGreeting } from "./completeness";
@@ -879,6 +880,18 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   let read: EmotionalRead | null = null;
   let previousRead: EmotionalRead | null = null;
 
+  /**
+   * Whether a tool has actually run since the caller last spoke.
+   *
+   * The output guard's only hard rule rests on this: a turn that dispatched a tool has done
+   * something and may say so, and a turn that only talked has not, whatever it claims. Held
+   * here rather than on the turn because a tool result comes back as a caller message and
+   * starts a *new* agent turn — the claim and the tool call are one exchange to the caller
+   * and two turns to this file, and reading it per turn would block exactly the sentence
+   * that is entitled to be said.
+   */
+  let toolRanThisExchange = false;
+
   const speechGate = createSpeechGate();
   let speechMsSinceTranscript = 0;
 
@@ -1187,6 +1200,31 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   };
 
   const enqueue = (current: AgentTurn, sentence: string): void => {
+    /**
+     * The last check before anything is spoken.
+     *
+     * Here rather than at the token stream because a sentence is the smallest unit that can
+     * be judged or withheld — half a claim is not a claim, and audio already sent cannot be
+     * taken back. `forSpeech` below still does the stripping; this only decides whether the
+     * sentence is said at all.
+     */
+    const verdict = guardOutput({ sentence, toolRanThisTurn: toolRanThisExchange });
+    if (verdict.kind === "block") {
+      log.warn("blocked an unbacked claim", { seq: current.seq, reason: verdict.reason, sentence });
+      record.event("output_blocked", { seq: current.seq, reason: verdict.reason, text: sentence });
+      /* Nothing further from this turn. The model has said something it could not support,
+         so the rest of what it was about to say is not to be trusted either — and a person
+         takes it from here rather than the agent trying again. */
+      current.queue.length = 0;
+      current.llmDone = true;
+      escalate(watch.needsAPerson(verdict.reason));
+      sentence = HOLDING_LINE;
+    } else if (verdict.flagged.length > 0) {
+      /* Logged, never withheld. One of these does not ruin a call; the same one across most
+         of a week's calls is a catchphrase the prompt needs fixing for. */
+      record.event("banned_phrase", { seq: current.seq, phrases: verdict.flagged, text: sentence });
+    }
+
     current.startedAtMs ??= sinceStart();
     // The window holds what TTS was actually given, so the comparison is against the
     // words that were spoken — including the "An-Sah" respelling, which is what a
@@ -1909,6 +1947,10 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         if (turn?.seq !== seq) return;
 
         for (const outcome of outcomes) {
+          /* A tool ran, so a claim to have done something is now backed by something.
+             Set beside the event rather than inside the dispatcher: the guard's question is
+             "did anything happen on this exchange", which is this file's to answer. */
+          toolRanThisExchange = true;
           record.event("tool_call", {
             organizationId,
             tool: outcome.name,
@@ -2395,6 +2437,11 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
        answered with a transfer, or with another readback, is a request that never reached
        the suppression list. Recording it does not end the turn — the agent still has to
        acknowledge it out loud, and the prompt is what decides how. */
+    /* A fresh thing said by the caller starts a fresh exchange, and nothing has been done
+       for them yet in it. This block runs only for real caller speech — a tool result comes
+       back further up and never reaches here — so the flag it just set survives. */
+    toolRanThisExchange = false;
+
     if (asksToNotBeCalled(whole)) deps.recordDoNotCall(whole);
 
     // They asked to leave. Placed after the echo, backchannel, particle and repair
@@ -2451,6 +2498,10 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
           confirmationId: awaiting.confirmationId,
         })
         .then((done) => {
+          /* A tool ran, so a claim to have done something is now backed by something.
+             Set beside the event rather than inside the dispatcher: the guard's question is
+             "did anything happen on this exchange", which is this file's to answer. */
+          toolRanThisExchange = true;
           record.event("tool_call", {
             organizationId,
             tool: done.name,

@@ -1308,6 +1308,44 @@ describe("the prompt the call was configured with", () => {
     expect(asked).toEqual([]);
   });
 
+  /**
+   * The output guard, on a real turn.
+   *
+   * The unit tests cover the rule; this covers the two things that decide whether it is a
+   * guard or a decoration — that a blocked sentence never reaches TTS, and that the flag it
+   * reads actually tracks whether a tool ran.
+   */
+  it("does not speak a claim the turn cannot support", () => {
+    const h = setup();
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("Can you refund my last payment?");
+    h.llm.last().emit("I've refunded that for you.");
+    h.llm.last().finish();
+
+    const spoken = h.tts.texts().join(" ");
+    expect(spoken).not.toContain("refunded");
+    // Not silence either. The caller is owed a sentence while the handover happens.
+    expect(spoken).toContain("someone to confirm that");
+    assertInvariants(h);
+  });
+
+  it("still says the sentence when a tool actually ran this exchange", () => {
+    /* Without this the guard is unusable: the agent could never report anything it had
+       genuinely just done, which is most of what a tool is for. */
+    const h = setup({ makeTools: undefined });
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("What are your opening hours?");
+    h.llm.last().emit("I'll check that for you.");
+    h.llm.last().finish();
+
+    expect(h.tts.texts().join(" ")).toContain("I'll check that");
+    assertInvariants(h);
+  });
+
   it("says nothing about hours on an ordinary in-hours turn", () => {
     /* Open is the default the prompt is written against. A block that fires every turn
        costs prompt budget for something the model was going to assume anyway. */
@@ -2196,6 +2234,38 @@ describe("tool calling", () => {
 
     await settle();
     expect(tools.events).toContain("stop:opening_times");
+  });
+
+  it("lets the agent report what a tool just did, and not what it did last time", async () => {
+    /**
+     * Both halves of the output guard's only hard rule, in one call.
+     *
+     * A tool ran, so the claim on that exchange is backed and must be spoken — without this
+     * the guard would be unusable, because reporting what it just did is most of what a
+     * tool is for. Then the caller says something new, nothing runs, and the same words are
+     * no longer supported. The clearing between the two is what the second half proves, and
+     * an earlier version of this test could not see it: with no tool ever running, the flag
+     * was already false and removing the reset changed nothing.
+     */
+    const tools = toolHarness([READ_TOOL]);
+    const h = setup({ makeTools: tools.makeTools });
+    started(h);
+
+    h.listen.final("When do you open?");
+    h.llm.last().callTools([{ name: "opening_times", args: {} }]);
+    await settle();
+    h.llm.last().emit("I've booked that in for you.");
+    h.llm.last().finish();
+    expect(h.tts.texts().join(" ")).toContain("I've booked that in");
+
+    // A new thing said by the caller. Nothing has been done for them in this exchange.
+    h.listen.final("And can you cancel the other one?");
+    h.llm.last().emit("I've cancelled the other one.");
+    h.llm.last().finish();
+
+    const spoken = h.tts.texts().join(" ");
+    expect(spoken).not.toContain("I've cancelled");
+    expect(spoken).toContain("someone to confirm that");
   });
 
   it("gives the model the result and speaks the reply it writes", async () => {

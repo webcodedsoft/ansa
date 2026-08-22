@@ -171,3 +171,28 @@ describe("forSpeech", () => {
     expect(forSpeech(plain)).toBe(plain);
   });
 });
+
+describe("things that only make sense on a screen", () => {
+  /**
+   * Emoji survived this package for as long as it has existed. They render silently in a
+   * chat window and are pronounced on a phone: "Done ✅" reaches the caller as "Done white
+   * heavy check mark", which is exactly the failure markdown stripping was added for.
+   */
+  it("removes emoji rather than letting them be read aloud", () => {
+    expect(forSpeech("Done \u{2705}")).toBe("Done");
+    expect(forSpeech("All set \u{1F389}")).toBe("All set");
+  });
+
+  it("removes the invisible characters that glue a composite emoji together", () => {
+    // A variation selector or a joiner left behind turns one unspoken symbol into two.
+    expect(forSpeech("Ready \u{1F468}\u{200D}\u{1F4BB}")).toBe("Ready");
+    expect(forSpeech("Warning \u{26A0}\u{FE0F}")).toBe("Warning");
+  });
+
+  it("leaves ordinary punctuation and accented letters alone", () => {
+    /* The ranges are narrow on purpose. Stripping too widely would eat the punctuation a
+       voice needs for its pauses, or a name somebody actually has. */
+    expect(forSpeech("Well — yes, that's right.")).toBe("Well — yes, that's right.");
+    expect(forSpeech("Adaeze Okonkwo")).toBe("Adaeze Okonkwo");
+  });
+});

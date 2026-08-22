@@ -56,9 +56,24 @@ const looksLikeSequence = (digits: string, preceding: string): boolean =>
   // number by construction.
   digits.startsWith("0") || digits.length >= 7 || SEQUENCE_CUE.test(preceding);
 
-/** The markdown the model emits despite being told not to. */
+/**
+ * Everything the model writes that only makes sense on a screen.
+ *
+ * Markdown, and emoji, which survived this for as long as it has existed: a tick and a
+ * party popper reach the voice as their spoken names, so "Done ✅" is read out as "Done
+ * white heavy check mark". Both are the same failure — characters that render silently in
+ * a chat window and are pronounced on a phone — so they are removed in the same place.
+ */
 const stripMarkdown = (text: string): string =>
   text
+    /* The emoji planes plus the older symbol and arrow blocks. */
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}]/gu, " ")
+    /* The variation selector and the zero-width joiner, separately and by alternation
+       rather than in the class above — they are combining characters, and eslint's
+       `no-misleading-character-class` is right that putting them in a range is a trap.
+       Both are invisible alone and are what glue a composite emoji together, so leaving
+       them behind turns one unspoken symbol into two. */
+    .replace(/\u{FE0F}|\u{200D}/gu, "")
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/`([^`]*)`/g, "$1")
     .replace(/^[ \t]*[#>*\-+][ \t]+/gm, "")
