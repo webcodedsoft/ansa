@@ -6891,6 +6891,12 @@
                                   "integer",
                                   "null"
                                 ]
+                              },
+                              "answeredBy": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               }
                             },
                             "required": [
@@ -6902,7 +6908,8 @@
                               "subject",
                               "outcome",
                               "tool",
-                              "chars"
+                              "chars",
+                              "answeredBy"
                             ],
                             "additionalProperties": false
                           }

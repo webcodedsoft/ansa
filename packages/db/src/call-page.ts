@@ -252,6 +252,15 @@ export interface CallEventDetail {
   readonly outcome: string | null;
   readonly tool: string | null;
   readonly chars: number | null;
+  /**
+   * The carrier's answering-machine verdict: "human", "machine" or "unknown".
+   *
+   * Safe to publish here, unlike most of what an event detail can hold — it is the carrier's
+   * judgement about who picked up, not anything the caller said. Recorded since migration
+   * 0045 and, until this was added, projected away: the console could see that detection had
+   * run and never what it concluded.
+   */
+  readonly answeredBy: string | null;
 }
 
 export interface CallEventItem {
@@ -313,6 +322,7 @@ const detailOf = (raw: unknown): CallEventDetail => {
     outcome: asString(d["outcome"]),
     tool: asString(d["tool"]),
     chars: asNumber(d["chars"]),
+    answeredBy: asString(d["answeredBy"]),
   };
 };
 

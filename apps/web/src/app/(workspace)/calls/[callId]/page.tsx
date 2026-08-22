@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { Card, PageHeader } from "@/components/ui";
 import { findCall } from "@/features/calls/calls.service";
+import { CallFlags } from "@/features/calls/components/call-flags";
 import { CallStats, computeCallStats } from "@/features/calls/components/call-stats";
 import { CallTimeline, EventTable, linesOf } from "@/features/calls/components/call-timeline";
 import { duration, humanise, when } from "@/lib/format";
@@ -39,6 +40,8 @@ const CallDetailPage = async ({
           call.configVersion === null ? "" : ` · configuration version ${call.configVersion}`
         }`}
       />
+
+      <CallFlags call={call} />
 
       <CallStats stats={stats} />
 

@@ -498,6 +498,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly outcome: string | null;
         readonly tool: string | null;
         readonly chars: number | null;
+        readonly answeredBy: string | null;
       };
       })[];
       }>(options, "GET", `/api/v1/calls/${encodeURIComponent(input.path.callId)}`, input),

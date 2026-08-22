@@ -95,7 +95,11 @@ const eventDetail = (detail: CallEvent["detail"]): string =>
     detail.tool,
     detail.subject,
     detail.outcome,
-    detail.reason,
+    /* Humanised like the event kind above it. These are slugs the dispatcher writes —
+       `outbound-write-refused`, `stale-confirmation` — and rendering them raw beside a
+       readable kind makes the reason look like an internal code rather than the answer to
+       "why did that not run". */
+    humanise(detail.reason),
     detail.ms === null ? null : `${detail.ms}ms`,
     detail.attempt === null ? null : `attempt ${detail.attempt}`,
   ]

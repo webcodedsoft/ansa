@@ -182,6 +182,11 @@ const callEvent = object({
     outcome: nullable(text()),
     tool: nullable(text()),
     chars: nullable(integer()),
+    /* The carrier's answering-machine verdict, recorded since migration 0045 and until now
+       never returned. Without it the console could show that detection ran and not what it
+       concluded, which is the half that matters — "machine" is why the agent left a message
+       and hung up instead of talking. */
+    answeredBy: nullable(text()),
   }),
 });
 
