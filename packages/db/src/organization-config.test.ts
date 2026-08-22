@@ -1,4 +1,5 @@
 import { asOrganizationId } from "@ansa/shared";
+import { Client } from "pg";
 import type { DataSource } from "typeorm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -342,5 +343,88 @@ describe("policies a screen cannot edit", () => {
     );
 
     expect(await livePolicies()).toEqual([]);
+  });
+});
+
+describe("an organisation with more than one agent", () => {
+  /**
+   * `config.*` has no agent in its route and resolves the oldest live one. With a second
+   * agent that is a coin toss that never says it flipped: an operator edits the agent they
+   * have open, publishes, and it lands on the other. Nothing errors and the version bumps.
+   *
+   * `POST /agents` exists, so this is one request away rather than hypothetical. Making the
+   * surface agent-scoped is the real fix; refusing to guess is the half worth having first.
+   */
+  const SECOND = "a2a2a2a2-a2a2-4a2a-8a2a-a2a2a2a2a2a2";
+
+  /**
+   * Seeded as the owner, because `ansa_app` cannot write this table — and that refusal is
+   * itself the system working. Agents are not created by the application role; the guard
+   * being tested exists for the day an operator creates one through the privileged path.
+   * Assertions still run as the app role, which is the one that publishes.
+   */
+  const owner = process.env["MIGRATION_DIRECT_URL"];
+
+  const asOwner = async (sql: string, params: readonly unknown[]): Promise<void> => {
+    const client = new Client({ connectionString: owner });
+    await client.connect();
+    try {
+      await client.query(sql, [...params]);
+    } finally {
+      await client.end();
+    }
+  };
+
+  const addSecondAgent = (): Promise<void> =>
+    asOwner(
+      `insert into agents (id, organization_id, name, created_at)
+       values ($1, $2, 'Second agent', now() + interval '1 hour')
+         on conflict (id) do nothing`,
+      [SECOND, A],
+    );
+
+  const removeSecondAgent = (): Promise<void> =>
+    asOwner("delete from agents where id = $1", [SECOND]);
+
+  it("publishes normally while there is only one", async () => {
+    // The case every organisation is in today. The guard must be invisible here.
+    await expect(
+      withOrganization(ds, A, (scope) => publishAgentConfig(scope, fields(), "one agent")),
+    ).resolves.toBeGreaterThan(0);
+  });
+
+  it.skipIf(owner === undefined)("refuses to publish rather than picking one", async () => {
+    await addSecondAgent();
+    try {
+      await expect(
+        withOrganization(ds, A, (scope) => publishAgentConfig(scope, fields(), "two agents")),
+      ).rejects.toThrow(/live agents/);
+    } finally {
+      await removeSecondAgent();
+    }
+  });
+
+  it.skipIf(owner === undefined)("says which organisation and how many, so the message is actionable", async () => {
+    /* "Something went wrong" would send somebody to the logs. The operator needs to know
+       the surface cannot mean one agent any more and which routes can. */
+    await addSecondAgent();
+    try {
+      await withOrganization(ds, A, (scope) => publishAgentConfig(scope, fields(), "two"));
+      expect.unreachable("the publish should have refused");
+    } catch (error) {
+      expect(String(error)).toContain("2 live agents");
+      expect(String(error)).toContain("agent-scoped");
+    } finally {
+      await removeSecondAgent();
+    }
+  });
+
+  it.skipIf(owner === undefined)("publishes again once the second agent is gone", async () => {
+    // The guard is about ambiguity, not a latch. Removing the second must restore the path.
+    await addSecondAgent();
+    await removeSecondAgent();
+    await expect(
+      withOrganization(ds, A, (scope) => publishAgentConfig(scope, fields(), "one again")),
+    ).resolves.toBeGreaterThan(0);
   });
 });

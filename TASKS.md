@@ -2707,8 +2707,21 @@ What to listen for, in order of what is actually in doubt:
 - [ ] Agent templates to pick from when creating the first one, and the create form itself.
 - [ ] Organisation-level general config that an agent's own settings override. Today an
       agent carries every value outright and there is no organisation default beneath it.
-- [ ] `config.*` is still organisation-scoped and resolves the oldest live agent. Three
-      places share that rule so they move together.
+- [~] `config.*` is still organisation-scoped and resolves the oldest live agent — **but it
+      no longer guesses.** Migration 0047: with more than one live agent the resolver raises
+      rather than picking, and `publish_agent_config` calls it instead of repeating the same
+      `order by created_at limit 1` on its own, so the guard cannot hold on the draft routes
+      and not on publish.
+
+      Refusing is not the fix, it is the half worth having first. With two agents the old
+      behaviour was a coin toss that never said it flipped: an operator edits the agent they
+      have open, publishes, and it lands on the other — no error, version bumped, and the
+      call that goes wrong afterwards is on an agent nobody was editing. `POST /agents`
+      exists, so that was one request away rather than hypothetical.
+
+      Costs nothing today: no organisation has a second agent, so the raise is unreachable
+      until somebody makes one, at which point being stopped is the point. **Still to do:**
+      the agent-scoped routes themselves, and the console screens that call them.
 
 - [x] ~~Capture enforcement is still the model's job on this path.~~ **Stale in every
       clause, corrected 2026-08-22 rather than deleted.** It said `attempts` did not count,
