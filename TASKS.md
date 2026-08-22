@@ -2743,9 +2743,19 @@ What to listen for, in order of what is actually in doubt:
       and the workspace at `/agents/[agentId]` both publish through `config.publish`, so
       today they would edit whichever agent that function picks. Make them agent-scoped
       before wiring a create form to `POST /agents`.
-- [ ] Only `GET /agents` is exercised over HTTP. The mutations are typechecked, schema-
-      checked by the drift test and unit-covered, but no test drives them through the
-      pipeline — the constraint behaviour underneath them was proven directly in psql.
+- [ ] **No agents route is exercised over HTTP** — not one, and this entry used to claim
+      `GET /agents` was. Checked 2026-08-22: `apps/api/src/api/agents/` holds a controller
+      and no test file, and nothing anywhere requests `/api/v1/agents`. Five routes are
+      uncovered: list, create, read, patch and delete.
+
+      Worth more now than when it was written. `POST /agents` and `DELETE /agents/:id` are
+      what move an organisation between one live agent and two, which is the condition
+      migration 0047 made `config.*` refuse on — so those two routes now decide whether a
+      publish succeeds or raises, and nothing drives them.
+
+      The work is a test file mirroring `calls.test.ts`: real database, real HTTP, two
+      organisations. Most of that file is harness — `seed`, `signIn`, `request`, the Nest
+      bootstrap — so the first question is whether to extract it rather than copy it.
 - [ ] Readiness is organisation-wide, so a failing check pauses every agent. Honest today
       (none of them can answer) and wrong once checks become per agent.
 
