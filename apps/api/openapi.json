@@ -5624,6 +5624,177 @@
         }
       }
     },
+    "/api/v1/agents/{agentId}/readiness": {
+      "get": {
+        "operationId": "readiness.report",
+        "tags": [
+          "readiness"
+        ],
+        "summary": "Whether this agent is live, and what is missing if it is not",
+        "description": "Read-only. Every check is a failure that has actually happened while onboarding an organisation by hand: a carrier webhook nobody set, a voice id that publishes happily and ends the first call, a vault key whose absence drops every tool silently at config load, a tool or event document that no longer parses. A check that cannot be decided from this process answers `unknown` with the reason rather than passing. No call is placed.",
+        "x-ansa-capability": "config:read",
+        "parameters": [
+          {
+            "name": "agentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "live": {
+                      "type": "boolean"
+                    },
+                    "checkedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "configVersion": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "checks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "enum": [
+                              "number.attached",
+                              "number.carrier_webhook",
+                              "number.traffic",
+                              "greeting",
+                              "voice",
+                              "consent_policy",
+                              "business_hours",
+                              "tools",
+                              "credentials",
+                              "events",
+                              "escalation"
+                            ]
+                          },
+                          "title": {
+                            "type": "string",
+                            "maxLength": 120
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "ok",
+                              "attention",
+                              "blocked",
+                              "unknown"
+                            ]
+                          },
+                          "detail": {
+                            "type": "string",
+                            "maxLength": 1200
+                          },
+                          "remedy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 600
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "title",
+                          "state",
+                          "detail",
+                          "remedy"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "live",
+                    "checkedAt",
+                    "configVersion",
+                    "checks"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/agents/{agentId}/tools": {
       "put": {
         "operationId": "agents.setTools",
@@ -11091,145 +11262,6 @@
           },
           "422": {
             "description": "The request did not match this endpoint's schema",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Something went wrong",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "The database is unreachable",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/readiness": {
-      "get": {
-        "operationId": "readiness.report",
-        "tags": [
-          "readiness"
-        ],
-        "summary": "Whether this organisation is live, and what is missing if it is not",
-        "description": "Read-only. Every check is a failure that has actually happened while onboarding an organisation by hand: a carrier webhook nobody set, a voice id that publishes happily and ends the first call, a vault key whose absence drops every tool silently at config load, a tool or event document that no longer parses. A check that cannot be decided from this process answers `unknown` with the reason rather than passing. No call is placed.",
-        "x-ansa-capability": "config:read",
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "live": {
-                      "type": "boolean"
-                    },
-                    "checkedAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "configVersion": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "checks": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "string",
-                            "enum": [
-                              "number.attached",
-                              "number.carrier_webhook",
-                              "number.traffic",
-                              "greeting",
-                              "voice",
-                              "consent_policy",
-                              "business_hours",
-                              "tools",
-                              "credentials",
-                              "events",
-                              "escalation"
-                            ]
-                          },
-                          "title": {
-                            "type": "string",
-                            "maxLength": 120
-                          },
-                          "state": {
-                            "type": "string",
-                            "enum": [
-                              "ok",
-                              "attention",
-                              "blocked",
-                              "unknown"
-                            ]
-                          },
-                          "detail": {
-                            "type": "string",
-                            "maxLength": 1200
-                          },
-                          "remedy": {
-                            "type": [
-                              "string",
-                              "null"
-                            ],
-                            "maxLength": 600
-                          }
-                        },
-                        "required": [
-                          "id",
-                          "title",
-                          "state",
-                          "detail",
-                          "remedy"
-                        ],
-                        "additionalProperties": false
-                      }
-                    }
-                  },
-                  "required": [
-                    "live",
-                    "checkedAt",
-                    "configVersion",
-                    "checks"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "No session, or a session that is no longer valid",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller's role does not hold config:read",
             "content": {
               "application/problem+json": {
                 "schema": {

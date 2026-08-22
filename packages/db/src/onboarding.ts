@@ -91,26 +91,33 @@ const toIsoOrNull = (value: unknown): string | null => {
  * happen — a session exists because the row that owns it does. Reported rather than
  * asserted, because the alternative is a null dereference in a health endpoint.
  */
-export const loadOnboardingFacts = async (scope: OrganizationScope): Promise<OnboardingFacts | null> => {
+export const loadOnboardingFacts = async (
+  scope: OrganizationScope,
+  agentId: string,
+): Promise<OnboardingFacts | null> => {
   const organizations = await scope.query<OrganizationRow>("select * from organizations limit 1");
   const row = organizations[0];
   if (row === undefined) return null;
 
-  /* Readiness is about the whole organisation, but three of its facts belong to an agent
-     now: the number it answers, the greeting it opens with and the voice it uses all moved
-     to `agents` in migration 0018, and 0026 dropped the stale copies here. The oldest live
-     agent, matching every other place that has to pick one without being told which.
+  /* Readiness mixes two scopes and always has. Credentials, consent and the event receivers
+     belong to the organisation; the number a caller dials, the greeting they hear, the voice
+     it is said in and the transfer target all belong to an agent — they moved to `agents` in
+     migration 0018 and 0026 dropped the stale copies here.
 
-     No agent at all is a real state since 0025 stopped creating one — a brand-new
-     organisation looks exactly like this — and it reads as "not ready", which is true. */
+     The agent is named now rather than resolved. It used to be the organisation's oldest live
+     one, which made the report identical for every agent an organisation ran: a second agent
+     with no number would have been reported ready because the first one had one.
+
+     An id that names no live agent returns null, which reads as "not ready" — true for a
+     brand-new organisation with no agent at all, and true for an archived one. */
   const agents = await scope.query<Record<string, unknown>>(
     `select greeting, voice_id, dialled_number, escalation_to_number, escalation_from_number
        from agents
-      where deleted_at is null
-      order by created_at, id
-      limit 1`,
+      where id = $1 and deleted_at is null`,
+    [agentId],
   );
-  const agent = agents[0] ?? {};
+  const agent = agents[0];
+  if (agent === undefined) return null;
 
   const credentials = await scope.query<{ ref: string }>(
     "select ref from organization_credentials order by ref",
@@ -118,8 +125,17 @@ export const loadOnboardingFacts = async (scope: OrganizationScope): Promise<Onb
 
   // `::int` because the driver hands a bigint back as a string, and a count compared with
   // `> 0` as a string is true for "0".
+  /* This agent's traffic, not the organisation's. The check this feeds says "a number is
+     attached and nothing has ever rung it", and answering that with another agent's calls is
+     how a silent line reports as working.
+
+     A call with no `agent_id` does not count, which is right going forward — `recordCall`
+     has always written one — and mildly wrong for rows predating that. The cost is an
+     organisation with only such rows being told its line has never rung, and the next real
+     call corrects it. */
   const traffic = await scope.query<{ received: number; last_at: unknown }>(
-    "select count(*)::int as received, max(created_at) as last_at from calls",
+    "select count(*)::int as received, max(created_at) as last_at from calls where agent_id = $1",
+    [agentId],
   );
 
   const deliveries = await scope.query<{ failed: number; pending: number }>(

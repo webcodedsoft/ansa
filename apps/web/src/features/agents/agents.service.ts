@@ -142,7 +142,16 @@ export const discardDraft = async (agentId: string) =>
 export const listGuarantees = async (agentId: string) =>
   (await api()).config.listGuarantees({ path: { agentId } });
 
-export const readinessReport = async () => (await api()).readiness.report();
+/**
+ * Whether one agent is live, and what is missing if it is not.
+ *
+ * Per agent since the checks stopped guessing which one they were about. The report still
+ * mixes two scopes — credentials, consent and event receivers are the organisation's — but
+ * the number, greeting, voice, transfer target and traffic are this agent's, and reporting
+ * another agent's is how a silent line looks wired.
+ */
+export const readinessReport = async (agentId: string) =>
+  (await api()).readiness.report({ path: { agentId } });
 
 /**
  * The voices the deployment's speech account can speak with.

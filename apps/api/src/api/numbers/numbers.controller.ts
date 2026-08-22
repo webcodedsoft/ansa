@@ -1,4 +1,4 @@
-import { loadOnboardingFacts } from "@ansa/db";
+import { liveAgentId, loadOnboardingFacts } from "@ansa/db";
 import { Controller, Get, Inject } from "@nestjs/common";
 
 import { Endpoint } from "../http/endpoint";
@@ -130,8 +130,18 @@ export class NumbersController {
     response: numberList,
   })
   async list(): Promise<Infer<typeof numberList>> {
-    const facts = await this.db.tx((scope) => loadOnboardingFacts(scope));
-    const number = facts?.dialledNumber ?? null;
+    /* Organisation-scoped, so it resolves rather than naming an agent — and `liveAgentId`
+       raises on two rather than picking one (migration 0047). Worth saying plainly what this
+       leaves owed: the endpoint describes itself as the organisation's numbers and answers
+       with one agent's, which is the same shape of wrong that `config.*` had before it was
+       made agent-scoped. The real source is `organization_numbers`, and moving it there is a
+       change to what this returns rather than to how it resolves. */
+    const number = await this.db.tx(async (scope) => {
+      const agentId = await liveAgentId(scope);
+      if (agentId === null) return null;
+      const facts = await loadOnboardingFacts(scope, agentId);
+      return facts?.dialledNumber ?? null;
+    });
     if (number === null) return { items: [] };
 
     const environment = loadNumbersEnvironment();

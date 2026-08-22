@@ -116,7 +116,7 @@ const AgentWorkspacePage = async ({
     readDraft(agentId),
     readTools(),
     readKnowledge(),
-    readinessReport(),
+    readinessReport(agentId),
     listVersions(agentId),
   ]);
 

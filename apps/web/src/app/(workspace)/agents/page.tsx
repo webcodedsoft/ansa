@@ -73,7 +73,7 @@ const statusOf = (
 const AgentsPage = async () => {
   const since = new Date(Date.now() - WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
-  const [agents, readiness] = await Promise.all([liveAgents(), readinessReport()]);
+  const agents = await liveAgents();
 
   /* Shared counts are decoration and must never take the page down: a failing credentials
      read should cost a number, not the agent somebody came here to open. */
@@ -88,13 +88,16 @@ const AgentsPage = async () => {
   const numberCount = numbers.status === "fulfilled" ? numbers.value.items.length : 0;
   const credentialCount = credentials.status === "fulfilled" ? credentials.value.items.length : 0;
 
-  const failing = readiness.checks.filter((check) => check.state !== "ok").length;
+  /* Three reads per agent, every one in flight at once. Sequentially this is 3N round trips
+     end to end, and the page waits for the slowest either way.
 
-  /* Two counts per agent, every one in flight at once. Sequentially this is 2N round trips
-     end to end, and the page waits for the slowest either way. */
+     Readiness joined the fan-out when it stopped being organisation-wide. It used to be one
+     report shown against every row, so an organisation whose first agent was wired reported
+     every other agent as live — including one with no number at all. A report per agent costs
+     a request per agent and is the only version of this column that means anything. */
   const counted = await Promise.all(
     agents.map(async (agent): Promise<AgentRow> => {
-      const [all, clean] = await Promise.allSettled([
+      const [all, clean, ready] = await Promise.allSettled([
         listCalls({ from: since, agentId: agent.agentId, perPage: 1 }),
         listCalls({
           from: since,
@@ -102,16 +105,25 @@ const AgentsPage = async () => {
           endReason: RESOLVED_END_REASON,
           perPage: 1,
         }),
+        readinessReport(agent.agentId),
       ]);
       const total = all.status === "fulfilled" ? all.value.total : 0;
       const resolved = clean.status === "fulfilled" ? clean.value.total : 0;
+      /* A readiness read that failed is not a passing one. Treated as not live with one
+         unexplained check, which is what `unknown` means everywhere else on this surface: a
+         check that could not run has not passed. */
+      const live = ready.status === "fulfilled" ? ready.value.live : false;
+      const failing =
+        ready.status === "fulfilled"
+          ? ready.value.checks.filter((check) => check.state !== "ok").length
+          : 1;
 
       return {
         id: agent.agentId,
         name: agent.name,
         summary: summarise(agent.persona, agent.enabledTools.length),
         answersOn: agent.dialledNumber,
-        status: statusOf(agent.dialledNumber, readiness.live, failing),
+        status: statusOf(agent.dialledNumber, live, failing),
         calls7d: total,
         // Null, not zero: no calls at all and no clean calls are different readings, and a
         // dash says the first where "0%" would accuse the agent of the second.

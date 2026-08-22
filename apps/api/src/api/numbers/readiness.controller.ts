@@ -1,10 +1,10 @@
 import { loadOnboardingFacts } from "@ansa/db";
-import { Controller, Get, Inject, ServiceUnavailableException } from "@nestjs/common";
+import { Controller, Get, Inject, NotFoundException } from "@nestjs/common";
 
 import { Endpoint } from "../http/endpoint";
-import { apiRoute } from "../http/request";
+import { apiRoute, FromPath } from "../http/request";
 import { choice, flag, integer, list, nullable, object, text, type Infer } from "../http/schema";
-import { timestamp } from "../schemas";
+import { timestamp, uuid } from "../schemas";
 import { OrganizationContext } from "../tenancy/organization-context";
 
 import { loadNumbersEnvironment } from "./environment";
@@ -24,6 +24,9 @@ import { CHECK_IDS, CHECK_STATES, evaluateReadiness } from "./readiness";
  * own rows, the carrier's record of a number, and whether a voice id resolves. Nothing is
  * written and nothing is sent to a third party's endpoint.
  */
+
+/** Which agent is being asked about. Readiness is per agent since it stopped guessing. */
+const agentPath = object({ agentId: uuid() });
 
 const readinessCheck = object({
   id: choice(CHECK_IDS),
@@ -46,25 +49,28 @@ const readinessReport = object({
   checks: list(readinessCheck),
 });
 
-@Controller(apiRoute("readiness"))
+@Controller(apiRoute("agents/:agentId/readiness"))
 export class ReadinessController {
   constructor(@Inject(OrganizationContext) private readonly db: OrganizationContext) {}
 
   @Get()
   @Endpoint({
-    summary: "Whether this organisation is live, and what is missing if it is not",
+    summary: "Whether this agent is live, and what is missing if it is not",
     description:
       "Read-only. Every check is a failure that has actually happened while onboarding an organisation by hand: a carrier webhook nobody set, a voice id that publishes happily and ends the first call, a vault key whose absence drops every tool silently at config load, a tool or event document that no longer parses. A check that cannot be decided from this process answers `unknown` with the reason rather than passing. No call is placed.",
     capability: "config:read",
+    params: agentPath,
     response: readinessReport,
   })
-  async report(): Promise<Infer<typeof readinessReport>> {
-    const facts = await this.db.tx((scope) => loadOnboardingFacts(scope));
-    if (facts === null) {
-      // Unreachable through a session, which cannot exist without the row that owns it. A
-      // 503 rather than a null dereference if it ever is reached.
-      throw new ServiceUnavailableException("this organisation's record could not be read");
-    }
+  async report(
+    @FromPath() path: Infer<typeof agentPath>,
+  ): Promise<Infer<typeof readinessReport>> {
+    const facts = await this.db.tx((scope) => loadOnboardingFacts(scope, path.agentId));
+    /* Null now covers three things and they are deliberately one answer: no organisation row,
+       no such agent, and an agent belonging to somebody else — RLS makes the last two the
+       same query result. A 404 rather than the old 503, because "there is nothing here to
+       report on" is the ordinary case for an id that is not yours and not an outage. */
+    if (facts === null) throw new NotFoundException();
 
     const environment = loadNumbersEnvironment();
     // Both at once. They are independent lookups against different vendors, and running

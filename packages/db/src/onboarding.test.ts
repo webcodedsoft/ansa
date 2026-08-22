@@ -166,8 +166,12 @@ beforeAll(async () => {
       [A],
     );
     await scope.query(
-      `insert into calls (organization_id, carrier_call_id, dialled) values ($1, 'CA-ready-a', '+2348770000001')
-       on conflict do nothing`,
+      /* `agent_id` set, as `recordCall` sets it on every real call. Readiness counts this
+             agent's traffic rather than the organisation's, so a fixture that left it null
+             would report a line nothing has ever rung — and the check would be right. */
+          `insert into calls (organization_id, agent_id, carrier_call_id, dialled)
+           values ($1, $1, 'CA-ready-a', '+2348770000001')
+           on conflict do nothing`,
       [A],
     );
     for (const status of ["failed", "failed", "pending", "delivered"]) {
@@ -201,8 +205,12 @@ beforeAll(async () => {
       [B],
     );
     await scope.query(
-      `insert into calls (organization_id, carrier_call_id, dialled) values ($1, 'CA-ready-b', '+2348880000002')
-       on conflict do nothing`,
+      /* `agent_id` set, as `recordCall` sets it on every real call. Readiness counts this
+             agent's traffic rather than the organisation's, so a fixture that left it null
+             would report a line nothing has ever rung — and the check would be right. */
+          `insert into calls (organization_id, agent_id, carrier_call_id, dialled)
+           values ($1, $1, 'CA-ready-b', '+2348880000002')
+           on conflict do nothing`,
       [B],
     );
     await scope.query(
@@ -226,7 +234,7 @@ afterAll(async () => {
 
 describe("the onboarding facts", () => {
   it("reads the organisation's own row without naming it", async () => {
-    const facts = await withOrganization(ds, A, loadOnboardingFacts);
+    const facts = await withOrganization(ds, A, (scope) => loadOnboardingFacts(scope, A));
     expect(facts).toMatchObject({
       organisationName: "Readiness A",
       dialledNumber: "+2348770000001",
@@ -237,13 +245,13 @@ describe("the onboarding facts", () => {
 
   /** Names, never the ciphertext beside them. A yes/no question does not need the secret. */
   it("reads credential reference names and no sealed values", async () => {
-    const facts = await withOrganization(ds, A, loadOnboardingFacts);
+    const facts = await withOrganization(ds, A, (scope) => loadOnboardingFacts(scope, A));
     expect(facts?.credentialRefs).toEqual(["policy_api"]);
     expect(JSON.stringify(facts)).not.toContain("v1.aaaa");
   });
 
   it("hands the tool document back unparsed, for readiness to parse as config load does", async () => {
-    const facts = await withOrganization(ds, A, loadOnboardingFacts);
+    const facts = await withOrganization(ds, A, (scope) => loadOnboardingFacts(scope, A));
     expect(facts?.toolConfig).toMatchObject({ http: [{ name: "check_policy" }] });
     expect(facts?.eventConfig).toBeNull();
   });
@@ -254,7 +262,7 @@ describe("the onboarding facts", () => {
    * bug this cast exists to prevent.
    */
   it("counts calls and deliveries as numbers", async () => {
-    const facts = await withOrganization(ds, A, loadOnboardingFacts);
+    const facts = await withOrganization(ds, A, (scope) => loadOnboardingFacts(scope, A));
     expect(facts?.callsReceived).toBe(1);
     expect(facts?.failedDeliveries).toBe(2);
     expect(facts?.pendingDeliveries).toBe(1);
@@ -268,7 +276,7 @@ describe("the onboarding facts", () => {
    * appear in A's report, and A's may not appear in B's.
    */
   it("shows each organisation only its own facts", async () => {
-    const forB = await withOrganization(ds, B, loadOnboardingFacts);
+    const forB = await withOrganization(ds, B, (scope) => loadOnboardingFacts(scope, B));
     expect(forB).toMatchObject({
       organisationName: "Readiness B",
       dialledNumber: "+2348880000002",
@@ -280,7 +288,7 @@ describe("the onboarding facts", () => {
   });
 
   it("reads business hours as unset rather than as a partial row", async () => {
-    const facts = await withOrganization(ds, A, loadOnboardingFacts);
+    const facts = await withOrganization(ds, A, (scope) => loadOnboardingFacts(scope, A));
     expect(facts?.businessHours).toBeNull();
   });
 });

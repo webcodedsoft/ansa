@@ -158,8 +158,10 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)(
       });
     });
 
-    it("answers readiness for a barely configured organisation without falling over", async () => {
-      const reply = await get("/api/v1/readiness");
+    it("answers readiness for a barely configured agent without falling over", async () => {
+      /* Per agent since the checks stopped guessing which one they were about. The agent is
+         seeded with its id equal to the organisation's, a few lines up. */
+      const reply = await get(`/api/v1/agents/${organizationId}/readiness`);
       expect(reply.status, JSON.stringify(reply.body)).toBe(200);
 
       const checks = reply.body["checks"] as { id: string; state: string }[];
@@ -179,7 +181,11 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)(
 
     /** No session, no answers. The guard is global; this is the proof for these routes. */
     it("refuses all three without a session", async () => {
-      for (const path of ["/api/v1/numbers", "/api/v1/numbers/provisioning", "/api/v1/readiness"]) {
+      for (const path of [
+        "/api/v1/numbers",
+        "/api/v1/numbers/provisioning",
+        `/api/v1/agents/${organizationId}/readiness`,
+      ]) {
         const response = await fetch(`${baseUrl}${path}`);
         expect(response.status, path).toBe(401);
       }

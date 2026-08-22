@@ -1613,10 +1613,14 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
 
   readiness: {
     /**
-     * Whether this organisation is live, and what is missing if it is not
+     * Whether this agent is live, and what is missing if it is not
      * Read-only. Every check is a failure that has actually happened while onboarding an organisation by hand: a carrier webhook nobody set, a voice id that publishes happily and ends the first call, a vault key whose absence drops every tool silently at config load, a tool or event document that no longer parses. A check that cannot be decided from this process answers `unknown` with the reason rather than passing. No call is placed.
      */
-    report: () =>
+    report: (input: {
+        readonly path: {
+          readonly agentId: string;
+        };
+      }) =>
       send<{
         readonly live: boolean;
         readonly checkedAt: string;
@@ -1628,7 +1632,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly detail: string;
         readonly remedy: string | null;
       })[];
-      }>(options, "GET", `/api/v1/readiness`, {}),
+      }>(options, "GET", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}/readiness`, input),
   },
 
   testCalls: {
