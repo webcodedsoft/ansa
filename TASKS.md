@@ -2812,6 +2812,32 @@ What to listen for, in order of what is actually in doubt:
       an account with sells no Nigerian inventory. That is a different sentence from "you
       cannot bring your own", and the two used to be muddled together in one paragraph.
 
+- [x] **Several numbers per organisation, asserted rather than assumed (2026-08-22).** The
+      schema always allowed it — `organization_numbers` is keyed on the number, so a row per
+      number was the shape from 0019 — but nothing proved it and two places assumed otherwise:
+      `GET /numbers` answered with one agent's `dialled_number`, and the console wrapper carried
+      a note reading "at most one today". `many-numbers.test.ts` proves three numbers on one
+      token, each reporting its own agent, and the third reporting null because nobody answers
+      it. That last state is where onboarding spends most of its time and it used to be
+      invisible.
+
+- [x] **`tools/organization/provision.mjs` worked again (2026-08-22).** It wrote
+      `organizations.dialled_number` and read `organizations.config_version`, both dropped by
+      migration 0026 when the organisation stopped being the agent — so Postgres answered
+      "column does not exist" and onboarding by hand failed at its first step. Nothing caught it
+      because nothing runs it in CI, which is the standing cost of a hand-run tool.
+      It inserts into `organization_numbers` now, in a transaction, and its idempotency rule
+      changed with the schema: re-running used to *rename* whoever held the number, which is a
+      surprising amount of damage for a typo in argv. It reports the holder and changes nothing.
+
+- [x] **The import instructions say what to do when it does not work (2026-08-22).** The failure
+      everybody hits is a webhook that never reaches us, and it looks identical to a number
+      nobody has called — the screen cannot tell them apart. The card now names what to check:
+      the URL exactly, POST rather than GET, saved against the number rather than the account
+      default. It also says the same URL takes every number they own, and that nothing here
+      needs a carrier password. With no numbers yet the instructions come first and the empty
+      table last, because with none the table is not the answer.
+
 - [ ] **Twilio numbers under the platform's own account, as part of a subscription.** Deferred
       by the user on 2026-08-22. Assignment to an agent needs no change when it lands — the
       picker reads `organization_numbers` and does not care how a row got there — and neither

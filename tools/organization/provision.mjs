@@ -3,11 +3,22 @@
 // Separate from config.mjs, and the split is the point rather than tidiness.
 //
 // `config.mjs` runs as `ansa_app` inside one organization's own scope, because everything it
-// writes is that organization's to decide. **This is not that.** `organizations.dialled_number` is the
-// ingress routing table: it is what turns a call on a wire into a organization id, and a organization
-// who could write it could claim a number nobody assigned them and answer calls meant for
-// somebody else. It is not in `app.publish_agent_config` for that reason and it is not
-// reachable from the onboarding path, so it lives here, as the owner, deliberately.
+// writes is that organization's to decide. **This is not that.** `organization_numbers` is the
+// ownership table, and an organisation that could write it could claim a line somebody else
+// controls at their own carrier. `ansa_app` holds SELECT on it and nothing else, so this runs
+// as the owner, deliberately.
+//
+// It is no longer the only way in. Migration 0054 lets an organisation prove it holds a number
+// by pointing that number's voice webhook at a URL carrying its own secret and calling it once
+// — the arriving call is the proof, because only a number's holder can say where it sends its
+// calls. This script stays for the numbers that predate that, for a number an operator is
+// handing over on somebody's behalf, and for creating the organisation in the first place.
+//
+// **This script was broken and had been for some time.** It wrote `organizations.dialled_number`
+// and read `organizations.config_version`, both dropped by migration 0026 when the organisation
+// stopped being the agent. Postgres answered "column does not exist" and the whole of onboarding
+// by hand failed at its first step. Nothing caught it because nothing runs it in CI, which is
+// the standing cost of a hand-run tool.
 //
 // Honest note about what that does and does not buy. `ansa_app` still holds INSERT on
 // `organizations` and the RLS policy passes for any row whose `id` equals the scope you set, so
@@ -19,10 +30,13 @@
 //
 //   MIGRATION_DIRECT_URL=... node tools/organization/provision.mjs "<name>" <+E164>
 //
-// Idempotent on the number: running it twice renames rather than creating a second organization
-// that would race the first for the same calls. It publishes nothing — the new organization has
-// no persona, no greeting, no voice and no keyterms until `config.mjs publish` gives it
-// some, which is the honest starting state and the one an onboarding runbook should
+// Idempotent on the number: running it twice reports who holds it and changes nothing. It used
+// to rename the holder instead, which is a surprising amount of damage for a typo in argv.
+//
+// It publishes nothing, and it routes nothing. The new organisation has no persona, no
+// greeting, no voice and no keyterms until `config.mjs publish` gives it some, and the number
+// rings nobody until an agent is created and routed to it — which is now done from the agent's
+// own page. That is the honest starting state and the one an onboarding runbook should
 // describe.
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
@@ -64,19 +78,53 @@ if (!url) throw new Error("MIGRATION_DIRECT_URL must be set: this runs as the ow
 const client = new Client({ connectionString: url, ssl: { rejectUnauthorized: false } });
 await client.connect();
 
-const { rows } = await client.query(
-  `insert into organizations (name, dialled_number) values ($1, $2)
-   on conflict (dialled_number) where dialled_number is not null
-     do update set name = excluded.name
-     returning id, name, dialled_number, config_version`,
-  [name, dialled],
-);
+/* Two statements, because they are two facts now: the organisation exists, and it holds a
+   number. They used to be one column on one row, which is what made "rename on conflict" a
+   sensible idempotency rule and what makes it a wrong one today — a second number for the same
+   organisation is an ordinary thing to want, not a collision. */
+await client.query("begin");
 
-const organization = rows[0];
-console.log(JSON.stringify(organization, null, 2));
+let organization;
+try {
+  const held = await client.query(
+    "select organization_id from organization_numbers where number = $1",
+    [dialled],
+  );
+  const holder = held.rows[0]?.organization_id ?? null;
+
+  if (holder === null) {
+    const created = await client.query(
+      "insert into organizations (name) values ($1) returning id, name",
+      [name],
+    );
+    organization = created.rows[0];
+    await client.query(
+      "insert into organization_numbers (organization_id, number, note) values ($1, $2, $3)",
+      [organization.id, dialled, `assigned by an operator to ${name}`],
+    );
+  } else {
+    /* Idempotent on the number, as it always was, but by refusing to move it rather than by
+       renaming whoever holds it. Re-running with a different name used to rename the holding
+       organisation, which is a surprising amount of damage for a typo in argv. */
+    const existing = await client.query("select id, name from organizations where id = $1", [
+      holder,
+    ]);
+    organization = existing.rows[0];
+    console.log(`${dialled} is already held by ${organization.name} (${organization.id}).`);
+    console.log("Nothing was changed. Numbers move between organisations by hand, on purpose.");
+  }
+
+  await client.query("commit");
+} catch (error) {
+  await client.query("rollback");
+  throw error;
+}
+
+console.log(JSON.stringify({ ...organization, number: dialled }, null, 2));
 console.log(
   `\nnext: ORGANIZATION_ID=${organization.id} node tools/organization/config.mjs publish <file.json> "<why>"`,
 );
+console.log(`      create an agent and route ${dialled} to it, or the number rings nobody`);
 console.log(`      and point the carrier's voice webhook for ${dialled} at /telephony/voice`);
 
 await client.end();

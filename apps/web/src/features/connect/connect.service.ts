@@ -14,7 +14,14 @@ import type { CredentialFormInput, WebhooksBody } from "./connect.schema";
 // Numbers
 // ---------------------------------------------------------------------------
 
-/** The numbers attached to this organisation. At most one today, per the API's own note. */
+/**
+ * Every number this organisation holds.
+ *
+ * As many as it likes. The note here used to say "at most one today", which was true of the
+ * old query rather than of the schema — `organization_numbers` has been keyed on the number
+ * itself since 0019, so a row per number per organisation was always the shape. What limited
+ * it was `GET /numbers` reading one agent's `dialled_number`, and that is fixed.
+ */
 export const listNumbers = async () => (await api()).numbers.list();
 
 /** What this organisation can and cannot do to get a number, and who to ask instead. */

@@ -131,16 +131,34 @@ export const ImportNumber = ({ webhook }: { readonly webhook: ClaimWebhook }) =>
             <h3 className="text-[13.5px] font-medium">What to do</h3>
             <ol className="mt-1.5 list-decimal space-y-1 pl-5 text-[12.5px] leading-relaxed text-[var(--ink-3)]">
               <li>Sign in wherever you bought the number and open its voice settings.</li>
-              <li>Set that number&apos;s voice webhook to the URL above, sent as {webhook.method}.</li>
+              <li>
+                Set that number&apos;s voice webhook to the URL above, sent as {webhook.method}.
+                Consoles call this different things — the voice webhook, the voice URL, the
+                answer URL, or on Twilio the field under &ldquo;A call comes in&rdquo;.
+              </li>
               <li>Call the number once from any handset. That call is what proves you hold it.</li>
               <li>
                 The number appears in the table above, unrouted. Give it an agent to answer on the{" "}
                 <Link href="/agents" className="underline">
                   Agents
                 </Link>{" "}
-                screen.
+                screen — until then it rings nobody.
+              </li>
+              <li>
+                Repeat with the same URL for every other number you want here. One URL, as many
+                numbers as you own.
               </li>
             </ol>
+
+            {/* The failure everybody hits, and the one the screen cannot detect for them: a
+                webhook that never reaches us looks identical to a number nobody has called.
+                Saying what to check beats leaving somebody refreshing a table. */}
+            <p className="mt-2 text-[12.5px] leading-relaxed text-[var(--ink-3)]">
+              If the number does not appear after the call, the webhook is not reaching us. Check
+              the URL is exact, that it is set as {webhook.method} rather than GET, and that you
+              saved it against the number itself and not the account default. Nothing here needs
+              your carrier password or account details — only that one setting.
+            </p>
           </div>
 
           <Notice tone="warn">

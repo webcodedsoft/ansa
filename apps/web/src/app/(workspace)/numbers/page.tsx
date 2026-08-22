@@ -32,12 +32,35 @@ const NumbersPage = async () => {
         meta="The numbers attached to this organisation, and the carrier's own record of where each one sends calls."
       />
 
-      <Card>
-        <NumbersTable numbers={items} />
-      </Card>
+      {/* Order follows what the reader came for, and that differs by whether they have a
+          number yet. With none, the table is an empty box and the instructions are the whole
+          page, so those go first. With one, the table is the answer and the import card is
+          how you add the next — an organisation can hold as many numbers as it likes. */}
+      {items.length === 0 ? (
+        <>
+          <Notice tone="warn">
+            No number is attached yet, so nobody can call this organisation&apos;s agents.
+            Bring one you already own using the steps below. Placing a test call from the Calls
+            screen works in the meantime.
+          </Notice>
 
-      <SectionHead>Getting a number</SectionHead>
-      {webhook !== null && <ImportNumber webhook={webhook} />}
+          <SectionHead>Bring a number you already own</SectionHead>
+          {webhook !== null && <ImportNumber webhook={webhook} />}
+
+          <Card>
+            <NumbersTable numbers={items} />
+          </Card>
+        </>
+      ) : (
+        <>
+          <Card>
+            <NumbersTable numbers={items} />
+          </Card>
+
+          <SectionHead>Bring another number</SectionHead>
+          {webhook !== null && <ImportNumber webhook={webhook} />}
+        </>
+      )}
 
       <Card description="What this deployment can and cannot do about numbers, straight from the API.">
         <Stack>
@@ -82,12 +105,6 @@ const NumbersPage = async () => {
         </Stack>
       </Card>
 
-      {items.length === 0 && (
-        <Notice tone="warn" className="mt-3.5">
-          No number is attached yet, so nobody can call the agent. Placing a test call from
-          the Calls screen still works.
-        </Notice>
-      )}
     </>
   );
 };
