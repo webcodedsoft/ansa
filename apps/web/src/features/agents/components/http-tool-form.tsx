@@ -18,6 +18,8 @@ import {
   type StepDef,
   type Tone,
 } from "@/components/ui";
+
+import { parseCurl } from "../curl-import";
 import { idleForm } from "@/lib/form-state";
 import { useFormToast } from "@/stores/toast.store";
 
@@ -103,6 +105,11 @@ export const HttpToolForm = ({
   onDone,
 }: Props) => {
   const [draft, setDraft] = useState<HttpToolDraft>(initial ?? emptyDraft());
+  const [curl, setCurl] = useState("");
+  /* What the paste could not carry, kept so the notice survives a re-render. Cleared on the
+     next paste rather than on edit: somebody who fixes a header should still be able to read
+     that their Authorization was dropped. */
+  const [imported, setImported] = useState<readonly string[]>([]);
   const [showProblems, setShowProblems] = useState(false);
   const [fields, setFields] = useState<readonly Found[]>([]);
   const [state, action, pending] = useActionState(saveHttpToolAction, idleForm() as ToolsState);
@@ -115,6 +122,25 @@ export const HttpToolForm = ({
 
   const edit = (over: Partial<HttpToolDraft>) => {
     setDraft((current) => ({ ...current, ...over }));
+  };
+
+  /**
+   * Fill the endpoint fields from a pasted command, and say what was left behind.
+   *
+   * Only the four fields a curl command actually contains. The name, description, parameters,
+   * speech and risk tier are untouched — a command carries none of them, and overwriting what
+   * somebody typed with an empty string because they pasted afterwards is the kind of thing
+   * that loses work silently.
+   */
+  const applyCurl = () => {
+    const { draft: parsed, unsupported } = parseCurl(curl);
+    edit({
+      url: parsed.url,
+      method: parsed.method,
+      send: parsed.send,
+      headers: parsed.headers,
+    });
+    setImported(unsupported);
   };
 
   const problems = useMemo(
@@ -176,6 +202,37 @@ export const HttpToolForm = ({
       hint: "What it is and where it goes",
       panel: (
         <Stack>
+          {/* First, because it is the fastest way to fill everything below it and useless
+              once they are filled by hand. Only offered on a new tool: pasting a command over
+              a tool somebody has already configured would silently discard their parameters,
+              speech and risk tier, none of which a curl command can express. */}
+          {initial === undefined && (
+            <Card
+              title="Start from a curl command"
+              description="Paste the one from your API's documentation. It fills in the endpoint below — check it, then carry on."
+            >
+              <Stack>
+                <TextAreaField
+                  label="curl command"
+                  rows={3}
+                  value={curl}
+                  onChange={(event: { target: { value: string } }) => setCurl(event.target.value)}
+                  placeholder="curl -X POST https://api.example.com/policies -H 'Accept: application/json'"
+                />
+                {imported.length > 0 && (
+                  <Notice tone="warn">
+                    Filled in what it could. It did not take {imported.join("; ")}.
+                  </Notice>
+                )}
+                <div>
+                  <Button variant="secondary" onClick={applyCurl} disabled={curl.trim() === ""}>
+                    Fill in from this
+                  </Button>
+                </div>
+              </Stack>
+            </Card>
+          )}
+
           <Card title="What it is" description="How the agent decides to reach for this, mid-call.">
             <Stack>
               <TextField

@@ -2230,7 +2230,30 @@ MCP servers appear in the list, still run, and round-trip untouched.
       `pathParams` was renamed `urlParams` and every message saying "path" now says what the
       rule is, because a field named for half of what it holds is how the next reader gets
       it wrong too. A test now pins query-string substitution end to end.
-- [ ] Not built: the curl/OpenAPI import.
+- [x] **The curl import is built (2026-08-22).** `curl-import.ts` parses a pasted command into
+      the HTTP tool draft: URL, method, headers, and whether arguments travel in the query or a
+      body. Wired into `http-tool-form.tsx` as the first card, and offered only on a *new* tool
+      — pasting over one somebody has configured would silently discard parameters, speech and
+      risk tier, none of which a curl command can express.
+
+      **Credentials never survive the paste.** An `Authorization`, `X-API-Key`, `api-key` or
+      `-u user:pass` is dropped and reported rather than copied into the draft. Pasting a
+      command with a live key into a form that stores it is how a key ends up inside a
+      configuration document, and the vault exists for exactly this. Two tests assert the key
+      appears nowhere in the resulting draft.
+
+      **No risk tier is guessed.** A POST is not necessarily a write, and the tier decides
+      whether a caller hears a value read back before anything happens — wrong is worse than
+      absent, so it stays at the default and a person picks.
+
+      Lenient rather than strict, which is safe because the result is a form somebody checks
+      rather than a tool that gets saved: nothing throws, a command it half-understands still
+      yields the parts it could, and `unsupported` names what it dropped. It survives the line
+      continuations and mixed quoting every documented command is wrapped in. 12 tests.
+
+      OpenAPI import is still not built. It is a different job — a document describing many
+      operations, where the question is which one you want — rather than the same job in
+      another format.
 
 ### Soft delete, where it means something (2026-08-15)
 
