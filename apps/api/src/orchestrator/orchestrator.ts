@@ -36,6 +36,7 @@ import {
   type EmotionalRead,
 } from "../conversation/emotional-read";
 import { describeSituation, renderSituation } from "../conversation/situation";
+import { asksToNotBeCalled } from "../outbound/stop-calling";
 import type { Handoff } from "../handoff/handoff";
 import { createEscalationWatch, type EscalationTrigger } from "../handoff/triggers";
 import { endsMidThought, isBareGreeting } from "./completeness";
@@ -234,6 +235,19 @@ export interface OrchestratorDeps {
    * through. Nothing may wait for this.
    */
   readonly callerHistory: () => CallerHistory | null;
+  /**
+   * Put this caller's number on the do-not-call list, permanently and everywhere.
+   *
+   * Fire and forget, and required rather than optional: an optional field here is a wire a
+   * construction site can forget, and the symptom would be a suppression that was heard,
+   * acknowledged out loud, and never written down. A deployment with no database supplies a
+   * no-op and says so.
+   *
+   * Takes the caller's words rather than a reason string. What they actually said is the
+   * only honest record of why the row exists, and it is what somebody reviewing a complaint
+   * six months from now will want to read.
+   */
+  readonly recordDoNotCall: (saidWhat: string) => void;
   /**
    * Builds the thing that hands the call to a person. Absent means escalation only logs,
    * as it did before there was anywhere to transfer to.
@@ -2375,6 +2389,13 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     const whole = carried === null ? text : `${carried.text} ${text}`;
     const wholeForModel =
       carried === null ? heard.forModel : `${carried.forModel} ${heard.forModel}`;
+
+    /* They asked never to be called again. Before the handoff check and before capture,
+       because this is the one thing on the caller path that outlives the call: a request
+       answered with a transfer, or with another readback, is a request that never reached
+       the suppression list. Recording it does not end the turn — the agent still has to
+       acknowledge it out loud, and the prompt is what decides how. */
+    if (asksToNotBeCalled(whole)) deps.recordDoNotCall(whole);
 
     // They asked to leave. Placed after the echo, backchannel, particle and repair
     // filters, so "put me through" echoed back from our own audio cannot transfer a call —

@@ -288,6 +288,31 @@ export interface ConsentRecord {
 }
 
 /**
+ * Write a suppression that holds everywhere, forever.
+ *
+ * Global on purpose rather than by omission: somebody who says "stop calling me" is not
+ * saying it to whichever organisation happened to dial them, and a per-organisation record
+ * would leave every other one free to ring the same person tomorrow. `loadConsentFacts`
+ * below has always counted global rows; until migration 0044 nothing could create one,
+ * because the write policy on this table refuses a null organisation from `ansa_app`. Hence
+ * the SECURITY DEFINER function, which takes no organisation and so cannot be talked into
+ * recording something narrower than what was asked for.
+ *
+ * Idempotent, and safe on a path that must never fail: repeating it is a no-op and the
+ * first reason recorded is kept.
+ */
+export const recordDoNotCall = async (
+  dataSource: Db,
+  organizationId: OrganizationId,
+  phoneNumber: string,
+  reason: string,
+): Promise<void> => {
+  await withOrganization(dataSource, organizationId, async (scope) => {
+    await scope.query(`select app.record_do_not_call($1::text, $2::text)`, [phoneNumber, reason]);
+  });
+};
+
+/**
  * Consent and suppression for one organization and one number.
  *
  * Runs inside the organization's own scope under RLS, so a organization cannot read another's consent

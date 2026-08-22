@@ -1,6 +1,7 @@
 import { asOrganizationId } from "@ansa/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { loadConsentFacts, recordDoNotCall } from "./call-config";
 import { readCallerHistory } from "./call-records";
 import { createDataSource, type Db } from "./data-source";
 import { withOrganization } from "./organization-scope";
@@ -160,5 +161,57 @@ describe("what this number has done before", () => {
     const history = await read();
     expect(history.lastContactDaysAgo).toBe(1);
     expect(history.contactsThisWeek).toBe(2);
+  });
+});
+
+describe("somebody asking never to be called again", () => {
+  const NUMBER = "+2348000000077";
+
+  it("writes a suppression the application role cannot write directly", async () => {
+    /* The write policy on `do_not_call` is `organization_id = app.current_organization()`,
+       so `ansa_app` cannot insert the global row this needs — which is why migration 0044
+       added a SECURITY DEFINER function and why this test connects as the app role. */
+    await recordDoNotCall(db, ORGANIZATION, NUMBER, "take me off your list");
+
+    const facts = await loadConsentFacts(db, ORGANIZATION, NUMBER);
+    expect(facts.suppressed).toBe(true);
+  });
+
+  it("suppresses the number for every other organisation too", async () => {
+    /* The point of the whole thing. Somebody who says "stop calling me" is not saying it to
+       whichever organisation happened to dial them, and a per-organisation record would
+       leave every other one free to ring them tomorrow. */
+    await recordDoNotCall(db, ORGANIZATION, NUMBER, "take me off your list");
+
+    const theirs = await loadConsentFacts(db, OTHER, NUMBER);
+    expect(theirs.suppressed).toBe(true);
+  });
+
+  it("can be recorded twice without failing", async () => {
+    /* Said three times in one sentence, or again on tomorrow's call. A path whose whole job
+       is to fail safe must not raise on the second attempt. */
+    await recordDoNotCall(db, ORGANIZATION, NUMBER, "first time");
+    await expect(recordDoNotCall(db, ORGANIZATION, NUMBER, "second time")).resolves.toBeUndefined();
+  });
+
+  it("cannot be taken back by the application", async () => {
+    /* "Permanently, no expiry" is the requirement, and it is enforced by the grant rather
+       than by anybody remembering: `ansa_app` holds SELECT and INSERT on this table and
+       nothing else. Found by writing an `afterAll` that tried to tidy these rows away and
+       watching it fail — which is the behaviour, not the bug. It does mean the rows below
+       outlive the suite, so the numbers are ones nothing else uses. */
+    await recordDoNotCall(db, ORGANIZATION, NUMBER, "take me off your list");
+
+    await expect(
+      withOrganization(db, ORGANIZATION, (scope) =>
+        scope.query("delete from do_not_call where phone_number = $1", [NUMBER]),
+      ),
+    ).rejects.toThrow(/permission denied/i);
+    expect((await loadConsentFacts(db, ORGANIZATION, NUMBER)).suppressed).toBe(true);
+  });
+
+  it("leaves other numbers alone", async () => {
+    await recordDoNotCall(db, ORGANIZATION, NUMBER, "take me off your list");
+    expect((await loadConsentFacts(db, ORGANIZATION, "+2348000000088")).suppressed).toBe(false);
   });
 });

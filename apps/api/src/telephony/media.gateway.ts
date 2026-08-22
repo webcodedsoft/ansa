@@ -15,6 +15,7 @@ import type { CallDirection, CallMediaStream, TelephonyProvider } from "@ansa/te
 import type { LlmProvider } from "@ansa/llm";
 import {
   readCallerHistory,
+  recordDoNotCall,
   recordKnowledgeRetrieval,
   searchKnowledge,
   withOrganization,
@@ -674,6 +675,38 @@ export class MediaGateway implements OnApplicationShutdown {
          of the same config would be two places for one of them to go stale. */
       businessHours: settings.businessHours,
       callerHistory: () => callerHistory,
+      /**
+       * Somebody asking never to be called again, written down before the call ends.
+       *
+       * Not awaited: the caller is mid-sentence and the agent still has to say something
+       * back. A failure is logged at error rather than swallowed quietly, and that is the
+       * one difference from every other write here — losing a transcript costs a review,
+       * losing this one means ringing somebody who asked us not to.
+       *
+       * A number we never learned cannot be suppressed. Logged loudly for the same reason:
+       * it means a withheld-CLI caller asked and we could not comply, which somebody has to
+       * be able to find afterwards.
+       */
+      recordDoNotCall: (saidWhat) => {
+        if (this.dataSource === null || settings.organizationId === null) return;
+        if (callerNumber === null) {
+          log.error("caller asked not to be called again, but their number is withheld", {
+            saidWhat,
+          });
+          return;
+        }
+        void recordDoNotCall(this.dataSource, settings.organizationId, callerNumber, saidWhat).then(
+          () => {
+            log.info("recorded a do-not-call request", { saidWhat });
+          },
+          (error: unknown) => {
+            log.error("could not record a do-not-call request", {
+              saidWhat,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          },
+        );
+      },
       // Null for an unregistered number, and the orchestrator reads that as "no tools on
       // this call at all". Such a caller may hold a conversation and must not reach
       // anybody's systems (CLAUDE.md rule 3).

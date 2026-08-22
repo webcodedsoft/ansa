@@ -203,6 +203,7 @@ export const scenario = (options: ScenarioOptions = {}): Scenario => {
        scenario that wants to be near closing can override it. */
     businessHours: null,
     callerHistory: () => null,
+    recordDoNotCall: () => undefined,
     voiceId: "voice-ng",
     // Scenarios are about the conversation, not the pace, so unless one says otherwise the
     // voice runs at its own.

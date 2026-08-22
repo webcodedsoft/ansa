@@ -52,6 +52,7 @@ const setup = (
     makeTools?: OrchestratorDeps["makeTools"];
     speakingRate?: number;
     businessHours?: OrchestratorDeps["businessHours"];
+    recordDoNotCall?: OrchestratorDeps["recordDoNotCall"];
     callerHistory?: OrchestratorDeps["callerHistory"];
   } = {},
 ) => {
@@ -75,6 +76,7 @@ const setup = (
     businessHours: null,
     // No history by default: every test written before this existed sees the same prompt.
     callerHistory: () => null,
+    recordDoNotCall: () => undefined,
     forSpeech: (t) => t.replace(/\bAnsa\b/g, "An-Sah"),
     // These tests drive transcripts directly to exercise turn logic and never fan in
     // audio, so the no-speech filter would discard every one of them. The filter has its
@@ -1236,6 +1238,76 @@ describe("the prompt the call was configured with", () => {
     assertInvariants(h);
   });
 
+  /**
+   * The suppression list had a reader and no writer.
+   *
+   * `mayCall` has checked `do_not_call` before consent and before hours since it was
+   * written, and every row in that table was put there by hand. A matcher with passing unit
+   * tests and no call site would have left it exactly as it was, so this drives a real turn.
+   */
+  it("writes down a caller asking never to be called again", () => {
+    const asked: string[] = [];
+    const h = setup({ recordDoNotCall: (saidWhat) => asked.push(saidWhat) });
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("Please take me off your list.");
+
+    // Their own words, not a canned reason: it is what somebody reviewing a complaint six
+    // months from now will want to read.
+    expect(asked).toEqual(["Please take me off your list."]);
+    assertInvariants(h);
+  });
+
+  it("still answers the caller who asked, rather than going silent on them", () => {
+    /* Recording is not the end of the turn. Somebody who asks to be taken off a list is
+       owed an acknowledgement out loud, and a request answered with silence is the version
+       of this that generates the complaint anyway. */
+    const h = setup({ recordDoNotCall: () => undefined });
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    const before = h.llm.completions.length;
+    h.listen.final("Please take me off your list.");
+
+    expect(h.llm.completions.length).toBeGreaterThan(before);
+    assertInvariants(h);
+  });
+
+  it("records the suppression even when the same breath asks for a person", () => {
+    /* This is why the check sits before the handoff branch and not after it. `callerSaid`
+       returns early — the caller is leaving, no model turn follows — so anything downstream
+       of it never runs. Placed after, a caller who says "take me off your list, put me
+       through to someone" gets transferred and never suppressed, which is the exact request
+       being ignored. */
+    const asked: string[] = [];
+    /* A handoff has to be configured or `escalate` returns false, the branch never returns
+       early, and the ordering this test exists for is unobservable — which is exactly how
+       the first version of it passed with the check moved. */
+    const h = setup({
+      makeHandoff: spyHandoff().make,
+      recordDoNotCall: (saidWhat) => asked.push(saidWhat),
+    });
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("Take me off your list and put me through to a person.");
+
+    expect(asked).toHaveLength(1);
+  });
+
+  it("does not suppress a caller who only asked for a person", () => {
+    // The two read alike and mean opposite things. This is the expensive mistake.
+    const asked: string[] = [];
+    const h = setup({ recordDoNotCall: (saidWhat) => asked.push(saidWhat) });
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("Put me through to a person please.");
+
+    expect(asked).toEqual([]);
+  });
+
   it("says nothing about hours on an ordinary in-hours turn", () => {
     /* Open is the default the prompt is written against. A block that fires every turn
        costs prompt budget for something the model was going to assume anyway. */
@@ -1740,6 +1812,7 @@ describe("audio that arrived before the listener existed", () => {
       systemPrompt: DEFAULT_SYSTEM_PROMPT,
       businessHours: null,
       callerHistory: () => null,
+      recordDoNotCall: () => undefined,
       organizationId: ORGANIZATION,
       forSpeech: (t) => t,
       minSpeechMs: 0,
@@ -1767,6 +1840,7 @@ describe("audio that arrived before the listener existed", () => {
       systemPrompt: DEFAULT_SYSTEM_PROMPT,
       businessHours: null,
       callerHistory: () => null,
+      recordDoNotCall: () => undefined,
       organizationId: ORGANIZATION,
       forSpeech: (t) => t,
       minSpeechMs: 0,

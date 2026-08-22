@@ -2923,7 +2923,59 @@ The brief asks for ~20 across five tags with the same behaviour.
       with the call id, and report fingerprints appearing in more than 15% of calls. Pure
       observability, no call-path risk, and it needs the other two to have run for a while
       before it has anything to say.
-- [ ] Phase 7 — outbound: AMD, DNC as a dial-time gate, consent basis, calling windows
+- [x] **Phase 7a — "stop calling me" is now written down**. Most of Phase 7 was already
+      built: `mayCall` is a pure verdict that checks suppression before consent and consent
+      before hours, with an outer 08:00-20:00 bound a organization may narrow and cannot
+      widen; AMD hangs up on `machine`/`fax` and keeps `human`/`unknown`; status callbacks
+      already distinguish busy, no-answer and failed. What was missing was the write.
+      - **The suppression table had a reader and no writer.** `mayCall` has checked
+        `do_not_call` since it was written; the only insert anywhere in the codebase was in
+        `rls.test.ts`. Every row in that table was put there by hand.
+      - And `ansa_app` could not have written one. The write policy is
+        `organization_id = app.current_organization()`, so the role can only record a
+        suppression scoped to itself — while the requirement is the opposite: somebody who
+        asks is asking every organisation, permanently. Migration 0044 adds
+        `app.record_do_not_call`, SECURITY DEFINER with a pinned search_path, taking no
+        organisation so it cannot be talked into narrowing the record.
+      - **"Permanently" is enforced by the grant, not by anybody remembering.** `ansa_app`
+        holds SELECT and INSERT on that table and nothing else, so the application cannot
+        take a suppression back. Found by writing an `afterAll` that tried to tidy the test
+        rows away and watching it fail; there is now a test asserting the refusal.
+      - `outbound/stop-calling.ts` matches the request, in English and Pidgin, and is
+        deliberately separate from `asksForAPerson` — they read alike and mean opposite
+        things, and putting "get me a manager" on a permanent list is the worse mistake. A
+        complaint ("you keep calling me") is not an instruction.
+      - It runs on **every** call, not only outbound. Somebody who rings in specially to say
+        it means it as much as an outbound recipient does.
+      - Placed before the handoff branch, which returns early. After it, a caller saying
+        "take me off your list and put me through to a person" is transferred and never
+        suppressed.
+
+- [ ] **Phase 7b — the rest of outbound.** Four items, none blocked, none as urgent as the
+      write above.
+      - **AMD leaves no message.** Today it hangs up on a machine, which is safer than the
+        brief's "play a single voicemail message" — nothing private can be left on a
+        stranger's answerphone — but it is a product decision, not an accident, and it
+        should be made deliberately. The brief also asks for the AMD false-positive rate to
+        be logged, because the model is trained on US carrier patterns and nobody knows how
+        it behaves on Nigerian networks. Nothing measures that yet.
+      - **A separate outbound prompt module** replacing the inbound OPENING section: state
+        who you are and why in one breath, ask whether now is a good time, never ask an
+        outbound recipient to verify anything. `prompts/` has no outbound layer.
+      - **Outbound metrics**: connect rate, human-answer rate, DNC rate, average
+        time-to-hangup. A rising DNC rate is the alarm and there is nothing to see it with.
+      - **The calling window is in WAT, not the recipient's local time.** Correct for every
+        Nigerian number and wrong for any other, and `mayCall` says `hourInWat` outright.
+        Worth fixing before anybody dials outside +234.
+
+- [ ] **Payment tools on outbound calls.** The brief asks for payment tools to be
+      uncallable on an outbound call regardless of configuration. There is no payment
+      category in the registry — tools carry a risk tier, not a kind — so the faithful
+      version of this rule is broader than the brief's wording: nothing that changes an
+      account should fire on a call the recipient did not initiate and cannot be verified
+      on. That means blocking the `write` tier outright when `direction` is outbound,
+      enforced in the dispatcher beside the existing tier check. It needs `direction`
+      threaded into `ToolCall`, which is why it is not in the commit above.
 - [ ] Phase 8 — dialogue policy layer and the output guard
 
 **Awaiting a real phone call:** phases 1, 2, 3a and 3b. None of them is done until one is
