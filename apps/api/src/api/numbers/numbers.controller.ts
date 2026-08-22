@@ -1,5 +1,7 @@
-import { listHeldNumbers } from "@ansa/db";
-import { Controller, Get, Inject } from "@nestjs/common";
+import { randomBytes } from "node:crypto";
+
+import { listHeldNumbers, readClaimToken, setClaimToken } from "@ansa/db";
+import { Controller, Get, Inject, NotFoundException, Post } from "@nestjs/common";
 
 import { uuid } from "../schemas";
 import { Endpoint } from "../http/endpoint";
@@ -7,37 +9,33 @@ import { apiRoute } from "../http/request";
 import { choice, flag, list, nullable, object, text, type Infer } from "../http/schema";
 import { OrganizationContext } from "../tenancy/organization-context";
 
-import { expectedVoiceWebhookUrl, loadNumbersEnvironment } from "./environment";
+import { expectedVoiceWebhookUrl, loadNumbersEnvironment, VOICE_WEBHOOK_PATH } from "./environment";
 import { carrierDirectoryFor, probeCarrierWebhook } from "./probes";
 import { clamp } from "./text";
 
 /**
  * The organisation's phone numbers, and the honest account of how it gets one.
  *
- * **This area is read-only, and that is a decision rather than an omission.**
+ * **Attaching is self-service now, and the proof is a phone call.** This header used to say
+ * the opposite — that the area was read-only by design, because nothing could prove an
+ * organisation controlled the number it named, and an organisation that could write the
+ * routing table could claim a line somebody else holds at their own carrier. That reasoning
+ * was right and the gap it described is closed rather than reopened.
  *
- * "Claim a number" is the first thing a Nigerian organisation asks for and the one thing
- * this platform cannot give them: the carrier it has an account with sells no Nigerian
- * inventory. A claim endpoint would be a button that always fails, so there is none, and
- * `GET /numbers/provisioning` says so in a form a dashboard can render.
+ * It closed by building the mechanism this file already specified: a per-organisation token
+ * the organisation puts in the voice webhook it configures at its own carrier, "the telephony
+ * equivalent of a DNS TXT record and which they can only do if they hold the number".
+ * `GET /numbers/webhook` mints and returns that URL; a call arriving on it attaches the
+ * number; migration 0054 has the full argument and `app.claim_number_with_token` is the only
+ * hole in the SELECT-only grant that 0019 established.
  *
- * "Attach a number I already own" is the useful half of that, and it is not here either.
- * `organizations.dialled_number` is the ingress routing table — `app.organization_for_number` resolves
- * every inbound call through it — and `docs/ORGANIZATION_CONFIGURATION.md` §5 keeps it out of the
- * organisation's reach for a concrete reason: an organisation that could write it could
- * claim a number nobody assigned it. The unique index stops two organisations holding the
- * same number, but nothing stops the *first* claim on a number somebody else controls at
- * their carrier, and the next organization to be onboarded onto it would find it taken and their
- * calls answered by a stranger's agent.
- *
- * Making that safe needs proof that the organisation controls the number, and there is
- * none available: the carrier cannot vouch for a number it does not sell, and a
- * verification call is a different task with its own consent question. The shape it would
- * take is written down in the report for this work — a per-organisation token the
- * organisation puts in the voice webhook they configure at their own carrier, which is the
- * telephony equivalent of a DNS TXT record and which they can only do if they hold the
- * number. Until something like that exists, attaching is an operator's job, and this
- * endpoint's job is to say so instead of failing obscurely.
+ * Two things did not change. A number somebody else has already proved is refused rather than
+ * moved, because proving control today does not entitle you to take a line off whoever proved
+ * it yesterday — porting stays an operator's job. And **buying** a number is still impossible:
+ * the carrier this deployment holds an account with sells no Nigerian inventory, so
+ * `claim.available` is still false and `GET /numbers/provisioning` still says why in a form a
+ * dashboard can render. That is a different sentence from "you cannot bring your own", and the
+ * two used to be muddled together.
  */
 
 /**
@@ -95,6 +93,22 @@ const attachedNumber = object({
  */
 const numberList = object({ items: list(attachedNumber) });
 
+/**
+ * The URL and nothing else. The token is inside it and is never returned on its own.
+ *
+ * `url` is null in two situations that need different answers on screen, which is why
+ * `addressable` exists rather than the caller inferring one from the other. No token yet is
+ * ordinary and the remedy is a button; no public address is an operator's misconfiguration and
+ * the remedy is not on this page. Collapsing them meant a fresh organisation being told its
+ * deployment was broken.
+ */
+const claimWebhook = object({
+  url: nullable(text({ maxLength: URL_LIMIT })),
+  /** Whether this process knows its own public address. False is nothing the reader can fix. */
+  addressable: flag(),
+  method: choice(["POST"]),
+});
+
 const provisioning = object({
   /** The carrier this deployment can read. Null when it holds no carrier credentials. */
   carrier: nullable(text({ maxLength: 32 })),
@@ -105,7 +119,9 @@ const provisioning = object({
   }),
   attach: object({
     selfService: flag(),
-    reason: choice(["operator-owned-ingress"]),
+    /* `prove-by-webhook` since migration 0054: attaching is self-service now, and the proof is
+       that a call arrives on a URL only the number's holder could have configured. */
+    reason: choice(["operator-owned-ingress", "prove-by-webhook"]),
     detail: text({ maxLength: 800 }),
   }),
   voiceWebhook: object({
@@ -120,7 +136,7 @@ const CLAIM_DETAIL =
   "A number cannot be bought through this API. The carrier this platform holds an account with sells no Nigerian numbers, so there is no inventory to offer and no endpoint that would succeed. Bring a number you already hold with your own carrier.";
 
 const ATTACH_DETAIL =
-  "A number is attached by an operator, not from here. The attached number is the ingress routing table for every inbound call on this deployment, and nothing yet proves that an organisation controls the number it asks for — so a self-service attach could take a number belonging to somebody who has not been onboarded onto it. Send the number to your operator.";
+  "Point your carrier's voice webhook at the URL below and call the number once. The call proves you hold it — only the holder can say where a number sends its calls — and the number attaches itself. Nothing is typed in, because a number somebody types is a number they might not own.";
 
 const WEBHOOK_DETAIL =
   "Configure this at your carrier as the number's voice webhook. Until it is set, the number rings nowhere and every other part of the configuration will still look correct.";
@@ -177,6 +193,69 @@ export class NumbersController {
     };
   }
 
+  /**
+   * The URL this organisation points its carrier at, secret and all.
+   *
+   * `config:write`, unlike everything else on this surface, and the difference is the point: a
+   * reader with `config:read` is a member who can see what the agent says, and this value is a
+   * bearer secret that attaches numbers. It is the one thing here that is not safe to show
+   * everybody who can see the page it belongs on.
+   *
+   * Answers null until somebody asks for one. Minting is `POST webhook/rotate`, so an
+   * organisation that never imports a number never has a secret to leak — and opening a page
+   * is never a write.
+   */
+  @Get("webhook")
+  @Endpoint({
+    summary: "The webhook URL to configure at your carrier, including this organisation's secret",
+    description:
+      "Point a number's voice webhook here at whichever provider sold it to you, then call the number once. The call proves you hold it and the number attaches itself — only the holder of a number can decide where it sends its calls. Treat the URL as a password: anyone who has it can attach numbers to this organisation. Rotate it if it leaks; numbers already attached stay attached.",
+    capability: "config:write",
+    response: claimWebhook,
+  })
+  async webhook(): Promise<Infer<typeof claimWebhook>> {
+    /* A read, and only a read. An earlier version minted on first GET, which was convenient
+       and wrong twice over: it made opening a page a write, and it meant every organisation
+       ended up holding a secret whether or not it ever imported a number — the opposite of
+       what migration 0054 promises. Null here means "none yet", and the caller asks for one. */
+    const token = await this.db.tx((scope) => readClaimToken(scope));
+    return {
+      url: this.claimUrl(token),
+      addressable: loadNumbersEnvironment().publicBaseUrl !== null,
+      method: "POST",
+    };
+  }
+
+  @Post("webhook/rotate")
+  @Endpoint({
+    summary: "Create or replace the secret in the webhook URL",
+    description:
+      "Also how the first one is created: there is no separate generate step, because minting and replacing are the same act. The old URL stops working the moment this returns and every number already attached stays attached — but a carrier still pointing at the old URL stops reaching this organisation, so have their settings open before you rotate.",
+    capability: "config:write",
+    response: claimWebhook,
+    status: 201,
+  })
+  async rotate(): Promise<Infer<typeof claimWebhook>> {
+    /* 32 bytes from the platform's own randomness rather than a database default, and this is
+       the only place a token is ever minted — which is what makes "never logged" a property
+       somebody can check rather than a hope. */
+    const minted = randomBytes(32).toString("hex");
+    const saved = await this.db.tx((scope) => setClaimToken(scope, minted));
+    if (!saved) throw new NotFoundException();
+    return {
+      url: this.claimUrl(minted),
+      addressable: loadNumbersEnvironment().publicBaseUrl !== null,
+      method: "POST",
+    };
+  }
+
+  /** Null when there is no token, or when this process does not know its own address. */
+  private claimUrl(token: string | null): string | null {
+    const base = loadNumbersEnvironment().publicBaseUrl;
+    if (token === null || base === null) return null;
+    return clamp(`${base}${VOICE_WEBHOOK_PATH}/${token}`, URL_LIMIT);
+  }
+
   @Get("provisioning")
   @Endpoint({
     summary: "What this organisation can and cannot do to get a number",
@@ -190,7 +269,7 @@ export class NumbersController {
     return {
       carrier: carrierDirectoryFor(environment)?.name ?? null,
       claim: { available: false, reason: "no-nigerian-inventory", detail: CLAIM_DETAIL },
-      attach: { selfService: false, reason: "operator-owned-ingress", detail: ATTACH_DETAIL },
+      attach: { selfService: true, reason: "prove-by-webhook", detail: ATTACH_DETAIL },
       voiceWebhook: {
         url: expectedVoiceWebhookUrl(environment)?.slice(0, URL_LIMIT) ?? null,
         method: "POST",

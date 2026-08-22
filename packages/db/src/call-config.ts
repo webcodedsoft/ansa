@@ -388,3 +388,25 @@ export const loadOutboundPolicy = async (
     };
   });
 
+/**
+ * Which organisation owns a claim token, and attach the dialled number to it.
+ *
+ * Runs at ingress on an unscoped connection, exactly as `loadAgentForNumber` does and for the
+ * same reason: resolving the organisation is the thing being asked, so there is no scope to
+ * set yet. Both functions behind it are SECURITY DEFINER.
+ *
+ * Returns the organisation now holding the number, or null when nothing was proved — an
+ * unknown token, a closed organisation, or a number somebody else already holds are one answer
+ * on purpose. An unauthenticated webhook must not be able to learn which.
+ */
+export const claimNumberWithToken = async (
+  dataSource: Db,
+  token: string,
+  dialledNumber: string,
+): Promise<string | null> => {
+  const rows = (await dataSource.query("select app.claim_number_with_token($1, $2) as organization", [
+    token,
+    dialledNumber,
+  ])) as { organization: string | null }[];
+  return rows[0]?.organization ?? null;
+};

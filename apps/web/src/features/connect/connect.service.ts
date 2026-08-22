@@ -24,6 +24,26 @@ export type NumbersList = Awaited<ReturnType<typeof listNumbers>>;
 export type NumberSummary = NumbersList["items"][number];
 export type NumberProvisioning = Awaited<ReturnType<typeof numberProvisioning>>;
 
+/**
+ * The URL a carrier's voice webhook is pointed at to import a number, secret and all.
+ *
+ * Minted on first read rather than when the organisation was created, so an organisation
+ * that never imports a number never has a secret in existence to leak. Every read after
+ * that returns the same URL — `rotateClaimWebhook` is the only thing that changes it.
+ */
+export const claimWebhook = async () => (await api()).numbers.webhook();
+
+/**
+ * Replace the secret inside that URL.
+ *
+ * The old URL stops answering the moment this returns. Numbers already attached stay
+ * attached, but their carriers are still pointing at the dead address, so this is a
+ * deliberate outage for every one of them until each is moved to the new URL.
+ */
+export const rotateClaimWebhook = async () => (await api()).numbers.rotate();
+
+export type ClaimWebhook = Awaited<ReturnType<typeof claimWebhook>>;
+
 // ---------------------------------------------------------------------------
 // Event subscriptions (webhooks)
 // ---------------------------------------------------------------------------

@@ -153,7 +153,11 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)(
       expect(reply.body).toMatchObject({
         carrier: null,
         claim: { available: false, reason: "no-nigerian-inventory" },
-        attach: { selfService: false, reason: "operator-owned-ingress" },
+        /* Self-service since migration 0054, and the reason names how rather than refusing:
+           an organisation points its carrier at the tokened webhook and calls the number
+           once, which proves it holds the line. Buying one is still unavailable — the carrier
+           this deployment holds an account with sells no Nigerian inventory. */
+        attach: { selfService: true, reason: "prove-by-webhook" },
         voiceWebhook: { url: "https://readiness.test/telephony/voice", method: "POST" },
       });
     });

@@ -2773,19 +2773,51 @@ What to listen for, in order of what is actually in doubt:
         add one, which is the whole of migration 0019 — `ansa_app` has SELECT on
         `organization_numbers` and nothing else.
 
-- [ ] **Numbers page: add or import a number (planned 2026-08-22).** A screen where an
-      organisation brings a number it already holds at another provider, or takes one from
-      Twilio under the platform's own account as part of its subscription. Assignment to an
-      agent is already built — see the entry above — and needs no change when this lands,
-      because the picker reads `organization_numbers` and does not care how a row got there.
+- [x] **Importing a number is self-service, and proved by a phone call (2026-08-22).**
+      Migration 0054 builds the mechanism `numbers.controller.ts` had specified in prose since
+      it was written: a per-organisation token in the voice webhook the organisation configures
+      at its own carrier — "the telephony equivalent of a DNS TXT record and which they can
+      only do if they hold the number".
 
-      What has to change with it: `GET /numbers/provisioning` currently answers
-      `claim.available: false` with `no-nigerian-inventory` and `attach.selfService: false`
-      with `operator-owned-ingress`, and both messages are written as permanent facts rather
-      than as today's state. The second one carries a real constraint that survives the
-      change — nothing proves an organisation controls a number it names, and the attached
-      number is the ingress routing table for the whole deployment — so importing somebody
-      else's number has to be gated on proving control of it, not just on asking.
+      **Why the webhook is the proof.** Deciding where a number sends its calls is something
+      only its holder can do, at the carrier that sold it. So a call arriving on a URL carrying
+      an organisation's secret proves both that somebody holds the number and which
+      organisation they are. No operator in the loop, and nothing typed in — a number somebody
+      types is a number they might not own.
+
+      **It also fixes the thing that made importing impossible rather than merely unbuilt.** A
+      number on another provider posts to us signed with *their* secret, so `verifyWebhook`
+      would 403 every call. `POST /telephony/voice/:token` does not consult it: the token is
+      the authentication for that path, which the fake in `claim-ingress.test.ts` pins by
+      returning false from `verifyWebhook` throughout.
+
+      What it refuses matters more than what it allows, and each is tested:
+      - a number another organisation already proved is refused and **not moved** — proving
+        control today does not entitle you to take a line off whoever proved it yesterday, and
+        a silent transfer is indistinguishable from a hijack. Porting stays an operator's job.
+      - an unknown token, a closed organisation and somebody else's number are one answer, so
+        an unauthenticated webhook cannot become an oracle for who holds what.
+      - the route answers identical TwiML either way, so it cannot be used to test whether a
+        token is real.
+      - `ansa_app` still has no INSERT on `organization_numbers`. `app.claim_number_with_token`
+        is the single narrow hole through the 0019 boundary, and a test asserts the direct
+        insert still fails.
+      - repeats are idempotent: every call to a claimed number arrives on the same webhook.
+
+      The token is a bearer secret in a URL and the code says so. 32 bytes minted in the
+      application, never logged, rotatable — and rotating detaches nothing, though carriers
+      must be repointed before rotating rather than after.
+
+      Still true: **buying** a number is impossible, because the carrier this deployment holds
+      an account with sells no Nigerian inventory. That is a different sentence from "you
+      cannot bring your own", and the two used to be muddled together in one paragraph.
+
+- [ ] **Twilio numbers under the platform's own account, as part of a subscription.** Deferred
+      by the user on 2026-08-22. Assignment to an agent needs no change when it lands — the
+      picker reads `organization_numbers` and does not care how a row got there — and neither
+      does the ingress, because a number on our own account is signed and takes the existing
+      `POST /telephony/voice` path. What it needs is billing, and an inventory this carrier
+      does not currently sell for Nigeria.
 
 - [x] **`GET /numbers` reads the numbers table (2026-08-22).** It described itself as the
       organisation's numbers and answered with one agent's `dialled_number`, read through the

@@ -1515,7 +1515,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       };
         readonly attach: {
         readonly selfService: boolean;
-        readonly reason: "operator-owned-ingress";
+        readonly reason: "operator-owned-ingress" | "prove-by-webhook";
         readonly detail: string;
       };
         readonly voiceWebhook: {
@@ -1524,6 +1524,28 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly detail: string;
       };
       }>(options, "GET", `/api/v1/numbers/provisioning`, {}),
+
+    /**
+     * The webhook URL to configure at your carrier, including this organisation's secret
+     * Point a number's voice webhook here at whichever provider sold it to you, then call the number once. The call proves you hold it and the number attaches itself — only the holder of a number can decide where it sends its calls. Treat the URL as a password: anyone who has it can attach numbers to this organisation. Rotate it if it leaks; numbers already attached stay attached.
+     */
+    webhook: () =>
+      send<{
+        readonly url: string | null;
+        readonly addressable: boolean;
+        readonly method: "POST";
+      }>(options, "GET", `/api/v1/numbers/webhook`, {}),
+
+    /**
+     * Create or replace the secret in the webhook URL
+     * Also how the first one is created: there is no separate generate step, because minting and replacing are the same act. The old URL stops working the moment this returns and every number already attached stays attached — but a carrier still pointing at the old URL stops reaching this organisation, so have their settings open before you rotate.
+     */
+    rotate: () =>
+      send<{
+        readonly url: string | null;
+        readonly addressable: boolean;
+        readonly method: "POST";
+      }>(options, "POST", `/api/v1/numbers/webhook/rotate`, {}),
   },
 
   organization: {

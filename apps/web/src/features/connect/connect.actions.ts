@@ -6,7 +6,12 @@ import { failureMessage } from "@/lib/api/server";
 import { failedForm, invalidForm, succeededForm, type FormState } from "@/lib/form-state";
 
 import { credentialDeleteSchema, credentialFormSchema, webhooksFormSchema } from "./connect.schema";
-import { putCredential, removeCredential, replaceSubscriptions } from "./connect.service";
+import {
+  putCredential,
+  removeCredential,
+  replaceSubscriptions,
+  rotateClaimWebhook,
+} from "./connect.service";
 
 // ---------------------------------------------------------------------------
 // Webhooks (event subscriptions)
@@ -60,6 +65,40 @@ export const saveSubscriptions = async (
     // version the form was built from and the next save carries stale fields forward.
     revalidatePath("/webhooks");
     return succeededForm({ configVersion: result.configVersion });
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Importing a number (the carrier webhook secret)
+// ---------------------------------------------------------------------------
+
+export interface RotatedWebhook {
+  readonly url: string | null;
+}
+
+export type RotateWebhookState = FormState<RotatedWebhook>;
+
+/**
+ * Mint a new secret for the import URL and discard the one it replaces.
+ *
+ * There is no schema and nothing is read off the form: rotation takes no input, and this is
+ * a form at all only so the request goes through a Server Action rather than a fetch from
+ * the browser holding a session the client has no business handling. The confirmation lives
+ * on the button, because the damage is not in this request — it is in the carriers that were
+ * already pointed at the URL this one throws away.
+ */
+export const rotateWebhook = async (
+  _previous: RotateWebhookState,
+  _form: FormData,
+): Promise<RotateWebhookState> => {
+  try {
+    const rotated = await rotateClaimWebhook();
+    // Without this the screen keeps offering the URL that just stopped answering, and a
+    // secret nobody can tell is dead is worse than no secret on screen at all.
+    revalidatePath("/numbers");
+    return succeededForm({ url: rotated.url });
   } catch (error) {
     return failedForm(failureMessage(error));
   }

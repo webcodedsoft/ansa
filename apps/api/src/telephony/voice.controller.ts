@@ -6,13 +6,19 @@ import {
   HttpCode,
   HttpStatus,
   Inject,
+  Param,
   Post,
   Res,
 } from "@nestjs/common";
-import { closeCallByCarrierId, recordCallEventByCarrierId, type Db } from "@ansa/db";
+import {
+  claimNumberWithToken,
+  closeCallByCarrierId,
+  recordCallEventByCarrierId,
+  type Db,
+} from "@ansa/db";
 import { asCallId } from "@ansa/shared";
 import type { Logger } from "@ansa/shared";
-import { wasAnswered, type TelephonyProvider } from "@ansa/telephony";
+import { wasAnswered, type InboundCall, type TelephonyProvider } from "@ansa/telephony";
 
 import type { AppConfig } from "../config/env";
 import { MediaGateway } from "./media.gateway";
@@ -53,6 +59,61 @@ export class VoiceController {
     @Inject(MediaGateway) private readonly media: MediaGateway,
   ) {}
 
+  /**
+   * The same call, arriving on an organisation's own carrier.
+   *
+   * A number an organisation brings from another provider posts here, and it cannot be
+   * signature-checked: `verifyWebhook` computes a Twilio signature with *our* account's auth
+   * token, and their carrier is not our account. Every such call would be a 403 on the signed
+   * path, which is why importing a number was impossible rather than merely unbuilt.
+   *
+   * **The token in the path is the authentication for this route.** That is the whole of it —
+   * there is no signature and no second factor. It is a 32-byte secret only this organisation
+   * has, and only somebody who holds the number can put it where their carrier will send it,
+   * which is exactly what makes the arrival of a call proof of control. Migration 0054 has the
+   * full argument.
+   *
+   * Three consequences, each deliberate. The token never reaches a log line, here or anywhere
+   * below. An unknown token is answered with the same TwiML as a known one on an unrouted
+   * number, so this path cannot be used to test whether a token is real. And a number somebody
+   * else already holds is refused rather than moved, so pointing your carrier at us does not
+   * take a line off whoever proved it first.
+   */
+  @Post("voice/:token")
+  @HttpCode(HttpStatus.OK)
+  async answerForToken(
+    @Param("token") token: string,
+    @Body() body: unknown,
+    @Res({ passthrough: true }) res: HttpResponse,
+  ): Promise<string> {
+    const call = this.telephony.parseInboundCall(body);
+    const log = this.log.child({ callId: call.callId });
+
+    /* Attach the number if this organisation has proved it and nobody holds it yet. Null is
+       every failure at once — unknown token, closed organisation, somebody else's number —
+       and the response does not distinguish them. */
+    const proved =
+      this.dataSource === null
+        ? null
+        : await claimNumberWithToken(this.dataSource, token, call.dialled).catch((error: unknown) => {
+            /* A failed claim must not drop the call. The number may already be routed and
+               working; this is the path every one of its calls arrives on. */
+            log.error("claiming a number failed", {
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return null;
+          });
+
+    log.info("inbound call on a carrier webhook", {
+      dialled: call.dialled,
+      caller: call.caller,
+      // The organisation, never the token that named it.
+      organizationId: proved,
+    });
+
+    return this.connect(call, log, res);
+  }
+
   @Post("voice")
   // Nest answers POST with 201 by default. The carrier expects 200 for TwiML and
   // treats anything else as a failed webhook, which drops the call.
@@ -77,6 +138,23 @@ export class VoiceController {
     const log = this.log.child({ callId: call.callId });
     log.info("inbound call", { dialled: call.dialled, caller: call.caller });
 
+    return this.connect(call, log, res);
+  }
+
+  /**
+   * Everything below "which call is this" — shared by the signed webhook and the tokened one.
+   *
+   * One implementation rather than two, for the reason the media path is one implementation
+   * for inbound and outbound: the difference between these routes is entirely in how the call
+   * is authenticated and whether a number gets attached on the way in. Once that is settled
+   * they are the same call, and a second copy of the answer would be a second place for
+   * warm-up, stream parameters and the caller-history read to drift.
+   */
+  private async connect(
+    call: InboundCall,
+    log: Logger,
+    res: HttpResponse,
+  ): Promise<string> {
     // Resolved here, before anything else happens (R7.3). The media socket carries no
     // dialled number, so it travels to it as a stream parameter.
     const organization = await this.organizations.resolve(call.dialled);

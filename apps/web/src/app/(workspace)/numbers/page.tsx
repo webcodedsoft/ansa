@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 
-import { Button, Card, Notice, PageHeader, SectionHead, SettingRow, Stack, Tag } from "@/components/ui";
-import { listNumbers, numberProvisioning } from "@/features/connect/connect.service";
+import { Card, Notice, PageHeader, SectionHead, SettingRow, Stack, Tag } from "@/components/ui";
+import { claimWebhook, listNumbers, numberProvisioning } from "@/features/connect/connect.service";
+import { ImportNumber } from "@/features/connect/components/import-number";
 import { NumbersTable } from "@/features/connect/components/numbers-table";
 
 export const metadata: Metadata = { title: "Numbers · Ansa" };
@@ -16,6 +17,13 @@ export const dynamic = "force-dynamic";
 const NumbersPage = async () => {
   const [{ items }, provisioning] = await Promise.all([listNumbers(), numberProvisioning()]);
 
+  /* Settled, and not part of the pair above. `GET /numbers/webhook` needs `config:write`
+     while this page needs only `config:read`, so a member opening it gets a 403 for the
+     webhook and nothing else — awaiting it outright meant one refused request took the whole
+     numbers list down for exactly the people who cannot act on it anyway. Null hides the
+     import card, which is the right thing to show somebody who could not use it. */
+  const webhook = await claimWebhook().catch(() => null);
+
   return (
     <>
       <PageHeader
@@ -29,7 +37,9 @@ const NumbersPage = async () => {
       </Card>
 
       <SectionHead>Getting a number</SectionHead>
-      <Card description="Numbers are provisioned by an operator, not through this dashboard.">
+      {webhook !== null && <ImportNumber webhook={webhook} />}
+
+      <Card description="What this deployment can and cannot do about numbers, straight from the API.">
         <Stack>
           <SettingRow
             title="Buying a number"
@@ -69,19 +79,6 @@ const NumbersPage = async () => {
               )
             }
           />
-
-          <div className="pt-1">
-            {/* Disabled rather than a live link: there is no request-a-number endpoint or
-                support address this app can honestly wire up, and a button that looked
-                clickable but did nothing would be worse than one that says so. */}
-            <Button variant="primary" disabled>
-              Request a number
-            </Button>
-            <p className="mt-1.5 max-w-[58ch] text-xs leading-relaxed text-[var(--ink-3)]">
-              There is no self-service flow for this. Ask whoever operates this deployment to
-              attach a number on your behalf — they will need the voice webhook address above.
-            </p>
-          </div>
         </Stack>
       </Card>
 
