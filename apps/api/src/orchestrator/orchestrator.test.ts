@@ -2268,6 +2268,34 @@ describe("tool calling", () => {
     expect(spoken).toContain("someone to confirm that");
   });
 
+  it("stops offering tools once the call needs a person", async () => {
+    /**
+     * The policy layer, on a real turn. Two enforcement points and both matter: the filter
+     * stops the model asking, and the dispatch refusal is what makes the answer no when it
+     * asks anyway — a name it was never offered would otherwise resolve perfectly happily,
+     * because the registry has no idea the conversation is coming apart.
+     */
+    const tools = toolHarness([READ_TOOL]);
+    const h = setup({ makeTools: tools.makeTools });
+    started(h);
+
+    // Two turns that went nowhere: the turn before the hard rule transfers.
+    h.listen.final("Hello?");
+    h.llm.last().fail("upstream fell over");
+    h.listen.final("Are you there?");
+    h.llm.last().fail("upstream fell over again");
+    h.listen.final("When do you open?");
+
+    // Not offered.
+    const offered = (h.llm.last().request.tools ?? []).map((t) => t.name);
+    expect(offered).not.toContain("opening_times");
+
+    // And refused if asked for anyway.
+    h.llm.last().callTools([{ name: "opening_times", args: {} }]);
+    await settle();
+    expect(tools.events).not.toContain("ran:opening_times");
+  });
+
   it("gives the model the result and speaks the reply it writes", async () => {
     const tools = toolHarness([READ_TOOL]);
     const h = setup({ makeTools: tools.makeTools });

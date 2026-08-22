@@ -3061,12 +3061,26 @@ own published rules, trips it — and an agent that goes silent on every price i
 product than one that occasionally gets a price wrong. The commitment check catches the
 case that actually matters, which is claiming an action, not quoting a figure.
 
-- [ ] **Phase 8b — the dialogue policy layer.** `TurnConstraints` computed before each LLM
-      call: when escalation is required the tool list collapses to escalation only, so the
-      agent is physically unable to do anything else. Most of the inputs now exist —
-      `failedTurns`, the emotional read, `contactsThisWeek` — and the enforcement point is
-      the dispatcher, beside the existing tier check. The remaining design question is
-      whether constraints filter the list offered to the model, refuse at dispatch, or both.
+- [x] **Phase 8b — the dialogue policy layer**. It computes what is *permitted*, never what
+      to *say* — deciding the next sentence deterministically rebuilds the IVR flowchart
+      that makes these systems sound scripted, and removing options does not, because the
+      wording stays entirely the model's.
+      - **Both enforcement points, and the answer to the open question is both.** Filtering
+        the offered list stops the model asking; it does not stop it naming a tool it was
+        never shown, and the registry resolves that name perfectly happily because it has no
+        idea the conversation is coming apart. Each is mutation-tested independently.
+      - Every input already existed as a number nothing consulted: `failedTurns` since R6.4,
+        `contactsThisWeek` from 4b, the emotional read from 5.
+      - Fires at two failed turns — the turn *before* the watch transfers at three, so the
+        agent can hand over gracefully rather than be cut off mid-sentence. At three contacts
+        in a week, which is a failed process rather than a difficult caller. On angry *and*
+        low trust together, never either alone: plenty of angry callers get helped by the
+        agent that annoyed them, and disarming it guarantees they cannot be. And on
+        `resigned`, which reads as calm and is not.
+      - `transfer_to_human` and `end_call` survive. Somebody saying goodbye mid-collapse
+        should still hang up cleanly rather than be held on a disarmed line.
+      - The constraints are recomputed at dispatch rather than reused from prompt time: a
+        tool result can arrive seconds later and the call may have gone wrong in between.
 - [ ] **Phase 8c — the rest.** Tool `origin` (internal vs tenant) beside the risk tier;
       business policies as named blocks; prompt-cache hit-rate logging; drift logging for
       replies over three sentences. Tool timeouts and response caps already exist in

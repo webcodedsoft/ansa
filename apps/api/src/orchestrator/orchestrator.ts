@@ -37,6 +37,7 @@ import {
 } from "../conversation/emotional-read";
 import { describeSituation, renderSituation } from "../conversation/situation";
 import { asksToNotBeCalled } from "../outbound/stop-calling";
+import { computeConstraints, type TurnConstraints } from "./dialogue-policy";
 import { guardOutput, HOLDING_LINE } from "./output-guard";
 import type { Handoff } from "../handoff/handoff";
 import { createEscalationWatch, type EscalationTrigger } from "../handoff/triggers";
@@ -376,6 +377,23 @@ interface AgentTurn {
  * dropped call, which is the thing R6.2 exists to prevent.
  */
 const FALSE_INTERRUPTION_MS = 1000;
+
+/**
+ * The tools the model is shown, once the policy layer has had its say.
+ *
+ * Filtering rather than replacing: the registry decides what exists and this decides what
+ * is reachable, and inventing a list here would be a second source of truth for the first
+ * question. A constraint naming a tool this organisation never registered simply matches
+ * nothing, which is the right outcome — it cannot conjure a transfer that was not
+ * configured.
+ */
+const offerable = <T extends { readonly name: string }>(
+  registered: readonly T[],
+  constraints: TurnConstraints,
+): readonly T[] =>
+  constraints.allowedTools === null
+    ? registered
+    : registered.filter((tool) => constraints.allowedTools?.includes(tool.name) === true);
 
 const DEFAULT_BARGE_IN_GUARD_MS = 400;
 
@@ -891,6 +909,23 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
    * that is entitled to be said.
    */
   let toolRanThisExchange = false;
+
+  /**
+   * What the agent is allowed to do right now.
+   *
+   * Recomputed rather than held, because every input moves during a call. Consulted twice
+   * and deliberately so: once to decide what the model is even shown, and once at the
+   * dispatch site — the first stops it asking, the second is what makes the answer no. A
+   * model naming a tool it was not offered would otherwise still resolve, because the
+   * registry has no idea a conversation is going wrong.
+   */
+  const constraintsNow = (): TurnConstraints =>
+    computeConstraints({
+      failedTurns: watch.failedTurns(),
+      escalationOffered: watch.handedOver(),
+      read,
+      contactsThisWeek: deps.callerHistory()?.contactsThisWeek ?? 0,
+    });
 
   const speechGate = createSpeechGate();
   let speechMsSinceTranscript = 0;
@@ -1715,6 +1750,14 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     const stripper = createReadStripper();
     // Empty until something is known, so turn one is byte-for-byte the prompt that was
     // sent before this existed.
+    /* Before the prompt is built, so both what the model is told and what it is offered are
+       decided by the same reading of the call. */
+    const constraints = constraintsNow();
+    if (constraints.escalationRequired) {
+      log.info("policy requires a person", { seq, reason: constraints.reason });
+      record.event("escalation_required", { seq, reason: constraints.reason });
+    }
+
     const known = deps.facts === undefined ? "" : renderFacts(deps.facts.facts);
     // Order is deliberate. Standing instructions, then what is known about this call, then
     // how long this particular reply may be — the per-turn instruction sits nearest the
@@ -1773,7 +1816,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       tools:
         toolset === null || toolOrganizationId === null
           ? undefined
-          : toolset.registry.listFor(toolOrganizationId),
+          : offerable(toolset.registry.listFor(toolOrganizationId), constraints),
     });
     current.cancelLlm = () => {
       completion.cancel();
@@ -1908,6 +1951,39 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       // on behalf of a turn the caller has already talked over.
       if (turn?.seq !== seq) return;
       if (calls.length === 0) return;
+
+      /**
+       * The half that makes the filter a guarantee rather than a hint.
+       *
+       * Filtering the offered list stops the model asking; it does not stop it naming a
+       * tool it was never shown, and the registry would resolve that name perfectly happily
+       * because it has no idea the conversation is coming apart. Recomputed here rather
+       * than reusing the value from prompt time, because a tool result can arrive several
+       * seconds later and the call may have gone wrong in between.
+       */
+      const allowed = constraintsNow();
+      const refused = calls.filter(
+        (call) => allowed.allowedTools !== null && !allowed.allowedTools.includes(call.name),
+      );
+      if (refused.length > 0) {
+        log.warn("refused a tool the policy layer had withdrawn", {
+          seq,
+          reason: allowed.reason,
+          tools: refused.map((c) => c.name),
+        });
+        record.event("tool_withheld", {
+          seq,
+          reason: allowed.reason,
+          tools: refused.map((c) => c.name),
+        });
+        /* The caller is not left with silence and the model is not given another go: this
+           call needs a person, which is what the policy said in the first place. */
+        current.llmDone = true;
+        if (!escalate(watch.needsAPerson(allowed.reason ?? "policy withdrew every tool"))) {
+          sayNow(HOLDING_LINE, "policy withdrew the tool");
+        }
+        return;
+      }
 
       if (toolset === null || toolOrganizationId === null) {
         // Unreachable while `tools` is only sent when a dispatcher exists, and handled
