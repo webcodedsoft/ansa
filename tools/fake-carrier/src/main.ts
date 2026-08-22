@@ -130,13 +130,14 @@ interface OutboundTally {
 const tallyOutbound = (
   raw: string,
   tally: OutboundTally,
+  verbose: boolean,
   onMark: (name: string) => void,
 ): void => {
   let frame: unknown;
   try {
     frame = JSON.parse(raw);
   } catch {
-    console.log(`[carrier] <- unparseable frame: ${raw.slice(0, 80)}`);
+    if (verbose) console.log(`[carrier] <- unparseable frame: ${raw.slice(0, 80)}`);
     return;
   }
   if (typeof frame !== "object" || frame === null) return;
@@ -164,14 +165,14 @@ const tallyOutbound = (
         ? (mark as Record<string, unknown>)["name"]
         : undefined;
     tally.marks.push(typeof name === "string" ? name : "(unnamed)");
-    console.log(`[carrier] <- mark ${String(name)}`);
+    if (verbose) console.log(`[carrier] <- mark ${String(name)}`);
     if (typeof name === "string") onMark(name);
     return;
   }
 
   if (event === "clear") {
     tally.clears += 1;
-    console.log("[carrier] <- clear (barge-in)");
+    if (verbose) console.log("[carrier] <- clear (barge-in)");
   }
 };
 
@@ -179,6 +180,7 @@ const streamMedia = async (
   streamUrl: string,
   options: Options,
   index: number,
+  verbose: boolean,
 ): Promise<number> => {
   const sid = streamSid(index);
   const params = callParams(index);
@@ -187,11 +189,15 @@ const streamMedia = async (
 
   const finished = new Promise<number>((resolve) => {
     socket.on("close", () => {
-      console.log(
-        `[carrier] socket closed. received ${tally.media} media frames ` +
-          `(${tally.mediaBytes} bytes), marks ${JSON.stringify(tally.marks)}, ` +
-          `${tally.clears} clear(s)`,
-      );
+      /* Silent above one call. Fifty copies of this bury the two numbers the summary exists
+         to show, which is the whole reason `--calls` has a quiet mode. */
+      if (verbose) {
+        console.log(
+          `[carrier] socket closed. received ${tally.media} media frames ` +
+            `(${tally.mediaBytes} bytes), marks ${JSON.stringify(tally.marks)}, ` +
+            `${tally.clears} clear(s)`,
+        );
+      }
       resolve(0);
     });
     socket.on("error", (error: Error) => {
@@ -201,7 +207,7 @@ const streamMedia = async (
   });
 
   socket.on("message", (data: Buffer) => {
-    tallyOutbound(data.toString("utf8"), tally, (name) => {
+    tallyOutbound(data.toString("utf8"), tally, verbose, (name) => {
       // The real carrier echoes a mark back once playback reaches it. Without this the
       // agent can never learn that the caller actually heard the audio.
       setTimeout(() => {
@@ -248,7 +254,9 @@ const streamMedia = async (
     );
     await delay(2);
   }
-  console.log(`[carrier] sent ${options.frames} media frames (${options.frames * 160} bytes)`);
+  if (verbose) {
+    console.log(`[carrier] sent ${options.frames} media frames (${options.frames * 160} bytes)`);
+  }
 
   // Hold the socket open so anything the agent plays back has time to arrive.
   await delay(options.holdMs);
@@ -311,7 +319,7 @@ const placeCall = async (options: Options, index: number, verbose: boolean): Pro
   }
 
   if (verbose) console.log(`[carrier] opening media socket at ${streamUrl}`);
-  const code = await streamMedia(streamUrl, options, index);
+  const code = await streamMedia(streamUrl, options, index, verbose);
   return { ok: code === 0, answerMs };
 };
 
