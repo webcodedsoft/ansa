@@ -7,7 +7,7 @@ export default [
     // Hand-run developer scripts, not product code: they are Node programs whose whole
     // job is to read the environment and print what they did, so the globals the rest of
     // the package is right to forbid are exactly what belongs here.
-    files: ["seeds/**/*.mjs"],
+    files: ["seeds/**/*.mjs", "scripts/**/*.mjs"],
     languageOptions: {
       globals: { process: "readonly", console: "readonly", URL: "readonly" },
     },

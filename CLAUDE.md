@@ -287,6 +287,10 @@ reshape the interface around it and don't leak the gap upward.
 - Update `TASKS.md` before stopping. Check boxes; write down what broke.
 - One slice at a time. Don't start the next until the current "done when" is true.
 - `pnpm lint && pnpm typecheck` before committing.
+- `pnpm --filter @ansa/db migrate` applies whatever a database has not seen, reading
+  `app.schema_migrations` rather than guessing. It refuses to continue past a migration that
+  was edited after it was applied — write a new file instead. A database migrated by hand
+  before the ledger existed is recorded once with `migrate:baseline`, which runs nothing.
 - Push to remote at the end of every session. The last build was lost on a dead laptop.
 
 ---
