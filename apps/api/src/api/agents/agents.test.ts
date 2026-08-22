@@ -200,6 +200,7 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("the agents endp
     alpha.owner.token = await signIn(alpha, alpha.owner);
     alpha.member.token = await signIn(alpha, alpha.member);
     beta.owner.token = await signIn(beta, beta.owner);
+    beta.member.token = await signIn(beta, beta.member);
   }, 60_000);
 
   afterAll(async () => {
@@ -399,5 +400,175 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("the agents endp
 
     const recovered = await draft();
     expect(recovered.status, JSON.stringify(recovered.body)).toBe(200);
+  });
+
+  /**
+   * The four staging routes, which had no HTTP coverage either.
+   *
+   * Their shared promise is the one worth testing: they save and do not apply. A call answered
+   * a second after any of these behaves exactly as it did before, until somebody publishes.
+   * That is a claim about which table got written, and nothing was checking it.
+   *
+   * Beta owns these because it ends the file with one live agent and the whole point of the
+   * suite above was that a second one changes what these routes can resolve.
+   */
+  describe("the agent staging routes", () => {
+    /**
+     * Its own organisation with its own single agent.
+     *
+     * The first draft of this suite reused beta's agent, which a test in the sibling suite
+     * creates — so it passed in a full run and died under any `-t` filter with an unrelated
+     * "agentId is not in the expected format". Depending on another test's side effect is
+     * how a suite becomes order-sensitive, and the version that only fails sometimes is
+     * worse than the one that never worked.
+     *
+     * Creating a second agent inside beta was the other option and a worse one: `GET
+     * /config/draft` resolves the organisation's single live agent, so a second would make
+     * every assertion below raise the 0047 ambiguity instead of testing staging.
+     */
+    let gamma: Organisation;
+    let agentId: string;
+
+    beforeAll(async () => {
+      gamma = await seed("gamma");
+      gamma.owner.token = await signIn(gamma, gamma.owner);
+      gamma.member.token = await signIn(gamma, gamma.member);
+
+      const created = await request("POST", "/api/v1/agents", {
+        token: gamma.owner.token,
+        body: { name: "Staged" },
+      });
+      expect(created.status, JSON.stringify(created.body)).toBe(200);
+      agentId = String(created.body["agentId"]);
+    }, 30_000);
+
+    const draft = async (): Promise<Reply> =>
+      request("GET", "/api/v1/config/draft", { token: gamma.owner.token });
+
+    const agent = async (): Promise<Reply> =>
+      request("GET", `/api/v1/agents/${agentId}`, { token: gamma.owner.token });
+
+    it("stages a behaviour flag without changing the agent", async () => {
+      const before = await agent();
+      expect(before.body["bargeIn"]).toBe(true);
+
+      const staged = await request("PUT", `/api/v1/agents/${agentId}/behaviour`, {
+        token: gamma.owner.token,
+        body: { bargeIn: false },
+      });
+      expect(staged.status, JSON.stringify(staged.body)).toBe(200);
+      expect(staged.body["updatedAt"]).toBeTypeOf("string");
+
+      /* The whole promise of the route. If this flips, a switch in the console silenced
+         barge-in on a call in progress with nobody publishing anything. */
+      expect((await agent()).body["bargeIn"]).toBe(true);
+
+      const saved = (await draft()).body["draft"] as Record<string, unknown>;
+      expect(saved["bargeIn"]).toBe(false);
+    });
+
+    it("leaves the other flag alone rather than carrying the page's stale copy", async () => {
+      /* Why `behaviour` takes two optionals instead of one required object. The console flips
+         one switch at a time, and a shared section would send the other flag as the browser
+         last read it — which is how one tab reverts the other. */
+      await request("PUT", `/api/v1/agents/${agentId}/behaviour`, {
+        token: gamma.owner.token,
+        body: { answeringMachineDetection: true },
+      });
+
+      const saved = (await draft()).body["draft"] as Record<string, unknown>;
+      expect(saved["answeringMachineDetection"]).toBe(true);
+      // Still staged off from the test above, not reset by a request that never mentioned it.
+      expect(saved["bargeIn"]).toBe(false);
+    });
+
+    it("stages an empty tool selection as a choice, not as an absence", async () => {
+      const staged = await request("PUT", `/api/v1/agents/${agentId}/tools`, {
+        token: gamma.owner.token,
+        body: { tools: [] },
+      });
+      expect(staged.status, JSON.stringify(staged.body)).toBe(200);
+
+      /* Null would mean "nothing staged" and the console would render the live selection in
+         its place. An empty list is a deliberate "this agent reaches none of them", and the
+         difference is the whole reason the draft's sections are separately nullable. */
+      const saved = (await draft()).body["draft"] as Record<string, unknown>;
+      expect(saved["tools"]).toEqual([]);
+    });
+
+    it("stages knowledge sources", async () => {
+      const staged = await request("PUT", `/api/v1/agents/${agentId}/knowledge`, {
+        token: gamma.owner.token,
+        body: { sources: [] },
+      });
+      expect(staged.status, JSON.stringify(staged.body)).toBe(200);
+      expect((await draft()).body["draft"]).toMatchObject({ knowledge: [] });
+    });
+
+    it("refuses a form whose pattern will not compile, and saves nothing", async () => {
+      /* The runtime treats an uncompilable pattern as "accept anything", which is the only
+         safe reading at answer time — a stray bracket must not become a caller who can never
+         get past the first question. That safety is exactly what makes it silent, so the
+         check has to happen here or it never happens at all. */
+      const field = {
+        key: "policyNumber",
+        type: "reference",
+        prompt: "What is your policy number?",
+        capture: "either",
+        confirm: "readback",
+        pattern: "AB[0-9",
+        attempts: 3,
+        required: true,
+        options: [],
+      };
+
+      const refused = await request("PUT", `/api/v1/agents/${agentId}/fields`, {
+        token: gamma.owner.token,
+        body: { fields: [field] },
+      });
+      expect(refused.status, JSON.stringify(refused.body)).toBe(400);
+      expect(JSON.stringify(refused.body)).toContain("policyNumber");
+
+      // "Nothing was saved" is part of the message, so it had better be true.
+      const saved = (await draft()).body["draft"] as Record<string, unknown>;
+      expect(saved["capturedFields"]).toBeNull();
+
+      const accepted = await request("PUT", `/api/v1/agents/${agentId}/fields`, {
+        token: gamma.owner.token,
+        body: { fields: [{ ...field, pattern: "AB[0-9]{4}" }] },
+      });
+      expect(accepted.status, JSON.stringify(accepted.body)).toBe(200);
+      expect((await draft()).body["draft"]).toMatchObject({
+        capturedFields: [expect.objectContaining({ key: "policyNumber" })],
+      });
+    });
+
+    it("does not stage anything onto another organisation's agent", async () => {
+      for (const route of ["behaviour", "tools", "knowledge", "fields"] as const) {
+        const body =
+          route === "behaviour"
+            ? { bargeIn: true }
+            : route === "tools"
+              ? { tools: [] }
+              : route === "knowledge"
+                ? { sources: [] }
+                : { fields: [] };
+
+        const reply = await request("PUT", `/api/v1/agents/${agentId}/${route}`, {
+          token: alpha.owner.token,
+          body,
+        });
+        // Not ours reads as does not exist. A 403 would confirm the agent id.
+        expect(reply.status, `${route} leaked`).toBe(404);
+      }
+    });
+
+    it("refuses a member, who may read the configuration but not stage one", async () => {
+      const reply = await request("PUT", `/api/v1/agents/${agentId}/tools`, {
+        token: gamma.member.token,
+        body: { tools: [] },
+      });
+      expect(reply.status, JSON.stringify(reply.body)).toBe(403);
+    });
   });
 });

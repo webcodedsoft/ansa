@@ -2799,7 +2799,19 @@ What to listen for, in order of what is actually in doubt:
       0047 guard walked end to end — no agent 404s, one agent saves, a second makes
       `PUT /config/draft` refuse, archiving it restores the surface.
 
-      Not covered: the four `@Put` staging routes (behaviour, tools, knowledge, fields).
+      The four `@Put` staging routes are covered too, in a nested suite with its own
+      organisation. Their shared promise is that they save and do not apply, which is a claim
+      about which table got written and nothing was checking it: staging `bargeIn: false`
+      leaves the agent row reading `true` and puts the `false` in the draft. Also pinned —
+      omitting a behaviour flag leaves the other staged value alone rather than carrying the
+      page's stale copy, an empty tool list stages as `[]` rather than null, an uncompilable
+      field pattern is refused with 400 naming the key and saves nothing, and the routes
+      answer 404 across an organisation boundary rather than 403.
+
+      Its own organisation, learned the hard way. The first version reused beta's agent,
+      which a sibling test creates — it passed in a full run and died under any `-t` filter.
+      Creating a second agent inside beta was worse: `GET /config/draft` resolves the single
+      live agent, so every assertion would have raised the 0047 ambiguity instead.
 - [ ] Readiness is organisation-wide, so a failing check pauses every agent. Honest today
       (none of them can answer) and wrong once checks become per agent.
 
