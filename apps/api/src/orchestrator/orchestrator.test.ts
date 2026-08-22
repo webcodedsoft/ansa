@@ -2560,7 +2560,12 @@ describe("the platform tools on a call", () => {
     await settle();
 
     const note = h.llm.lastMessages().at(-1)?.content ?? "";
-    expect(note).toContain("business_hours returned:");
+    /* Fenced, because a result carries words we did not write. This one came from a
+       platform tool and is ours, but the fence does not know that and must not: the model
+       has to see one boundary in one place, or the marker means nothing when a organization's
+       endpoint is on the other side of it. */
+    expect(note).toContain("business_hours returned the following");
+    expect(note).toContain("<<<tool-result");
     expect(note).toMatch(/open now|closed at the moment/);
   });
 
