@@ -22,6 +22,7 @@ const call = (over: Partial<CallRecord> = {}): CallRecord => ({
   callId: "c1",
   carrierCallId: "CA1",
   createdAt: "2026-08-08T12:00:00.000Z",
+  direction: "inbound",
   configVersion: 1,
   endReason: "carrier sent stop",
   durationSeconds: 60,
@@ -227,6 +228,7 @@ describe("the queue", () => {
   const bad = call({
     callId: "bad",
     createdAt: "2026-08-08T10:00:00.000Z",
+    direction: "inbound",
     events: [
       { kind: "hallucination discarded", detail: {} },
       { kind: "escalated to a human", detail: {} },
@@ -275,6 +277,7 @@ describe("trends by configuration version (R9.2.6)", () => {
     callId: "c",
     configVersion: 4,
     createdAt: "2026-08-08T11:00:00.000Z",
+    direction: "inbound",
     events: [{ kind: "hallucination discarded", detail: {} }],
   });
   const unversioned = call({ callId: "d", configVersion: null });

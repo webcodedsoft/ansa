@@ -3810,6 +3810,116 @@
         }
       }
     },
+    "/api/v1/calls/outbound": {
+      "get": {
+        "operationId": "calls.outbound",
+        "tags": [
+          "calls"
+        ],
+        "summary": "Connect, human-answer and do-not-call rates for calls we placed",
+        "description": "Outbound only. `doNotCallRate` is the one to watch: every request behind it is a permanent, platform-wide suppression, so a rate that climbs is a list or a script burning through numbers nobody can dial again. `humanAnswerRate` is computed only over calls the carrier gave an answering-machine verdict for, and `answeredByKnown` is that denominator. Time to hangup is a median rather than a mean, so one long call cannot hide fifty short ones.",
+        "x-ansa-capability": "calls:read",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "calls": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "connectRate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 24
+                    },
+                    "humanAnswerRate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 24
+                    },
+                    "answeredByKnown": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "doNotCallRate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 24
+                    },
+                    "medianSecondsToHangup": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "calls",
+                    "connectRate",
+                    "humanAnswerRate",
+                    "answeredByKnown",
+                    "doNotCallRate",
+                    "medianSecondsToHangup"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold calls:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/calls/review-queue": {
       "get": {
         "operationId": "calls.reviewQueue",

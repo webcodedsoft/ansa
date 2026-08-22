@@ -184,6 +184,7 @@ describe("the metrics page", () => {
       callId: "c1",
       carrierCallId: "CA1",
       createdAt: "2026-08-08T12:00:00.000Z",
+      direction: "inbound",
       configVersion: 3,
       endReason: "carrier sent stop",
       durationSeconds: 30,

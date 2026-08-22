@@ -3034,8 +3034,24 @@ The brief asks for ~20 across five tags with the same behaviour.
         on that call. `direction` is required on `OrchestratorDeps` for the same reason
         `organizationId` is: an optional one defaults to inbound, and the failure is an
         outbound call conducted with inbound instructions.
-      - **Outbound metrics**: connect rate, human-answer rate, DNC rate, average
-        time-to-hangup. A rising DNC rate is the alarm and there is nothing to see it with.
+      - [x] **Outbound metrics** — `GET /api/v1/calls/outbound`. Connect rate, human-answer
+        rate, do-not-call rate and time to hangup, over outbound calls only: an inbound call
+        is answered by definition, so any of these computed across both mostly measures how
+        much inbound traffic there was.
+        - Two gaps had to close first. `CallRecord` carried no `direction`, so the split was
+          not expressible. And a do-not-call request was written to the suppression list and
+          nowhere else — the row is global and carries no call and no direction, so nothing
+          could attribute one to the call that caused it. It is an event on the call now.
+        - `humanAnswerRate` divides by the calls the carrier actually gave a verdict for,
+          and that denominator is returned beside it. Dividing by every call would report a
+          shortfall that is really just detection being off.
+        - "unknown" counts as neither human nor machine. Folding the carrier's uncertainty
+          into either side puts it into a number that gets read as fact.
+        - A caller who says "take me off" three times is one call, not three. Counting the
+          repeats would make one angry person look like a trend on the number whose whole
+          job is trends.
+        - Median rather than the mean the brief asks for: one four-minute call among fifty
+          ten-second ones moves an average and tells you nothing about the fifty.
       - **The window refusal should become a timezone lookup** the day somebody genuinely
         needs to dial outside Nigeria. Not before: a partial table is worse than a refusal,
         because it answers confidently for the countries it has and silently wrongly for

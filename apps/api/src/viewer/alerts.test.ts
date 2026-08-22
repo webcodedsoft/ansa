@@ -24,6 +24,7 @@ const window = (
     callId: `c${i}`,
     carrierCallId: `CA${i}`,
     createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, i)).toISOString(),
+    direction: "inbound",
     configVersion: 1,
     endReason: "carrier sent stop",
     durationSeconds: 60,

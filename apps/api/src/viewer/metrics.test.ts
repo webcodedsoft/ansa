@@ -7,6 +7,7 @@ const call = (over: Partial<CallRecord> = {}): CallRecord => ({
   callId: "c1",
   carrierCallId: "CA-metrics",
   createdAt: "2026-01-01T00:00:00.000Z",
+  direction: "inbound",
   configVersion: 1,
   endReason: "carrier sent stop",
   durationSeconds: 42,

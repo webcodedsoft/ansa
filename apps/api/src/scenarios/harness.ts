@@ -282,6 +282,7 @@ export const scenario = (options: ScenarioOptions = {}): Scenario => {
       callId: "scenario",
       carrierCallId: "scenario",
       createdAt: new Date(0).toISOString(),
+      direction: "inbound",
       // A scenario runs against no organization row, so there is no published configuration for
       // it to have been served by. Null is what a real call with an unregistered number
       // records, which is the honest value rather than an invented version number.

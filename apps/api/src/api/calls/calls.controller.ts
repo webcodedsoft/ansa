@@ -17,6 +17,7 @@ import {
 } from "@nestjs/common";
 
 import { catchphrases } from "../../viewer/fingerprint";
+import { outboundMetrics } from "../../viewer/outbound-metrics";
 import { scoreCalls, stagePercentiles } from "../../viewer/metrics";
 // Aliased: the handler below is also called `reviewQueue`, and a reader should not have to
 // work out that a bare call inside a method resolves to the module import and not to `this`.
@@ -470,6 +471,21 @@ const catchphraseResponse = object({
   phrases: list(catchphrase),
 });
 
+const outboundResponse = object({
+  /** Outbound calls in the window. Inbound is excluded: it is answered by definition. */
+  calls: integer({ minimum: 0 }),
+  /** Reached somebody or something rather than ringing out. Null when none were placed. */
+  connectRate: nullable(ratio()),
+  /** Of those the carrier gave a verdict for, how many reached a person. */
+  humanAnswerRate: nullable(ratio()),
+  /** The denominator above, so the rate can be judged rather than taken. */
+  answeredByKnown: integer({ minimum: 0 }),
+  /** The alarm. Every one of these is a permanent, platform-wide suppression. */
+  doNotCallRate: nullable(ratio()),
+  /** Median, not mean: one long call among fifty short ones should not hide the fifty. */
+  medianSecondsToHangup: nullable(integer({ minimum: 0 })),
+});
+
 const toFilters = (query: Infer<typeof callQuery>): CallFilters => ({
   from: query.from ?? null,
   to: query.to ?? null,
@@ -624,6 +640,36 @@ export class CallsController {
         // survive the trip without the schema layer rounding them away.
         share: phrase.share.toFixed(4),
       })),
+    };
+  }
+
+  /**
+   * How the calls we place are going.
+   *
+   * Separate from `/metrics`, which scores every call together. An inbound call is answered
+   * by definition, so a connect rate computed across both mostly measures how much inbound
+   * traffic there was.
+   *
+   * Declared before `:callId` for the reason at the top of this file.
+   */
+  @Get("outbound")
+  @Endpoint({
+    summary: "Connect, human-answer and do-not-call rates for calls we placed",
+    description:
+      "Outbound only. `doNotCallRate` is the one to watch: every request behind it is a permanent, platform-wide suppression, so a rate that climbs is a list or a script burning through numbers nobody can dial again. `humanAnswerRate` is computed only over calls the carrier gave an answering-machine verdict for, and `answeredByKnown` is that denominator. Time to hangup is a median rather than a mean, so one long call cannot hide fifty short ones.",
+    capability: "calls:read",
+    response: outboundResponse,
+  })
+  async outbound(): Promise<Infer<typeof outboundResponse>> {
+    const records = await this.db.tx((scope) => readCallRecords(scope, METRIC_WINDOW));
+    const placed = outboundMetrics(records);
+    return {
+      calls: placed.calls,
+      connectRate: asRatio(placed.connectRate),
+      humanAnswerRate: asRatio(placed.humanAnswerRate),
+      answeredByKnown: placed.answeredByKnown,
+      doNotCallRate: asRatio(placed.doNotCallRate),
+      medianSecondsToHangup: round(placed.medianSecondsToHangup),
     };
   }
 

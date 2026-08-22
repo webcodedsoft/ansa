@@ -770,6 +770,11 @@ export class MediaGateway implements OnApplicationShutdown {
           });
           return;
         }
+        /* On the call as well as on the list. The suppression row is global and carries no
+           call and no direction, so this is the only thing that can attribute a request to
+           the call that produced it — which is what makes a rising rate visible before it
+           is visible in complaints. */
+        record.event("do_not_call_recorded", { saidWhat });
         void recordDoNotCall(this.dataSource, settings.organizationId, callerNumber, saidWhat).then(
           () => {
             log.info("recorded a do-not-call request", { saidWhat });

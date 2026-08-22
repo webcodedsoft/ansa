@@ -595,6 +595,20 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       }>(options, "GET", `/api/v1/calls/metrics`, {}),
 
     /**
+     * Connect, human-answer and do-not-call rates for calls we placed
+     * Outbound only. `doNotCallRate` is the one to watch: every request behind it is a permanent, platform-wide suppression, so a rate that climbs is a list or a script burning through numbers nobody can dial again. `humanAnswerRate` is computed only over calls the carrier gave an answering-machine verdict for, and `answeredByKnown` is that denominator. Time to hangup is a median rather than a mean, so one long call cannot hide fifty short ones.
+     */
+    outbound: () =>
+      send<{
+        readonly calls: number;
+        readonly connectRate: string | null;
+        readonly humanAnswerRate: string | null;
+        readonly answeredByKnown: number;
+        readonly doNotCallRate: string | null;
+        readonly medianSecondsToHangup: number | null;
+      }>(options, "GET", `/api/v1/calls/outbound`, {}),
+
+    /**
      * Calls worth reviewing first, worst rated highest
      * Scanned over the last 200 calls against the failure heuristics in R9.2.1: invented speech, escalations, repeated readbacks, low-confidence turns, interruption storms, recovery lines, dropped sentences, capture falling through to spelling or the keypad, dead air over two seconds, tool failures and calls where the caller never spoke. `severity` orders the list and means nothing else.
      */

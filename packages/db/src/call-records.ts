@@ -55,6 +55,10 @@ const METRIC_EVENT_KINDS: readonly string[] = [
      drops it and the human-answer rate reads zero against a table full of them — which is
      the failure this list's own comment records having happened three times already. */
   "answered_by",
+  /* Somebody asking never to be called again. A rising rate is the alarm the brief names,
+     and the suppression row itself carries no call and no direction — so the only way to
+     attribute one to the call that caused it is to record it as an event there. */
+  "do_not_call_recorded",
   // The post-call review scan (review.ts). `agent said` above carries the readback reason
   // that says capture fell through to spelling or the keypad, so it is not repeated here.
   "tts_sentence_dropped",
@@ -78,6 +82,14 @@ export interface CallRecord {
   /** The carrier's id. What a reviewer searches by, and what the recording is named after. */
   readonly carrierCallId: string;
   readonly createdAt: string;
+  /**
+   * Who rang whom.
+   *
+   * Carried because the outbound figures are meaningless mixed with inbound ones: an
+   * inbound call is answered by definition, so a connect rate computed over both is a
+   * measure of how much inbound traffic there was.
+   */
+  readonly direction: string;
   /**
    * Which version of the organization's configuration served this call (R7.5).
    *
@@ -121,7 +133,7 @@ export const readCallRecords = async (
   limit = 200,
 ): Promise<readonly CallRecord[]> => {
   const calls = await scope.query<Record<string, unknown>>(
-    `select c.id, c.carrier_call_id, c.created_at, c.config_version,
+    `select c.id, c.carrier_call_id, c.created_at, c.direction, c.config_version,
             c.end_reason, c.duration_seconds,
             (select count(*) from turns t
               where t.call_id = c.id and t.speaker = 'caller') as caller_turns,
@@ -190,6 +202,7 @@ export const readCallRecords = async (
       callId,
       carrierCallId: String(c["carrier_call_id"]),
       createdAt: (c["created_at"] as Date).toISOString(),
+      direction: String(c["direction"]),
       configVersion: c["config_version"] === null ? null : Number(c["config_version"]),
       endReason: c["end_reason"] === null ? null : String(c["end_reason"]),
       durationSeconds: c["duration_seconds"] === null ? null : Number(c["duration_seconds"]),
