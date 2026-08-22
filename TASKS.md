@@ -2740,9 +2740,23 @@ What to listen for, in order of what is actually in doubt:
       indistinguishable from a per-agent one while no organisation has a second live agent,
       and 0047 refuses to resolve one if it does — but the moment that changes an operator
       sets Saturday hours on the agent they have open and silently opens the other.
-      Still to do: move the card to an organisation settings screen. Whether hours should
-      instead *become* per-agent is a product decision, and the label deliberately does not
-      pre-empt it.
+      **Still to do, and blocked on a decision rather than on work (checked 2026-08-22).**
+      Moving the card needs hours to have their own endpoint, and the obvious cheap version
+      does not exist: "null means leave alone", the trick `policyBlocks` uses, is unavailable
+      because `businessHours: null` already means *always open*. One value cannot mean both
+      "no restriction" and "unchanged", so an organisation screen writing hours and a publish
+      carrying them would overwrite each other with whatever the agent workspace last
+      rendered.
+
+      The real move is to drop `businessHours` from the publish document and give it a
+      dedicated organisation endpoint — which stops hours being versioned. That is arguably
+      right, since they are operational rather than script and organisation-wide rather than
+      an agent's, but it is a decision about what a configuration version means and not a
+      refactor. `agent_prompt_versions` keeps its hours columns either way; they become
+      history rather than the source.
+
+      Not done unilaterally. The card says what it does in the meantime, which removes the
+      lie without pre-empting the answer.
 - [x] ~~`conversation-preview.tsx` and `field-builder.tsx` duplicate the sample values and
       read-back wording.~~ **Already done, and recorded twice.** "One preview" further up
       this file is the entry that did it; both import `heardAs`, `readBackOf` and

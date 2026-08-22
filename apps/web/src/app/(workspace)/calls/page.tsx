@@ -67,9 +67,12 @@ const CallsPage = async ({
      dependency of the list, so making the list wait for it would be a second
      round trip for one number. `allSettled` because a caption is not worth
      failing the page over. */
-  /* The caption names a configuration version, and a version belongs to an agent. This list
-     is organisation-wide and has no agent in its route, so it asks for the organisation's
-     only live agent — see `soleLiveAgentId`, which is where that assumption now lives. */
+  /* The caption names the configuration a test call would run on, and it is the only thing
+     this version feeds — `TestCallForm` below. So resolving the organisation's single live
+     agent here is not an assumption papering over a gap: it is the same resolution
+     `POST /testcall` performs server-side, and showing a different agent's version would be
+     the bug. It stops being right the day the test call grows an agent picker, and both
+     halves move together. */
   const captionAgent = await soleLiveAgentId().catch(() => null);
   const [calls, configuration] = await Promise.allSettled([
     listCalls(filters),

@@ -45,26 +45,23 @@ export const revokeInvitation = async (input: RevokeInvitationInput) =>
  * calling-hour window the platform operator set. Everything else on this document belongs to
  * the agent-configuration feature, not this one.
  */
-export const currentConfiguration = async () => {
-  /* This screen wants `operatorManaged.consent` — the legal basis and calling-hour window,
-     both of which belong to the organisation rather than to any agent. It reads them off an
-     agent's configuration document because that is where the API exposes them, which was
-     invisible while configuration had no agent in its route and is now plainly a seam in the
-     wrong place. Resolved here rather than hidden in a query, and worth moving to an
-     organisation endpoint the next time this document is touched. */
-  const client = await api();
-  const { items } = await client.agents.list();
-  const agentId = items.find((agent) => agent.deletedAt === null)?.agentId;
-  /* Throws rather than returning null, so callers keep one shape. An organisation with no
-     live agent cannot show a consent window either, and a page that renders half of one is
-     worse than a page that says it could not load. */
-  if (agentId === undefined) throw new Error("this organisation has no live agent");
-  return client.config.current({ path: { agentId } });
-};
+/**
+ * The organisation itself: its name, its retention windows and the consent posture the
+ * outbound gate enforces.
+ *
+ * `GET /organization` rather than an agent's configuration document, which is where this used
+ * to read from. That was a detour through an agent to fetch organisation data, invisible while
+ * configuration had no agent in its route and plainly wrong once it did — the page had to pick
+ * an agent to ask about facts that belong to none of them. The endpoint has carried `consent`
+ * and the retention windows all along.
+ */
+export const organisation = async () => (await api()).organization.read();
+
+export type Organisation = Awaited<ReturnType<typeof organisation>>;
 
 export type MemberPage = Awaited<ReturnType<typeof listMembers>>;
 export type MemberSummary = MemberPage["items"][number];
 export type InvitationPage = Awaited<ReturnType<typeof listInvitations>>;
 export type InvitationSummary = InvitationPage["items"][number];
-export type LiveConfiguration = Awaited<ReturnType<typeof currentConfiguration>>;
-export type ConsentPolicy = LiveConfiguration["operatorManaged"]["consent"];
+/** The consent posture, off the organisation rather than off one of its agents. */
+export type ConsentPolicy = Organisation["consent"];

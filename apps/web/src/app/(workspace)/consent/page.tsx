@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { Card, GlassPanel, Notice, PageHeader, Stack } from "@/components/ui";
 import { humanise } from "@/lib/format";
-import { currentConfiguration } from "@/features/org/org.service";
+import { organisation } from "@/features/org/org.service";
 
 export const metadata: Metadata = { title: "Consent · Ansa" };
 export const dynamic = "force-dynamic";
@@ -10,8 +10,9 @@ export const dynamic = "force-dynamic";
 const hourLabel = (hour: number | null): string => (hour === null ? "not narrowed" : `${String(hour).padStart(2, "0")}:00`);
 
 const ConsentPage = async () => {
-  const { operatorManaged } = await currentConfiguration();
-  const { consent } = operatorManaged;
+  /* Read from the organisation, not from an agent's configuration. Consent belongs to the
+     company and to none of its agents, so asking an agent about it meant picking one. */
+  const { consent } = await organisation();
 
   return (
     <>
