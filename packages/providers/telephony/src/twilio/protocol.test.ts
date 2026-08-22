@@ -3,6 +3,7 @@ import { Buffer } from "node:buffer";
 import { describe, expect, it } from "vitest";
 
 import {
+  renderVoicemail,
   encodeClear,
   encodeMark,
   encodeMedia,
@@ -164,5 +165,42 @@ describe("renderConnectStream", () => {
 describe("escapeXml", () => {
   it("escapes every character that can break out of an attribute", () => {
     expect(escapeXml(`<>&'"`)).toBe("&lt;&gt;&amp;&apos;&quot;");
+  });
+});
+
+describe("leaving one message on an answering machine", () => {
+  /**
+   * Hanging up silently was the earlier behaviour. It leaves somebody a missed call from
+   * an unknown number and tells them nothing, which serves neither them nor the business —
+   * and ten words saying who rang and how to call back carry no risk at all, provided
+   * nothing private is in them.
+   */
+  it("says the message and hangs up, with nothing after", () => {
+    /* The `<Hangup />` is the point. A document that ends after `<Say>` would return the
+       call to whatever came next, which on an answerphone is a machine listening to an
+       agent talk to itself until the recording stops. */
+    expect(renderVoicemail("Hello, this is Acme.")).toBe(
+      "<Response><Say>Hello, this is Acme.</Say><Hangup /></Response>",
+    );
+  });
+
+  it("escapes an organisation name that would otherwise break the document", () => {
+    /* The name comes from organisation configuration. An ampersand in it is ordinary —
+       "Smith & Sons" — and unescaped it makes the TwiML invalid, which the carrier answers
+       by dropping the call rather than by leaving a broken message. */
+    const twiml = renderVoicemail('Ring "Smith & Sons" back <soon>');
+    expect(twiml).toContain("&amp;");
+    expect(twiml).toContain("&quot;");
+    expect(twiml).toContain("&lt;soon&gt;");
+    // And no injected verb survives as markup.
+    expect(twiml.match(/<Say>/g)).toHaveLength(1);
+  });
+
+  it("cannot be made to contain a second verb", () => {
+    // Configuration is not markup. An organisation naming itself after a TwiML verb must
+    // not be able to add one.
+    const twiml = renderVoicemail("</Say><Dial>+2348030000000</Dial><Say>");
+    expect(twiml).not.toContain("<Dial>");
+    expect(twiml.match(/<Hangup \/>/g)).toHaveLength(1);
   });
 });

@@ -3018,11 +3018,25 @@ The brief asks for ~20 across five tags with the same behaviour.
         both needed: the human-answer rate, and the AMD false-positive rate that matters
         here because the model is trained on US carrier patterns and nobody knows how it
         behaves on Nigerian networks.
-      - [ ] **The voicemail message itself.** The decision is recorded above as made — leave
-        one, composed only of who we are, a brief reason and a callback number, never an
-        amount or a balance or anything else somebody in the room should not hear. What it
-        needs is a way to say one sentence and hang up on a socket that may not be open
-        yet, which is a lifecycle question rather than a wording one.
+      - [x] **The voicemail message.** `leaveVoicemail` on `TelephonyProvider`, the same
+        mechanism `transferToNumber` already uses: replacing the live call's instruction,
+        which ends our media stream — here that is the point, because whatever the agent was
+        part-way through saying to a machine should stop.
+        - Composed at call start, where the organisation is known, and held per call. The
+          answering-machine webhook arrives holding nothing but a carrier id, and resolving
+          an organisation from there would be a second resolution path for something already
+          in hand.
+        - **Only who rang and how to call back.** Nothing about why: an answerphone plays
+          out loud in a room, and whoever is in it did not agree to hear somebody else's
+          business. If either half is missing the call is hung up silently, which is what
+          every call did before — a message that cannot say who rang is worse than the
+          silence it replaces.
+        - `<Say>` rather than the agent's voice, and the trade is recorded rather than
+          overlooked: playing the cloned voice would need a publicly fetchable audio URL for
+          every message, which is a larger surface than the carrier's voice on ten words.
+        - Escaped. An organisation called "Smith & Sons" makes the document invalid
+          unescaped, and the carrier answers invalid TwiML by dropping the call rather than
+          by leaving a broken message.
       - [x] **The outbound prompt module** is in. Loaded only when `direction` is outbound,
         placed immediately after the base prompt so it stays inside the cacheable prefix.
         Its hardest rule is a prohibition and it is absolute rather than graduated: never

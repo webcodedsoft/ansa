@@ -238,6 +238,19 @@ export interface TelephonyProvider {
   /** Hang up a call in progress. Used when the thing that answered was a voicemail. */
   endCall(callId: CallId): Promise<void>;
   /**
+   * Say one short thing to an answering machine and hang up.
+   *
+   * Separate from `endCall` because the difference is what the person finds later: a
+   * silent hangup leaves a missed call from an unknown number and tells them nothing,
+   * which serves neither them nor the business. Ten words that identify who rang and how
+   * to call back is the whole of it.
+   *
+   * The caller is responsible for what goes in `message`, and the rule there is absolute:
+   * never an amount, a balance, an account detail, or anything else somebody else in the
+   * room should not hear.
+   */
+  leaveVoicemail(callId: CallId, message: string): Promise<void>;
+  /**
    * Hand a call in progress to a person.
    *
    * Rejects rather than resolving on a carrier refusal. The caller is still on our media

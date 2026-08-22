@@ -21,6 +21,7 @@ import type {
 import {
   parseFrame,
   parseStatusCallback,
+  renderVoicemail,
   renderConnectStream,
   renderDialTransfer,
   renderSay,
@@ -183,6 +184,18 @@ export const createTwilioTelephonyProvider = (
       callId,
       new URLSearchParams({ Status: "completed" }),
       "end the call",
+    );
+  },
+
+  leaveVoicemail: async (callId: CallId, message: string): Promise<void> => {
+    /* The same mechanism as a transfer, and with the same consequence: replacing the
+       instruction ends our media stream. Here that is the point — whatever the agent was
+       part-way through saying to a machine should stop. */
+    await updateLiveCall(
+      options,
+      callId,
+      new URLSearchParams({ Twiml: renderVoicemail(message) }),
+      "leave a voicemail",
     );
   },
 

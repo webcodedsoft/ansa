@@ -185,11 +185,33 @@ export class VoiceController {
     // lost customer — so the doubt resolves in the caller's favour.
     if (!answeredBy.startsWith("machine") && answeredBy !== "fax") return;
 
+    /**
+     * Leave one short message, then hang up — and never converse.
+     *
+     * Hanging up silently was the earlier behaviour and I defended it as the safer option.
+     * It is not: the person finds a missed call from an unknown number and learns nothing,
+     * which serves neither them nor the business, and ten words that say who rang and how
+     * to call back carry no risk at all.
+     *
+     * The message was composed when the call started, where the organisation is known, and
+     * carries only those two things. Nothing about why we rang goes on an answerphone: it
+     * is played out loud in a room, and whoever is in that room did not agree to hear
+     * somebody else's business.
+     *
+     * No message means hang up, which is exactly what happened before. A message that
+     * cannot say who rang is worse than the silence it would replace.
+     */
+    const message = this.media.voicemailFor(callSid);
     try {
-      await this.telephony.endCall(callId);
-      log.info("hung up on a voicemail", { answeredBy });
+      if (message === null) {
+        await this.telephony.endCall(callId);
+        log.info("hung up on a voicemail, having nothing safe to say", { answeredBy });
+        return;
+      }
+      await this.telephony.leaveVoicemail(callId, message);
+      log.info("left a message on a voicemail", { answeredBy });
     } catch (error) {
-      log.error("could not hang up on a voicemail", {
+      log.error("could not deal with a voicemail", {
         answeredBy,
         error: error instanceof Error ? error.message : String(error),
       });

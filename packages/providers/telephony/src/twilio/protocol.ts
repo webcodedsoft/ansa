@@ -228,6 +228,25 @@ export const renderConnectStream = (
  * A verb AFTER `</Dial>` — a document that ends at the dial hangs up on the caller when
  * nobody answers. They have already been failed once; being cut off is the second time.
  */
+/**
+ * One short message onto an answering machine, then hang up.
+ *
+ * Replacing the live call's instruction ends our media stream, which is exactly what is
+ * wanted here — the agent must stop talking to a machine the moment we know it is one, and
+ * the alternative is a two-minute conversation with a voicemail greeting that is both
+ * useless and billed.
+ *
+ * `<Say>` rather than the agent's own voice. Playing the cloned voice would mean a
+ * publicly fetchable audio URL for every message, and the carrier's voice on ten words
+ * left on an answerphone is a smaller cost than a public endpoint serving synthesised
+ * speech. It is worth knowing the trade was made rather than overlooked.
+ *
+ * Nothing private may be composed into `message` — see the caller. Someone else in the
+ * room will hear this.
+ */
+export const renderVoicemail = (message: string): string =>
+  `<Response><Say>${escapeXml(message)}</Say><Hangup /></Response>`;
+
 export const renderDialTransfer = (options: {
   readonly to: string;
   readonly callerId: string;

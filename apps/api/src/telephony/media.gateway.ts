@@ -128,6 +128,20 @@ export class MediaGateway implements OnApplicationShutdown {
    */
   private readonly history = new Map<string, CallerHistory>();
   /**
+   * What to leave on an answering machine, per live call.
+   *
+   * Composed here because this is where the organisation is known. The answering-machine
+   * verdict arrives on its own webhook holding nothing but a carrier id, and looking the
+   * organisation up from there would be a second resolution path for something already in
+   * hand — the same reasoning that keeps the caller history in a map rather than re-read.
+   */
+  private readonly voicemail = new Map<string, string>();
+
+  /** What to say to a machine on this call, or null to hang up silently instead. */
+  voicemailFor(callId: string): string | null {
+    return this.voicemail.get(callId) ?? null;
+  }
+  /**
    * R5.2.3. Per process, and keyed inside by organization and tool.
    *
    * It has to outlive a call to be worth anything — the point is that the fourth call to
@@ -683,6 +697,28 @@ export class MediaGateway implements OnApplicationShutdown {
             error: error instanceof Error ? error.message : String(error),
           });
         });
+    }
+
+    /**
+     * What a machine hears, if one answers.
+     *
+     * Only what identifies us and how to ring back. **Never an amount, a balance, an
+     * account detail, or anything about why we called** — an answerphone is played out
+     * loud in a room, and whoever is in it did not consent to hearing somebody else's
+     * business. That constraint is why this is composed from two fields and not from the
+     * call's own context.
+     *
+     * Composed only when both halves exist. A message that cannot say who rang or how to
+     * call back is worse than the silence it replaces, so a missing one falls back to
+     * hanging up — which is what every call did before this.
+     */
+    const callbackNumber = stream.parameters[DIALLED_PARAM] ?? null;
+    if (settings.name !== "" && callbackNumber !== null) {
+      this.voicemail.set(
+        stream.callId,
+        `Hello, this is ${settings.name}. We tried to reach you. Please call us back on ${callbackNumber} when you get a chance. Thank you.`,
+      );
+      stream.onClosed(() => this.voicemail.delete(stream.callId));
     }
 
     const listen = this.openListen(stream.format, keyterms);
