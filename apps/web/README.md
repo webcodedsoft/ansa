@@ -37,8 +37,8 @@ as a failed sign-in, deliberately. A friendlier message would confirm the addres
 registered, which is exactly what `POST /auth/organisations` spends a full scrypt on a
 missing account to avoid revealing.
 
-Operators onboarding an organisation by hand still use `tools/tenant/provision.mjs` and
-`tools/tenant/owner.mjs`; the latter prints an invitation token, and the link to redeem it is
+Operators onboarding an organisation by hand still use `tools/organization/provision.mjs`
+and `tools/organization/owner.mjs`; the latter prints an invitation token, and the link to redeem it is
 `/accept-invitation?token=<token>`.
 
 ## Why every request is server-side

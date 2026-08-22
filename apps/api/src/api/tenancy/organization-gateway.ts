@@ -37,8 +37,13 @@ import { API_DATA_SOURCE } from "./tokens";
  * ever needed, the question to answer first is why it cannot be written against a scope.
  *
  * `apps/api/eslint.config.mjs` refuses to let anything under `src/api/` outside this
- * folder import `API_DATA_SOURCE`, `withOrganization` or `Db`, so the rule above is a lint
+ * folder import `withOrganization` or `createDataSource`, so the rule above is a lint
  * failure and not a review comment.
+ *
+ * That sentence was here before the rule was, describing an enforcement that did not
+ * exist. Switching it on found exactly one violation — `api.module.ts`, the composition
+ * root that builds the handle this gateway is given, which is the door being constructed
+ * rather than a second one, and is exempt for that reason.
  */
 @Injectable()
 export class OrganizationGateway {

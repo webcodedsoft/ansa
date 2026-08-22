@@ -3261,6 +3261,35 @@ before it can be heard at all.
 `gpt-4o-mini-transcribe` and claims ~120ms faster. One of those is wrong and it is worth
 measuring rather than guessing.
 
+## Drift found in the Phase 1 audit, now cleared (2026-08-22)
+
+Four things the audit noticed and set aside. Three were real and are fixed; the fourth was
+my own claim and did not survive checking.
+
+- [x] **`.env.example` recommended the transcription model a later A/B rejected.** It set
+      `gpt-4o-mini-transcribe` and gave the reason: about 120ms faster to a usable
+      transcript. True, and settled the other way afterwards — mini rendered "policy" as
+      apology, penalty and course, which is close to fatal for an insurance agent, and the
+      120ms costs nothing measurable end to end because the other stages vary by more. The
+      comment in `env.ts` recorded that; the example did not, so anybody setting up from it
+      got the worse model and a reason to keep it.
+- [x] **`organization-gateway.ts` claimed a lint rule that did not exist.** Its docstring
+      said anything under `src/api/` outside that folder is refused the raw database handle,
+      "a lint failure and not a review comment" — and there was no such rule. Written rather
+      than softened, because the design it describes is right. Switching it on found exactly
+      one violation, `api.module.ts`, which is the composition root building the handle the
+      gateway is given: the door being constructed rather than a second one, and exempt for
+      that reason. The convention was being followed; it just was not enforced.
+- [x] **`apps/web/README.md` pointed at `tools/tenant/`**, left behind by the rename to
+      `tools/organization/`. The same strings in this file are journal entries recording
+      what was true at the time and are deliberately untouched — a log that gets rewritten
+      is not a log.
+- [ ] ~~`next-env.d.ts` should be gitignored~~ — **withdrawn, I could not support it.** The
+      installed Next docs say nothing about it and `.gitignore` never listed it. There is a
+      concrete argument the other way: `pnpm typecheck` runs `tsc` directly, so on a fresh
+      clone where `next dev` has not run, an untracked `next-env.d.ts` would fail the web
+      typecheck. Left tracked.
+
 ## Session discipline
 
 - Update this file before you stop working. Check boxes, note what broke.
