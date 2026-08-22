@@ -42,7 +42,7 @@ export interface EmotionalRead {
 }
 
 /** What the model is told to append, and what the stripper watches for. */
-export const MARKER_START = "<<";
+const MARKER_START = "<<";
 
 /**
  * Takes the model's tokens and returns only the part that may be spoken.

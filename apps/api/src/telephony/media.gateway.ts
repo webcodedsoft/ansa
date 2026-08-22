@@ -34,6 +34,10 @@ import { WebSocketServer, type WebSocket } from "ws";
 
 import type { AppConfig } from "../config/env";
 import { ACKNOWLEDGEMENTS, ALL_FILLERS, PROGRESS, STILL_WORKING } from "./filler";
+import { ALL_GREETING_LEADS, chooseGreetingLead } from "./greeting-lead";
+/* The same clock the situation block reads. Asking it here rather than deriving the hour
+   again keeps one definition of what "morning" means on a call. */
+import { describeSituation } from "../conversation/situation";
 import { forSpeech, GREETING_TEXT } from "./greeting";
 import { cacheKey, createAudioCache, type AudioCache } from "./prerender";
 import { composeListen, type TranscriptSource } from "./composite-listen";
@@ -78,12 +82,20 @@ import { fromWebSocket } from "./ws-media-socket";
 interface WarmAudio {
   /** Null when the render failed; the greeting is then synthesised live. */
   readonly greeting: readonly AudioChunk[] | null;
+  /**
+   * The openers that may be spoken before the greeting, by phrase.
+   *
+   * Rendered here rather than per call for exactly the reason the greeting is: this plays
+   * in the first half-second, and a network round trip there is the whole cost this cache
+   * exists to avoid. A phrase missing from the map simply is not chosen.
+   */
+  readonly leads: ReadonlyMap<string, readonly AudioChunk[]>;
   /** Keyed by phrase so the orchestrator picks a register, not a queue position. */
   readonly fillers: ReadonlyMap<string, readonly AudioChunk[]>;
 }
 
 /** Nothing rendered yet, and the call must not wait for it (R6.2). */
-const NOT_WARM: WarmAudio = { greeting: null, fillers: new Map() };
+const NOT_WARM: WarmAudio = { greeting: null, leads: new Map(), fillers: new Map() };
 
 /**
  * Owns the media WebSocket server. It knows about sockets and nothing about the
@@ -178,12 +190,17 @@ export class MediaGateway implements OnApplicationShutdown {
     }));
 
     const greetingAudio = await cache.render(greeting, voiceId, speakingRate);
+    const leads = new Map<string, readonly AudioChunk[]>();
+    for (const phrase of ALL_GREETING_LEADS) {
+      const chunks = await cache.render(phrase, voiceId, speakingRate);
+      if (chunks !== null) leads.set(phrase, chunks);
+    }
     const fillers = new Map<string, readonly AudioChunk[]>();
     for (const phrase of ALL_FILLERS) {
       const chunks = await cache.render(phrase, voiceId, speakingRate);
       if (chunks !== null) fillers.set(phrase, chunks);
     }
-    return { greeting: greetingAudio, fillers };
+    return { greeting: greetingAudio, leads, fillers };
   }
 
   /**
@@ -210,6 +227,7 @@ export class MediaGateway implements OnApplicationShutdown {
           voiceId,
           speakingRate: speakingRate ?? null,
           greeting: rendered.greeting !== null,
+          leads: rendered.leads.size,
           fillers: rendered.fillers.size,
         });
       })
@@ -602,6 +620,46 @@ export class MediaGateway implements OnApplicationShutdown {
 
     const listen = this.openListen(stream.format, keyterms);
 
+    /**
+     * How this call opens, which is no longer one recording.
+     *
+     * A lead-in is chosen per call and spoken before the organisation's own greeting, which
+     * is left exactly as they wrote it. Both halves come from the same warm cache, so this
+     * costs no network time at the one moment that could not afford any.
+     *
+     * The audio is concatenated rather than re-synthesised as a single phrase. These are
+     * raw mu-law frames with no header, so two sequences played back to back are one
+     * sequence — and keeping the original chunking is what keeps barge-in cutting at the
+     * same granularity it always did.
+     *
+     * Falls back to the greeting alone whenever anything is missing: no lead chosen, the
+     * phrase never rendered, or the greeting itself did not. That fallback is exactly what
+     * every call did before this existed.
+     */
+    const opener = ((): { text: string; audio: readonly AudioChunk[] | null } => {
+      const plain = { text: settings.greeting, audio: warm.greeting };
+      if (warm.greeting === null) return plain;
+
+      const now = describeSituation({
+        now: new Date(),
+        callStartedAtMs: openedAt,
+        businessHours: settings.businessHours,
+        failedTurns: 0,
+        escalationOffered: false,
+        history: null,
+      });
+      const lead = chooseGreetingLead({
+        partOfDay: now.partOfDay,
+        openNow: now.openNow,
+        callId: stream.callId,
+      });
+      if (lead === null) return plain;
+
+      const leadAudio = warm.leads.get(lead);
+      if (leadAudio === undefined) return plain;
+      return { text: `${lead} ${settings.greeting}`, audio: [...leadAudio, ...warm.greeting] };
+    })();
+
     runConversation(stream, {
       // The answering agent's own switch (migration 0020), resolved with its config at
       // ingress so this costs no extra round trip on the answer path.
@@ -811,7 +869,7 @@ export class MediaGateway implements OnApplicationShutdown {
       voiceId: settings.voiceId,
       speakingRate: settings.speakingRate,
       log: this.log,
-      greeting: settings.greeting,
+      greeting: opener.text,
       // The organization's own persona and instructions, already composed and cached at config
       // load. An unregistered number gets the default composition, which is exactly what
       // every call got before this line existed.
@@ -819,7 +877,7 @@ export class MediaGateway implements OnApplicationShutdown {
       forSpeech,
       // Rendered for this call's voice and this call's greeting, or null and synthesised
       // live. Never another voice's.
-      greetingAudio: warm.greeting,
+      greetingAudio: opener.audio,
       fillers: warm.fillers,
       // Acknowledge first, then report progress, then acknowledge the wait itself.
       fillerTiers: [ACKNOWLEDGEMENTS, PROGRESS, STILL_WORKING],

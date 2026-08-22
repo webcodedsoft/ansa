@@ -45,11 +45,21 @@ export const ALL_FILLERS: readonly string[] = [
 ];
 
 /**
- * Picks at random but never the same one twice running.
+ * Picks at random, and does not say the same thing twice on one call.
  *
  * Round-robin was the obvious choice and is the wrong one: over a few turns a caller
  * hears the same cycle in the same order, which sounds like a recording rather than a
  * person. Random alone can repeat immediately, which sounds worse than either.
+ *
+ * Avoiding only the immediately preceding phrase was not enough. Eight acknowledgements
+ * across a twelve-turn call means the caller hears "Mm-hm" three or four times, and one
+ * repeat inside a single call is more damaging than a slightly less apt phrase — a person
+ * does not have eight stock noises, but they do not reuse one either. So a picker is one
+ * per call and remembers everything it has said.
+ *
+ * When the pool is exhausted it starts again rather than falling silent. Silence where the
+ * caller expects a sound is the failure R6.2 exists to prevent, and it is a worse outcome
+ * than a repeat on the ninth wait of one conversation.
  */
 export interface FillerPicker {
   next(pool: readonly string[]): string | null;
@@ -57,14 +67,22 @@ export interface FillerPicker {
 
 export const createFillerPicker = (random: () => number = Math.random): FillerPicker => {
   let last: string | null = null;
+  const used = new Set<string>();
 
   return {
     next(pool) {
       if (pool.length === 0) return null;
       if (pool.length === 1) return pool[0] ?? null;
 
-      const choices = pool.filter((p) => p !== last);
+      const fresh = pool.filter((p) => !used.has(p));
+      /* Everything in this tier has been said. Forget the tier and start over rather than
+         going quiet — and only this tier, because the other tiers have not been used up
+         and their memory is still doing its job. */
+      if (fresh.length === 0) for (const phrase of pool) used.delete(phrase);
+
+      const choices = (fresh.length === 0 ? pool : fresh).filter((p) => p !== last);
       const picked = choices[Math.floor(random() * choices.length)] ?? choices[0] ?? null;
+      if (picked !== null) used.add(picked);
       last = picked;
       return picked;
     },

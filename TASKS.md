@@ -2879,7 +2879,50 @@ source of truth for the same fact.
       - Rendered as its own block rather than a line in the situation block. Everything in
         the situation block is computed here and is therefore true; this is the model's own
         guess handed back to it, and keeping them apart stops the guess reading as a fact.
-- [ ] Phase 6 — pools instead of fixed artifacts (greetings, fillers, backchannels)
+- [x] **Phase 6a — the greeting stops being one recording**. Split from Phase 6, which is
+      five features, two of which were already built better than the brief describes.
+      - A short lead-in chosen per call and spoken before the organisation's own greeting,
+        which is left exactly as they wrote it. Prefixing "Good morning" onto a greeting
+        that already says good morning is worse than any amount of sameness.
+      - Pre-rendered at boot beside the fillers, so this costs no network time at the one
+        moment that cannot afford any. Audio is concatenated, not re-synthesised: raw
+        mu-law has no header, and keeping the original chunking keeps barge-in cutting at
+        the same granularity.
+      - **The brief's selection rule does not achieve its own stated aim.** It asks to seed
+        the pick from the caller's number "so the same caller gets a different variant each
+        time"; a hash of a number that never changes gives that caller the same variant
+        forever. The call id varies between calls and holds still within one, so it is what
+        is hashed.
+      - Saying nothing is a member of every pool and the most common outcome. A flourish on
+        every call is its own kind of recording.
+      - Out of hours drops the time of day entirely — "Good afternoon" followed by "we're
+        closed" is the agent contradicting itself in two sentences.
+      - `createFillerPicker` now remembers the whole call rather than only the previous
+        phrase. Eight acknowledgements across twelve turns meant "Mm-hm" three or four
+        times. Each tier's memory resets independently, and an exhausted tier starts again
+        rather than falling silent — silence where the caller expects a sound is the
+        failure R6.2 exists to prevent.
+
+**Already built, and better than the brief describes.** The FillerPool is `telephony/filler.ts`:
+seventeen phrases across three tiers, pre-rendered at boot, escalating from acknowledgement
+to progress to apology for the wait, fired on a timer that stays silent for short waits.
+The brief asks for ~20 across five tags with the same behaviour.
+
+- [ ] **Phase 6b — the returning-caller greeting, and backchannel production.** Two things,
+      both blocked on a decision rather than on work.
+      *The greeting half:* "hi again" needs the caller's history, and that read starts as
+      the media socket opens — by which time the greeting is already playing. Having it
+      sooner means a query on the answer path at ingress, where the organisation resolve
+      already is. That is a real trade (time-to-answer against the single highest-value
+      greeting variant) and it should be made deliberately.
+      *The backchannel half:* playing "mm-hm" while the caller is still speaking. The brief
+      flags the hazard itself — the turn detector must be gated for the backchannel's
+      duration or the agent interrupts itself with its own noise. Worth doing after the
+      barge-in work from Phase 2 has been heard on a real call.
+- [ ] **Phase 6c — phrase fingerprinting.** Normalise each agent utterance, hash it, log it
+      with the call id, and report fingerprints appearing in more than 15% of calls. Pure
+      observability, no call-path risk, and it needs the other two to have run for a while
+      before it has anything to say.
 - [ ] Phase 7 — outbound: AMD, DNC as a dial-time gate, consent basis, calling windows
 - [ ] Phase 8 — dialogue policy layer and the output guard
 
