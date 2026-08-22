@@ -2731,10 +2731,24 @@ What to listen for, in order of what is actually in doubt:
       on the create page is gone, replaced by the field itself and a line saying it can be
       edited later. Verified against the database: create, patch and the call path all
       carry it.
-- [ ] The Routing & hours tab still edits hours as though they were the agent's. They are
-      the organisation's now; that tab needs to move to an organisation settings screen.
-- [ ] `conversation-preview.tsx` and `field-builder.tsx` duplicate the sample values and
-      read-back wording. One module.
+- [~] The Routing & hours tab edits hours as though they were the agent's. They are the
+      organisation's — `publish_agent_config` writes `business_open_hour`,
+      `business_close_hour` and `business_days` onto `organizations`.
+      **The lie is fixed, the move is not (2026-08-22).** The card now says the hours belong
+      to the organisation and that publishing them from one agent's workspace changes them
+      for every agent it runs. That is the whole of the present harm: the setting is
+      indistinguishable from a per-agent one while no organisation has a second live agent,
+      and 0047 refuses to resolve one if it does — but the moment that changes an operator
+      sets Saturday hours on the agent they have open and silently opens the other.
+      Still to do: move the card to an organisation settings screen. Whether hours should
+      instead *become* per-agent is a product decision, and the label deliberately does not
+      pre-empt it.
+- [x] ~~`conversation-preview.tsx` and `field-builder.tsx` duplicate the sample values and
+      read-back wording.~~ **Already done, and recorded twice.** "One preview" further up
+      this file is the entry that did it; both import `heardAs`, `readBackOf` and
+      `spokenValue` from `../capture-vocabulary`. Verified 2026-08-22. Two entries for one
+      fact, one ticked and one not, is worse than either alone — the open one is the one
+      that gets believed.
 - [ ] `config.*` is still organisation-scoped and resolves the oldest live agent.
 
 - [ ] Agent templates to pick from when creating the first one, and the create form itself.
@@ -2814,6 +2828,9 @@ What to listen for, in order of what is actually in doubt:
       live agent, so every assertion would have raised the 0047 ambiguity instead.
 - [ ] Readiness is organisation-wide, so a failing check pauses every agent. Honest today
       (none of them can answer) and wrong once checks become per agent.
+      **Blocked on the agent-scoped `config.*` work, not independent of it.** Per-agent
+      readiness has nothing to read until per-agent configuration exists, so doing this first
+      would mean inventing a per-agent view of organisation-wide facts. Do it after.
 
 ## Voice remediation (2026-08-20)
 

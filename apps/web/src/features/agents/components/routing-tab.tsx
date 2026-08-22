@@ -23,7 +23,7 @@ interface RoutingTabProps {
   readonly savingDraft: boolean;
 }
 
-/** When the agent answers as open, where it hands over, and what the operator controls. */
+/** When the organisation counts as open, where a call hands over, and what the operator controls. */
 export const RoutingTab = ({ config, operatorManaged, errors, publishForm, savingDraft }: RoutingTabProps) => {
   const hours = config.businessHours;
   const escalation = config.escalation;
@@ -36,7 +36,23 @@ export const RoutingTab = ({ config, operatorManaged, errors, publishForm, savin
 
   return (
     <Stack>
-      <Card title="Business hours" description="When the agent answers as open. Unchecked means always open.">
+      {/*
+        Named for the organisation, not for the agent, because that is where they are stored.
+        `publish_agent_config` writes `business_open_hour`, `business_close_hour` and
+        `business_days` onto `organizations` — so these hours are shared, and publishing them
+        from one agent's workspace moves them for every agent the organisation has.
+
+        Indistinguishable from a per-agent setting today, since no organisation has a second
+        live agent and migration 0047 refuses to resolve one if they do. It stops being
+        indistinguishable the moment that changes, and the failure would be silent: an
+        operator sets Saturday hours on the agent they have open and quietly opens the other
+        one too. Saying so costs a sentence; whether hours should become per-agent is a
+        product decision, and one this label does not pre-empt.
+      */}
+      <Card
+        title="Business hours"
+        description="When the organisation counts as open. Shared by every agent it runs, so publishing here changes them all. Unchecked means always open."
+      >
         <Stack>
           <CheckboxField label="Restrict to set hours" name="hoursEnabled" defaultChecked={hours !== null} />
 
