@@ -2888,6 +2888,27 @@ What to listen for, in order of what is actually in doubt:
       needs a carrier password. With no numbers yet the instructions come first and the empty
       table last, because with none the table is not the answer.
 
+- [x] **The load harness is `fake-carrier --calls N` (R5.5 half, 2026-08-22).** Not a second
+      tool: it already POSTs the webhook, reads the TwiML, opens the media socket and streams
+      μ-law, and a load test speaking a different media protocol from the real one measures the
+      harness. Above one call the per-frame narration is replaced by a summary — failures, and
+      p50/p95/max time to TwiML, nearest-rank because one slow call among fifty moves a mean
+      and hides the forty-nine.
+      **`CallSid` and `streamSid` are per call now, and that was load-bearing.** They were
+      constants, right for one call and wrong for fifty: the API keys a call on the carrier's
+      own id, so fifty calls sharing one id are one call reported fifty times and the run would
+      measure nothing while looking like it worked.
+      What it cannot see is stated in the output rather than implied: turn-to-audio is measured
+      inside the API and lands in `latencies`. Running it against fifty real concurrent calls is
+      still owed — the harness exists, the run does not.
+
+- [x] **Retiring an agent is reachable (2026-08-22).** `DELETE /agents/:agentId` has worked
+      throughout, `archiveAgent` sat in `agents.service.ts`, and its only occurrence in the whole
+      of `apps/web/src` was that definition — no action, no button. A feature that shipped
+      unreachable. It is a form of its own in the workspace header rather than a button on the
+      publish form, which would have carried every field along with it, and it redirects to the
+      agent list because the page it was pressed on is now about an agent that does not answer.
+
 - [ ] **Twilio numbers under the platform's own account, as part of a subscription.** Deferred
       by the user on 2026-08-22. Assignment to an agent needs no change when it lands — the
       picker reads `organization_numbers` and does not care how a row got there — and neither

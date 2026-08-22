@@ -11,6 +11,15 @@ interface Options {
   readonly mode: Mode;
   readonly frames: number;
   readonly holdMs: number;
+  /**
+   * How many calls to place at once. One by default, which is the debugging shape.
+   *
+   * Above one this stops being a debugger and becomes R5.5's load test: fifty concurrent
+   * calls with the latency targets held. It is the same code either way rather than a second
+   * harness, because a load test that speaks a different media protocol from the real one
+   * measures the harness.
+   */
+  readonly calls: number;
 }
 
 const MODES: readonly Mode[] = ["unsigned", "signed", "badsig"];
@@ -22,6 +31,7 @@ const parseArgs = (argv: readonly string[]): Options => {
   let mode: Mode = "unsigned";
   let frames = 120;
   let holdMs = 1000;
+  let calls = 1;
 
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
@@ -43,6 +53,15 @@ const parseArgs = (argv: readonly string[]): Options => {
         if (!Number.isInteger(frames) || frames < 0) throw new Error("--frames must be >= 0");
         i += 1;
         break;
+      case "--calls": {
+        const parsedCalls = Number(value);
+        if (!Number.isInteger(parsedCalls) || parsedCalls < 1) {
+          throw new Error("--calls must be >= 1");
+        }
+        calls = parsedCalls;
+        i += 1;
+        break;
+      }
       case "--hold-ms":
         holdMs = Number(value);
         if (!Number.isInteger(holdMs) || holdMs < 0) throw new Error("--hold-ms must be >= 0");
@@ -53,26 +72,37 @@ const parseArgs = (argv: readonly string[]): Options => {
     }
   }
 
-  return { baseUrl, mode, frames, holdMs };
+  return { baseUrl, mode, frames, holdMs, calls };
 };
 
-// Synthetic throughout. The SIDs are the carrier's documented shapes; the numbers are
-// reserved test ranges, not anyone's line.
-const CALL_PARAMS: Readonly<Record<string, string>> = {
-  CallSid: "CAfaketestcall00000000000000000001",
-  AccountSid: "ACfaketestacct00000000000000000001",
-  From: "+2348012345678",
-  To: "+2348099999999",
-  CallStatus: "ringing",
-  Direction: "inbound",
+/**
+ * Synthetic throughout. The SIDs are the carrier's documented shapes; the numbers are reserved
+ * test ranges, not anyone's line.
+ *
+ * Both ids take the call's index, and that is load-bearing rather than tidy. They were
+ * constants, which is correct for one call and wrong the moment there are fifty: the API keys a
+ * call on the carrier's own id, so fifty calls sharing `CAfaketestcall…0001` are one call
+ * reported fifty times, and the run would measure nothing while looking like it worked.
+ */
+const callParams = (index: number): Readonly<Record<string, string>> => {
+  const suffix = String(index + 1).padStart(4, "0");
+  return {
+    CallSid: `CAfaketestcall0000000000000000${suffix}`,
+    AccountSid: "ACfaketestacct00000000000000000001",
+    From: "+2348012345678",
+    To: "+2348099999999",
+    CallStatus: "ringing",
+    Direction: "inbound",
+  };
 };
 
-const STREAM_SID = "MZfaketeststream0000000000000001";
+const streamSid = (index: number): string =>
+  `MZfaketeststream000000000000${String(index + 1).padStart(4, "0")}`;
 
 /** Stands in for the time the carrier takes to play queued audio before echoing a mark. */
 const MARK_PLAYBACK_MS = 150;
 
-const buildHeaders = (mode: Mode, url: string): Record<string, string> => {
+const buildHeaders = (mode: Mode, url: string, params: Readonly<Record<string, string>>): Record<string, string> => {
   const headers: Record<string, string> = {
     "Content-Type": "application/x-www-form-urlencoded",
   };
@@ -82,7 +112,7 @@ const buildHeaders = (mode: Mode, url: string): Record<string, string> => {
     if (token.length === 0) {
       throw new Error("--mode signed needs TWILIO_AUTH_TOKEN set to the API's token");
     }
-    headers["X-Twilio-Signature"] = getExpectedTwilioSignature(token, url, { ...CALL_PARAMS });
+    headers["X-Twilio-Signature"] = getExpectedTwilioSignature(token, url, { ...params });
   } else if (mode === "badsig") {
     headers["X-Twilio-Signature"] = "definitelynotavalidsignature==";
   }
@@ -145,7 +175,13 @@ const tallyOutbound = (
   }
 };
 
-const streamMedia = async (streamUrl: string, options: Options): Promise<number> => {
+const streamMedia = async (
+  streamUrl: string,
+  options: Options,
+  index: number,
+): Promise<number> => {
+  const sid = streamSid(index);
+  const params = callParams(index);
   const socket = new WebSocket(streamUrl);
   const tally: OutboundTally = { media: 0, mediaBytes: 0, marks: [], clears: 0 };
 
@@ -169,7 +205,7 @@ const streamMedia = async (streamUrl: string, options: Options): Promise<number>
       // The real carrier echoes a mark back once playback reaches it. Without this the
       // agent can never learn that the caller actually heard the audio.
       setTimeout(() => {
-        socket.send(JSON.stringify({ event: "mark", streamSid: STREAM_SID, mark: { name } }));
+        socket.send(JSON.stringify({ event: "mark", streamSid: sid, mark: { name } }));
       }, MARK_PLAYBACK_MS);
     });
   });
@@ -184,11 +220,11 @@ const streamMedia = async (streamUrl: string, options: Options): Promise<number>
     JSON.stringify({
       event: "start",
       sequenceNumber: "1",
-      streamSid: STREAM_SID,
+      streamSid: sid,
       start: {
-        accountSid: CALL_PARAMS["AccountSid"],
-        callSid: CALL_PARAMS["CallSid"],
-        streamSid: STREAM_SID,
+        accountSid: params["AccountSid"],
+        callSid: params["CallSid"],
+        streamSid: sid,
         tracks: ["inbound"],
         mediaFormat: { encoding: "audio/x-mulaw", sampleRate: 8000, channels: 1 },
       },
@@ -201,7 +237,7 @@ const streamMedia = async (streamUrl: string, options: Options): Promise<number>
       JSON.stringify({
         event: "media",
         sequenceNumber: String(i + 2),
-        streamSid: STREAM_SID,
+        streamSid: sid,
         media: {
           track: "inbound",
           chunk: String(i + 1),
@@ -218,7 +254,7 @@ const streamMedia = async (streamUrl: string, options: Options): Promise<number>
   await delay(options.holdMs);
 
   socket.send(
-    JSON.stringify({ event: "stop", sequenceNumber: "999", streamSid: STREAM_SID, stop: {} }),
+    JSON.stringify({ event: "stop", sequenceNumber: "999", streamSid: sid, stop: {} }),
   );
   await delay(100);
   socket.close();
@@ -226,40 +262,104 @@ const streamMedia = async (streamUrl: string, options: Options): Promise<number>
   return finished;
 };
 
-const main = async (): Promise<number> => {
-  const options = parseArgs(process.argv.slice(2));
+interface CallResult {
+  readonly ok: boolean;
+  /** How long the carrier waited for TwiML. The first thing a caller feels. */
+  readonly answerMs: number;
+}
+
+/**
+ * One call, end to end, quietly enough that fifty of them do not drown the summary.
+ *
+ * `verbose` is the difference between the debugging shape and the load shape. Below one call
+ * the per-frame narration is the point; above it, fifty copies of it hide the only two numbers
+ * anybody is reading.
+ */
+const placeCall = async (options: Options, index: number, verbose: boolean): Promise<CallResult> => {
   const url = `${options.baseUrl}/telephony/voice`;
+  const params = callParams(index);
+  const started = Date.now();
 
   const response = await fetch(url, {
     method: "POST",
-    headers: buildHeaders(options.mode, url),
-    body: new URLSearchParams(CALL_PARAMS),
+    headers: buildHeaders(options.mode, url, params),
+    body: new URLSearchParams(params),
   });
   const body = await response.text();
+  const answerMs = Date.now() - started;
 
-  console.log(`[carrier] POST ${url} (${options.mode}) -> ${response.status}`);
-  console.log(`[carrier] content-type: ${response.headers.get("content-type") ?? "(none)"}`);
-  console.log(`[carrier] body: ${body}`);
+  if (verbose) {
+    console.log(`[carrier] POST ${url} (${options.mode}) -> ${response.status} in ${answerMs}ms`);
+    console.log(`[carrier] content-type: ${response.headers.get("content-type") ?? "(none)"}`);
+    console.log(`[carrier] body: ${body}`);
+  }
 
   if (response.status === 403) {
     // The correct outcome for unsigned and badsig against an API that verifies.
-    console.log("[carrier] rejected by signature verification");
-    return 0;
+    if (verbose) console.log("[carrier] rejected by signature verification");
+    return { ok: true, answerMs };
   }
-
   if (response.status !== 200) {
-    console.error(`[carrier] expected 200 with TwiML, got ${response.status}`);
-    return 1;
+    console.error(`[carrier] call ${index + 1}: expected 200 with TwiML, got ${response.status}`);
+    return { ok: false, answerMs };
   }
 
   const streamUrl = /url="([^"]+)"/.exec(body)?.[1];
   if (streamUrl === undefined) {
-    console.error("[carrier] answered 200 but the TwiML contains no stream url");
-    return 1;
+    console.error(`[carrier] call ${index + 1}: answered 200 but the TwiML contains no stream url`);
+    return { ok: false, answerMs };
   }
 
-  console.log(`[carrier] opening media socket at ${streamUrl}`);
-  return streamMedia(streamUrl, options);
+  if (verbose) console.log(`[carrier] opening media socket at ${streamUrl}`);
+  const code = await streamMedia(streamUrl, options, index);
+  return { ok: code === 0, answerMs };
+};
+
+/**
+ * Nearest-rank, and percentiles rather than a mean, for the reason the rest of this codebase
+ * reports percentiles: one slow call among fifty moves an average and hides the forty-nine.
+ */
+const percentile = (values: readonly number[], fraction: number): number => {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const rank = Math.max(1, Math.ceil(fraction * sorted.length));
+  return sorted[rank - 1] ?? 0;
+};
+
+const main = async (): Promise<number> => {
+  const options = parseArgs(process.argv.slice(2));
+  const verbose = options.calls === 1;
+
+  if (!verbose) {
+    console.log(`[carrier] placing ${options.calls} calls at once against ${options.baseUrl}`);
+  }
+
+  /* All at once, deliberately. R5.5 asks whether the targets hold under fifty concurrent
+     calls, and a ramp would answer a different and easier question. */
+  const started = Date.now();
+  const results = await Promise.all(
+    Array.from({ length: options.calls }, (_, index) => placeCall(options, index, verbose)),
+  );
+  const elapsed = Date.now() - started;
+
+  if (verbose) return results[0]?.ok === true ? 0 : 1;
+
+  const failed = results.filter((result) => !result.ok).length;
+  const answers = results.map((result) => result.answerMs);
+
+  console.log("");
+  console.log(`[carrier] ${options.calls} calls in ${elapsed}ms, ${failed} failed`);
+  console.log(
+    `[carrier] time to TwiML: p50 ${percentile(answers, 0.5)}ms · ` +
+      `p95 ${percentile(answers, 0.95)}ms · max ${Math.max(...answers)}ms`,
+  );
+  /* What this does and does not measure, said here rather than left to be assumed. The number
+     above is the carrier's wait for an answer, which is the part this harness can see from
+     outside. Turn-to-audio — the one the product is judged on — is measured inside the API and
+     lands in `latencies`; read it there for the same run. */
+  console.log("[carrier] turn-to-audio is measured server-side: query `latencies` for this run");
+
+  return failed === 0 ? 0 : 1;
 };
 
 main()

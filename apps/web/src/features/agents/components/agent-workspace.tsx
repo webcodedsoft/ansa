@@ -13,9 +13,11 @@ import type { CallSummary } from "@/features/calls/calls.service";
 
 import {
   discardDraftAction,
+  retireAgent,
   publish,
   saveDraftAction,
   type DiscardDraftState,
+  type RetireState,
   type PublishState,
   type SaveDraftState,
 } from "../agents.actions";
@@ -41,6 +43,7 @@ import { VoiceTab } from "./voice-tab";
 const START: PublishState = idleForm();
 const START_SAVE: SaveDraftState = idleForm();
 const START_DISCARD: DiscardDraftState = idleForm();
+const START_RETIRE: RetireState = idleForm();
 
 /**
  * The one form every tab writes into, and the two things that can be done with it.
@@ -167,6 +170,9 @@ export const AgentWorkspace = ({
   const [state, action, pending] = useActionState(publish, START);
   const [saveState, save, saving] = useActionState(saveDraftAction, START_SAVE);
   const [discardState, discard, discarding] = useActionState(discardDraftAction, START_DISCARD);
+  /* Only the failure is rendered. A retirement that works redirects to the agent list, so
+     there is no screen left to show a success on. */
+  const [retireState, retire, retiring] = useActionState(retireAgent, START_RETIRE);
 
   /* Whichever attempt answered last owns the field errors. Both schemas validate the same
      fields, so a name rejected by a save is the same name a publish would reject. */
@@ -291,6 +297,22 @@ export const AgentWorkspace = ({
           >
             Test call
           </Link>
+          {/* Retiring is a form of its own rather than a button on the publish form, because it
+              is the one action here that is not "save what I typed" — submitting the publish
+              form to archive an agent would carry every field on it along for the ride. */}
+          <form
+            action={retire}
+            onSubmit={(event) => {
+              const confirmed = window.confirm(
+                `Retire ${agent.name}? It stops answering immediately and its number is released for another agent. Calls it already handled keep its name.`,
+              );
+              if (!confirmed) event.preventDefault();
+            }}
+          >
+            <input type="hidden" name="agentId" value={agent.agentId} />
+            <SubmitButton pending={retiring} idle="Retire" busy="Retiring…" size="sm" />
+          </form>
+
           {/* Discard first, and only when there is something to discard. A button offering to
               throw away work that does not exist is furniture, and one sitting there
               permanently beside Publish invites the click it should not get. */}
@@ -348,6 +370,12 @@ export const AgentWorkspace = ({
             fail at runtime with a compiling build, which is exactly why the action refuses
             rather than falling back to the organisation's only agent. */}
         <input type="hidden" name="agentId" value={agent.agentId} />
+        {retireState.status === "failed" && (
+          <Notice tone="error" className="mb-3.5">
+            {retireState.message}
+          </Notice>
+        )}
+
         {(state.status === "failed" || state.status === "invalid") && (
           <Notice tone="error" className="mb-3.5">
             {state.message}

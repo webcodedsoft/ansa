@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { failureMessage } from "@/lib/api/server";
@@ -20,6 +21,7 @@ import {
   type CapturedField,
 } from "./agents.schema";
 import {
+  archiveAgent,
   createAgent,
   routeAgent,
   diffVersions,
@@ -895,4 +897,36 @@ export const setRouting = async (
   } catch (error) {
     return failedForm(failureMessage(error));
   }
+};
+
+/**
+ * Retiring an agent.
+ *
+ * `DELETE /agents/:agentId` has worked throughout and nothing in the console could reach it —
+ * `archiveAgent` sat in the service with no caller, which is the shape of a feature that ships
+ * unreachable. The API archives rather than deletes: the agent stays listed so a call log can
+ * still name it, and its number is released in the same statement, because an archived agent
+ * does not answer and a number left attached would ring nobody and could not be reassigned.
+ *
+ * Redirects rather than returning to the workspace. The page it was called from is about an
+ * agent that no longer answers, and leaving somebody there to press Publish is worse than
+ * moving them.
+ */
+export type RetireState = FormState<{ readonly agentId: string }>;
+
+export const retireAgent = async (_previous: RetireState, form: FormData): Promise<RetireState> => {
+  const agentId = agentFrom(form);
+  if (agentId === null) return failedForm("This form does not say which agent it is for.");
+
+  try {
+    await archiveAgent(agentId);
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+
+  /* Outside the try. `redirect` works by throwing, so catching around it would turn a
+     successful retirement into "something went wrong" — a mistake this file would make once
+     and then be confusing about forever. */
+  revalidatePath("/", "layout");
+  redirect("/agents");
 };

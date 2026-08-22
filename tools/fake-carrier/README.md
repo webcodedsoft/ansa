@@ -29,6 +29,27 @@ With signature checking on, pass the same token the API is running with:
 TWILIO_AUTH_TOKEN=<token> node tools/fake-carrier/dist/main.js --mode signed
 ```
 
+## Fifty at once
+
+```sh
+node tools/fake-carrier/dist/main.js --url http://127.0.0.1:3222 --calls 50
+```
+
+Above one call the per-frame narration is dropped and a summary replaces it: how many failed,
+and the p50, p95 and max time the carrier waited for TwiML. All fifty are placed at once rather
+than ramped, because R5.5 asks whether the targets hold under fifty concurrent calls and a ramp
+answers an easier question.
+
+Each call carries its own `CallSid` and `streamSid`. They used to be constants, which is right
+for one call and wrong for fifty — the API keys a call on the carrier's own id, so fifty calls
+sharing one id are one call reported fifty times, and the run would measure nothing while
+looking like it worked.
+
+**What the summary does not measure.** Time to TwiML is the part visible from outside the
+process. Turn-to-audio, which is the number the product is judged on, is measured inside the
+API and written to `latencies` — read it there for the same run. A harness that reported its
+own guess at it would be reporting the harness.
+
 ## Options
 
 | Flag | Default | Meaning |
