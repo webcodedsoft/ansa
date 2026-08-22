@@ -2710,13 +2710,19 @@ What to listen for, in order of what is actually in doubt:
 - [ ] `config.*` is still organisation-scoped and resolves the oldest live agent. Three
       places share that rule so they move together.
 
-- [ ] Capture *enforcement* is still the model's job on this path. The prompt tells it to
-      confirm before using a value, and risk tiers stop a write-tier tool firing — but
-      nothing yet tracks per-field state on the call: `attempts` does not count, `pattern`
-      does not reject and re-ask, and `redact` does not hide anything in a transcript. Those
-      need a capture state machine in the orchestrator holding a value per field with a
-      confirmed flag. That is the next real slice, and until it lands those three settings
-      describe an intention rather than a behaviour.
+- [x] ~~Capture enforcement is still the model's job on this path.~~ **Stale in every
+      clause, corrected 2026-08-22 rather than deleted.** It said `attempts` did not count,
+      `pattern` did not reject and re-ask, and `redact` hid nothing — and called a capture
+      state machine "the next real slice". All of that has since landed:
+      `orchestrator/form.ts` holds a value and a `confirmed` flag per field, compiles the
+      operator's `pattern` into `matches`, and counts attempts (`again: count < attempts`);
+      `capture.ts` owns how one value is heard, checked and read back. The `redact` toggle
+      was removed outright — see the entry above recording that.
+
+      Left visible instead of removed because the failure mode of a stale open item is
+      specific and expensive: it reads as work outstanding, and the next person spends a day
+      building something that is already there. That is the same defect as a docstring
+      claiming a lint rule that does not exist, pointing the other way.
 
 - [ ] `config.*` reads and writes the tenant's oldest live agent via
       `app.tenant_config_for_id`. Correct with one agent, a coin toss with two. **This is
