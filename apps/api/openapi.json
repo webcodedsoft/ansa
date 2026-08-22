@@ -3323,6 +3323,111 @@
         }
       }
     },
+    "/api/v1/calls/catchphrases": {
+      "get": {
+        "operationId": "calls.catchphrases",
+        "tags": [
+          "calls"
+        ],
+        "summary": "Phrasings appearing in more than 15% of recent calls",
+        "description": "Counted per call rather than per utterance: saying something three times in one difficult call is one awkward call, and saying it once in every call is a catchphrase. Numbers are flattened to `#` so a phrasing that quotes a figure still groups with itself. An empty list is the healthy answer.",
+        "x-ansa-capability": "calls:read",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "callsScanned": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "phrases": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "shape": {
+                            "type": "string",
+                            "maxLength": 400
+                          },
+                          "example": {
+                            "type": "string",
+                            "maxLength": 400
+                          },
+                          "calls": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "share": {
+                            "type": "string",
+                            "maxLength": 8
+                          }
+                        },
+                        "required": [
+                          "shape",
+                          "example",
+                          "calls",
+                          "share"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "callsScanned",
+                    "phrases"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold calls:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/calls/latency": {
       "get": {
         "operationId": "calls.latency",

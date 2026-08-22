@@ -525,6 +525,21 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       }>(options, "POST", `/api/v1/calls/${encodeURIComponent(input.path.callId)}/transcripts/${encodeURIComponent(input.path.transcriptId)}/corrections`, input),
 
     /**
+     * Phrasings appearing in more than 15% of recent calls
+     * Counted per call rather than per utterance: saying something three times in one difficult call is one awkward call, and saying it once in every call is a catchphrase. Numbers are flattened to `#` so a phrasing that quotes a figure still groups with itself. An empty list is the healthy answer.
+     */
+    catchphrases: () =>
+      send<{
+        readonly callsScanned: number;
+        readonly phrases: readonly ({
+        readonly shape: string;
+        readonly example: string;
+        readonly calls: number;
+        readonly share: string;
+      })[];
+      }>(options, "GET", `/api/v1/calls/catchphrases`, {}),
+
+    /**
      * Response time per pipeline stage, as percentiles
      * Percentiles, never averages: a mean hides the calls that make somebody hang up. `from` is inclusive and `to` exclusive; both default to the last seven days, and a range longer than 31 days is refused rather than clamped. `stages` is keyed by whatever the orchestrator measured — typically `stt_final`, `llm_first_token`, `tts_first_byte` and `turn_to_audio`.
      */

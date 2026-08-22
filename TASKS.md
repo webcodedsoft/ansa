@@ -2938,10 +2938,22 @@ The brief asks for ~20 across five tags with the same behaviour.
       plus a beat, or the agent interrupts itself with its own noise — which is the Phase 2
       defect reintroduced by the feature meant to make calls feel warmer. Worth doing once
       the barge-in work has been heard on a real call, and not before.
-- [ ] **Phase 6c — phrase fingerprinting.** Normalise each agent utterance, hash it, log it
-      with the call id, and report fingerprints appearing in more than 15% of calls. Pure
-      observability, no call-path risk, and it needs the other two to have run for a while
-      before it has anything to say.
+- [x] **Phase 6c — the sentences the agent says to everybody**. `GET /api/v1/calls/catchphrases`.
+      - **Nothing was added to the call path.** Every agent utterance has been recorded as an
+        `agent said` event carrying its text since the event log existed, and
+        `readCallRecords` already selects that kind — so this is a read. It costs a live call
+        nothing and it had something to say the day it shipped, rather than in a month.
+      - **No hash, unlike the brief.** It reaches for sha1 because it writes a fingerprint
+        per call and wants the column small; computing at read time removes the constraint,
+        and the normalised phrase is a better key than its digest, because the whole output
+        is a list somebody reads and acts on.
+      - **Counted per call, not per utterance.** Saying "let me check" three times in one
+        difficult call is one awkward call; saying it once in every call is a catchphrase.
+        Conflating them sends somebody off to rewrite a prompt that was working.
+      - Numbers flatten to `#`, so a phrasing that quotes a figure still groups with itself
+        — and a turn that was *only* a number reduces to nothing rather than to `#`, which
+        would otherwise report "the agent read a reference back" as its top catchphrase.
+        That one was a real bug, found by a test asserting the empty string.
 - [x] **Phase 7a — "stop calling me" is now written down**. Most of Phase 7 was already
       built: `mayCall` is a pure verdict that checks suppression before consent and consent
       before hours, with an outer 08:00-20:00 bound a organization may narrow and cannot

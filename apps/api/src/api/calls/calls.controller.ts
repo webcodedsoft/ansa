@@ -16,6 +16,7 @@ import {
   UnprocessableEntityException,
 } from "@nestjs/common";
 
+import { catchphrases } from "../../viewer/fingerprint";
 import { scoreCalls, stagePercentiles } from "../../viewer/metrics";
 // Aliased: the handler below is also called `reviewQueue`, and a reader should not have to
 // work out that a bare call inside a method resolves to the module import and not to `this`.
@@ -450,6 +451,23 @@ const toLatencyRange = (query: Infer<typeof latencyQuery>): LatencyRange => {
   return { from: from.toISOString(), to: to.toISOString() };
 };
 
+const catchphrase = object({
+  /** The normalised shape, which is what groups two differently-worded turns as one. */
+  shape: text({ maxLength: 400 }),
+  /** One utterance as it was said, so the report reads like speech rather than like a key. */
+  example: text({ maxLength: 400 }),
+  /** Distinct calls containing it. Calls, never utterances — three in one call is one call. */
+  calls: integer({ minimum: 0 }),
+  /** That count over the calls scanned. A string for the reason `ratio` is; see below. */
+  share: text({ maxLength: 8 }),
+});
+
+const catchphraseResponse = object({
+  callsScanned: integer({ minimum: 0 }),
+  /** Worst first. Empty is the healthy answer. */
+  phrases: list(catchphrase),
+});
+
 const toFilters = (query: Infer<typeof callQuery>): CallFilters => ({
   from: query.from ?? null,
   to: query.to ?? null,
@@ -571,6 +589,39 @@ export class CallsController {
       stages[stage] = { p50: round(p.p50), p90: round(p.p90), p95: round(p.p95), samples: p.samples };
     }
     return { from: range.from, to: range.to, truncated: measured.truncated, stages };
+  }
+
+  /**
+   * Phrasings the agent has started using on most calls.
+   *
+   * Nothing on the call path feeds this. Every agent utterance has been recorded with its
+   * text since the event log existed, so this is a read over calls already on disk — which
+   * also means it had something to say the day it shipped rather than in a month.
+   *
+   * Declared before `:callId` for the reason at the top of this file.
+   */
+  @Get("catchphrases")
+  @Endpoint({
+    summary: "Phrasings appearing in more than 15% of recent calls",
+    description:
+      "Counted per call rather than per utterance: saying something three times in one difficult call is one awkward call, and saying it once in every call is a catchphrase. Numbers are flattened to `#` so a phrasing that quotes a figure still groups with itself. An empty list is the healthy answer.",
+    capability: "calls:read",
+    response: catchphraseResponse,
+  })
+  async catchphrases(): Promise<Infer<typeof catchphraseResponse>> {
+    const records = await this.db.tx((scope) => readCallRecords(scope, METRIC_WINDOW));
+    const report = catchphrases(records);
+    return {
+      callsScanned: report.callsScanned,
+      phrases: report.phrases.map((phrase) => ({
+        shape: phrase.shape,
+        example: phrase.example,
+        calls: phrase.calls,
+        // Text, for the same reason every other rate here is text: four decimal places
+        // survive the trip without the schema layer rounding them away.
+        share: phrase.share.toFixed(4),
+      })),
+    };
   }
 
   @Get("review-queue")
