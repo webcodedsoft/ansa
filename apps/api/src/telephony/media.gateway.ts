@@ -111,6 +111,9 @@ const FRAME_MS = 20;
 
 const NOT_WARM: WarmAudio = { greeting: null, leads: new Map(), fillers: new Map(), complete: false };
 
+/** A gap this size or smaller reads as a dropped packet rather than a pause in speech. */
+const SHORT_GAP_MS = 200;
+
 /** How often the loop is sampled for lateness. Half a frame, so a lost frame is visible. */
 const LOOP_SAMPLE_MS = 10;
 
@@ -591,8 +594,22 @@ export class MediaGateway implements OnApplicationShutdown {
     let previousOffsetMs: number | null = null;
     /** Milliseconds of audio the carrier numbered and we never received. */
     let missingMs = 0;
+    /**
+     * The shape of what went missing, which is the part `missingMs` cannot tell you.
+     *
+     * A total says how much is absent and nothing about why. Steady packet loss on a bad
+     * leg arrives as many gaps of a frame or two; a network that suppresses silence — most
+     * mobile carriers do, and stop sending RTP entirely when nobody is talking — arrives as
+     * a handful of gaps seconds long, aligned with the pauses. Both produce the same
+     * `missingMs`, and reading it as loss cost several calls' worth of wrong conclusions.
+     */
+    let gaps = 0;
+    let shortGaps = 0;
+    let longGapMs = 0;
+    let largestGapMs = 0;
     let bytes = 0;
     let firstFrameLogged = false;
+    let firstOffsetMs: number | null = null;
 
     log.info("media stream started", {
       encoding: stream.format.encoding,
@@ -605,6 +622,7 @@ export class MediaGateway implements OnApplicationShutdown {
 
       if (!firstFrameLogged) {
         firstFrameLogged = true;
+        firstOffsetMs = chunk.offsetMs;
         log.info("first inbound audio frame", {
           bytes: chunk.data.length,
           msSinceStreamStart: Date.now() - openedAt,
@@ -624,7 +642,14 @@ export class MediaGateway implements OnApplicationShutdown {
        * arguing about which one this is. */
       if (previousOffsetMs !== null) {
         const step = chunk.offsetMs - previousOffsetMs;
-        if (step > FRAME_MS) missingMs += step - FRAME_MS;
+        if (step > FRAME_MS) {
+          const lost = step - FRAME_MS;
+          missingMs += lost;
+          gaps += 1;
+          if (lost <= SHORT_GAP_MS) shortGaps += 1;
+          else longGapMs += lost;
+          largestGapMs = Math.max(largestGapMs, lost);
+        }
       }
       previousOffsetMs = chunk.offsetMs;
 
@@ -648,6 +673,15 @@ export class MediaGateway implements OnApplicationShutdown {
         /* `missingMs` is the verdict. Zero with a short call means the carrier stopped
            sending; a large number means it sent and the frames were lost on the way. */
         missingMs,
+        /* Where the missing milliseconds actually went. Many short gaps is a lossy leg;
+           a few long ones is a caller who was not talking. */
+        gaps,
+        shortGaps,
+        longGapMs,
+        largestGapMs,
+        /* Nothing arrived before this, and it is not counted in `missingMs` — which only
+           measures between frames it saw. A large value here is its own finding. */
+        silentLeadInMs: firstOffsetMs ?? 0,
         carrierSpanMs: previousOffsetMs ?? 0,
         frames,
         bytes,

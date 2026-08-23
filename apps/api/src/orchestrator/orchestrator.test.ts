@@ -986,6 +986,23 @@ describe("a turn that never ends", () => {
     }
   });
 
+  it("fires on a real event loop, not only a mocked one", async () => {
+    /* Every other test here runs on fake timers, and `vi.advanceTimersByTime` fires an
+       unref'd timer whether or not a real loop would. On the call of 2026-08-23 21:15 the
+       watchdog armed on speech start and nothing was heard for the 25 seconds until the
+       caller hung up — no error, no recovery line. Fake timers cannot see a difference
+       like that, so this one waits on the clock the process actually uses. */
+    const h = setup({ stalledTurnMs: 120, transcriptWatchdogMs: 60_000 });
+    h.tts.last().done();
+    h.stream.ackAll();
+    const before = h.tts.texts().length;
+
+    h.listen.speechStart(1000);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    expect(h.tts.texts().length).toBeGreaterThan(before);
+  });
+
   it("stands down when the turn does end", () => {
     vi.useFakeTimers();
     try {

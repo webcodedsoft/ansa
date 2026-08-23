@@ -13,6 +13,7 @@ import {
 } from "@ansa/tools";
 
 import { ACKNOWLEDGEMENTS, createFillerPicker } from "../telephony/filler";
+import { createSilenceFill } from "../telephony/silence-fill";
 import { classify } from "./action";
 import {
   advance,
@@ -752,7 +753,14 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     cancelStalledTurn();
     stalledTurn = setTimeout(() => {
       stalledTurn = null;
-      if (turn !== null) return;
+      /* Logged rather than returned silently. On the call of 2026-08-23 21:15 the caller
+         spoke, this armed, and nothing was heard for 25 seconds — and a bare `return` left
+         no way to tell a timer that never fired from one that fired and found a turn
+         open. */
+      if (turn !== null) {
+        log.debug("the stall timer found a turn already open", { seq: turn.seq });
+        return;
+      }
       log.error("caller spoke but the turn never ended");
       sayRecovery("turn never ended");
     }, deps.stalledTurnMs ?? STALLED_TURN_MS);
@@ -1087,6 +1095,30 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   const speechGate = createSpeechGate();
   let speechMsSinceTranscript = 0;
 
+  /**
+   * Silence the caller's network did not send, for the turn detector's benefit only.
+   *
+   * Flux ends a turn by hearing the caller stop. Networks that suppress silence send
+   * nothing rather than quiet, so it hears neither and the turn never closes — the agent
+   * goes mute for the rest of the call. This hands it the quiet it is listening for.
+   *
+   * Written straight to `deps.listen`, deliberately bypassing the speech gate and the
+   * `audio_received` stamp: invented frames are not evidence, and a noise floor computed
+   * partly from audio we made up is not a noise floor.
+   */
+  const silenceFill = createSilenceFill({
+    format: stream.format,
+    frameMs: FRAME_MS,
+    emit: (chunk) => deps.listen.write(chunk),
+    now: () => Date.now(),
+    schedule: (fn, ms) => {
+      const handle = setTimeout(fn, ms);
+      handle.unref();
+      return handle;
+    },
+    cancel: (handle) => clearTimeout(handle),
+  });
+
   const takeAudio = (chunk: AudioChunk): void => {
     if (!audioSeen) {
       audioSeen = true;
@@ -1094,6 +1126,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       record.event("stt_start", {});
     }
     if (speechGate.push(chunk.data).length > 0) speechMsSinceTranscript += FRAME_MS;
+    silenceFill.seen(chunk);
     deps.listen.write(chunk);
   };
 
@@ -2976,10 +3009,18 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     cancelFiller();
     cancelWatchdog();
     cancelStalledTurn();
+    /* Before `listen.close()`: a filler still armed writes into a closed session. */
+    silenceFill.stop();
     echoSegments.clear();
     stopSpeaking("call ended");
     deps.listen.close();
-    log.info("conversation ended", { reason, turns: turnSeq });
+    log.info("conversation ended", {
+      reason,
+      turns: turnSeq,
+      /* Non-zero means the caller's network suppresses silence, which is worth knowing
+         per call: it changes what the turn detector was actually working from. */
+      silenceFilledFrames: silenceFill.filled(),
+    });
   });
 
   // ---- open the call -------------------------------------------------------

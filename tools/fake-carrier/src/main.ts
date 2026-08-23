@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { readFileSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { getExpectedTwilioSignature } from "twilio";
@@ -37,6 +38,15 @@ interface Options {
    * out and something else is competing for the link. Pass 20 to imitate a call.
    */
   readonly paceMs: number;
+  /**
+   * A mu-law recording to send as the caller, instead of a synthetic ramp.
+   *
+   * The ramp is fine for counting frames and useless for anything that depends on the
+   * audio being speech: no transcriber will emit a word for it, and no turn detector will
+   * find a boundary in it. `recordings/*.ulaw` holds what real callers actually said, so
+   * pointing this at one replays a call that failed and reproduces the failure for free.
+   */
+  readonly audioPath: string | null;
 }
 
 const MODES: readonly Mode[] = ["unsigned", "signed", "badsig"];
@@ -51,6 +61,7 @@ const parseArgs = (argv: readonly string[]): Options => {
   let calls = 1;
   let to = "+2348099999999";
   let paceMs = 2;
+  let audioPath: string | null = null;
 
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
@@ -77,6 +88,10 @@ const parseArgs = (argv: readonly string[]): Options => {
         to = value;
         i += 1;
         break;
+      case "--audio":
+        audioPath = value;
+        i += 1;
+        break;
       case "--frames":
         frames = Number(value);
         if (!Number.isInteger(frames) || frames < 0) throw new Error("--frames must be >= 0");
@@ -101,7 +116,7 @@ const parseArgs = (argv: readonly string[]): Options => {
     }
   }
 
-  return { baseUrl, mode, frames, holdMs, calls, to, paceMs };
+  return { baseUrl, mode, frames, holdMs, calls, to, paceMs, audioPath };
 };
 
 /**
@@ -266,8 +281,17 @@ const streamMedia = async (
     }),
   );
 
+  /* Real speech if a recording was given, and a ramp otherwise. The ramp exists to move
+     bytes; only the recording exercises anything downstream that has to understand them. */
+  const recorded = options.audioPath === null ? null : readFileSync(options.audioPath);
+  const total = recorded === null ? options.frames : Math.ceil(recorded.length / 160);
+
   // 160 bytes is one 20ms frame of 8kHz mu-law, which is what the carrier actually sends.
-  for (let i = 0; i < options.frames; i += 1) {
+  for (let i = 0; i < total; i += 1) {
+    const payload =
+      recorded === null
+        ? Buffer.alloc(160, i % 256)
+        : recorded.subarray(i * 160, i * 160 + 160);
     socket.send(
       JSON.stringify({
         event: "media",
@@ -277,14 +301,15 @@ const streamMedia = async (
           track: "inbound",
           chunk: String(i + 1),
           timestamp: String(i * 20),
-          payload: Buffer.alloc(160, i % 256).toString("base64"),
+          payload: payload.toString("base64"),
         },
       }),
     );
     await delay(options.paceMs);
   }
   if (verbose) {
-    console.log(`[carrier] sent ${options.frames} media frames (${options.frames * 160} bytes)`);
+    const what = recorded === null ? "synthetic" : options.audioPath;
+    console.log(`[carrier] sent ${total} media frames (${total * 160} bytes) from ${what}`);
   }
 
   // Hold the socket open so anything the agent plays back has time to arrive.
