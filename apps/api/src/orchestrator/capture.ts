@@ -124,6 +124,29 @@ export type EntityRisk = "identifier" | "consequential" | "conversational";
  */
 export type ConfirmationRule = "always" | "when-uncertain";
 
+/**
+ * Enough digits for any value here, and a ceiling on what a join may build.
+ *
+ * The longest is an eleven-digit NIN or mobile; twenty leaves room for a caller who
+ * restates part of it without letting the string grow for the length of a call.
+ */
+const MAX_PARTIAL_DIGITS = 20;
+
+/**
+ * Whether two turns of this kind may be read as one value.
+ *
+ * The keypad fallback is the marker, and it is the right one: those are precisely the
+ * kinds that are a run of digits, where a pause is punctuation rather than the end. A name
+ * or an address is prose, and stitching two turns of prose together invents a value.
+ *
+ * Defensive rather than load-bearing today, and exported so the rule is testable instead
+ * of merely stated: no prose parser currently returns a value for a fragment, so the join
+ * is unreachable for them anyway. The day one does — a partial address, say — this is what
+ * stops two halves of two different sentences becoming one.
+ */
+export const joinable = (kind: EntityKind): boolean =>
+  ENTITY_POLICY[kind].fallback === "keypad";
+
 /** Where a caller goes when speech has failed twice. */
 export type CaptureFallback = "spelling" | "keypad" | "retry";
 
@@ -147,7 +170,22 @@ export type CaptureState =
    * is a fragment, and a date parser let loose on every turn would find dates in
    * "fourteen Adeola Odeku Street".
    */
-  | { readonly kind: "awaiting"; readonly expect: EntityKind; readonly attempt: number }
+  | {
+      readonly kind: "awaiting";
+      readonly expect: EntityKind;
+      readonly attempt: number;
+      /**
+       * Digits heard so far for a value the caller is still part-way through.
+       *
+       * A turn detector decides on silence, and somebody reading out eleven digits pauses
+       * between the groups — so "zero eight one three eight one seven eight five" and
+       * "five zero" arrive as two turns of one number. Read separately both are the wrong
+       * length and both are rejected, which is what had a caller repeat their number five
+       * times on 2026-08-23. Kept only for the kinds that fall back to the keypad; joining
+       * fragments of a name or an address would invent values nobody said.
+       */
+      readonly partial?: string;
+    }
   | {
       readonly kind: "confirming";
       readonly value: string;
@@ -930,6 +968,7 @@ const beginCapture = (
    * until they hung up.
    */
   attempt = 1,
+  carry: { readonly partial?: string } = {},
 ): CaptureResult => {
   // A value that does not fit its own shape is not put to the caller as a question. "Is
   // that right?" on nine digits of an eleven-digit NIN wastes a whole exchange on
@@ -940,7 +979,12 @@ const beginCapture = (
     // doing while there is a chance the next go is better; after that the keypad is.
     if (attempt >= spokenAttemptsFor(subject, confidence)) return fallbackFor(subject, []);
     return {
-      state: { kind: "awaiting", expect: subject, attempt: attempt + 1 },
+      state: {
+        kind: "awaiting",
+        expect: subject,
+        attempt: attempt + 1,
+        ...(carry.partial === undefined ? {} : { partial: carry.partial }),
+      },
       say: forSpeech(`${problem} ${ENTITY_POLICY[subject].ask}`),
       captured: null,
       capturedKind: null,
@@ -1201,16 +1245,34 @@ const confirming = (
  * values in free speech, and are unambiguous in answer to a question.
  */
 const awaiting = (
-  state: { readonly expect: EntityKind; readonly attempt: number },
+  state: { readonly expect: EntityKind; readonly attempt: number; readonly partial?: string },
   text: string,
   atMs: number,
   confidence?: number | null,
 ): CaptureResult => {
   const value = parseAnswer(state.expect, text, atMs);
-  // Carrying the attempt is what lets a malformed answer reach the keypad. Without it the
-  // caller is asked the same question forever — see `beginCapture`.
   if (value !== null) {
-    return beginCapture(value, state.expect, atMs, confidence, [], state.attempt);
+    /* Two readings of the same turn, and whichever is a whole value wins.
+     *
+     * `joined` is the caller continuing — the second half of a number they paused in the
+     * middle of. `value` alone is the caller starting again, which is what they do when
+     * they think you missed it. Trying the join first and falling back to the fresh answer
+     * handles both without having to guess which one this was. */
+    const partial = joinable(state.expect) ? (state.partial ?? "") : "";
+    const joined = partial === "" ? null : `${partial}${value}`;
+    for (const candidate of [joined, value]) {
+      if (candidate === null) continue;
+      if (ENTITY_POLICY[state.expect].problem(candidate) === null) {
+        return beginCapture(candidate, state.expect, atMs, confidence, [], state.attempt);
+      }
+    }
+    // Carrying the attempt is what lets a malformed answer reach the keypad. Without it
+    // the caller is asked the same question forever — see `beginCapture`.
+    return beginCapture(joined ?? value, state.expect, atMs, confidence, [], state.attempt, {
+      // Cap it. A caller who keeps talking must not build an unbounded string, and past a
+      // point the join is no longer a number anybody said.
+      partial: (joined ?? value).slice(-MAX_PARTIAL_DIGITS),
+    });
   }
 
   if (state.attempt >= spokenAttemptsFor(state.expect, confidence)) {

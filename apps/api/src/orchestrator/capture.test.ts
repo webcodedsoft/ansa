@@ -6,6 +6,7 @@ import {
   ENTITY_POLICY,
   expecting,
   idle,
+  joinable,
   mustConfirm,
   spokenAttemptsFor,
   type CaptureState,
@@ -24,6 +25,50 @@ const press = (state: CaptureState, digit: string) => advance(state, { kind: "ke
  * said "That doesn't look like a complete mobile number" in exactly the same words five
  * times running. It would have done that until they hung up.
  */
+/**
+ * A number the turn detector cut in half.
+ *
+ * Verbatim from the call at 17:32 on 2026-08-23, where the caller's own number arrived as
+ * two turns because they paused between the digit groups — as everyone does. Read
+ * separately both halves are the wrong length, both were rejected, and the caller was
+ * asked again five times. Flux decides on silence and the pause is real, so this is the
+ * capture engine's problem to solve rather than a threshold to tune.
+ */
+describe("digits split across two turns", () => {
+  it("joins the halves into the number that was actually said", () => {
+    const asked = expecting("phone").state;
+    const first = speak(asked, "Zero eight one three eight one seven eight five");
+    expect(first.captured).toBeNull();
+
+    const second = speak(first.state, "five zero");
+    expect(second.state.kind).toBe("confirming");
+    expect(second.say).toContain("Is that right?");
+  });
+
+  it("takes a caller who starts over rather than gluing it to the last attempt", () => {
+    /* They think you missed it, so they say the whole thing again. Joining that to what
+       came before builds a twenty-digit number nobody said. */
+    const asked = expecting("phone").state;
+    const half = speak(asked, "zero eight one three eight one");
+    const whole = speak(half.state, "zero eight one three eight one seven eight five five zero");
+
+    expect(whole.state.kind).toBe("confirming");
+  });
+
+  it("joins runs of digits and nothing else", () => {
+    /* Stated as the rule rather than probed through behaviour, because no prose parser
+       returns a value for a fragment today — so the guard is unreachable by any input and
+       a behavioural test of it would pass with the guard deleted. It is here for the day
+       a partial address parses, which would otherwise glue two sentences into one. */
+    for (const kind of ["phone", "reference", "nin", "bvn", "otp", "amount"] as const) {
+      expect(joinable(kind), kind).toBe(true);
+    }
+    for (const kind of ["name", "email", "address", "date", "time"] as const) {
+      expect(joinable(kind), kind).toBe(false);
+    }
+  });
+});
+
 describe("a number that keeps coming out the wrong length", () => {
   const short = "0813 817 85";
 
