@@ -50,6 +50,10 @@ the model.
 | `R4.3.1` | capture/readback dispatch path | yes |
 | `R4.3.3` | capture dispatch path | no — invisible to it |
 | `R5.3` | tool registry dispatch path | yes |
+| `ABS-3` | prompt only — no dispatch path can judge a sentence | yes |
+| `ABS-6` | prompt only — no dispatch path can judge a sentence | yes |
+| `ABS-7` | prompt only — no dispatch path can judge a sentence | yes |
+| `ABS-8` | prompt only — no dispatch path can judge a sentence | yes |
 | `R6.7` | prompt only — the model is the only thing that can answer this question | yes |
 | `R6.2` | holding-speech scheduler and the degrade-to-speech paths | no — invisible to it |
 | `R6.4` | escalation counter in the conversation loop | no — invisible to it |

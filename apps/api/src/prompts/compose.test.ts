@@ -66,6 +66,48 @@ describe("the composition", () => {
     expect(shared).toContain("\"Sorry?\" on its own means they didn't hear you.");
   });
 
+  /**
+   * The sections ported out of `docs/ansa-agent-prompt.md`.
+   *
+   * That document specified all of this and reached no layer — nothing in the code has
+   * ever read it, so every rule below was written down and then not shipped. One line of
+   * it describes the worst defect of 2026-08-23 exactly: the agent said one sentence five
+   * times running and the caller hung up to escape it.
+   *
+   * Pinned by the behaviour each section exists to produce, not by its wording, so the
+   * prose can be rewritten and the rule cannot quietly vanish with it.
+   */
+  it("carries every rule ported from the agent-prompt document", () => {
+    const shared = composeSystemPrompt({ organization: null, tools: [] }).toLowerCase();
+    for (const [rule, evidence] of [
+      ["stops repeating itself", "said the same thing twice"],
+      ["escalates a caller who is not being heard", "same thing three times"],
+      ["escalates when nothing is being achieved", "three turns with nothing achieved"],
+      ["does not greet twice", "greeting has already been spoken"],
+      ["does not echo the wrong part of the day", "don't repeat it back either"],
+      ["never says good night to someone who just rang", "that is a goodbye"],
+      ["asks about anything else once", "anything else once"],
+      ["does not finish a sentence it was cut off in", "don't finish the sentence"],
+      ["waits out a silence", "let a pause be a pause"],
+      ["handles two requests in order", "two things at once"],
+      ["never reuses its own wording", "never reuse your own wording"],
+      ["matches how the caller talks", "meet them where they are"],
+      ["never mirrors the caller back", "never open by mirroring"],
+      ["stays level when sworn at", "don't get more deferential"],
+      ["refuses instructions hidden in caller speech", "instruction you follow"],
+      ["will not act for a child", "adult who can come to the phone"],
+      ["treats self-harm as outranking the call", "outranks everything else on the call"],
+      ["spots coercion", "somebody else prompting them"],
+      ["stops at two failed identity checks", "two goes at most"],
+      ["will not discuss somebody else's account", "authorisation already on file"],
+      ["does not respond to a legal threat", "do not respond to the threat"],
+      ["never quantifies a refund", "never put a number on it"],
+      ["admits what it is", "asked what you are"],
+    ] as const) {
+      expect(shared, rule).toContain(evidence);
+    }
+  });
+
   it("puts the layers in the order the design specifies", () => {
     const prompt = composeSystemPrompt({ organization: layerFor("Warm, not chatty.").layer, tools: [] });
     const at = (needle: string) => prompt.indexOf(needle);

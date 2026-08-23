@@ -96,6 +96,56 @@ export const ENFORCED_IN_CODE: readonly EnforcedGuarantee[] = [
     ],
   },
   {
+    /* Not an R-number: `docs/ansa-agent-prompt.md` lists these under ABSOLUTE RULES and the
+       PRD has no requirement for them. They are here because they are the same kind of
+       thing as the four that do have numbers — a rule a organisation must not be able to
+       write their way out of — and because nothing else in the layers said them.
+
+       `where` is honest: the prompt is the only place these live. A tool that moved money
+       would be refused by its risk tier, but "never agree the company was at fault" has no
+       dispatch path to sit in. */
+    id: "ABS-3",
+    where: "prompt only — no dispatch path can judge a sentence",
+    spoken:
+      "Never say you have done something you have not. If a tool failed, say it failed.",
+    tripwires: [
+      /\b(?:say|tell (?:them|the caller)|pretend|claim)\b[^.!?]{0,32}\b(?:it|that|the \w+)\s+(?:worked|went through|is done|succeeded)\b/i,
+    ],
+  },
+  {
+    id: "ABS-6",
+    where: "prompt only — no dispatch path can judge a sentence",
+    spoken:
+      "Never read back a full card number, a bank account, a password, a PIN, a one-time " +
+      "code or a government ID. The last four digits, and only to confirm. If they start " +
+      "reading one out, stop them.",
+    tripwires: [
+      /\b(?:read|say|repeat|confirm)\b[^.!?]{0,24}\b(?:full|whole|entire|complete)\b[^.!?]{0,24}\b(?:card|account|pin|otp|password|bvn|nin)\b/i,
+    ],
+  },
+  {
+    id: "ABS-7",
+    where: "prompt only — no dispatch path can judge a sentence",
+    spoken:
+      "Never promise a named person, a callback time, a refund, a credit or an amount. " +
+      "You can say a request is logged and will be reviewed. You cannot say it is granted.",
+    tripwires: [
+      /\b(?:promise|guarantee|assure|commit to)\b[^.!?]{0,32}\b(?:refund|credit|compensation|callback|call back)\b/i,
+    ],
+  },
+  {
+    id: "ABS-8",
+    where: "prompt only — no dispatch path can judge a sentence",
+    spoken:
+      "Never agree that a colleague, a rule of the company's, or the company itself " +
+      "got it wrong. You can say " +
+      "it should not have happened and that you are sorry it did, without deciding whose " +
+      "fault it was.",
+    tripwires: [
+      /\b(?:admit|agree|confirm|accept)\b[^.!?]{0,32}\b(?:we|the company|our staff|they)\b[^.!?]{0,24}\b(?:were|was|are|is)\b[^.!?]{0,16}\b(?:wrong|at fault|liable|negligent)\b/i,
+    ],
+  },
+  {
     id: "R6.7",
     where: "prompt only — the model is the only thing that can answer this question",
     spoken: "If someone asks directly whether you're an AI, say yes. Always.",

@@ -1,8 +1,12 @@
 import { BASE_CONDUCT, identityLine } from "./base";
+import { CONVERSATION_LAYER } from "./conversation";
 import { EMOTIONAL_LAYER } from "./emotional";
 import { renderPolicyBlocks, toPolicyBlocks } from "./policy-blocks";
 import { GUARANTEES_LAYER } from "./guarantees";
 import { LOCALE_LAYER } from "./locale";
+import { SAFEGUARDING_LAYER } from "./safeguarding";
+import { SITUATIONS_LAYER } from "./situations";
+import { VARIATION_LAYER } from "./variation";
 import { fenceOrganizationText, type OrganizationLayer } from "./organization-layer";
 import { taskLayer, type AvailableTool } from "./task-layer";
 import type { CollectedField } from "../tenancy/captured-fields";
@@ -57,7 +61,13 @@ export const composeSystemPrompt = (input: CallPrompt): string =>
   [
     identityLine(input.organization?.name ?? null),
     BASE_CONDUCT,
+    /* Straight after the conduct it qualifies: those rules say what a good sentence is,
+       and this says not to produce the same good sentence twice. */
+    VARIATION_LAYER,
     LOCALE_LAYER,
+    /* How a call moves, before anything organisation-specific. Interruptions, silence and
+       loops happen the same way whoever is being answered for. */
+    CONVERSATION_LAYER,
     // Only when they actually wrote something. An empty fence would tell the model an
     // organisation had rules and then show it none, which reads as an instruction to
     // invent them.
@@ -75,6 +85,10 @@ export const composeSystemPrompt = (input: CallPrompt): string =>
     /* Before the guarantees, which must land last, and after the task layer, because how
        to sound is a smaller instruction than what may be done. */
     EMOTIONAL_LAYER,
+    /* After the emotional read, because both are about the person rather than the task,
+       and this is what to do once that read says something is wrong. */
+    SAFEGUARDING_LAYER,
+    SITUATIONS_LAYER,
     GUARANTEES_LAYER,
   ].join("\n\n");
 
@@ -87,6 +101,10 @@ export const composeSystemPrompt = (input: CallPrompt): string =>
  *
  * To change the wording:
  *   phone-call conduct        -> prompts/base.ts
+ *   not sounding like a loop  -> prompts/variation.ts
+ *   openings, silence, loops  -> prompts/conversation.ts
+ *   distress, abuse, crisis   -> prompts/safeguarding.ts
+ *   verification, edge cases  -> prompts/situations.ts
  *   Nigerian English, numbers -> prompts/locale.ts
  *   what a organization may say     -> prompts/organization-layer.ts
  *   tools and capabilities    -> prompts/task-layer.ts
