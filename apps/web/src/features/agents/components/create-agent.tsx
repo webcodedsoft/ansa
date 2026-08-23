@@ -4,6 +4,8 @@ import { Check } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
+import { useProgressWhile } from "@/stores/progress.store";
+
 import { Button, CONTROL, Notice, Panel, PanelBody, Tag } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
@@ -72,6 +74,9 @@ export const CreateAgent = () => {
   const [name, setName] = useState("");
   const [failure, setFailure] = useState<string | null>(null);
   const [creating, startCreating] = useTransition();
+  /* One token for the create and the navigation to the new agent together, rather than one
+     that completes and a second that starts — the bar would restart mid-way across. */
+  useProgressWhile(creating);
 
   const template = AGENT_TEMPLATES.find((one) => one.id === templateId);
 

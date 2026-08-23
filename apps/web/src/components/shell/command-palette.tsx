@@ -4,6 +4,7 @@ import { Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { useProgressStore } from "@/stores/progress.store";
 import { cn } from "@/lib/cn";
 
 import { allowedDestinations, type Destination } from "./navigation";
@@ -17,6 +18,7 @@ import { allowedDestinations, type Destination } from "./navigation";
  */
 export const CommandPalette = ({ capabilities }: { readonly capabilities: readonly string[] }) => {
   const router = useRouter();
+  const beginNavigation = useProgressStore((store) => store.beginNavigation);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [at, setAt] = useState(0);
@@ -41,6 +43,9 @@ export const CommandPalette = ({ capabilities }: { readonly capabilities: readon
 
   const goTo = (href: string) => {
     setOpen(false);
+    /* Chosen with the keyboard, so no anchor was clicked and the document listener sees
+       nothing. Started by hand here; the URL change releases it like any other. */
+    beginNavigation();
     router.push(href);
   };
 

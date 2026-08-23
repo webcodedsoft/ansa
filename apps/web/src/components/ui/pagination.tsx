@@ -5,6 +5,8 @@ import Link, { useLinkStatus } from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition, type ReactNode } from "react";
 
+import { useProgressWhile } from "@/stores/progress.store";
+
 import { cn } from "@/lib/cn";
 import { DEFAULT_PAGE_SIZE, PAGE_SIZES } from "@/lib/paging";
 
@@ -94,6 +96,9 @@ export const Pagination = ({
 }) => {
   const router = useRouter();
   const [resizing, startResize] = useTransition();
+  /* The page links are anchors and the document listener sees those. This one is a
+     `router.push` inside a transition, so it reports the transition instead. */
+  useProgressWhile(resizing);
 
   const href = (to: number) =>
     // Page one is the default, so it stays out of the URL — a clean link for the common case.

@@ -1,6 +1,7 @@
 import { Loader2 } from "lucide-react";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 
+import { PendingProgress } from "@/components/pending-progress";
 import { cn } from "@/lib/cn";
 
 /**
@@ -97,6 +98,11 @@ export const SubmitButton = ({
     aria-busy={pending}
     className={cn(BASE, SIZES[size], VARIANTS[variant], className)}
   >
+    {/* Every form in the app submits through one of these, so this is the whole of "data is
+        saving" in one place — no per-form wiring, and a form added next week is covered
+        without knowing the bar exists. Renders nothing; see `pending-progress.tsx` for why
+        it is a child rather than a hook. */}
+    <PendingProgress pending={pending} />
     {pending && <Loader2 aria-hidden className="size-4 animate-spin" />}
     {pending ? busy : idle}
   </button>
