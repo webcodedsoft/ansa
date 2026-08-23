@@ -248,6 +248,25 @@ const intron = ({ language }) =>
     ws.on("error", (e) => { notes.push(`socket error: ${e.message}`); done(); });
   });
 
+/**
+ * Common Nigerian given names, as a standing keyterm list.
+ *
+ * The objection to boosting a caller's name is that it is unknown by definition. That is
+ * true of the individual and false of the set: Yoruba, Igbo and Hausa given names are a
+ * knowable vocabulary, and "Sikiru" is an ordinary member of it. The question this run
+ * answers is whether a list still rescues the name the way one exact term does, or whether
+ * it dilutes into the same bias that turned "Sikiru" into "Akiro".
+ */
+const NIGERIAN_NAMES = [
+  "Sikiru", "Adebayo", "Adeyemi", "Chinedu", "Chidinma", "Ngozi", "Emeka", "Obinna",
+  "Ifeoma", "Olumide", "Oluwaseun", "Babatunde", "Folake", "Yewande", "Temitope",
+  "Abiodun", "Bolanle", "Kehinde", "Taiwo", "Segun", "Funmilayo", "Chukwuemeka",
+  "Nnamdi", "Uchenna", "Amaka", "Ekene", "Ibrahim", "Aminu", "Usman", "Hauwa",
+  "Fatima", "Zainab", "Musa", "Yusuf", "Aisha", "Halima", "Sadiq", "Bashir",
+  "Tunde", "Femi", "Bisi", "Kunle", "Wale", "Seyi", "Damilola", "Oluwatobi",
+  "Chiamaka", "Adaeze", "Ifeanyi", "Okonkwo",
+];
+
 const KEYTERMS = ["Ansa", "policy", "policy number", "premium", "naira", "claim", "renewal"];
 
 const runs = [
@@ -255,6 +274,13 @@ const runs = [
   ["openai pcm 24k      ", () => openai({ asPcm: true })],
   ["deepgram mu-law 8k  ", () => deepgram({ keyterms: [] })],
   ["deepgram + keyterms ", () => deepgram({ keyterms: KEYTERMS })],
+  // The caller's own name, boosted. Tested on Deepgram's console first: the same audio
+  // that failed without it passed with it. This asks whether that holds here, and whether
+  // it survives the domain vocabulary sitting alongside it.
+  ["deepgram + the name ", () => deepgram({ keyterms: ["Sikiru"] })],
+  ["deepgram name+domain", () => deepgram({ keyterms: ["Sikiru", ...KEYTERMS] })],
+  ["deepgram + 50 names ", () => deepgram({ keyterms: NIGERIAN_NAMES })],
+  ["deepgram names+domain", () => deepgram({ keyterms: [...NIGERIAN_NAMES, ...KEYTERMS] })],
   ["intron en 8k        ", () => intron({ language: "en" })],
   ["intron pcm 8k       ", () => intron({ language: "pcm" })],
 ];
