@@ -20,6 +20,14 @@ interface Options {
    * measures the harness.
    */
   readonly calls: number;
+  /**
+   * The number the call is placed to.
+   *
+   * Default is a test-range number no organisation holds, which exercises the unregistered
+   * path. Pass a number a real agent answers to exercise that agent's configured
+   * transcriber, prompt and form — the harness could not reach any of it before.
+   */
+  readonly to: string;
 }
 
 const MODES: readonly Mode[] = ["unsigned", "signed", "badsig"];
@@ -32,6 +40,7 @@ const parseArgs = (argv: readonly string[]): Options => {
   let frames = 120;
   let holdMs = 1000;
   let calls = 1;
+  let to = "+2348099999999";
 
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
@@ -46,6 +55,10 @@ const parseArgs = (argv: readonly string[]): Options => {
       case "--mode":
         if (!isMode(value)) throw new Error(`Unknown mode: ${value}. Use ${MODES.join(", ")}.`);
         mode = value;
+        i += 1;
+        break;
+      case "--to":
+        to = value;
         i += 1;
         break;
       case "--frames":
@@ -72,7 +85,7 @@ const parseArgs = (argv: readonly string[]): Options => {
     }
   }
 
-  return { baseUrl, mode, frames, holdMs, calls };
+  return { baseUrl, mode, frames, holdMs, calls, to };
 };
 
 /**
@@ -84,13 +97,13 @@ const parseArgs = (argv: readonly string[]): Options => {
  * call on the carrier's own id, so fifty calls sharing `CAfaketestcall…0001` are one call
  * reported fifty times, and the run would measure nothing while looking like it worked.
  */
-const callParams = (index: number): Readonly<Record<string, string>> => {
+const callParams = (index: number, to: string): Readonly<Record<string, string>> => {
   const suffix = String(index + 1).padStart(4, "0");
   return {
     CallSid: `CAfaketestcall0000000000000000${suffix}`,
     AccountSid: "ACfaketestacct00000000000000000001",
     From: "+2348012345678",
-    To: "+2348099999999",
+    To: to,
     CallStatus: "ringing",
     Direction: "inbound",
   };
@@ -183,7 +196,7 @@ const streamMedia = async (
   verbose: boolean,
 ): Promise<number> => {
   const sid = streamSid(index);
-  const params = callParams(index);
+  const params = callParams(index, options.to);
   const socket = new WebSocket(streamUrl);
   const tally: OutboundTally = { media: 0, mediaBytes: 0, marks: [], clears: 0 };
 
@@ -285,7 +298,7 @@ interface CallResult {
  */
 const placeCall = async (options: Options, index: number, verbose: boolean): Promise<CallResult> => {
   const url = `${options.baseUrl}/telephony/voice`;
-  const params = callParams(index);
+  const params = callParams(index, options.to);
   const started = Date.now();
 
   const response = await fetch(url, {
