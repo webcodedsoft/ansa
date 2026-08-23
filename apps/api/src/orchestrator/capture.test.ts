@@ -14,6 +14,41 @@ import {
 const speak = (state: CaptureState, text: string) => advance(state, { kind: "speech", text });
 const press = (state: CaptureState, digit: string) => advance(state, { kind: "keypad", digit });
 
+/**
+ * Read off the call at 17:32 on 2026-08-23, the first with clean audio all day.
+ *
+ * The caller read their mobile number out five times, in fragments, because the turn
+ * detector kept closing the turn mid-recitation. Each fragment parsed as digits and then
+ * failed the eleven-digit check, and each time `beginCapture` returned to `awaiting` at
+ * attempt 1 — so the counter never advanced, the keypad was never offered, and the agent
+ * said "That doesn't look like a complete mobile number" in exactly the same words five
+ * times running. It would have done that until they hung up.
+ */
+describe("a number that keeps coming out the wrong length", () => {
+  const short = "0813 817 85";
+
+  it("stops repeating itself and offers the keypad", () => {
+    let state: CaptureState = expecting("phone").state;
+
+    const said: string[] = [];
+    for (let i = 0; i < 5; i += 1) {
+      const result = speak(state, short);
+      state = result.state;
+      if (result.say !== null) said.push(result.say);
+    }
+
+    // The objection is allowed a couple of goes, and then something else has to happen.
+    const repeats = said.filter((line) => line.includes("complete mobile number")).length;
+    expect(repeats).toBeLessThanOrEqual(2);
+    expect(said.some((line) => line.toLowerCase().includes("keypad"))).toBe(true);
+  });
+
+  it("still objects the first time, because the caller may simply have misspoken", () => {
+    const result = speak(expecting("phone").state, short);
+    expect(result.say).toContain("complete mobile number");
+  });
+});
+
 describe("readback", () => {
   it("reads a spoken number back before it can be used", () => {
     const r = speak(idle, "My policy number is four one seven");

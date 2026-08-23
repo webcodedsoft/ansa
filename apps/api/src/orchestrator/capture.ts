@@ -919,14 +919,28 @@ const beginCapture = (
   atMs: number,
   confidence?: number | null,
   rejected: readonly string[] = [],
+  /**
+   * Which spoken attempt this is, so a malformed answer escalates like an unheard one.
+   *
+   * It used to be hard-coded to 1 here, which made the counter unreachable: a value that
+   * parsed but failed its own shape check went back to `awaiting` at attempt 1 every time,
+   * so `spokenAttemptsFor` never fired and the keypad was never offered. On the call at
+   * 17:32 the caller read their number out five times, was told "that doesn't look like a
+   * complete mobile number" in the same words five times, and would have been told it
+   * until they hung up.
+   */
+  attempt = 1,
 ): CaptureResult => {
   // A value that does not fit its own shape is not put to the caller as a question. "Is
   // that right?" on nine digits of an eleven-digit NIN wastes a whole exchange on
   // something already known to be wrong.
   const problem = ENTITY_POLICY[subject].problem(value);
   if (problem !== null) {
+    // Same budget as an answer nobody could parse. Repeating the objection is only worth
+    // doing while there is a chance the next go is better; after that the keypad is.
+    if (attempt >= spokenAttemptsFor(subject, confidence)) return fallbackFor(subject, []);
     return {
-      state: { kind: "awaiting", expect: subject, attempt: 1 },
+      state: { kind: "awaiting", expect: subject, attempt: attempt + 1 },
       say: forSpeech(`${problem} ${ENTITY_POLICY[subject].ask}`),
       captured: null,
       capturedKind: null,
@@ -1193,7 +1207,11 @@ const awaiting = (
   confidence?: number | null,
 ): CaptureResult => {
   const value = parseAnswer(state.expect, text, atMs);
-  if (value !== null) return beginCapture(value, state.expect, atMs, confidence);
+  // Carrying the attempt is what lets a malformed answer reach the keypad. Without it the
+  // caller is asked the same question forever — see `beginCapture`.
+  if (value !== null) {
+    return beginCapture(value, state.expect, atMs, confidence, [], state.attempt);
+  }
 
   if (state.attempt >= spokenAttemptsFor(state.expect, confidence)) {
     return fallbackFor(state.expect, []);
