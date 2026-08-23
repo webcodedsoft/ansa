@@ -184,6 +184,70 @@ const deepgram = ({ keyterms }) =>
     ws.on("error", (e) => { notes.push(`socket error: ${e.message}`); done(); });
   });
 
+// Intron. Two differences from the others that shape the runner rather than decorate it:
+// COMMIT is what produces a transcript and it closes the socket, so a whole recording is
+// one connection and one final; and audio is base64 PCM16 in JSON with a 1 KB floor, so
+// the carrier's 160-byte frames have to be gathered before they can go.
+const intron = ({ language }) =>
+  new Promise((resolve) => {
+    const finals = [];
+    const notes = [];
+    const partials = [];
+    const pcm = muLawToPcm(audio, 8000, 8000);
+    const url =
+      `wss://${env.INTRON_HOST ?? "infer.voice.intron.io"}/stt/v1/stream` +
+      `?sample_rate=8000&bit_rate=16&num_channels=1&use_language_asr_input=${language}`;
+    const ws = new WebSocket(url, { headers: { Authorization: `Bearer ${env.INTRON_API_KEY}` } });
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      if (finals.length === 0 && partials.length > 0) {
+        notes.push(`no committed transcript, but ${partials.length} partial(s) — the last was ${JSON.stringify(partials[partials.length - 1])}`);
+      }
+      try { ws.close(); } catch { /* gone */ }
+      resolve({ finals, notes });
+    };
+    setTimeout(done, (pcm.length / 16000) * 1000 + 40_000);
+
+    ws.on("message", async (raw) => {
+      const e = JSON.parse(raw.toString("utf8"));
+      if (e.message_type === "SESSION_CREATED") {
+        if (e.configs?.sample_rate !== 8000) {
+          notes.push(`asked for 8000 Hz, server applied ${e.configs?.sample_rate}`);
+        }
+        // 4 KB is eight carrier frames: over the floor, well under the 32 KB ceiling.
+        let ack = 0;
+        for (let off = 0; off < pcm.length; off += 4096) {
+          ws.send(JSON.stringify({
+            message_type: "INPUT_AUDIO_CHUNK",
+            audio_base_64: pcm.subarray(off, Math.min(off + 4096, pcm.length)).toString("base64"),
+            ack_id: (ack += 1),
+          }));
+          // Eight frames of audio, paced like eight frames of audio.
+          await new Promise((r) => setTimeout(r, 160));
+        }
+        ws.send(JSON.stringify({ message_type: "COMMIT" }));
+        return;
+      }
+      if (e.message_type === "PARTIAL_TRANSCRIPT" && e.transcript) partials.push(e.transcript);
+      else if (e.message_type === "COMMITTED_TRANSCRIPT" && e.transcript_text) {
+        finals.push(e.transcript_text);
+        done();
+      } else if (e.message_type === "SESSION_TIME_LIMIT_EXCEEDED") {
+        notes.push("hit the 300s session ceiling");
+        done();
+      } else if (["CHUNK_SIZE_TOO_SMALL", "CHUNK_ID_MISMATCH_WITH_TOTAL", "INPUT_ERROR"].includes(e.message_type)) {
+        notes.push(`refused a chunk: ${e.message_type}`);
+      }
+    });
+    ws.on("close", (code, reason) => {
+      if (code !== 1000 && code !== 1005) notes.push(`closed ${code}: ${reason?.toString() ?? ""}`.trim());
+      done();
+    });
+    ws.on("error", (e) => { notes.push(`socket error: ${e.message}`); done(); });
+  });
+
 const KEYTERMS = ["Ansa", "policy", "policy number", "premium", "naira", "claim", "renewal"];
 
 const runs = [
@@ -191,6 +255,8 @@ const runs = [
   ["openai pcm 24k      ", () => openai({ asPcm: true })],
   ["deepgram mu-law 8k  ", () => deepgram({ keyterms: [] })],
   ["deepgram + keyterms ", () => deepgram({ keyterms: KEYTERMS })],
+  ["intron en 8k        ", () => intron({ language: "en" })],
+  ["intron pcm 8k       ", () => intron({ language: "pcm" })],
 ];
 
 const results = [];
@@ -214,3 +280,4 @@ console.log("  providers disagree        -> provider or its configuration");
 console.log("  both wrong the same way   -> the audio: Twilio, encoding, or the line");
 console.log("  mu-law vs pcm differ      -> the transcoding hop, not the model");
 console.log("  keyterms change a name    -> boosting is biasing, as it did with Ikeja");
+console.log("  intron en vs pcm differ   -> the code-switched model, not the audio");
