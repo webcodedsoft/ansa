@@ -1,4 +1,4 @@
-import type { ComponentPropsWithoutRef, ReactNode } from "react";
+import type { ComponentPropsWithRef, ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
 
@@ -8,6 +8,9 @@ import { cn } from "@/lib/cn";
  * Each takes the native element's own props and spreads them, so `maxLength`,
  * `min` and the rest behave exactly as they do in HTML. These supply the label,
  * the hint, the error and the styling — they do not reinvent the input.
+ *
+ * `ref` is among those native props: React 19 passes it as one, so it reaches the element
+ * through the same spread as everything else and no consumer needs a forwardRef wrapper.
  *
  * `required` is the exception, and is handled rather than passed through. See
  * `FieldShell.required` for why.
@@ -71,9 +74,9 @@ export const Field = ({
   </label>
 );
 
-type InputProps = Omit<ComponentPropsWithoutRef<"input">, "className">;
-type TextAreaProps = Omit<ComponentPropsWithoutRef<"textarea">, "className">;
-type SelectProps = Omit<ComponentPropsWithoutRef<"select">, "className">;
+type InputProps = Omit<ComponentPropsWithRef<"input">, "className">;
+type TextAreaProps = Omit<ComponentPropsWithRef<"textarea">, "className">;
+type SelectProps = Omit<ComponentPropsWithRef<"select">, "className">;
 
 export const TextField = ({
   label,

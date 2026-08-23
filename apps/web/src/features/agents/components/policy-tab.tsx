@@ -1,10 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ClipboardEvent } from "react";
 
 import { Button, Card, FieldError, Notice, Stack, TextAreaField, TextField } from "@/components/ui";
 
 import type { LiveConfiguration } from "../agents.service";
+import {
+  adviseLines,
+  applySplit,
+  countEntries,
+  splitPasted,
+  type LineAdvice,
+} from "../policy-lines";
 import { parsePolicies, renderPolicies } from "../policy-text";
 
 /**
@@ -140,6 +148,119 @@ interface PolicyTabProps {
   readonly publishForm: string;
   readonly savingDraft: boolean;
 }
+
+/**
+ * A list where "one per line" is true rather than requested.
+ *
+ * The hint under these boxes said it and nothing held it up. Three things now do, and the split
+ * between them is the whole point: two are mechanical and one is a guess that is only ever
+ * shown.
+ *
+ * - **The count is live.** A box reading "1 entry" when somebody meant three is the hint
+ *   enforcing itself, and it costs a glance rather than a rejected save. This is the part that
+ *   does most of the work, because the mistake becomes visible at the moment it is made.
+ * - **Paste is normalised**, because a numbered list arriving from a handbook is unambiguous:
+ *   the numbering is somebody else's formatting, not the words. A single-line paste is left to
+ *   the browser so the undo stack survives ordinary editing.
+ * - **A line that looks like several is reported with the parts it would become**, and splits
+ *   only when pressed. `policy-lines.ts` explains why guessing here cannot be automatic.
+ *
+ * Typing stays untouched. Nothing rewrites the box under the cursor, so a trailing newline left
+ * mid-thought is still there when the thought finishes.
+ */
+const LineListField = ({
+  label,
+  value,
+  onChange,
+}: {
+  readonly label: string;
+  readonly value: string;
+  readonly onChange: (next: string) => void;
+}) => {
+  const box = useRef<HTMLTextAreaElement>(null);
+  const [caret, setCaret] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (caret === null) return;
+    box.current?.setSelectionRange(caret, caret);
+    setCaret(null);
+  }, [caret]);
+
+  const paste = (event: ClipboardEvent<HTMLTextAreaElement>): void => {
+    const entries = splitPasted(event.clipboardData.getData("text/plain"));
+    if (entries.length === 0) return;
+
+    /* One line that needed no tidying is an ordinary paste. Handling it here would cost the
+       browser's undo entry and gain nothing. */
+    const several = entries.length > 1;
+    if (!several && entries[0] === event.clipboardData.getData("text/plain").trim()) return;
+
+    event.preventDefault();
+    const area = event.currentTarget;
+    const before = value.slice(0, area.selectionStart);
+    const after = value.slice(area.selectionEnd);
+    const lead = several && before !== "" && !before.endsWith("\n") ? "\n" : "";
+    const trail = several && after !== "" && !after.startsWith("\n") ? "\n" : "";
+    const insert = `${lead}${entries.join("\n")}${trail}`;
+
+    onChange(`${before}${insert}${after}`);
+    setCaret(before.length + insert.length);
+  };
+
+  const entries = countEntries(value);
+  const advice = adviseLines(value, MAX_LINE);
+
+  const take = (item: LineAdvice): void => {
+    onChange(applySplit(value, item));
+  };
+
+  return (
+    <Stack gap="sm">
+      <TextAreaField
+        ref={box}
+        label={label}
+        rows={4}
+        hint={entries === 0 ? "One per line." : `One per line. ${entries} so far.`}
+        value={value}
+        onPaste={paste}
+        onChange={(event: { target: { value: string } }) => onChange(event.target.value)}
+      />
+
+      {advice.map((item) => (
+        <div
+          key={`${item.index}-${item.reason}`}
+          className="rounded-lg border border-[var(--hairline)] bg-[var(--glass-hi)] px-2.5 py-2"
+        >
+          {item.reason === "too-long" ? (
+            <p className="text-[11.5px] leading-relaxed text-[var(--ink-3)]">
+              Line {item.index + 1} is longer than {MAX_LINE} characters, which the API refuses.
+              Shorten it or break it into separate rules.
+            </p>
+          ) : (
+            <>
+              <p className="text-[11.5px] leading-relaxed text-[var(--ink-3)]">
+                Line {item.index + 1} reads as {item.parts.length} rules. The agent takes each
+                line as one instruction, so this arrives as a single long one.
+              </p>
+              <ul className="mt-1.5 space-y-0.5">
+                {item.parts.map((part, at) => (
+                  <li key={at} className="truncate font-mono text-[10.5px] text-[var(--ink-3)]">
+                    {at + 1}. {part}
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-2">
+                <Button onClick={() => take(item)}>
+                  Split into {item.parts.length} lines
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      ))}
+    </Stack>
+  );
+};
 
 export const PolicyTab = ({ config, errors, publishForm, savingDraft }: PolicyTabProps) => {
   const [blocks, setBlocks] = useState<PolicyBlock[]>(() =>
@@ -349,15 +470,11 @@ export const PolicyTab = ({ config, errors, publishForm, savingDraft }: PolicyTa
                 />
 
                 {LIST_KEYS.map((key) => (
-                  <TextAreaField
+                  <LineListField
                     key={key}
                     label={LIST_LABELS[key]}
-                    rows={4}
-                    hint="One per line."
                     value={current[key].join("\n")}
-                    onChange={(event: { target: { value: string } }) =>
-                      update(selected, { [key]: event.target.value.split("\n") })
-                    }
+                    onChange={(next) => update(selected, { [key]: next.split("\n") })}
                   />
                 ))}
 
