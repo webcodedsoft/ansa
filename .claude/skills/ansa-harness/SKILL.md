@@ -264,6 +264,7 @@ checklist of what a test cannot see.
 | A page, Server Action, form, component in `apps/web` | `nextjs-console-standards` |
 | Media streams, TwiML, webhooks, signatures, AMD, outbound origination | `twilio-media-streams` |
 | Flux turn detection, transcription, EOT thresholds, the listen layer | `deepgram-flux-listen` |
+| Intron transcription, African-accent words, the composite listen path | `intron-sahara-listen` |
 | Streaming synthesis, cancellation, voice settings, telephony output format | `elevenlabs-streaming-tts` |
 | The LLM adapter, tool-call reassembly, realtime transcription | `openai-realtime-voice` |
 | RLS, pooler behaviour, `SECURITY DEFINER`, connection strings | `supabase-postgres-tenancy` |
