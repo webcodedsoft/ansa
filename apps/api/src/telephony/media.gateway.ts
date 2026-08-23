@@ -1,6 +1,7 @@
 import { createWriteStream, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Server } from "node:http";
+import { monitorEventLoopDelay } from "node:perf_hooks";
 
 import {
   asCallId,
@@ -44,6 +45,7 @@ import { ALL_GREETING_LEADS, chooseGreetingLead } from "./greeting-lead";
 import { describeSituation } from "../conversation/situation";
 import { forSpeech, GREETING_TEXT, outboundOpener } from "./greeting";
 import { cacheKey, createAudioCache, type AudioCache } from "./prerender";
+import { createWarmScheduler } from "./warm-scheduler";
 import { openIntronSession, type IntronLanguage } from "@ansa/intron-listen";
 
 import { composeListen, type TranscriptSource } from "./composite-listen";
@@ -99,13 +101,39 @@ interface WarmAudio {
   readonly leads: ReadonlyMap<string, readonly AudioChunk[]>;
   /** Keyed by phrase so the orchestrator picks a register, not a queue position. */
   readonly fillers: ReadonlyMap<string, readonly AudioChunk[]>;
+  /** False when a call arrived mid-render and the rest was left for later. */
+  readonly complete: boolean;
 }
 
 /** Nothing rendered yet, and the call must not wait for it (R6.2). */
 /** One carrier frame of 8kHz audio. Its timestamps advance by this much when nothing is lost. */
 const FRAME_MS = 20;
 
-const NOT_WARM: WarmAudio = { greeting: null, leads: new Map(), fillers: new Map() };
+const NOT_WARM: WarmAudio = { greeting: null, leads: new Map(), fillers: new Map(), complete: false };
+
+/** How often the loop is sampled for lateness. Half a frame, so a lost frame is visible. */
+const LOOP_SAMPLE_MS = 10;
+
+/**
+ * Nanoseconds from the histogram to milliseconds *late*.
+ *
+ * `monitorEventLoopDelay` records the whole interval between samples, so a perfectly idle
+ * loop reads as the sampling resolution rather than as zero — a first run reported a p50 of
+ * 21ms on an idle process and looked alarming. Subtracting the resolution makes the number
+ * mean what its name says.
+ */
+const overSample = (nanoseconds: number): number =>
+  Math.max(0, Math.round(nanoseconds / 1e6) - LOOP_SAMPLE_MS);
+
+/**
+ * Phrases per batch when warming.
+ *
+ * Rendered concurrently because sequentially is what made the warm long enough to matter:
+ * ~60 awaited round trips took a measured 7.7 seconds. Batched, the same work is a
+ * fraction of that, and the batch boundary is also where the warm checks whether a call
+ * has arrived — so a smaller number yields sooner and a larger one finishes sooner.
+ */
+const WARM_BATCH = 8;
 
 /**
  * Owns the media WebSocket server. It knows about sockets and nothing about the
@@ -119,6 +147,20 @@ export class MediaGateway implements OnApplicationShutdown {
   /** Rendered phrases per voice, pace and greeting, and the renders in flight. */
   private readonly warm = new Map<string, WarmAudio>();
   private readonly warming = new Set<string>();
+  /**
+   * Open media sockets, and the warms waiting for them to close.
+   *
+   * Rendering a voice is ~60 ElevenLabs round trips. Done while a call is up it competes
+   * with the call for the same event loop, and the carrier does not wait: Twilio discards
+   * inbound media it cannot hand over. A measured call lost its first 6.6 seconds of audio
+   * to exactly this, warming a voice for the caller who was already talking.
+   *
+   * So warming yields. It runs when nothing is on the line, stops between phrases when
+   * something arrives, and resumes when the last socket closes. The cost is that a voice
+   * nobody has used yet stays cold for the call that first needs it — which is the
+   * fallback that has always existed, and is much cheaper than degrading the live call.
+   */
+  private readonly warmer = createWarmScheduler();
   /**
    * What each caller has done before, fetched at ingress and collected when their socket
    * opens.
@@ -220,26 +262,42 @@ export class MediaGateway implements OnApplicationShutdown {
     voiceId: string,
     greeting: string,
     speakingRate: number | undefined,
+    keepGoing: () => boolean,
   ): Promise<WarmAudio> {
     const cache = (this.audio ??= createAudioCache({
       tts: this.tts,
       format: TELEPHONY_AUDIO,
       forSpeech,
       log: this.log,
+      maxConcurrent: this.config.ttsMaxConcurrent,
     }));
 
+    /* The greeting first and alone. It is the one phrase the next call certainly needs,
+       and rendering it before the batches means an interrupted warm still leaves the
+       thing that matters most. */
     const greetingAudio = await cache.render(greeting, voiceId, speakingRate);
+
+    const into = async (
+      phrases: readonly string[],
+      target: Map<string, readonly AudioChunk[]>,
+    ): Promise<boolean> => {
+      for (let at = 0; at < phrases.length; at += WARM_BATCH) {
+        // Between batches, not within one: a call that lands mid-batch waits out the few
+        // requests already in flight, which is bounded and short.
+        if (!keepGoing()) return false;
+        const batch = phrases.slice(at, at + WARM_BATCH);
+        const rendered = await Promise.all(
+          batch.map(async (phrase) => [phrase, await cache.render(phrase, voiceId, speakingRate)] as const),
+        );
+        for (const [phrase, chunks] of rendered) if (chunks !== null) target.set(phrase, chunks);
+      }
+      return true;
+    };
+
     const leads = new Map<string, readonly AudioChunk[]>();
-    for (const phrase of ALL_GREETING_LEADS) {
-      const chunks = await cache.render(phrase, voiceId, speakingRate);
-      if (chunks !== null) leads.set(phrase, chunks);
-    }
     const fillers = new Map<string, readonly AudioChunk[]>();
-    for (const phrase of ALL_FILLERS) {
-      const chunks = await cache.render(phrase, voiceId, speakingRate);
-      if (chunks !== null) fillers.set(phrase, chunks);
-    }
-    return { greeting: greetingAudio, leads, fillers };
+    const complete = (await into(ALL_GREETING_LEADS, leads)) && (await into(ALL_FILLERS, fillers));
+    return { greeting: greetingAudio, leads, fillers, complete };
   }
 
   /**
@@ -258,26 +316,40 @@ export class MediaGateway implements OnApplicationShutdown {
     if (ready !== undefined) return ready;
     if (this.warming.has(key)) return NOT_WARM;
 
+    /* Handed to the scheduler rather than started here: whether this is a safe moment to
+       spend ~60 round trips on ElevenLabs is its question, not this one's. */
     this.warming.add(key);
-    void this.render(voiceId, greeting, speakingRate)
-      .then((rendered) => {
-        this.warm.set(key, rendered);
-        this.log.info("audio warmed", {
-          voiceId,
-          speakingRate: speakingRate ?? null,
-          greeting: rendered.greeting !== null,
-          leads: rendered.leads.size,
-          fillers: rendered.fillers.size,
-        });
-      })
-      .catch((error: unknown) => {
-        // Never fatal. The next call synthesises live and tries again.
-        this.log.error("could not warm audio for a voice", {
-          voiceId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      })
-      .finally(() => this.warming.delete(key));
+    this.warmer.submit({
+      key,
+      run: async (keepGoing) => {
+        try {
+          const rendered = await this.render(voiceId, greeting, speakingRate, keepGoing);
+          /* A partial render is still kept. Every phrase in it is one the next call does
+             not have to synthesise, and the scheduler re-queues the remainder. */
+          this.warm.set(key, rendered);
+          this.log.info("audio warmed", {
+            voiceId,
+            speakingRate: speakingRate ?? null,
+            greeting: rendered.greeting !== null,
+            leads: rendered.leads.size,
+            fillers: rendered.fillers.size,
+            complete: rendered.complete,
+          });
+          /* Cleared only once it is whole, so a resumed warm re-renders into the same
+             entry instead of handing the partial back and returning early. */
+          if (rendered.complete) this.warming.delete(key);
+          return rendered.complete;
+        } catch (error: unknown) {
+          // Never fatal. The next call synthesises live and tries again.
+          this.log.error("could not warm audio for a voice", {
+            voiceId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          this.warming.delete(key);
+          return true;
+        }
+      },
+    });
 
     return NOT_WARM;
   }
@@ -500,6 +572,20 @@ export class MediaGateway implements OnApplicationShutdown {
   private observe(stream: CallMediaStream): void {
     const log = this.log.child({ callId: stream.callId });
     const openedAt = Date.now();
+    /* Whether *we* were the reason frames went missing.
+     *
+       `missingMs` proves the carrier numbered frames we never received, and stops there —
+       it cannot tell a packet lost between Lagos and us from one Twilio discarded because
+       this process was too busy to read the socket. Twilio drops inbound media it cannot
+       deliver rather than buffering it, so a stalled event loop and a bad international
+       leg produce byte-identical accounting. This is the discriminator: a loop that stays
+       responsive while audio disappears puts the loss on the network, and a loop that
+       stalls for seconds puts it here. */
+    const loopDelay = monitorEventLoopDelay({ resolution: LOOP_SAMPLE_MS });
+    loopDelay.enable();
+    /* Counted here rather than at ingress because this is where the competition actually
+       is: the socket is what warming starves. */
+    this.warmer.callStarted();
     let frames = 0;
     /** The carrier's clock on the previous frame, for spotting frames it numbered but never delivered. */
     let previousOffsetMs: number | null = null;
@@ -549,8 +635,16 @@ export class MediaGateway implements OnApplicationShutdown {
     });
 
     stream.onClosed((reason) => {
+      loopDelay.disable();
+      this.warmer.callEnded();
       log.info("media stream closed", {
         reason,
+        /* Milliseconds late, not milliseconds elapsed — see `overSample`. Healthy is
+           single digits; anything approaching a frame means we were not reading the
+           socket when the carrier needed us to. */
+        loopDelayP50Ms: overSample(loopDelay.percentile(50)),
+        loopDelayP99Ms: overSample(loopDelay.percentile(99)),
+        loopDelayMaxMs: overSample(loopDelay.max),
         /* `missingMs` is the verdict. Zero with a short call means the carrier stopped
            sending; a large number means it sent and the frames were lost on the way. */
         missingMs,

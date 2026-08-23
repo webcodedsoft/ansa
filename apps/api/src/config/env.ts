@@ -109,6 +109,7 @@ export interface AppConfig {
    * speech better than Flux does.
    */
   readonly listenWords: string;
+  readonly ttsMaxConcurrent: number;
   readonly deepgramApiKey: string;
   /** Only read when `listenWords` selects it, so a deployment without Intron needs no key. */
   readonly intronApiKey: string;
@@ -273,6 +274,11 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
     /* Required now, not conditional. Flux is the only turn detector, so a deployment
        without this key cannot hear the caller stop talking — it should fail at boot
        rather than answer a call and never reply. */
+    /* Below ElevenLabs' per-subscription concurrent-request ceiling, deliberately: the
+       remainder is headroom for a live call's own synthesis, so warming can never be the
+       reason a caller waits for words. */
+    ttsMaxConcurrent: Number(env["TTS_MAX_CONCURRENT"] ?? 4),
+
     deepgramApiKey: required(env, "DEEPGRAM_API_KEY"),
     deepgramModel: optional(env, "DEEPGRAM_MODEL") ?? "flux-general-en",
     deepgramHost: optional(env, "DEEPGRAM_HOST") ?? "api.deepgram.com",

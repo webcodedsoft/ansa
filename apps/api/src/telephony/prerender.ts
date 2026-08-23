@@ -38,6 +38,16 @@ export interface AudioCacheDeps {
   /** Applied before synthesis, so the cache is never the one path that skips it. */
   readonly forSpeech: (text: string) => string;
   readonly log: Logger;
+  /**
+   * How many renders may be in flight at once.
+   *
+   * A vendor account limit, not a tuning knob: ElevenLabs answers 429
+   * `concurrent_limit_exceeded` above the subscription's ceiling, and a warm that fires
+   * everything at once burns phrases that then synthesise live on every later call. Set
+   * it below the account limit so a live call's own synthesis still has a slot — warming
+   * must never be the reason a caller waits.
+   */
+  readonly maxConcurrent: number;
 }
 
 /**
@@ -72,6 +82,32 @@ const collect = (
 
 export const createAudioCache = (deps: AudioCacheDeps): AudioCache => {
   const cache = new Map<string, readonly AudioChunk[]>();
+  /**
+   * Renders already on the wire, so the same phrase is never fetched twice.
+   *
+   * The gateway warms two openings for one voice, and both walk the same list of leads and
+   * fillers. Without this they both miss the cache — neither has populated it yet — and
+   * every phrase is synthesised, logged and billed twice. It showed up as pairs of
+   * `pre-rendered phrase` lines for the same words with different byte counts.
+   */
+  const inFlight = new Map<string, Promise<AudioChunk[]>>();
+
+  /* A plain counting semaphore. `collect` is the only thing it guards, so the count and
+     the queue cannot drift from what is actually open. */
+  let open = 0;
+  const waiting: Array<() => void> = [];
+  const acquire = async (): Promise<void> => {
+    if (open < deps.maxConcurrent) {
+      open += 1;
+      return;
+    }
+    await new Promise<void>((resolve) => waiting.push(resolve));
+    open += 1;
+  };
+  const release = (): void => {
+    open -= 1;
+    waiting.shift()?.();
+  };
 
   return {
     async render(text, voiceId, speakingRate) {
@@ -79,8 +115,32 @@ export const createAudioCache = (deps: AudioCacheDeps): AudioCache => {
       const existing = cache.get(key);
       if (existing !== undefined) return existing;
 
+      const running = inFlight.get(key);
+      if (running !== undefined) {
+        try {
+          return await running;
+        } catch {
+          // The render that owns this key logs and reports the failure. Joining it just
+          // means falling back to live synthesis too.
+          return null;
+        }
+      }
+
+      /* Registered before the first await, not after it. Waiting for a semaphore slot is
+         itself a yield, so a version that set this after `acquire()` let a second caller
+         past the check above and rendered the phrase twice anyway. */
+      const attempt = (async () => {
+        await acquire();
+        try {
+          return await collect(deps, text, voiceId, speakingRate);
+        } finally {
+          release();
+        }
+      })();
+      inFlight.set(key, attempt);
+
       try {
-        const chunks = await collect(deps, text, voiceId, speakingRate);
+        const chunks = await attempt;
         cache.set(key, chunks);
         deps.log.info("pre-rendered phrase", {
           text,
@@ -97,6 +157,8 @@ export const createAudioCache = (deps: AudioCacheDeps): AudioCache => {
           error: error instanceof Error ? error.message : String(error),
         });
         return null;
+      } finally {
+        inFlight.delete(key);
       }
     },
   };

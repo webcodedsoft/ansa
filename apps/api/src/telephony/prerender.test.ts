@@ -15,13 +15,14 @@ import { cacheKey, createAudioCache } from "./prerender";
  * the same voice at different speeds are the case that catches it.
  */
 
-const cacheWith = () => {
+const cacheWith = (maxConcurrent = 4) => {
   const tts = fakeTts();
   const audio = createAudioCache({
     tts: tts.provider,
     format: TELEPHONY_AUDIO,
     forSpeech: (text) => text,
     log: silentLog,
+    maxConcurrent,
   });
   return { tts, audio };
 };
@@ -98,5 +99,102 @@ describe("the cache key", () => {
   it("does not confuse the voice's own pace with a rate", () => {
     // `own` rather than an empty string, so the two cannot produce one key.
     expect(cacheKey("voice-a", undefined, "hello")).not.toBe(cacheKey("voice-a", 1, "hello"));
+  });
+});
+
+/**
+ * What the vendor's account limit costs if the cache ignores it.
+ *
+ * ElevenLabs answers 429 `concurrent_limit_exceeded` above the subscription ceiling. A warm
+ * that fired every phrase at once lost six of them to that, and a lost phrase is not a
+ * retry — it is synthesised live on every later call. Both tests below are that failure.
+ */
+describe("how many renders may be open at once", () => {
+  it("holds requests above the ceiling until a slot frees", async () => {
+    const { tts, audio } = cacheWith(2);
+
+    const pending = [
+      audio.render("one", "voice-ng", undefined),
+      audio.render("two", "voice-ng", undefined),
+      audio.render("three", "voice-ng", undefined),
+    ];
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // The third never reached the provider: two slots, two synthesis requests.
+    expect(tts.syntheses).toHaveLength(2);
+
+    tts.syntheses[0]?.audio(160);
+    tts.syntheses[0]?.done();
+    await pending[0];
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(tts.syntheses).toHaveLength(3);
+
+    for (const synthesis of tts.syntheses.slice(1)) {
+      synthesis.audio(160);
+      synthesis.done();
+    }
+    await Promise.all(pending);
+  });
+
+  it("frees the slot when a render fails", async () => {
+    /* Otherwise one vendor error permanently shrinks the pool, and enough of them wedge
+       every later render behind a semaphore nothing will ever release. */
+    const { tts, audio } = cacheWith(1);
+
+    const first = audio.render("one", "voice-ng", undefined);
+    await Promise.resolve();
+    tts.syntheses[0]?.fail("elevenlabs said no");
+    expect(await first).toBeNull();
+
+    const second = audio.render("two", "voice-ng", undefined);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(tts.syntheses).toHaveLength(2);
+
+    tts.syntheses[1]?.audio(160);
+    tts.syntheses[1]?.done();
+    expect(await second).not.toBeNull();
+  });
+});
+
+describe("the same phrase asked for twice at once", () => {
+  it("synthesises it once and gives both callers the same audio", async () => {
+    /* The gateway warms two openings for one voice and both walk the same filler list.
+       Neither has populated the cache yet, so without this every phrase is synthesised,
+       logged and billed twice — visible as paired `pre-rendered phrase` lines for the same
+       words with different byte counts. */
+    const { tts, audio } = cacheWith();
+
+    const first = audio.render("Mm-hm.", "voice-ng", 0.95);
+    const second = audio.render("Mm-hm.", "voice-ng", 0.95);
+    await Promise.resolve();
+
+    expect(tts.syntheses).toHaveLength(1);
+
+    tts.syntheses[0]?.audio(160);
+    tts.syntheses[0]?.done();
+
+    expect(await first).toBe(await second);
+  });
+
+  it("still separates two paces for the same words", async () => {
+    // The pace is part of what is being rendered. Coalescing on the words alone would
+    // hand one agent the other's speed, which is the bug the cache key already guards.
+    const { tts, audio } = cacheWith();
+
+    const slow = audio.render("Mm-hm.", "voice-ng", 0.85);
+    const fast = audio.render("Mm-hm.", "voice-ng", 1.0);
+    await Promise.resolve();
+
+    expect(tts.syntheses).toHaveLength(2);
+    for (const synthesis of tts.syntheses) {
+      synthesis.audio(160);
+      synthesis.done();
+    }
+    await Promise.all([slow, fast]);
+    expect(tts.syntheses.map((s) => s.request.speakingRate)).toEqual([0.85, 1.0]);
   });
 });
