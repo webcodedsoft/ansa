@@ -1,5 +1,5 @@
 import type { Message } from "@ansa/llm";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { AudioChunk } from "@ansa/shared";
 
@@ -806,6 +806,101 @@ describe("runConversation", () => {
     h.stream.closeCall("carrier sent stop");
 
     expect(h.listen.closed).toBe(true);
+  });
+});
+
+/**
+ * The silence a caller actually experiences when the turn detector stops working.
+ *
+ * Read off the calls of 2026-08-23. The greeting played, the caller spoke, partials
+ * arrived, and Flux never closed the turn — so nothing committed, the transcript watchdog
+ * was never armed (it arms *at* end-of-turn), and the agent said nothing at all for the
+ * rest of the call. Not an error, not a recovery line. Silence.
+ */
+describe("a turn that never ends", () => {
+  const STALL = 8_000;
+
+  it("says something rather than nothing", () => {
+    vi.useFakeTimers();
+    try {
+      const h = setup({ stalledTurnMs: STALL });
+      h.tts.last().done();
+      h.stream.ackAll();
+      const before = h.tts.texts().length;
+
+      h.listen.speechStart(1000);
+      h.listen.interim("my name is");
+      // No end-of-turn ever arrives, which is the whole failure.
+      vi.advanceTimersByTime(STALL + 500);
+
+      expect(h.tts.texts().length).toBeGreaterThan(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("speaks even when nothing they said ever transcribes", () => {
+    /* The worst case and the one the speech-start arm exists for: the line is bad enough
+       that not one partial arrives, so there is nothing to defer on and nothing to commit.
+       Armed on speech start rather than on the first partial, or this case is silent. */
+    vi.useFakeTimers();
+    try {
+      const h = setup({ stalledTurnMs: STALL, transcriptWatchdogMs: 60_000 });
+      h.tts.last().done();
+      h.stream.ackAll();
+      const before = h.tts.texts().length;
+
+      h.listen.speechStart(1000);
+      vi.advanceTimersByTime(STALL + 500);
+
+      expect(h.tts.texts().length).toBeGreaterThan(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("holds off while the caller is still audibly talking", () => {
+    /* Counting from the first word would cut across anyone giving a long answer. Each
+       partial stands the timer down, so it only fires once they have gone quiet to us. */
+    vi.useFakeTimers();
+    try {
+      const h = setup({ stalledTurnMs: STALL });
+      h.tts.last().done();
+      h.stream.ackAll();
+      const before = h.tts.texts().length;
+
+      h.listen.speechStart(1000);
+      for (let i = 0; i < 6; i += 1) {
+        vi.advanceTimersByTime(STALL - 1000);
+        h.listen.interim(`still going ${i}`);
+      }
+
+      expect(h.tts.texts().length).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stands down when the turn does end", () => {
+    vi.useFakeTimers();
+    try {
+      /* The transcript watchdog is pushed out of the way so that anything spoken here
+         could only have come from the stall timer. Both fire on silence, and a test that
+         cannot tell them apart proves nothing about either. */
+      const h = setup({ stalledTurnMs: STALL, transcriptWatchdogMs: 60_000 });
+      h.tts.last().done();
+      h.stream.ackAll();
+
+      h.listen.speechStart(1000);
+      h.listen.interim("my name is Sikiru");
+      h.listen.endOfTurn(2000);
+      const afterTurn = h.tts.texts().length;
+      vi.advanceTimersByTime(STALL + 500);
+
+      expect(h.tts.texts().length).toBe(afterTurn);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

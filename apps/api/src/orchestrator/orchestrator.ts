@@ -176,6 +176,8 @@ export interface OrchestratorDeps {
   readonly fillerAfterMs?: number;
   /** Speak a recovery line if the caller finishes and no transcript arrives in time. */
   readonly transcriptWatchdogMs?: number;
+  /** See `STALLED_TURN_MS`. The caller is talking and no turn boundary is arriving. */
+  readonly stalledTurnMs?: number;
   /**
    * Least speech that can produce a real transcript. Zero disables the check, which is
    * what most orchestrator tests want: they drive transcripts directly to exercise turn
@@ -521,6 +523,22 @@ const TURN_WATCHDOG_MS = 4_000;
 const TRANSCRIPT_WATCHDOG_MS = 5_000;
 
 /**
+ * How long the caller may be audibly talking with no turn boundary before the agent says
+ * something anyway.
+ *
+ * The transcript watchdog is armed at end-of-turn, so it cannot help when end-of-turn is
+ * the thing that never comes: on the calls of 2026-08-23 the caller spoke, partials
+ * arrived, Flux never closed the turn, and the agent sat silent for the rest of the call.
+ * No error, no recovery line, nothing — the one failure CLAUDE.md forbids above all
+ * others.
+ *
+ * Generous on purpose. Flux's own silence backstop is 4s, so a healthy detector has
+ * already closed the turn well inside this; anything past it is a detector that is not
+ * going to.
+ */
+const STALLED_TURN_MS = 8_000;
+
+/**
  * Backchannel: the noises a listener makes to show they are still there.
  *
  * A person saying "mm-hm" while you speak is not taking the floor, and a speaker who
@@ -704,9 +722,35 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   const pickBackchannel = createFillerPicker();
 
   let watchdog: ReturnType<typeof setTimeout> | null = null;
+  let stalledTurn: ReturnType<typeof setTimeout> | null = null;
+
   const cancelWatchdog = (): void => {
     if (watchdog !== null) clearTimeout(watchdog);
     watchdog = null;
+  };
+
+  /**
+   * The caller is talking and the turn detector is not closing the turn.
+   *
+   * Deferred on every partial rather than counted from the first: somebody mid-sentence is
+   * still talking and must not be spoken over, and while partials keep arriving this keeps
+   * standing down. It only fires once the caller has gone quiet to us — no partials, no
+   * end-of-turn — which is a detector that has stopped working, not a long answer.
+   */
+  const armStalledTurn = (): void => {
+    cancelStalledTurn();
+    stalledTurn = setTimeout(() => {
+      stalledTurn = null;
+      if (turn !== null) return;
+      log.error("caller spoke but the turn never ended");
+      sayRecovery("turn never ended");
+    }, deps.stalledTurnMs ?? STALLED_TURN_MS);
+    stalledTurn.unref();
+  };
+
+  const cancelStalledTurn = (): void => {
+    if (stalledTurn !== null) clearTimeout(stalledTurn);
+    stalledTurn = null;
   };
 
   /**
@@ -1521,9 +1565,16 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     // audio already playing is withheld, which is the whole of what "interrupt" means to
     // somebody on the phone.
     if (current !== null && bargeInEnabled) stopSpeaking("caller interrupted", true);
+
+    /* From here the caller has the floor and something has to end their turn. If nothing
+       does, this is what breaks the silence. */
+    armStalledTurn();
   });
 
   deps.listen.turns.onEndOfTurn(() => {
+    // The boundary arrived, so the stall never happened. The transcript watchdog below
+    // covers what comes next.
+    cancelStalledTurn();
     callState.apply({ kind: "caller.turn.ended" });
     mark("stt_final");
     // The number R5.5 is actually written against: caller stops speaking -> agent
@@ -2570,6 +2621,10 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   deps.listen.transcripts.onInterim((transcript) => {
     record.event("stt_partial", { chars: transcript.text.length }, transcript.offsetMs);
 
+    /* Still talking, so stand the stall timer down. Counting from the first word instead
+       would cut across anyone giving a long answer. */
+    if (transcript.text.trim() !== "") armStalledTurn();
+
     /* Somebody is part-way through explaining something. This is where a person would make
        a noise, and it is the only place we can: a final transcript arrives when they have
        already stopped, which is too late to be listening. */
@@ -2870,6 +2925,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     clearPending();
     cancelFiller();
     cancelWatchdog();
+    cancelStalledTurn();
     echoSegments.clear();
     stopSpeaking("call ended");
     deps.listen.close();
