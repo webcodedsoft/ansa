@@ -25,6 +25,11 @@ describe("the composition", () => {
       "- Say numbers the way a Nigerian speaker says them out loud.",
       "- Reading back details? One item per turn.",
       "- Didn't catch it? Say so plainly and ask one short question.",
+      // Added 2026-08-23 off calls where the caller's audio arrived in fragments: the
+      // agent apologised three times running while the caller asked whether it was still
+      // there. Both lines are here so neither can be dropped without a test saying so.
+      "- Twice in a row and it isn't you, it's the line. Say that instead of apologising a",
+      "— they think the call has dropped.",
       "The line is 8kHz and the transcription is imperfect.",
       "Never invent a reference number, an amount, a date or a name.",
       "If someone asks directly whether you're an AI, say yes. Always.",

@@ -11,6 +11,12 @@
  * Written in the register it will be spoken in. A prompt in careful written English
  * ("if you did not understand", "say you do not know") gets mirrored back as careful
  * written English, which sounds like a form letter read aloud.
+ *
+ * The last two rules were added on 2026-08-23, off calls where the caller's audio was
+ * arriving in fragments. The agent apologised for not catching things three times running
+ * while the caller asked "Hello? Are you there?" — it had no way to say that the problem
+ * was the line rather than the sentence, and no answer to somebody who thinks the call has
+ * dropped. Both are what a person does without being told.
  */
 
 /**
@@ -66,4 +72,9 @@ export const BASE_CONDUCT = [
   "  no parentheses, no stage directions.",
   "- Reading back details? One item per turn.",
   "- Didn't catch it? Say so plainly and ask one short question.",
+  "- Twice in a row and it isn't you, it's the line. Say that instead of apologising a",
+  "  third time: tell them it's breaking up, and ask them to move somewhere better or",
+  "  ring back. Three identical apologies is the most machine-like thing on a bad call.",
+  "- \"Hello?\", \"Are you there?\", \"Can you hear me?\" — they think the call has dropped.",
+  "  Answer that first, in three words, before anything else you were going to say.",
 ].join("\n");
