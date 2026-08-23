@@ -43,6 +43,7 @@ const setup = (
     fillerTiers?: readonly (readonly string[])[];
     fillerAfterMs?: number;
     transcriptWatchdogMs?: number;
+    stalledTurnMs?: number;
     minSpeechMs?: number;
     recorder?: CallRecorder;
     facts?: CallFactsStore;
