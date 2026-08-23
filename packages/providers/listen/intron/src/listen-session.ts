@@ -160,6 +160,12 @@ export const openIntronSession = (
         case "final": {
           if (leg !== current) return;
           for (const listener of finals) listener(transcript(event.text));
+          /* The socket is gone the moment it sends this — COMMIT closes it. Without
+             promoting the warm leg here, `current` stays a dead socket: turn two's audio
+             goes nowhere, `commit` no-ops because the leg is already committed, and every
+             turn after the first ends in the transcript watchdog. That is what the call at
+             13:05 did — full audio, Flux ending turns, two "no transcript" recovery lines. */
+          rotate();
           return;
         }
         case "desynced": {
@@ -190,8 +196,13 @@ export const openIntronSession = (
 
     socket.onClose((reason) => {
       if (closed) return;
-      // A close after our own COMMIT is the documented end of a leg, not a failure.
-      if (leg.committed) return;
+      // A close after our own COMMIT is the documented end of a leg, not a failure — but
+      // it still has to be replaced. A commit that closes without ever sending a final
+      // would otherwise leave `current` dead with nothing to notice it.
+      if (leg.committed) {
+        if (leg === current) rotate();
+        return;
+      }
       if (leg === current || leg === next) fail(`socket closed: ${reason}`);
     });
 

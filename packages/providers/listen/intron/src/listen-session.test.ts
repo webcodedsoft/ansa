@@ -129,6 +129,36 @@ describe("committing a turn", () => {
     expect(heard).toEqual(["my name is Sikiru"]);
   });
 
+  it("promotes the warm leg after a final, so turn two is not deaf", () => {
+    /* COMMIT closes the socket. Leaving `current` on it made every turn after the first
+       end in the transcript watchdog — the call at 13:05 had full audio, Flux ending
+       turns, and two "no transcript" recovery lines. */
+    const { session, legs } = setup();
+    const heard: string[] = [];
+    session.transcripts.onFinal((t) => heard.push(t.text));
+
+    legs[0]?.ready();
+    session.commit();
+    legs[0]?.say("COMMITTED_TRANSCRIPT", { transcript_text: "turn one" });
+    expect(legs).toHaveLength(3);
+
+    // The promoted leg is live: it commits and delivers rather than no-opping.
+    legs[1]?.ready();
+    session.commit();
+    legs[1]?.say("COMMITTED_TRANSCRIPT", { transcript_text: "turn two" });
+    expect(heard).toEqual(["turn one", "turn two"]);
+  });
+
+  it("replaces the leg even when a commit closes without ever sending a final", () => {
+    /* The backstop. If the vendor hangs up after COMMIT with nothing to say, `current`
+       would otherwise stay dead with nothing to notice it. */
+    const { session, legs } = setup();
+    legs[0]?.ready();
+    session.commit();
+    legs[0]?.hangUp("1000");
+    expect(legs).toHaveLength(3);
+  });
+
   it("does not treat the close that follows a commit as a failure", () => {
     /* The vendor closes with code 1000 after COMMIT. Reporting that as a dead listener
        would end a call at the end of every single turn. */
