@@ -1962,6 +1962,9 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     let firstToken = true;
     let sentencesSpoken = 0;
     let wordsSpoken = 0;
+    // What went to TTS. `current.spoken` lags — it is filled as audio emits — so at the
+    // cap site it is empty for sentences still synthesising.
+    const enqueued: string[] = [];
     completion.onDelta((token) => {
       if (turn?.seq !== seq) return;
       if (firstToken) {
@@ -1990,9 +1993,19 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         // length. After that both limits must allow it, and the word check includes THIS
         // sentence — letting a 14-word sentence follow a 3-word one produced a 17-word
         // answer to a yes/no question.
+        //
+        // `wordsSpoken > 0` was true after "Okay." and cut the answer behind it. On the
+        // call at 11:10 that was seq 8: two words against a polar budget of eight, and the
+        // question the model was about to ask went with the cancelled completion — the
+        // caller waited twelve seconds and asked "Are you there?".
+        //
+        // The threshold is words rather than sentences because the two cases sit either
+        // side of one boundary. "Yes, it is." is three words and a whole answer, and
+        // capping after it is the point of the mechanism. "Okay." is two and answers
+        // nothing. A turn that has said less than an interjection has not spoken yet.
         const wouldExceedWords = wordsSpoken + sentenceWords > budget.maxWords;
         const outOfUnits = sentencesSpoken >= budget.maxUnits;
-        if (wordsSpoken > 0 && (wouldExceedWords || outOfUnits)) {
+        if (wordsSpoken >= INTERJECTION_WORDS && (wouldExceedWords || outOfUnits)) {
           log.info("turn capped", {
             seq,
             action: budget.action,
@@ -2018,6 +2031,16 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
             screenFormatting: false,
             capped: true,
           });
+          // The only record this turn will get. `record.event("agent said")` for a model
+          // turn lives in `onDone`, and the next line cancels the completion, so a capped
+          // turn was absent from the call log entirely — the caller heard words nothing
+          // kept.
+          record.event("agent said", {
+            seq,
+            text: enqueued.join(" "),
+            action: budget.action,
+            capped: true,
+          });
           current.llmDone = true;
           current.cancelLlm?.();
           return;
@@ -2027,6 +2050,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         // Three turns in ten were cut off at a single word because it did.
         if (sentenceWords > INTERJECTION_WORDS) sentencesSpoken += 1;
         wordsSpoken += sentenceWords;
+        enqueued.push(sentence);
         enqueue(current, sentence);
       }
     });

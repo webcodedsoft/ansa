@@ -839,6 +839,36 @@ describe("reply length adapts to what was asked", () => {
     expect(spoken).toBeLessThanOrEqual(10);
   });
 
+  /**
+   * Read off the call at 11:10 on 2026-08-23.
+   *
+   * The caller confirmed their name, the model opened with a two-word acknowledgement, and
+   * the cap cancelled the completion behind it. `wordsSpoken > 0` was satisfied by those two
+   * words, so the sentence carrying the next question never went out. The caller waited
+   * twelve seconds and asked "Are you there?".
+   */
+  it("does not let an opener eat the answer behind it", () => {
+    const spoken = askAndCount(
+      setup(),
+      "Is my policy still active?",
+      "Okay. Your policy is active and it renews in May of next year.",
+    );
+    // Two words is less than an interjection, so the sentence behind it still goes.
+    expect(spoken).toBeGreaterThan(2);
+  });
+
+  it("still caps once a whole answer has been said", () => {
+    /* The other side of the same boundary, and why the threshold is words. "Yes, it is."
+       is three words and answers the question; what follows it is the rambling the cap
+       exists to stop. */
+    const spoken = askAndCount(
+      setup(),
+      "Is my policy still active?",
+      "Yes, it is. It renews in May and your premium has not changed at all this year.",
+    );
+    expect(spoken).toBeLessThanOrEqual(10);
+  });
+
   it("lets an explanation run longer", () => {
     const spoken = askAndCount(
       setup(),
