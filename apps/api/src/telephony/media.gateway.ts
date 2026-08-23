@@ -102,6 +102,9 @@ interface WarmAudio {
 }
 
 /** Nothing rendered yet, and the call must not wait for it (R6.2). */
+/** One carrier frame of 8kHz audio. Its timestamps advance by this much when nothing is lost. */
+const FRAME_MS = 20;
+
 const NOT_WARM: WarmAudio = { greeting: null, leads: new Map(), fillers: new Map() };
 
 /**
@@ -498,6 +501,10 @@ export class MediaGateway implements OnApplicationShutdown {
     const log = this.log.child({ callId: stream.callId });
     const openedAt = Date.now();
     let frames = 0;
+    /** The carrier's clock on the previous frame, for spotting frames it numbered but never delivered. */
+    let previousOffsetMs: number | null = null;
+    /** Milliseconds of audio the carrier numbered and we never received. */
+    let missingMs = 0;
     let bytes = 0;
     let firstFrameLogged = false;
 
@@ -515,18 +522,39 @@ export class MediaGateway implements OnApplicationShutdown {
         log.info("first inbound audio frame", {
           bytes: chunk.data.length,
           msSinceStreamStart: Date.now() - openedAt,
+          // The carrier's own clock on that first frame. Ours says when we saw it; this
+          // says when the carrier believes the caller said it, and the two answer
+          // different questions when audio goes missing.
+          carrierOffsetMs: chunk.offsetMs,
         });
       }
 
+      /* Whether the carrier's own timestamps are contiguous.
+       *
+       * Every frame is 20ms, so consecutive timestamps advance by 20. A larger step means
+       * frames the carrier numbered and we never received; a step of 20 throughout means
+       * we received everything it sent and any shortfall is audio it never sent at all.
+       * Those are opposite problems with opposite fixes, and four calls were spent
+       * arguing about which one this is. */
+      if (previousOffsetMs !== null) {
+        const step = chunk.offsetMs - previousOffsetMs;
+        if (step > FRAME_MS) missingMs += step - FRAME_MS;
+      }
+      previousOffsetMs = chunk.offsetMs;
+
       // The carrier sends a 20ms frame every 20ms, so this is one line per second.
       if (frames % 50 === 0) {
-        log.debug("inbound audio", { frames, bytes, carrierOffsetMs: chunk.offsetMs });
+        log.debug("inbound audio", { frames, bytes, carrierOffsetMs: chunk.offsetMs, missingMs });
       }
     });
 
     stream.onClosed((reason) => {
       log.info("media stream closed", {
         reason,
+        /* `missingMs` is the verdict. Zero with a short call means the carrier stopped
+           sending; a large number means it sent and the frames were lost on the way. */
+        missingMs,
+        carrierSpanMs: previousOffsetMs ?? 0,
         frames,
         bytes,
         durationMs: Date.now() - openedAt,
