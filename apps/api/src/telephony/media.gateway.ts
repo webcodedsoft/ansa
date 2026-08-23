@@ -42,7 +42,7 @@ import { ALL_GREETING_LEADS, chooseGreetingLead } from "./greeting-lead";
 /* The same clock the situation block reads. Asking it here rather than deriving the hour
    again keeps one definition of what "morning" means on a call. */
 import { describeSituation } from "../conversation/situation";
-import { forSpeech, GREETING_TEXT } from "./greeting";
+import { forSpeech, GREETING_TEXT, outboundOpener } from "./greeting";
 import { cacheKey, createAudioCache, type AudioCache } from "./prerender";
 import { composeListen, type TranscriptSource } from "./composite-listen";
 import { createHandoff } from "../handoff/handoff";
@@ -286,6 +286,9 @@ export class MediaGateway implements OnApplicationShutdown {
   warmForOrganization(organization: CallAgent): void {
     const settings = callSettings(organization, this.platform());
     this.warmed(settings.voiceId, settings.greeting, settings.speakingRate);
+    // Ingress does not yet know the direction, so warm both. Warming one leaves the other
+    // synthesising live on the first turn.
+    this.warmed(settings.voiceId, outboundOpener(settings.name), settings.speakingRate);
   }
 
   /**
@@ -572,10 +575,15 @@ export class MediaGateway implements OnApplicationShutdown {
       ownGreeting: settings.greeting !== this.platform().greeting,
       ownEscalation: settings.handoff !== this.platform().handoff,
     });
-    const warm = this.warmed(settings.voiceId, settings.greeting, settings.speakingRate);
-
+    // Read before the pre-render, because it decides what gets rendered.
     const direction: CallDirection =
       stream.parameters[DIRECTION_PARAM] === "outbound" ? "outbound" : "inbound";
+
+    const opening =
+      direction === "outbound" ? outboundOpener(settings.name) : settings.greeting;
+
+    // Keyed on the text, so the two openings are two entries and neither evicts the other.
+    const warm = this.warmed(settings.voiceId, opening, settings.speakingRate);
 
     // Only when the organization resolved. A call on an unconfigured number is already running
     // with base vocabulary and recording nothing; there is nothing to scope state to and
@@ -741,8 +749,12 @@ export class MediaGateway implements OnApplicationShutdown {
      * every call did before this existed.
      */
     const opener = ((): { text: string; audio: readonly AudioChunk[] | null } => {
-      const plain = { text: settings.greeting, audio: warm.greeting };
+      const plain = { text: opening, audio: warm.greeting };
       if (warm.greeting === null) return plain;
+
+      // The leads sit in front of an inbound greeting. `outboundOpener` brings its own, so
+      // prepending one says "Good afternoon. Good day, this is Oakhaven Properties calling."
+      if (direction === "outbound") return plain;
 
       const now = describeSituation({
         now: new Date(),
@@ -765,7 +777,7 @@ export class MediaGateway implements OnApplicationShutdown {
 
       const leadAudio = warm.leads.get(lead);
       if (leadAudio === undefined) return plain;
-      return { text: `${lead} ${settings.greeting}`, audio: [...leadAudio, ...warm.greeting] };
+      return { text: `${lead} ${opening}`, audio: [...leadAudio, ...warm.greeting] };
     })();
 
     runConversation(stream, {

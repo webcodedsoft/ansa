@@ -2477,7 +2477,14 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         escalate(watch.misunderstood(`third readback of the ${capture.subject}`));
       }
     }
-    if (result.say !== null) sayNow(result.say, `readback:${capture.kind}`);
+    if (result.say !== null) {
+      // This turn ends here rather than at `respondTo`, so measure the stage that path
+      // measures. Without it a readback turn contributes to `turn_to_audio` and to no
+      // component of it — seven of nine turns on the 2026-08-23 call had a total and no
+      // breakdown, which is why the three seconds could not be attributed.
+      measure("stt_final", { chars: text.length, path: "capture" });
+      sayNow(result.say, `readback:${capture.kind}`);
+    }
     return true;
   };
 
