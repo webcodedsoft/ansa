@@ -65,7 +65,20 @@ const pace = async (send) => {
   }
 };
 
-const openai = ({ asPcm }) =>
+/**
+ * The context sentence, written as speech rather than as instructions.
+ *
+ * `protocol.ts` refuses to send a prompt at all, because a keyterm list passed this way
+ * produced a phantom caller turn on a live call — the model regurgitated "Expect these
+ * terms: Ansa, policy, premium, naira." into silence and the agent answered it. This is a
+ * different shape of prompt and the same risk, which is why the harness pads every run
+ * with a hundred frames of comfort noise: regurgitation shows up there or nowhere.
+ */
+const NIGERIAN_PROMPT =
+  "This is a phone call with a Nigerian speaker. Nigerian English and Nigerian names, " +
+  "places and spellings are expected.";
+
+const openai = ({ asPcm, prompt }) =>
   new Promise((resolve) => {
     const finals = [];
     // Why a run produced nothing matters as much as that it did. An empty result can mean
@@ -101,7 +114,11 @@ const openai = ({ asPcm }) =>
           type: "transcription",
           audio: { input: {
             format: asPcm ? { type: "audio/pcm", rate: 24000 } : { type: "audio/pcmu" },
-            transcription: { model: env.TRANSCRIPTION_MODEL ?? "gpt-4o-transcribe", language: "en" },
+            transcription: {
+              model: env.TRANSCRIPTION_MODEL ?? "gpt-4o-transcribe",
+              language: "en",
+              ...(prompt === undefined ? {} : { prompt }),
+            },
             turn_detection: { type: "semantic_vad", eagerness: "auto" },
           } },
         },
@@ -272,6 +289,7 @@ const KEYTERMS = ["Ansa", "policy", "policy number", "premium", "naira", "claim"
 const runs = [
   ["openai mu-law 8k    ", () => openai({ asPcm: false })],
   ["openai pcm 24k      ", () => openai({ asPcm: true })],
+  ["openai pcm + prompt ", () => openai({ asPcm: true, prompt: NIGERIAN_PROMPT })],
   ["deepgram mu-law 8k  ", () => deepgram({ keyterms: [] })],
   ["deepgram + keyterms ", () => deepgram({ keyterms: KEYTERMS })],
   // The caller's own name, boosted. Tested on Deepgram's console first: the same audio
@@ -307,3 +325,4 @@ console.log("  both wrong the same way   -> the audio: Twilio, encoding, or the 
 console.log("  mu-law vs pcm differ      -> the transcoding hop, not the model");
 console.log("  keyterms change a name    -> boosting is biasing, as it did with Ikeja");
 console.log("  intron en vs pcm differ   -> the code-switched model, not the audio");
+console.log("  prompt text in a turn     -> regurgitation, which is why protocol.ts sends none");
