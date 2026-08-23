@@ -58,6 +58,7 @@ own guess at it would be reporting the harness.
 | `--mode` | `unsigned` | `unsigned`, `signed`, or `badsig` |
 | `--frames` | `120` | 160-byte μ-law frames to send (120 = 2.4s of audio) |
 | `--hold-ms` | `1000` | How long to keep the socket open after the last frame, so outbound audio can arrive |
+| `--pace-ms` | `2` | Milliseconds between frames. The default is ten times faster than a phone; pass `20` to imitate a real call's timing. |
 | `--to` | `+2348099999999` | The number dialled. The default is a test-range number no organisation holds, so it exercises the unregistered path. Pass a number a real agent answers to reach that agent's transcriber, prompt and form. |
 
 `TWILIO_AUTH_TOKEN` is read from the environment for `--mode signed`.

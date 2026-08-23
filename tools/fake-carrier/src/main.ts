@@ -28,6 +28,15 @@ interface Options {
    * transcriber, prompt and form — the harness could not reach any of it before.
    */
   readonly to: string;
+  /**
+   * Milliseconds between frames.
+   *
+   * The default sends ten times faster than a phone does, which is right for a throughput
+   * check and wrong for anything about timing: a real carrier delivers one 20ms frame every
+   * 20ms, and a socket that keeps up with a flood may still stall when the audio is spread
+   * out and something else is competing for the link. Pass 20 to imitate a call.
+   */
+  readonly paceMs: number;
 }
 
 const MODES: readonly Mode[] = ["unsigned", "signed", "badsig"];
@@ -41,6 +50,7 @@ const parseArgs = (argv: readonly string[]): Options => {
   let holdMs = 1000;
   let calls = 1;
   let to = "+2348099999999";
+  let paceMs = 2;
 
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
@@ -57,6 +67,12 @@ const parseArgs = (argv: readonly string[]): Options => {
         mode = value;
         i += 1;
         break;
+      case "--pace-ms": {
+        paceMs = Number(value);
+        if (!Number.isInteger(paceMs) || paceMs < 0) throw new Error("--pace-ms must be >= 0");
+        i += 1;
+        break;
+      }
       case "--to":
         to = value;
         i += 1;
@@ -85,7 +101,7 @@ const parseArgs = (argv: readonly string[]): Options => {
     }
   }
 
-  return { baseUrl, mode, frames, holdMs, calls, to };
+  return { baseUrl, mode, frames, holdMs, calls, to, paceMs };
 };
 
 /**
@@ -265,7 +281,7 @@ const streamMedia = async (
         },
       }),
     );
-    await delay(2);
+    await delay(options.paceMs);
   }
   if (verbose) {
     console.log(`[carrier] sent ${options.frames} media frames (${options.frames * 160} bytes)`);
