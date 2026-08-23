@@ -54,7 +54,44 @@
  *
  * A domain word does not go here. It goes in the organization's list.
  */
-export const BASE_KEYTERMS: readonly string[] = ["Ansa", "naira"];
+/**
+ * Common Nigerian given names, boosted on every call.
+ *
+ * `capture.ts` says a caller's name "is unknown by definition, so there is nothing to
+ * boost". True of the individual and false of the set: Yoruba, Igbo and Hausa given names
+ * are a knowable vocabulary and an arbitrary caller's name is usually in it.
+ *
+ * Measured on `recordings/control-sikiru.ulaw`, same waveform every run:
+ *
+ *   no keyterms                 -> "Sikiru"   (clean audio only)
+ *   7 domain terms, no names    -> "Akiro"
+ *   50 names                    -> "Sikiru"
+ *   50 names + the 7            -> "Sikiru"
+ *
+ * And on a real call, where the clean-audio result does not hold: without names Deepgram
+ * dropped the name altogether — "My name is." — and with them returned "Sikiru".
+ *
+ * Kept well under the cap. Deepgram takes at most 100 terms and silently ignores the whole
+ * list at 101, so this is a standing charge against every organisation's budget and is
+ * deliberately shorter than it could be.
+ */
+const NIGERIAN_GIVEN_NAMES: readonly string[] = [
+  "Sikiru", "Adebayo", "Adeyemi", "Babatunde", "Olumide", "Oluwaseun", "Abiodun", "Segun",
+  "Tunde", "Femi", "Kunle", "Wale", "Seyi", "Kehinde", "Taiwo", "Damilola", "Temitope",
+  "Folake", "Yewande", "Bolanle", "Funmilayo", "Bisi",
+  "Chinedu", "Chukwuemeka", "Nnamdi", "Uchenna", "Ifeanyi", "Emeka", "Obinna", "Ekene",
+  "Ngozi", "Chidinma", "Ifeoma", "Amaka", "Adaeze", "Chiamaka",
+  "Ibrahim", "Aminu", "Usman", "Musa", "Yusuf", "Sadiq", "Bashir",
+  "Fatima", "Zainab", "Aisha", "Halima", "Hauwa",
+];
+
+/**
+ * What every call boosts before the organisation's own vocabulary is added.
+ *
+ * `mergedKeyterms` puts these first on purpose: when the list has to be cut it is the
+ * terms that fail on *every* call that must survive, and a caller's name is exactly that.
+ */
+export const BASE_KEYTERMS: readonly string[] = ["Ansa", "naira", ...NIGERIAN_GIVEN_NAMES];
 
 /**
  * Deepgram accepts a bounded keyterm list. The cap is enforced here rather than
