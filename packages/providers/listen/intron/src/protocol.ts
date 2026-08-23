@@ -30,6 +30,16 @@ export const DEFAULT_SAMPLE_RATE = 16_000;
 export const SESSION_LIMIT_MS = 300_000;
 
 /**
+ * How much audio the not-yet-promoted leg keeps.
+ *
+ * It used to be fed the whole call, which doubled outbound traffic for a socket nobody was
+ * reading — on a constrained link that is bandwidth taken from the carrier's own media
+ * stream. Two seconds is enough that a promoted leg is not deaf to the start of a turn,
+ * and the cap is what stops it growing for the length of a call.
+ */
+export const WARM_BACKLOG_BYTES = 2 * 8000 * 2;
+
+/**
  * Nigerian speech is code-switched, and the model is chosen at connect time — before
  * anybody has spoken. Which of these is right for a Lagos line is a measurement.
  */

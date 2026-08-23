@@ -9,6 +9,7 @@ import {
   parseEvent,
   splitForSend,
   SESSION_LIMIT_MS,
+  WARM_BACKLOG_BYTES,
   type IntronOptions,
 } from "./protocol";
 
@@ -232,17 +233,17 @@ export const openIntronSession = (
           ? muLawToPcm(chunk.data, options.format.sampleRate, options.sampleRate ?? options.format.sampleRate)
           : chunk.data;
 
-      // Both legs are fed. The next one is already connected and its audio is what makes
-      // it useful the instant it is promoted — a socket promoted cold would start the
-      // turn deaf to whatever the caller said while it was being opened.
-      for (const leg of [current, next]) {
-        if (leg === null) continue;
-        if (!leg.ready) {
-          leg.backlog = Buffer.concat([leg.backlog, pcm]);
-          continue;
+      // Only the live leg streams. The warm one keeps a couple of seconds so it is not
+      // deaf at the moment it is promoted, and nothing more — sending it the whole call
+      // doubled outbound traffic for a socket no transcript was ever read from.
+      current.pending = Buffer.concat([current.pending, pcm]);
+      if (current.ready) flush(current);
+
+      if (next !== null) {
+        next.backlog = Buffer.concat([next.backlog, pcm]);
+        if (next.backlog.length > WARM_BACKLOG_BYTES) {
+          next.backlog = next.backlog.subarray(next.backlog.length - WARM_BACKLOG_BYTES);
         }
-        leg.pending = Buffer.concat([leg.pending, pcm]);
-        flush(leg);
       }
 
       /* The ceiling is 300s and there is no resume, so rotate on age rather than waiting

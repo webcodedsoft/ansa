@@ -2,7 +2,7 @@ import type { Logger } from "@ansa/shared";
 import { describe, expect, it, vi } from "vitest";
 
 import { openIntronSession, type IntronSocket } from "./listen-session";
-import { MIN_CHUNK_BYTES } from "./protocol";
+import { MIN_CHUNK_BYTES, WARM_BACKLOG_BYTES } from "./protocol";
 
 /**
  * Written against what the live API actually did on 2026-08-23, not against the docs.
@@ -59,12 +59,32 @@ describe("the socket that is already open", () => {
     expect(legs).toHaveLength(2);
   });
 
-  it("feeds both, so a promoted socket is not deaf to what was said while it opened", () => {
+  it("streams only to the live leg, so the warm one costs no bandwidth", () => {
+    /* It used to stream to both, which doubled outbound traffic for a socket no transcript
+       was ever read from. On a constrained link that is bandwidth taken from the carrier's
+       own media stream, and the calls at 12:42 and 12:50 arrived at a tenth of real time. */
     const { session, legs } = setup();
     legs[0]?.ready();
     legs[1]?.ready();
     session.write(audio(MIN_CHUNK_BYTES));
-    for (const leg of legs) expect(leg.sent.length).toBeGreaterThan(0);
+    expect(legs[0]?.sent.length).toBeGreaterThan(0);
+    expect(legs[1]?.sent).toHaveLength(0);
+  });
+
+  it("keeps the warm leg a couple of seconds of audio, so it is not deaf when promoted", () => {
+    const { session, legs } = setup();
+    legs[0]?.ready();
+    // Four seconds of mu-law, which is eight seconds of PCM16 — past the two-second cap.
+    for (let i = 0; i < 200; i += 1) session.write(audio(160));
+    legs[0]?.say("SESSION_TIME_LIMIT_EXCEEDED", {});
+
+    // The promoted leg flushes what it kept, and it is bounded rather than the whole call.
+    legs[1]?.ready();
+    const bytes = (legs[1]?.sent ?? [])
+      .map((raw) => Buffer.from(String((JSON.parse(raw) as Record<string, unknown>)["audio_base_64"]), "base64").length)
+      .reduce((n, b) => n + b, 0);
+    expect(bytes).toBeGreaterThan(0);
+    expect(bytes).toBeLessThanOrEqual(WARM_BACKLOG_BYTES);
   });
 });
 
