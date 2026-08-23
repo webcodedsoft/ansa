@@ -330,6 +330,19 @@ export interface CallerHistory {
    * `escalated to a human` event. A handover is a fact; "unresolved" would be a guess
    * dressed as one, and the agent would act on it.
    */
+  /**
+   * Roughly what they rang about last time, in their own words.
+   *
+   * Read from the transcripts of the previous call rather than stored on it: nothing wrote
+   * a subject anywhere, and a column would need something to fill it — which means either
+   * a model deciding what a call was about, or a heuristic pretending to. The caller's own
+   * first substantive sentence needs neither and is what they would say again if made to
+   * start over, which is the thing this exists to prevent.
+   *
+   * Null when the window holds no prior call, when its transcripts have aged out under
+   * `transcript_retention_days`, or when everything they said was hello.
+   */
+  readonly lastCallAbout: string | null;
   readonly lastCallHandedOver: boolean;
 }
 
@@ -369,6 +382,50 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * with a caller mid-greeting; the orchestrator holds whatever has arrived and renders
  * nothing when that is nothing. A turn must never wait for it.
  */
+/**
+ * The openings that are not what a call was about.
+ *
+ * A greeting, a name and a courtesy are how every call starts and tell you nothing about
+ * why this one was made. Matched clause by clause rather than whole-line, because a caller
+ * says all of it in one breath and it arrives as one transcript: "Hi. Good evening. My name
+ * is Sikiru. How are you doing? I want to book a viewing." Skipping whole lines would drop
+ * that entire turn and find nothing.
+ *
+ * Loose on purpose. These read 8kHz telephony transcripts and half of them are approximate.
+ */
+const OPENING_CLAUSE: readonly RegExp[] = [
+  /^(hi|hello|hey|yo)\b/i,
+  /^good (morning|afternoon|evening|day)\b/i,
+  /^(yes|yeah|no|okay|ok|sure|please|thanks|thank you|sorry)\b/i,
+  /^(my name is|this is|it s|i m)\s+\S+\s*$/i,
+  /^how (are you|far|you dey|body|is it going)\b/i,
+  /^hope you( a| )re well\b/i,
+];
+
+/** Long enough to be a reason, short enough to be said back in one breath. */
+const SUBJECT_MAX_CHARS = 120;
+
+/** Two words is a fragment the agent would have to guess around. Guessing is worse than silence. */
+const SUBJECT_MIN_WORDS = 3;
+
+const wordsIn = (text: string): number => text.trim().split(/\s+/).filter(Boolean).length;
+
+export const subjectOf = (lines: readonly string[]): string | null => {
+  for (const line of lines) {
+    const kept = line
+      .split(/(?<=[.!?])\s+/)
+      .map((clause) => clause.trim())
+      .filter((clause) => clause !== "" && !OPENING_CLAUSE.some((p) => p.test(clause)))
+      .join(" ")
+      .trim();
+    if (wordsIn(kept) < SUBJECT_MIN_WORDS) continue;
+    return kept.length <= SUBJECT_MAX_CHARS
+      ? kept
+      : `${kept.slice(0, SUBJECT_MAX_CHARS).trimEnd()}…`;
+  }
+  return null;
+};
+
 export const readCallerHistory = async (
   scope: OrganizationScope,
   request: CallerHistoryRequest,
@@ -392,7 +449,12 @@ export const readCallerHistory = async (
 
   const newest = prior[0];
   if (newest === undefined) {
-    return { lastContactDaysAgo: null, contactsThisWeek: 0, lastCallHandedOver: false };
+    return {
+      lastContactDaysAgo: null,
+      contactsThisWeek: 0,
+      lastCallAbout: null,
+      lastCallHandedOver: false,
+    };
   }
 
   const handover = await scope.query<{ handed_over: boolean }>(
@@ -400,6 +462,21 @@ export const readCallerHistory = async (
               select 1 from call_events e
                where e.call_id = $1 and e.kind = 'escalated to a human'
             ) as handed_over`,
+    [String(newest["id"])],
+  );
+
+  /* Their own words from last time, shortest useful form.
+   *
+   * Ordered by offset and taken in one go rather than filtered in SQL, because "was it
+   * substantive" is a judgement about language and belongs beside the words that make it
+   * — see `SUBJECT_SKIP`. Four rows is enough: somebody who has said four things has said
+   * the reason for the call. */
+  const said = await scope.query<{ text: string }>(
+    `select t.text
+       from transcripts t
+      where t.call_id = $1 and t.kind = 'final'
+      order by t.offset_ms
+      limit 4`,
     [String(newest["id"])],
   );
 
@@ -413,6 +490,7 @@ export const readCallerHistory = async (
     ),
     contactsThisWeek: prior.filter((row) => (row["created_at"] as Date).getTime() >= weekAgo)
       .length,
+    lastCallAbout: subjectOf(said.map((row) => row.text)),
     lastCallHandedOver: handover[0]?.handed_over ?? false,
   };
 };

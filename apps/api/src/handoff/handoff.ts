@@ -30,6 +30,15 @@ export interface HandoffDeps {
   readonly callerNumber: string | null;
   /** Null when nothing is configured. The caller is then told the truth. */
   readonly destination: HandoffDestination | null;
+  /**
+   * Where a caller in danger goes, whatever the hour.
+   *
+   * Null falls back to `destination`, which is the right failure: an office line that may
+   * not answer is still better than telling somebody in trouble that nobody is available.
+   * The absence is reported as a readiness problem on `GET /numbers` so it is visible
+   * before it is needed rather than discovered during the call it exists for.
+   */
+  readonly crisisDestination?: HandoffDestination | null;
   /** The call's own events, teed from the recorder. See journal.ts. */
   readonly events: () => readonly LoggedEvent[];
   readonly record: CallRecorder;
@@ -67,6 +76,13 @@ const departureLine = (trigger: EscalationTrigger): string => {
   switch (trigger.kind) {
     case "asked-for-a-person":
       return "Of course. Let me put you through to someone now.";
+    case "caller-in-crisis":
+      /* Warm, present, and not in a hurry. The document is explicit about what this must
+         not do: no questions about it, no advice, no minimising, and no rushing to get off
+         the phone. It also must not sound like the other lines here, which are all some
+         version of "I cannot do this" — that is the wrong thing to say to somebody who has
+         just told you they are in trouble. */
+      return "I am really sorry you are going through that. Stay with me — I am getting you to someone who can help.";
     case "capture-failed":
       return "Let me get a colleague for you — they will take it from here.";
     case "repeated-misunderstanding":
@@ -157,7 +173,21 @@ export const createHandoff = (deps: HandoffDeps) => {
       });
       log.info("escalating to a person", { reason: trigger.kind, detail: trigger.detail });
 
-      if (deps.destination === null) {
+      /* A crisis goes to the line that answers at any hour, and falls back to the ordinary
+         one when nobody has configured it. Chosen here rather than at the call site so
+         there is one place that decides where a transfer lands. */
+      const destination =
+        trigger.kind === "caller-in-crisis" ? (deps.crisisDestination ?? deps.destination) : deps.destination;
+      if (trigger.kind === "caller-in-crisis") {
+        log.warn("crisis escalation", {
+          configured: (deps.crisisDestination ?? null) !== null,
+        });
+        deps.record.event("crisis_escalation", {
+          configured: (deps.crisisDestination ?? null) !== null,
+        });
+      }
+
+      if (destination === null) {
         // The failure the charter names: today the agent says a line and transfers
         // nowhere. It is still a dead end, but it is one the caller is told about and one
         // the log can be searched for.
@@ -190,18 +220,18 @@ export const createHandoff = (deps: HandoffDeps) => {
       try {
         await deps.telephony.transferToNumber({
           callId: deps.callId,
-          to: deps.destination.to,
-          from: deps.destination.from,
-          ringSeconds: deps.destination.ringSeconds,
+          to: destination.to,
+          from: destination.from,
+          ringSeconds: destination.ringSeconds,
           noAnswerLine: forSpeech(NO_ANSWER_LINE),
           ...(whisperUrl === undefined ? {} : { whisperUrl }),
         });
         deps.record.event("handoff_transferred", {
           reason: trigger.kind,
-          to: deps.destination.to,
+          to: destination.to,
           withSummary: whisperUrl !== undefined,
         });
-        log.info("transferred to a person", { to: deps.destination.to });
+        log.info("transferred to a person", { to: destination.to });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         // The instruction was not replaced, so the media stream is still ours and the

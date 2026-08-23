@@ -232,6 +232,28 @@ const TRANSFER_TO_HUMAN: ToolDefinition = {
   transferReason: "the assistant asked for a person",
 };
 
+/**
+ * The escape hatch for a call that has stopped being about what they rang for.
+ *
+ * Separate from `transfer_to_human` because the model is the only thing on the call that
+ * can recognise this, and because the two go to different places: an office line that
+ * keeps hours, and a line that does not. Detecting distress in code was considered and
+ * rejected — a regular expression over a transcript would both miss the real thing and
+ * fire on somebody quoting a film, and the cost of each mistake is not symmetrical.
+ *
+ * Irreversible tier for the same reason `transfer_to_human` is: the tier's own behaviour —
+ * refuse, and hand to a person — is exactly what the tool means.
+ */
+const TRANSFER_URGENTLY: ToolDefinition = {
+  name: "transfer_urgently",
+  description:
+    "Hand the call to a person immediately, at any hour, because the caller may be at risk " +
+    "of harm. Use only for that. Everything else, including anger and abuse, is transfer_to_human.",
+  parameters: REASON_PARAMETER,
+  riskTier: "irreversible",
+  transferReason: "the caller may be at risk",
+};
+
 const BUSINESS_HOURS: ToolDefinition = {
   name: "business_hours",
   description: "Check whether the office is open right now, and when it next opens.",
@@ -252,6 +274,7 @@ const BUSINESS_HOURS: ToolDefinition = {
 export const CALL_CONTROL_DEFINITIONS: readonly ToolDefinition[] = [
   END_CALL,
   TRANSFER_TO_HUMAN,
+  TRANSFER_URGENTLY,
   BUSINESS_HOURS,
 ];
 
@@ -270,6 +293,13 @@ const handlersFor = (options: CallControlOptions): Readonly<Record<string, Inter
     // line or a whisper.
     [TRANSFER_TO_HUMAN.name]: async () => {
       throw new Error("transfer_to_human must never execute — the handoff module owns the transfer");
+    },
+
+    // Same tripwire, and it matters more here: this one reaches a line that answers at any
+    // hour, and a tier regression that let it run would dial nobody while a caller who
+    // needs somebody waits.
+    [TRANSFER_URGENTLY.name]: async () => {
+      throw new Error("transfer_urgently must never execute — the handoff module owns the transfer");
     },
 
     // No lookup, so no organization scoping to get wrong: the hours were resolved for this call

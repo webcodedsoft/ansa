@@ -57,6 +57,14 @@ export interface Situation {
   /** 24-hour WAT, for the model to read rather than to say. */
   readonly localTime: string;
   readonly weekday: string;
+  /**
+   * Today, spelled out, in WAT.
+   *
+   * The agent had the hour and the weekday and no date at all, so it could not answer
+   * "what's today's date" and could not work out "three days from now" — it would have had
+   * to guess the year. Anything a caller says about a date is measured from this.
+   */
+  readonly today: string;
   /** Null when the organisation has configured no hours. */
   readonly openNow: boolean | null;
   /** Minutes until the line closes, or null when it is shut or the hours are unknown. */
@@ -66,6 +74,12 @@ export interface Situation {
   readonly escalationOffered: boolean;
   readonly history: CallerHistory | null;
 }
+
+/** Indexed from 1 to match `WatMoment.month`, so slot 0 is never read. */
+const MONTHS: readonly string[] = [
+  "", "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
 
 /** ISO weekday, 1 is Monday. Indexed from 1, so slot 0 is never read. */
 const WEEKDAYS: readonly string[] = [
@@ -115,6 +129,7 @@ export const describeSituation = (input: SituationInput): Situation => {
     partOfDay: partOfDayAt(moment.hour),
     localTime: `${twoDigits(moment.hour)}:${twoDigits(moment.minute)}`,
     weekday: WEEKDAYS[moment.weekday] ?? "",
+    today: `${WEEKDAYS[moment.weekday] ?? ""} ${moment.day} ${MONTHS[moment.month] ?? ""} ${moment.year}`.trim(),
     openNow,
     closesInMinutes,
     /* Floored. A call forty seconds old is nought minutes old, and rounding up to one
@@ -207,6 +222,18 @@ const historyLines = (situation: Situation): readonly string[] => {
     `- They called before, ${whenTheyLastRang(history.lastContactDaysAgo)}. Do not greet them as a new caller and do not make them explain it again from the start.`,
   ];
 
+  if (history.lastCallAbout !== null) {
+    /* Their own words, quoted, with the model told plainly that they are approximate. The
+       comment below is right that an agent told "their issue is unresolved" invents the
+       issue — the fix is not silence but attribution: the difference between "you were
+       asking about the delivery" and inventing a delivery is whether the sentence came
+       from the caller or from the model. Quoting makes that visible, and 8kHz transcripts
+       are wrong often enough that it must never be repeated as fact. */
+    lines.push(
+      `- Last time they opened with "${history.lastCallAbout}". That is a rough transcript, so use it to avoid making them start over, never as something you know.`,
+    );
+  }
+
   if (history.lastCallHandedOver) {
     /* A handover is a fact; what it was about is not, so the line says only what is known.
        An agent told "their last issue is unresolved" will invent the issue. */
@@ -233,19 +260,20 @@ const historyLines = (situation: Situation): readonly string[] => {
  */
 export const renderSituation = (situation: Situation): string => {
   const lines = [
-    `- It is ${situation.localTime} on ${situation.weekday} ${
+    `- Today is ${situation.today}. It is ${situation.localTime} ${
       situation.partOfDay === "night" ? "at night" : `in the ${situation.partOfDay}`
-    }, where they are.`,
+    }, where they are. Work every date the caller mentions out from this one.`,
     ...hoursLines(situation),
     ...historyLines(situation),
     ...lengthLines(situation),
     ...escalationLines(situation),
   ];
 
-  /* The clock line alone is not worth a block. It is here to give the other lines context
-     when they fire; by itself it mostly invites "good afternoon!" as an opener, which the
-     prompt spends a section telling the agent not to do. */
-  if (lines.length === 1) return "";
+  /* The clock line used to be suppressed on its own, because by itself it mostly invited
+     "good afternoon!" as an opener. It now carries the date, which the agent cannot work
+     out from anything else and needs the moment a caller says "next Tuesday" — so it is
+     always sent, and the greeting problem is handled where it belongs: `conversation.ts`
+     opens with "your greeting has already been spoken, don't greet them again". */
 
   return [HEADER, "", ...lines].join("\n");
 };

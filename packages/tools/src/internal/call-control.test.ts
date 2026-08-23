@@ -76,6 +76,9 @@ describe("the platform tool set", () => {
       "business_hours",
       "end_call",
       "transfer_to_human",
+      // Also a non-data tool: it hands the call to a person, at a number the operator
+      // configured, and answers nothing from a fixture.
+      "transfer_urgently",
     ]);
   });
 

@@ -37,6 +37,14 @@ export interface OnboardingFacts {
   readonly consentBasis: string | null;
   /** Both numbers or neither, matching the CHECK constraint in migration 0015. */
   readonly escalationConfigured: boolean;
+  /**
+   * Whether a distressed caller has somewhere to go outside business hours.
+   *
+   * Reported rather than defaulted. `docs/ansa-agent-prompt.md`: "make it a required field
+   * during onboarding, not a default you fill in yourself. Getting this wrong is the
+   * failure mode with the worst consequences."
+   */
+  readonly crisisHandoffConfigured: boolean;
   /** The `tool_config` document exactly as stored, for readiness to parse as config load does. */
   readonly toolConfig: unknown;
   /** The `event_config` document exactly as stored, same reason. */
@@ -154,6 +162,12 @@ export const loadOnboardingFacts = async (
     consentBasis: textOrNull(row["consent_basis"]),
     escalationConfigured:
       textOrNull(agent["escalation_to_number"]) !== null &&
+      textOrNull(agent["escalation_from_number"]) !== null,
+    /* The `from` is the ordinary escalation's, because a caller id is a property of the
+       carrier account rather than of the reason for the transfer. Without one there is
+       nothing to dial with, so this is false however the crisis number is set. */
+    crisisHandoffConfigured:
+      textOrNull(row["crisis_handoff_number"]) !== null &&
       textOrNull(agent["escalation_from_number"]) !== null,
     toolConfig: row["tool_config"] ?? null,
     eventConfig: row["event_config"] ?? null,

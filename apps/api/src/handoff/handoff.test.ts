@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { asCallId, asOrganizationId, createLogger } from "@ansa/shared";
+import { asCallId, asOrganizationId, createLogger, type HandoffDestination } from "@ansa/shared";
 import type { TransferRequest } from "@ansa/telephony";
 
 import type { CallRecorder } from "../telephony/event-log";
@@ -39,6 +39,7 @@ const setup = (
     events?: readonly LoggedEvent[];
     /** null means "nowhere the carrier can reach us", which is a cold transfer. */
     whisperBaseUrl?: string | null;
+    crisisDestination?: HandoffDestination | null;
   } = {},
 ) => {
   const said: string[] = [];
@@ -58,6 +59,7 @@ const setup = (
       options.destination === undefined
         ? { to: "+2348000000001", from: "+18148592625", ringSeconds: 25 }
         : options.destination,
+    crisisDestination: options.crisisDestination ?? null,
     events: () => options.events ?? [],
     record: log.record,
     log: silentLog(),
@@ -76,6 +78,57 @@ const setup = (
 };
 
 const ASKED = { kind: "asked-for-a-person", detail: "the caller asked for a person" } as const;
+const CRISIS = { kind: "caller-in-crisis", detail: "the caller may be at risk" } as const;
+
+/**
+ * A crisis goes somewhere that answers at two in the morning.
+ *
+ * `docs/ansa-agent-prompt.md` is explicit that the destination must be a real one and not a
+ * default: "a named human queue that answers regardless of hours". The office line keeps
+ * office hours, which is exactly wrong for the call this exists for.
+ */
+describe("a caller who may be in danger", () => {
+  const CRISIS_LINE = { to: "+2348000009999", from: "+18148592625", ringSeconds: 40 } as const;
+
+  it("dials the line that answers at any hour, not the office one", async () => {
+    const s = setup({ crisisDestination: CRISIS_LINE });
+    await s.handoff.escalate(CRISIS);
+
+    expect(s.transferToNumber.mock.calls[0]?.[0]?.to).toBe(CRISIS_LINE.to);
+  });
+
+  it("still uses the office line for everything else", async () => {
+    const s = setup({ crisisDestination: CRISIS_LINE });
+    await s.handoff.escalate(ASKED);
+
+    expect(s.transferToNumber.mock.calls[0]?.[0]?.to).toBe("+2348000000001");
+  });
+
+  it("falls back to the office line rather than reaching nobody", async () => {
+    /* Worse than a line that answers at any hour, better than telling somebody in trouble
+       that there is nobody available. The absence is reported on GET /numbers so it is
+       visible before it is needed. */
+    const s = setup({ crisisDestination: null });
+    await s.handoff.escalate(CRISIS);
+
+    expect(s.transferToNumber).toHaveBeenCalledOnce();
+  });
+
+  it("says something warm rather than something about what it cannot do", async () => {
+    const s = setup({ crisisDestination: CRISIS_LINE });
+    await s.handoff.escalate(CRISIS);
+
+    expect(s.said[0]).toContain("Stay with me");
+    expect(s.said[0]).not.toContain("cannot");
+  });
+
+  it("records whether a crisis line was configured, so the gap is auditable", async () => {
+    const s = setup({ crisisDestination: null });
+    await s.handoff.escalate(CRISIS);
+
+    expect(s.log.kinds()).toContain("crisis_escalation");
+  });
+});
 
 describe("escalate", () => {
   it("tells the caller before it dials, not after", async () => {

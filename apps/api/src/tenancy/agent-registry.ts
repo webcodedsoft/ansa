@@ -68,6 +68,8 @@ export interface CallAgent {
    * own number, which is right for one organization and wrong for two — see migration 0015.
    */
   readonly handoff: HandoffDestination | null;
+  /** Answers at any hour. Null when the organisation has not named one. */
+  readonly crisisHandoff: HandoffDestination | null;
   /**
    * This organization's own tools, discovered and prepared once (R5.2).
    *
@@ -139,6 +141,7 @@ export const UNKNOWN_AGENT: CallAgent = {
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   businessHours: null,
   handoff: null,
+  crisisHandoff: null,
   connectors: NO_CONNECTORS,
   events: NO_EVENTS,
   // An unregistered number gets the pipeline's defaults; there is no agent to ask.
@@ -311,6 +314,7 @@ const toCallAgent = async (
     hasKnowledgeSources,
     businessHours: config.businessHours,
     handoff: config.handoff,
+    crisisHandoff: config.crisisHandoff,
     connectors,
     events,
     bargeIn: config.bargeIn,

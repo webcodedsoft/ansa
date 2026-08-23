@@ -16,6 +16,8 @@ import { CHECK_IDS, evaluateReadiness, type CheckId, type CheckState } from "./r
 
 const FACTS: OnboardingFacts = {
   organisationName: "An organisation",
+  // A crisis line is not configured by default, which is the point of the check.
+  crisisHandoffConfigured: false,
   dialledNumber: "+2348000000000",
   greeting: "Good afternoon.",
   voiceId: "a-voice",
@@ -400,5 +402,25 @@ describe("event receivers", () => {
 
   it("passes a configured receiver with a clean delivery history", () => {
     expect(stateOf("events", { eventConfig: EVENTS(), credentialRefs: ["crm_signing"] })).toBe("ok");
+  });
+});
+
+describe("a caller in trouble", () => {
+  /* `docs/ansa-agent-prompt.md`: "a named human queue that answers regardless of hours...
+     Make it a required field during onboarding, not a default you fill in yourself.
+     Getting this wrong is the failure mode with the worst consequences." It cannot be
+     required of organisations that already exist, so it is reported instead — and this is
+     what stops it being reported as fine. */
+  it("is not ready until somebody has named a line that answers at any hour", () => {
+    expect(stateOf("crisis", { crisisHandoffConfigured: false })).toBe("attention");
+  });
+
+  it("is ready once one is set", () => {
+    expect(stateOf("crisis", { crisisHandoffConfigured: true })).toBe("ok");
+  });
+
+  it("says something worse when there is no escalation either", () => {
+    expect(detailOf("crisis", { crisisHandoffConfigured: false, escalationConfigured: false }))
+      .toContain("reaches nobody at all");
   });
 });

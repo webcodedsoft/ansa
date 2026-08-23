@@ -68,6 +68,16 @@ export interface AgentConfig {
    */
   readonly handoff: HandoffDestination | null;
   /**
+   * Where a caller in danger goes, whatever the hour. Null when nobody has set one.
+   *
+   * It reuses `escalation_from_number` as its caller id, because the number a transfer
+   * appears to come from is a property of the carrier account rather than of the reason
+   * for the transfer. An organisation that has configured no ordinary handoff at all has
+   * no `from` to dial with, so this is null too — which is honest: there is nothing to
+   * transfer to.
+   */
+  readonly crisisHandoff: HandoffDestination | null;
+  /**
    * The organization's own tools: endpoints, schemas, risk tiers (R5.2). Null until they
    * configure some, which is every organization today.
    *
@@ -150,6 +160,8 @@ interface ConfigRow {
   captured_fields?: unknown[] | null;
   event_config: unknown;
   escalation_to_number: string | null;
+  /** Migration 0055. `undefined` on a database that has not applied it. */
+  crisis_handoff_number?: string | null;
   escalation_from_number: string | null;
   escalation_ring_seconds: number | null;
   credentials: Record<string, unknown> | null;
@@ -208,6 +220,13 @@ const toHandoff = (row: ConfigRow): HandoffDestination | null => {
   return { to, from, ringSeconds: row.escalation_ring_seconds ?? DEFAULT_RING_SECONDS };
 };
 
+const toCrisisHandoff = (row: ConfigRow): HandoffDestination | null => {
+  const to = row.crisis_handoff_number;
+  const from = row.escalation_from_number;
+  if (to == null || from == null) return null;
+  return { to, from, ringSeconds: row.escalation_ring_seconds ?? DEFAULT_RING_SECONDS };
+};
+
 const toConfig = (row: ConfigRow): AgentConfig => ({
   organizationId: asOrganizationId(row.id),
   agentId: row.agent_id == null ? null : asAgentId(row.agent_id),
@@ -221,6 +240,7 @@ const toConfig = (row: ConfigRow): AgentConfig => ({
   policyBlocks: row.policy_blocks ?? null,
   businessHours: toBusinessHours(row),
   handoff: toHandoff(row),
+  crisisHandoff: toCrisisHandoff(row),
   // `undefined` when migration 0013 has not been applied — the row comes back without the
   // column at all — and that has to read as "no tools configured" rather than reaching
   // the parser as a value.

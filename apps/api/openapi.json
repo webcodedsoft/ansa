@@ -5376,7 +5376,8 @@
                               "tools",
                               "credentials",
                               "events",
-                              "escalation"
+                              "escalation",
+                              "crisis"
                             ]
                           },
                           "title": {

@@ -1053,6 +1053,7 @@ export class MediaGateway implements OnApplicationShutdown {
           // Theirs, falling back to the platform's. Before migration 0015 this was always
           // the platform's, which on a second organization is somebody else's staff phone.
           destination: settings.handoff,
+          crisisDestination: settings.crisisHandoff,
           events: journal.events,
           record,
           log,

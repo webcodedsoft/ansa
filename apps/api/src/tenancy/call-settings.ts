@@ -52,6 +52,8 @@ export interface CallSettings {
   readonly businessHours: BusinessHours | null;
   /** Where an escalation is transferred. Null means it says so rather than dialling. */
   readonly handoff: HandoffDestination | null;
+  /** Answers at any hour. Null falls back to `handoff` — see `handoff/handoff.ts`. */
+  readonly crisisHandoff: HandoffDestination | null;
   /** Their own tools, prepared at config load, registered per call beside the platform's. */
   readonly connectors: PreparedConnectors;
   /** Their own event receivers and redaction policy. */
@@ -110,6 +112,12 @@ export const callSettings = (
     systemPrompt: resolved.systemPrompt,
     businessHours: resolved.businessHours,
     handoff: resolved.handoff ?? platform.handoff,
+    /* No platform fallback, deliberately. A shared crisis number would send one
+       organisation's distressed caller to another organisation's staff, and a default here
+       is exactly what `docs/ansa-agent-prompt.md` says must not exist: "make it a required
+       field during onboarding, not a default you fill in yourself". Null is reported as a
+       readiness problem instead. */
+    crisisHandoff: resolved.crisisHandoff,
     connectors: resolved.connectors,
     events: resolved.events,
     configVersion: resolved.configVersion,

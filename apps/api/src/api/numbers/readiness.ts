@@ -45,6 +45,7 @@ export const CHECK_IDS = [
   "credentials",
   "events",
   "escalation",
+  "crisis",
 ] as const;
 
 export type CheckId = (typeof CHECK_IDS)[number];
@@ -311,6 +312,37 @@ const hoursCheck = (facts: OnboardingFacts): ReadinessCheck => {
   );
 };
 
+/**
+ * Whether somebody in trouble has a line that answers.
+ *
+ * "attention" rather than "ok" when unset, and never satisfied by a platform default. A
+ * shared crisis number would send one organisation's distressed caller to another
+ * organisation's staff, and `docs/ansa-agent-prompt.md` is explicit that this must be
+ * asked for at onboarding rather than filled in by us. Until it is set the call falls back
+ * to the ordinary escalation, which keeps office hours — better than nothing, and not what
+ * this is for.
+ */
+const crisisCheck = (facts: OnboardingFacts): ReadinessCheck => {
+  const title = "A caller in trouble has somewhere to go at any hour";
+  if (facts.crisisHandoffConfigured) {
+    return check(
+      "crisis",
+      title,
+      "ok",
+      "transfer_urgently reaches a number that answers outside business hours.",
+    );
+  }
+  return check(
+    "crisis",
+    title,
+    "attention",
+    facts.escalationConfigured
+      ? "No crisis number is set, so a caller at risk of harm goes to the ordinary escalation — which keeps office hours. Somebody in trouble at two in the morning is the case this exists for."
+      : "No crisis number and no escalation number, so a caller at risk of harm reaches nobody at all.",
+    "Set a number that is answered by a person regardless of the hour, and agree with the organisation who answers it.",
+  );
+};
+
 const escalationCheck = (
   facts: OnboardingFacts,
   environment: NumbersEnvironment,
@@ -560,6 +592,7 @@ export const evaluateReadiness = (input: ReadinessInput): ReadinessReport => {
     credentialsCheck(facts, environment, parsed),
     eventsCheck(facts, parsed),
     escalationCheck(facts, environment),
+    crisisCheck(facts),
   ];
 
   return {

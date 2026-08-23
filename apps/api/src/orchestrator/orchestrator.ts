@@ -43,6 +43,7 @@ import { driftIn } from "./drift";
 import { guardOutput, HOLDING_LINE } from "./output-guard";
 import type { Handoff } from "../handoff/handoff";
 import { createEscalationWatch, type EscalationTrigger } from "../handoff/triggers";
+import { asksAfterYou, COURTESY_REPLIES, withCourtesy } from "./courtesy";
 import { endsMidThought, isBareGreeting } from "./completeness";
 import { createSpeechGate } from "./speech-gate";
 import { nullRecorder, type CallRecorder } from "../telephony/event-log";
@@ -720,6 +721,16 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   const pickRecovery = createFillerPicker();
   /** Its own, so a backchannel and a thinking filler do not exhaust each other. */
   const pickBackchannel = createFillerPicker();
+  const pickCourtesy = createFillerPicker();
+  /** When the filler currently playing will have finished. Zero when none is. */
+  let fillerPlayingUntilMs = 0;
+  /**
+   * Whether the caller has been answered about how the agent is.
+   *
+   * Once per call. Somebody who asks twice is making conversation, and the second answer
+   * would be the agent steering into small talk rather than out of it.
+   */
+  let courtesyOffered = false;
 
   let watchdog: ReturnType<typeof setTimeout> | null = null;
   let stalledTurn: ReturnType<typeof setTimeout> | null = null;
@@ -809,6 +820,14 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     if (chunks === undefined) return;
 
     for (const chunk of chunks) stream.send(chunk);
+    /* A filler is the one thing the agent says that no turn owns: no `turn`, no
+       `bytesSent`, nothing for `stopSpeaking` to cancel. So a caller answering into "let
+       me see" was talked over — the noise meant to cover a gap became an interruption of
+       the reply it was covering. Remembered here so speech-start can cut it. */
+    fillerPlayingUntilMs = Date.now() + durationMs(
+      chunks.reduce((total, chunk) => total + chunk.data.length, 0),
+      stream.format,
+    );
     // Added to the spoken window so the echo filter recognises it coming back, but
     // never to bytesSent, never marked, never remembered: the agent did not say
     // anything it should be held to.
@@ -1517,6 +1536,18 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       return;
     }
 
+    /* Cut the filler. Nothing else will: it belongs to no turn, so `stopSpeaking` below
+       returns without doing anything, and the carrier would keep playing "one moment" over
+       the answer the caller is giving. Safe to clear the whole queue — with no agent turn
+       in flight the filler is the only thing in it. */
+    if (Date.now() < fillerPlayingUntilMs) {
+      fillerPlayingUntilMs = 0;
+      if (turn === null) {
+        stream.clear();
+        log.debug("cut a filler short, the caller started talking");
+      }
+    }
+
     const current = turn;
     if (current !== null && current.sentenceAudioAt !== null) {
       const speakingFor = Date.now() - current.sentenceAudioAt;
@@ -1674,6 +1705,8 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       sentenceAudioAt: null,
     };
     turn = direct;
+    // The agent is speaking for real now, so nothing is left to cut.
+    fillerPlayingUntilMs = 0;
     // `capture` and only capture: readbacks, spell prompts and keypad prompts all arrive
     // here, and nothing else does.
     callState.apply({ kind: "agent.turn.started", seq: direct.seq, reason: "capture" });
@@ -2326,7 +2359,14 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
           // the caller to hear it, the whisper, and apologising out loud if the carrier
           // refuses. Going back to the model here would give it the chance to talk itself
           // into an alternative.
-          if (escalate(watch.needsAPerson(transfer.reason))) return;
+          /* One tool means something the others do not: the caller may be in danger. It
+             goes to its own trigger so the handoff can dial the line that answers at any
+             hour and say something other than "I cannot do that myself". */
+          const trigger =
+            transfer.name === "transfer_urgently"
+              ? watch.callerInCrisis(transfer.reason)
+              : watch.needsAPerson(transfer.reason);
+          if (escalate(trigger)) return;
           // Nothing configured to transfer to. Say the dispatcher's own line, which is
           // honest about what will not happen.
           sayNow(transfer.speech, "tool needs a human");
@@ -2558,7 +2598,17 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       // component of it — seven of nine turns on the 2026-08-23 call had a total and no
       // breakdown, which is why the three seconds could not be attributed.
       measure("stt_final", { chars: text.length, path: "capture" });
-      sayNow(result.say, `readback:${capture.kind}`);
+      /* They asked how you are, and this turn belongs to the form. Answer them first, in
+         the same breath, or the agent reads a name back at somebody who just said hello —
+         which is what the call at 17:32 did. The prompt cannot fix this: capture returns
+         before the model sees the turn. */
+      const courtesy =
+        !courtesyOffered && asksAfterYou(text) ? pickCourtesy.next(COURTESY_REPLIES) : null;
+      if (courtesy !== null) courtesyOffered = true;
+      sayNow(
+        courtesy === null ? result.say : withCourtesy(courtesy, result.say),
+        `readback:${capture.kind}`,
+      );
     }
     return true;
   };

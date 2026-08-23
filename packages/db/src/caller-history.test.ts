@@ -150,6 +150,8 @@ describe("what this number has done before", () => {
     expect(history).toEqual({
       lastContactDaysAgo: null,
       contactsThisWeek: 0,
+      // Nothing to have been about, because there was no previous call.
+      lastCallAbout: null,
       lastCallHandedOver: false,
     });
   });

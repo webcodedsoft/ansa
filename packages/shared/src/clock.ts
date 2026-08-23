@@ -27,6 +27,11 @@ export interface WatMoment {
    * turns every comparison into an off-by-one waiting to happen.
    */
   readonly weekday: number;
+  /** Day of the month in WAT, 1-31. */
+  readonly day: number;
+  /** Month in WAT, 1-12. Not JavaScript's 0-11 — this is read by people. */
+  readonly month: number;
+  readonly year: number;
 }
 
 export const watMoment = (now: Date): WatMoment => {
@@ -36,6 +41,9 @@ export const watMoment = (now: Date): WatMoment => {
     hour: shifted.getUTCHours(),
     minute: shifted.getUTCMinutes(),
     weekday: sunday0 === 0 ? 7 : sunday0,
+    day: shifted.getUTCDate(),
+    month: shifted.getUTCMonth() + 1,
+    year: shifted.getUTCFullYear(),
   };
 };
 

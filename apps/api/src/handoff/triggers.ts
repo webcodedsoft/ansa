@@ -15,6 +15,15 @@
 
 export type EscalationKind =
   | "asked-for-a-person"
+  /**
+   * The caller may be in danger, and this outranks the call.
+   *
+   * Its own kind rather than a `needs-a-person` with a sad reason, because two things
+   * differ downstream and both matter: it is dialled to a destination that answers at any
+   * hour, and the caller hears a different line on the way out. A shared kind would have
+   * to decide both from a free-text detail string.
+   */
+  | "caller-in-crisis"
   | "capture-failed"
   | "repeated-misunderstanding"
   | "tool-failed"
@@ -172,6 +181,18 @@ export const createEscalationWatch = (options: EscalationWatchOptions = {}) => {
     understood: (): void => {
       misunderstandings = 0;
     },
+
+    /**
+     * The model asked for the crisis line. Always, immediately, and outside the counters.
+     *
+     * No `once` guard and no thresholds: every other trigger is a judgement about whether
+     * the call is working, and this one is a judgement about the caller. If the model says
+     * it twice, it means it twice.
+     */
+    callerInCrisis: (detail: string): EscalationTrigger => ({
+      kind: "caller-in-crisis",
+      detail,
+    }),
 
     /** Capture gave up: spelling and the keypad both failed. Always a person. */
     captureFailed: (): EscalationTrigger | null =>

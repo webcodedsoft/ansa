@@ -80,7 +80,8 @@ describe("whether the line is open", () => {
     const s = describeSituation(at({ businessHours: null }));
     expect(s.openNow).toBeNull();
     expect(s.closesInMinutes).toBeNull();
-    expect(renderSituation(s)).toBe("");
+    // The date line is always there now; what matters is that nothing about hours is.
+    expect(renderSituation(s)).not.toContain("closed");
   });
 });
 
@@ -108,14 +109,25 @@ describe("how long they have been on the phone", () => {
 });
 
 describe("the block the model reads", () => {
-  it("says nothing on an unremarkable turn", () => {
-    /* Mid-afternoon, mid-week, nothing failed. A paragraph explaining that costs prompt
-       budget every turn and teaches the model nothing. */
-    expect(renderSituation(describeSituation(at()))).toBe("");
+  it("still tells the agent the date on an otherwise unremarkable turn", () => {
+    /* This asserted the empty string, on the argument that a paragraph about a quiet
+       Tuesday costs prompt budget and teaches the model nothing. That was right while the
+       line was only a clock, and wrong once it carried the date: the date is the one thing
+       the agent cannot work out from anywhere else, and a caller saying "next Tuesday" is
+       unanswerable without it. One line, not a paragraph.
+
+       What the suppression was really protecting against — the clock inviting "good
+       afternoon!" as an opener — is handled where it belongs now: `prompts/conversation.ts`
+       opens by saying the greeting has already been spoken. */
+    const quiet = renderSituation(describeSituation(at()));
+    expect(quiet).toContain("Today is");
+    expect(quiet.split("\n").filter((l) => l.startsWith("- "))).toHaveLength(1);
   });
 
   it("warns about closing only inside the last hour", () => {
-    expect(renderSituation(describeSituation(at({ now: wat("2026-03-10T15:00:00") })))).toBe("");
+    expect(
+      renderSituation(describeSituation(at({ now: wat("2026-03-10T15:00:00") }))),
+    ).not.toContain("closes in");
 
     const closing = renderSituation(describeSituation(at({ now: wat("2026-03-10T16:20:00") })));
     expect(closing).toContain("closes in 40 minutes");
@@ -135,7 +147,7 @@ describe("the block the model reads", () => {
         describeSituation(at({ now: new Date(started + minutes * 60_000), callStartedAtMs: started })),
       );
 
-    expect(after(3)).toBe("");
+    expect(after(3)).not.toContain("running");
     expect(after(6)).toContain("running 6 minutes");
     expect(after(6)).toContain("start resolving");
   });
@@ -159,7 +171,8 @@ describe("the block the model reads", () => {
   it("puts the clock line in whenever anything else fires", () => {
     // The other lines are meaningless without it — "closes in 40 minutes" from when?
     const closing = renderSituation(describeSituation(at({ now: wat("2026-03-10T16:20:00") })));
-    expect(closing).toContain("It is 16:20 on Tuesday in the afternoon");
+    expect(closing).toContain("Today is Tuesday 10 March 2026");
+    expect(closing).toContain("It is 16:20 in the afternoon");
   });
 });
 
@@ -167,10 +180,12 @@ describe("what we already know about this caller", () => {
   const rang = (over: Partial<{
     lastContactDaysAgo: number | null;
     contactsThisWeek: number;
+    lastCallAbout: string | null;
     lastCallHandedOver: boolean;
   }> = {}) => ({
     lastContactDaysAgo: 1,
     contactsThisWeek: 1,
+    lastCallAbout: null as string | null,
     lastCallHandedOver: false,
     ...over,
   });
@@ -178,14 +193,32 @@ describe("what we already know about this caller", () => {
   it("says nothing at all when the history has not arrived", () => {
     /* Null covers a withheld number, no database, a read still in flight and a read that
        failed. The agent's correct behaviour is identical in all four: treat them as new. */
-    expect(renderSituation(describeSituation(at({ history: null })))).toBe("");
+    expect(renderSituation(describeSituation(at({ history: null })))).not.toContain("before");
   });
 
   it("says nothing for a caller with no calls in the window", () => {
     const s = describeSituation(
       at({ history: rang({ lastContactDaysAgo: null, contactsThisWeek: 0 }) }),
     );
-    expect(renderSituation(s)).toBe("");
+    expect(renderSituation(s)).not.toContain("before");
+  });
+
+  it("quotes what they opened with last time, and says it is only a transcript", () => {
+    /* The line above it is right that an agent told "their issue is unresolved" invents the
+       issue. Attribution is the difference: quoting the caller's own words cannot invent a
+       delivery, and 8kHz transcripts are wrong often enough that it must not be repeated
+       as fact. */
+    const block = renderSituation(
+      describeSituation(at({ history: rang({ lastCallAbout: "I want to book a viewing in Lekki" }) })),
+    );
+    expect(block).toContain('"I want to book a viewing in Lekki"');
+    expect(block).toContain("rough transcript");
+    expect(block).toContain("never as something you know");
+  });
+
+  it("says nothing about a previous subject when there is none", () => {
+    const block = renderSituation(describeSituation(at({ history: rang({ lastCallAbout: null }) })));
+    expect(block).not.toContain("Last time they opened");
   });
 
   it("tells the agent not to make a returning caller start over", () => {
@@ -210,7 +243,8 @@ describe("what we already know about this caller", () => {
     /* Nothing on disk knows what the last call was about. An agent told "their issue is
        unresolved" will invent the issue; told "a person took over", it can only say that. */
     const block = renderSituation(
-      describeSituation(at({ history: rang({ lastCallHandedOver: true }) })),
+      describeSituation(at({ history: rang({ lastCallAbout: null,
+      lastCallHandedOver: true }) })),
     );
     expect(block).toContain("a person taking over");
     expect(block).not.toContain("unresolved");

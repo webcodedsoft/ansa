@@ -1,4 +1,6 @@
 import type { Message } from "@ansa/llm";
+
+import { COURTESY_REPLIES } from "./courtesy";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AudioChunk } from "@ansa/shared";
@@ -58,6 +60,7 @@ const setup = (
     businessHours?: OrchestratorDeps["businessHours"];
     recordDoNotCall?: OrchestratorDeps["recordDoNotCall"];
     callerHistory?: OrchestratorDeps["callerHistory"];
+    fields?: OrchestratorDeps["fields"];
   } = {},
 ) => {
   const stream = fakeStream();
@@ -501,6 +504,38 @@ describe("runConversation", () => {
       expect(h.stream.bytesSent()).toBe(before + 4800);
     });
 
+    it("stops the acknowledgement when the caller starts answering into it", async () => {
+      /* A filler belongs to no turn: no `turn`, no `bytesSent`, nothing for `stopSpeaking`
+         to cancel. So "let me check that" played on over a caller who had started
+         answering — the noise meant to cover a gap became an interruption of the reply it
+         was covering. */
+      const h = setup({ ...fillerSetup(), fillerAfterMs: 5 });
+      h.tts.last().done();
+      h.stream.ackAll();
+
+      h.listen.endOfTurn(1000);
+      await new Promise((r) => setTimeout(r, 30));
+      const clearsBefore = h.stream.clears;
+
+      h.listen.speechStart(1200);
+
+      expect(h.stream.clears).toBe(clearsBefore + 1);
+    });
+
+    it("does not clear anything when no acknowledgement is playing", async () => {
+      /* `clear` throws away whatever the carrier is holding. Calling it on every speech
+         start would delete the agent's own sentence at the moment barge-in is deciding
+         whether the caller actually interrupted. */
+      const h = setup({ ...fillerSetup(), fillerAfterMs: 5 });
+      h.tts.last().done();
+      h.stream.ackAll();
+      const clearsBefore = h.stream.clears;
+
+      h.listen.speechStart(1200);
+
+      expect(h.stream.clears).toBe(clearsBefore);
+    });
+
     // Filler is not something the agent said. It must not be remembered, marked, or
     // counted as audio the caller heard.
     it("keeps filler out of history and out of the accounting", async () => {
@@ -818,6 +853,75 @@ describe("runConversation", () => {
  * was never armed (it arms *at* end-of-turn), and the agent said nothing at all for the
  * rest of the call. Not an error, not a recovery line. Silence.
  */
+/**
+ * The call at 17:32 on 2026-08-23, in full:
+ *
+ *   caller  Hi. Good evening. My name is Sikir. How are you doing?
+ *   agent   Sikir — have I got that right?
+ *
+ * The prompt tells the model to answer what the caller actually said before moving the call
+ * on, and the model never saw this turn: capture handled it and returned. So the fix is
+ * here rather than in a layer.
+ */
+describe("a caller who says hello while the form is listening", () => {
+  const NAME_FIELD: OrchestratorDeps["fields"] = [
+    {
+      key: "callerName",
+      type: "name",
+      prompt: "Who am I speaking with?",
+      capture: "speech",
+      confirm: "readback",
+      required: true,
+      pattern: "",
+      attempts: 3,
+    },
+  ];
+
+  it("answers how it is, and reads the name back, in one turn", () => {
+    const h = setup({ fields: NAME_FIELD });
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("Hi. Good evening. My name is Sikiru. How are you doing?");
+
+    const spoken = h.tts.texts().slice(1).join(" ");
+    expect(spoken).toContain("Sikiru");
+    // Whichever wording the picker chose, one of them was said.
+    expect(COURTESY_REPLIES.some((reply) => spoken.includes(reply))).toBe(true);
+  });
+
+  it("says it once, not every time they ask", () => {
+    /* Somebody who asks twice is making conversation. Answering again would be the agent
+       steering into small talk rather than out of it. */
+    const h = setup({ fields: NAME_FIELD });
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("Hi, my name is Sikiru, how are you doing?");
+    const first = h.tts.texts().length;
+    h.tts.last().done();
+    h.stream.ackAll();
+    h.listen.final("No — how are you though?");
+
+    /* Checked against the whole set, not a phrase from it. The picker rotates, so a
+       regular expression for one wording passes while another is being said — which is
+       how the first version of this test passed with the guard deleted. */
+    const later = h.tts.texts().slice(first).join(" ");
+    for (const reply of COURTESY_REPLIES) expect(later, reply).not.toContain(reply);
+  });
+
+  it("does not answer a caller who only said good evening", () => {
+    const h = setup({ fields: NAME_FIELD });
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("Good evening. My name is Sikiru.");
+
+    const spoken = h.tts.texts().slice(1).join(" ");
+    for (const reply of COURTESY_REPLIES) expect(spoken, reply).not.toContain(reply);
+  });
+});
+
 describe("a turn that never ends", () => {
   const STALL = 8_000;
 
@@ -1274,7 +1378,7 @@ describe("the prompt the call was configured with", () => {
     expect(system).toContain("The line is closed right now");
     expect(system).toContain("Do not promise anything for today");
     // The hour in words the model does not have to derive, which is the whole point.
-    expect(system).toMatch(/It is \d\d:\d\d on \w+day/);
+    expect(system).toMatch(/It is \d\d:\d\d (in the|at)/);
     assertInvariants(h);
   });
 
@@ -1286,7 +1390,8 @@ describe("the prompt the call was configured with", () => {
       callerHistory: () => ({
         lastContactDaysAgo: 1,
         contactsThisWeek: 2,
-        lastCallHandedOver: true,
+        lastCallAbout: null,
+      lastCallHandedOver: true,
       }),
     });
 
@@ -1731,7 +1836,11 @@ describe("the prompt the call was configured with", () => {
 
     h.listen.final("What are your opening hours?");
 
-    expect(h.llm.last().request.system).not.toContain("Where this call is right now");
+    /* The block itself is always sent now — it carries today's date, which the agent
+       cannot derive. What must be absent on an ordinary in-hours turn is anything about
+       the hours themselves. */
+    expect(h.llm.last().request.system).not.toContain("closes in");
+    expect(h.llm.last().request.system).not.toContain("closed right now");
     assertInvariants(h);
   });
 
@@ -2864,7 +2973,7 @@ describe("the platform tools on a call", () => {
     h.stream.ackAll();
   };
 
-  it("offers exactly the three non-data tools", () => {
+  it("offers exactly the four non-data tools", () => {
     const h = setup({ makeTools: platform() });
     started(h);
     h.listen.final("Hello.");
@@ -2873,6 +2982,9 @@ describe("the platform tools on a call", () => {
       "business_hours",
       "end_call",
       "transfer_to_human",
+      // Distinct from transfer_to_human on purpose: it goes to a line that answers outside
+      // business hours, and only the model can recognise the call that needs it.
+      "transfer_urgently",
     ]);
   });
 
