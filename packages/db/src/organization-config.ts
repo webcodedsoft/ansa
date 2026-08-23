@@ -380,6 +380,11 @@ export interface CallConfigTrace {
 const CONFIG_COLUMNS = [
   "name",
   "voice_id",
+  /* Declared on `ConfigColumns` since it was added and selected by nothing until now, so
+     every read answered `undefined` and `?? null` turned that into "the voice's own pace".
+     The list is strings, so no type relates it to the interface beside it — the two drifted
+     apart silently and the only symptom was a rate that would not stick. */
+  "speaking_rate",
   "greeting",
   "persona",
   "instructions",
@@ -687,6 +692,11 @@ export const publishAgentConfig = async (
     {
       name: fields.name,
       voiceId: fields.voiceId,
+      /* The same omission as `policyBlocks` below, found the same way and worth its own note
+         because the symptom is quieter: the API validates a rate, answers 201, and the value
+         never reaches the column. Not "carried forward" — never sent, so `{...current}` puts
+         the old rate back and the pace a organisation chose is silently the pace it had. */
+      speakingRate: fields.speakingRate,
       greeting: fields.greeting,
       persona: fields.persona,
       instructions: fields.instructions,

@@ -184,6 +184,38 @@ describe("publishing a version", () => {
     expect(after[0]?.tool_config).toEqual(configured);
   });
 
+  /**
+   * Speaking rate reached the API, passed its 0.7-1.2 check, answered 201, and stopped.
+   *
+   * `publishAgentConfig` names the columns it sends one by one, and this one was not among
+   * them, so `{...current, ...patch}` put the stored rate back over it. The symptom is the
+   * quiet kind: nothing fails, the version bumps, the history records a publish, and the
+   * pace a organisation chose is the pace it already had. Found by publishing 0.95 onto a real
+   * agent and reading the column back as null.
+   *
+   * The same omission as `policyBlocks`, which is why this asserts the change *and* that a
+   * later publish can clear it again — a field that can only be set is half a fix.
+   */
+  it("writes the speaking rate rather than carrying the old one forward", async () => {
+    await withOrganization(ds, A, async (scope) =>
+      publishAgentConfig(scope, await theAgent(scope), fields({ speakingRate: 0.95 }), "a slower pace"),
+    );
+
+    const set = await withOrganization(ds, A, async (scope) =>
+      loadCurrentAgentConfig(scope, await theAgent(scope)),
+    );
+    expect(set?.config.speakingRate).toBeCloseTo(0.95, 5);
+
+    await withOrganization(ds, A, async (scope) =>
+      publishAgentConfig(scope, await theAgent(scope), fields({ speakingRate: null }), "back to the voice's own pace"),
+    );
+
+    const cleared = await withOrganization(ds, A, async (scope) =>
+      loadCurrentAgentConfig(scope, await theAgent(scope)),
+    );
+    expect(cleared?.config.speakingRate).toBeNull();
+  });
+
   it("is whole rather than a patch: a field left out is a field cleared", async () => {
     const current = await withOrganization(ds, A, async (scope) => loadCurrentAgentConfig(scope, await theAgent(scope)));
     // The greeting published by the first case is gone, because the second case did not
