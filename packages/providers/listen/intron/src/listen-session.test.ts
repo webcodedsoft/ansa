@@ -171,13 +171,54 @@ describe("committing a turn", () => {
     expect(failures).toEqual([]);
   });
 
-  it("reports a close that nobody asked for", () => {
+  it("replaces a leg that closes on its own instead of ending the call", () => {
+    /* Read off the call at 15:49. The vendor answered RESOURCE_EXHAUSTED and hung up five
+       seconds in; this reported a dead listener, the orchestrator stopped mid-greeting and
+       apologised for not catching something nobody had said. One socket is not the
+       listener. */
     const { session, legs } = setup();
     const failures: string[] = [];
     session.onFailure((reason) => failures.push(reason));
     legs[0]?.ready();
     legs[0]?.hangUp("1006");
+
+    expect(failures).toEqual([]);
+    expect(legs.length).toBeGreaterThan(2);
+  });
+
+  it("replaces a leg the vendor refuses outright", () => {
+    const { session, legs } = setup();
+    const failures: string[] = [];
+    session.onFailure((reason) => failures.push(reason));
+    legs[0]?.say("RESOURCE_EXHAUSTED", { message: "Required language not available" });
+
+    expect(failures).toEqual([]);
+    expect(legs.length).toBeGreaterThan(2);
+  });
+
+  it("gives up once several go in a row with none working", () => {
+    /* The other side of it. Replacing forever would have the caller talking to a line that
+       will never answer, which is the failure CLAUDE.md forbids above all others. */
+    const { session, legs } = setup();
+    const failures: string[] = [];
+    session.onFailure((reason) => failures.push(reason));
+
+    for (let i = 0; i < 8 && failures.length === 0; i += 1) {
+      legs[legs.length - 1]?.hangUp("1006");
+    }
     expect(failures).toHaveLength(1);
+  });
+
+  it("forgets the run of losses once a session works", () => {
+    const { session, legs } = setup();
+    const failures: string[] = [];
+    session.onFailure((reason) => failures.push(reason));
+
+    legs[0]?.hangUp("1006");
+    legs[legs.length - 1]?.ready();
+    for (let i = 0; i < 3; i += 1) legs[legs.length - 1]?.hangUp("1006");
+
+    expect(failures).toEqual([]);
   });
 });
 

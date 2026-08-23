@@ -87,6 +87,7 @@ export type IntronEvent =
   | { readonly kind: "final"; readonly text: string }
   | { readonly kind: "expired" }
   | { readonly kind: "desynced"; readonly detail: string }
+  | { readonly kind: "unavailable"; readonly detail: string }
   | { readonly kind: "ack" }
   | { readonly kind: "other"; readonly type: string };
 
@@ -144,6 +145,11 @@ export const parseEvent = (raw: string): IntronEvent | null => {
       return { kind: "desynced", detail: type };
     /* Undocumented, one per chunk, and the vendor's own spelling. Named so it does not
        arrive as an unknown message on every frame of every call. */
+    /* Transient, and observed refusing a connection outright: "Required language not
+       available for this session". Probed minutes later the same request succeeded, so it
+       is capacity on their side and the answer is another leg, not a dead call. */
+    case "RESOURCE_EXHAUSTED":
+      return { kind: "unavailable", detail: type };
     case "AUDIO_CHUCK_ACK":
     case "AUDIO_CHUNK_ACK":
       return { kind: "ack" };

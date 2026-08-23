@@ -80,6 +80,9 @@ interface Leg {
   openedAtMs: number;
 }
 
+/** Legs lost back to back before the agent is treated as deaf. */
+const MAX_CONSECUTIVE_LOSSES = 4;
+
 export const openIntronSession = (
   connect: (url: string) => IntronSocket,
   options: IntronConnectOptions,
@@ -96,6 +99,15 @@ export const openIntronSession = (
   let next: Leg | null = null;
   let closed = false;
   let failed = false;
+  /**
+   * Legs lost in a row without one working in between.
+   *
+   * A single leg dying is ordinary — the vendor answers RESOURCE_EXHAUSTED under load and
+   * closes — and it must not end a call while another socket is open or openable. Only a
+   * run of them means the agent is actually deaf, and that is what `fail` is for. Reset by
+   * any session that reaches SESSION_CREATED.
+   */
+  let consecutiveLosses = 0;
 
   const fail = (reason: string): void => {
     if (closed || failed) return;
@@ -154,6 +166,7 @@ export const openIntronSession = (
       switch (event.kind) {
         case "ready": {
           leg.ready = true;
+          consecutiveLosses = 0;
           if (event.sampleRate !== (options.sampleRate ?? options.format.sampleRate)) {
             // Not fatal, but it means the audio is being read at a rate it was not sent
             // at, which is heard as the wrong pitch and transcribed as nonsense.
@@ -185,6 +198,13 @@ export const openIntronSession = (
              turn after the first ends in the transcript watchdog. That is what the call at
              13:05 did — full audio, Flux ending turns, two "no transcript" recovery lines. */
           rotate();
+          return;
+        }
+        case "unavailable": {
+          // Not this leg's fault and not recoverable on it. Replaced, not mourned.
+          log.warn("intron refused a session", { detail: event.detail });
+          for (const listener of vendorErrors) listener(`intron: ${event.detail}`);
+          replace(leg);
           return;
         }
         case "desynced": {
@@ -222,7 +242,12 @@ export const openIntronSession = (
         if (leg === current) rotate();
         return;
       }
-      if (leg === current || leg === next) fail(`socket closed: ${reason}`);
+      /* An uncommitted close used to end the call. On the call at 15:49 the vendor refused
+         a session with RESOURCE_EXHAUSTED and hung up five seconds in; the agent stopped
+         mid-greeting and apologised for not catching something nobody had said. One socket
+         is not the listener — replacing it is. */
+      log.warn("intron leg closed unexpectedly", { reason, wasCurrent: leg === current });
+      replace(leg);
     });
 
     return leg;
@@ -234,6 +259,32 @@ export const openIntronSession = (
    * The promotion is why the 659ms is invisible: by the time the caller speaks again the
    * next leg has been connecting for as long as the agent has been talking.
    */
+  /**
+   * Take one leg out of service and stand another up in its place.
+   *
+   * The warm leg is a spare, so losing it costs nothing but a reconnect. Losing the live
+   * one costs the turn in flight, and promoting the spare is the fastest way back. Only
+   * when several go in a row without one working is the session genuinely lost.
+   */
+  const replace = (leg: Leg): void => {
+    if (closed) return;
+    consecutiveLosses += 1;
+    if (consecutiveLosses > MAX_CONSECUTIVE_LOSSES) {
+      fail(`intron refused ${consecutiveLosses} sessions in a row`);
+      return;
+    }
+    try {
+      leg.socket.close();
+    } catch {
+      // Already gone, which is why we are here.
+    }
+    if (leg === current) {
+      rotate();
+      return;
+    }
+    if (leg === next) next = openLeg();
+  };
+
   const rotate = (): void => {
     if (closed) return;
     const promoted = next ?? openLeg();
