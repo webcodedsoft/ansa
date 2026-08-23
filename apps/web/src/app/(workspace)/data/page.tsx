@@ -2,10 +2,10 @@ import type { Metadata } from "next";
 
 import { Card, Notice, PageHeader, SelectField, TextField } from "@/components/ui";
 import { liveAgents } from "@/features/agents/agents.service";
-import { pivot, toCsv } from "@/features/calls/captures";
+import { pivot } from "@/features/calls/captures";
 import { listCaptures } from "@/features/calls/calls.service";
 import { CapturesTable } from "@/features/calls/components/captures-table";
-import { ExportCsv } from "@/features/calls/components/export-csv";
+import { ExportMenu } from "@/features/calls/components/export-menu";
 
 export const metadata: Metadata = { title: "Collected data · Ansa" };
 export const dynamic = "force-dynamic";
@@ -50,9 +50,8 @@ const DataPage = async ({ searchParams }: { readonly searchParams: Promise<DataS
         title="Collected data"
         meta="What callers told the agents and confirmed, newest call first."
         actions={
-          <ExportCsv
-            csv={toCsv(pivoted)}
-            filename={`ansa-collected-${new Date().toISOString().slice(0, 10)}.csv`}
+          <ExportMenu
+            query={{ agentId: search.agentId, from: search.from, to: search.to }}
             disabled={pivoted.calls.length === 0}
           />
         }

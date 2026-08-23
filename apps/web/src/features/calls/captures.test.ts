@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { label, pivot, toCsv } from "./captures";
+import { label, pivot } from "./captures";
+import { toCsv } from "./export/csv";
+import { sheetOf } from "./export/sheet";
 import type { CapturedRow } from "./calls.service";
 
 /**
@@ -74,28 +76,30 @@ describe("pivoting values into a table", () => {
 
 describe("the export", () => {
   it("quotes a value containing a comma so the columns survive", () => {
-    const csv = toCsv(pivot([row({ fieldKey: "address", value: "12 Bode Thomas, Surulere" })]));
+    const csv = toCsv(sheetOf(pivot([row({ fieldKey: "address", value: "12 Bode Thomas, Surulere" })])));
     expect(csv).toContain('"12 Bode Thomas, Surulere"');
     // One header line and one data line, and the comma did not make a third column.
     expect(csv.trim().split("\r\n")).toHaveLength(2);
   });
 
   it("doubles a quote inside a value rather than ending the field", () => {
-    const csv = toCsv(pivot([row({ fieldKey: "note", value: 'they said "urgent"' })]));
+    const csv = toCsv(sheetOf(pivot([row({ fieldKey: "note", value: 'they said "urgent"' })])));
     expect(csv).toContain('"they said ""urgent"""');
   });
 
   it("survives a newline inside a value", () => {
-    const csv = toCsv(pivot([row({ fieldKey: "note", value: "line one\nline two" })]));
+    const csv = toCsv(sheetOf(pivot([row({ fieldKey: "note", value: "line one\nline two" })])));
     expect(csv).toContain('"line one\nline two"');
   });
 
   it("writes an empty cell where the call has no value for a column", () => {
     const csv = toCsv(
-      pivot([
-        row({ callId: "a", fieldKey: "callerName", value: "Sikiru" }),
-        row({ callId: "b", carrierCallId: "CA2", fieldKey: "phone", value: "0813" }),
-      ]),
+      sheetOf(
+        pivot([
+          row({ callId: "a", fieldKey: "callerName", value: "Sikiru" }),
+          row({ callId: "b", carrierCallId: "CA2", fieldKey: "phone", value: "0813" }),
+        ]),
+      ),
     );
     const lines = csv.trim().split("\r\n");
     // Every row has the same number of columns, which is the whole contract of a CSV.
@@ -106,7 +110,7 @@ describe("the export", () => {
   it("starts with a BOM so Excel reads Nigerian names correctly", () => {
     /* Without it Excel on Windows decodes UTF-8 as Latin-1 and "Adaeze Nwosu-Ọkọ" arrives
        as mojibake — correct file, unreadable to the people most likely to open it. */
-    const csv = toCsv(pivot([row({ value: "Adaeze Nwosu-Ọkọ" })]));
+    const csv = toCsv(sheetOf(pivot([row({ value: "Adaeze Nwosu-Ọkọ" })])));
     expect(csv.charCodeAt(0)).toBe(0xfeff);
     expect(csv).toContain("Adaeze Nwosu-Ọkọ");
   });

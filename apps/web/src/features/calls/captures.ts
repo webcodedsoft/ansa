@@ -84,39 +84,3 @@ export const label = (key: string): string => {
   if (spaced === "") return key;
   return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase();
 };
-
-/**
- * RFC 4180. Quoted always, rather than only when a value contains a comma.
- *
- * Callers give values with commas, quotes and newlines in them — an address, a spelled-out
- * name, anything the transcriber ran together. Deciding per value which need quoting is
- * the kind of rule that is right until the first address, and the cost of always quoting
- * is a slightly larger file that every spreadsheet reads identically.
- */
-const cell = (value: string): string => `"${value.replace(/"/g, '""')}"`;
-
-/**
- * The dataset as a spreadsheet.
- *
- * Same rows and the same column order the table shows, so what somebody exports is what
- * they were looking at. A leading BOM because Excel on Windows reads a plain UTF-8 CSV as
- * Latin-1 and turns every Nigerian name with an accent into mojibake — the file is correct
- * without it and unreadable to the people most likely to open it.
- */
-export const toCsv = (pivoted: Pivoted): string => {
-  const header = ["When", "Caller", "Call", ...pivoted.columns.map((c) => label(c.key))];
-  const lines = [header.map(cell).join(",")];
-  for (const call of pivoted.calls) {
-    lines.push(
-      [
-        call.calledAt,
-        call.caller ?? "",
-        call.carrierCallId,
-        ...pivoted.columns.map((column) => call.values.get(column.key) ?? ""),
-      ]
-        .map(cell)
-        .join(","),
-    );
-  }
-  return `\uFEFF${lines.join("\r\n")}\r\n`;
-};
