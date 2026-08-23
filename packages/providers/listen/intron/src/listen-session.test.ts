@@ -85,16 +85,18 @@ describe("audio that arrives before the session is ready", () => {
 });
 
 describe("committing a turn", () => {
-  it("sends the tail below the chunk floor before committing", () => {
-    /* The end of a turn is where the answer is. Audio still under the 1 KB floor when the
-       caller stops would otherwise be dropped on the way to COMMIT. */
+  it("pads the tail up to the floor rather than sending it short", () => {
+    /* Read off the call at 12:37. The tail went out at its real length, came back
+       CHUNK_SIZE_TOO_SMALL, and every chunk after it was CHUNK_ID_MISMATCH_WITH_TOTAL —
+       the counter never recovers. One short chunk cost the whole session. */
     const { session, legs } = setup();
     legs[0]?.ready();
     session.write(audio(100));
     session.commit();
 
-    const types = (legs[0]?.sent ?? []).map((raw) => (JSON.parse(raw) as { message_type: string }).message_type);
-    expect(types).toEqual(["INPUT_AUDIO_CHUNK", "COMMIT"]);
+    const frames = (legs[0]?.sent ?? []).map((raw) => JSON.parse(raw) as Record<string, unknown>);
+    expect(frames.map((f) => f["message_type"])).toEqual(["INPUT_AUDIO_CHUNK", "COMMIT"]);
+    expect(Buffer.from(String(frames[0]?.["audio_base_64"]), "base64").length).toBe(MIN_CHUNK_BYTES);
   });
 
   it("delivers the committed transcript as a final", () => {
@@ -156,6 +158,30 @@ describe("the audio fan-out point", () => {
   it("refuses a write through the transcriber, so both providers cannot diverge", () => {
     const { session } = setup();
     expect(() => session.transcripts.write(audio(10))).toThrow(/through the session/);
+  });
+});
+
+describe("a chunk the server refuses", () => {
+  it("replaces the leg, because the counter never resynchronises", () => {
+    /* `ack_id` tracks the server's count of accepted chunks. A rejection desynchronises
+       it permanently, so retrying on the same socket sends thirty seconds of audio into
+       INPUT_ERROR — which is exactly what the 12:37 call did. */
+    const { legs } = setup();
+    legs[0]?.ready();
+    legs[0]?.say("CHUNK_SIZE_TOO_SMALL", {});
+    expect(legs).toHaveLength(3);
+  });
+
+  it("reports it as a vendor complaint rather than a dead listener", () => {
+    const { session, legs } = setup();
+    const failures: string[] = [];
+    const complaints: string[] = [];
+    session.onFailure((r) => failures.push(r));
+    session.onVendorError((m) => complaints.push(m));
+    legs[0]?.ready();
+    legs[0]?.say("CHUNK_ID_MISMATCH_WITH_TOTAL", {});
+    expect(failures).toEqual([]);
+    expect(complaints).toHaveLength(1);
   });
 });
 

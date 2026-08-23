@@ -6,6 +6,7 @@ import {
   encodeCommit,
   MAX_CHUNK_BYTES,
   MIN_CHUNK_BYTES,
+  padToFloor,
   parseEvent,
   splitForSend,
 } from "./protocol";
@@ -166,5 +167,28 @@ describe("the chunk acknowledgement", () => {
 
   it("also accepts the spelling they may fix it to", () => {
     expect(parseEvent(JSON.stringify({ message_type: "AUDIO_CHUNK_ACK" }))).toEqual({ kind: "ack" });
+  });
+});
+
+describe("the chunk floor", () => {
+  it("pads a short tail with silence instead of sending it short", () => {
+    const padded = padToFloor(Buffer.alloc(100, 0x7f));
+    expect(padded.length).toBe(MIN_CHUNK_BYTES);
+    // Zeros are PCM16 silence, so nothing audible is added.
+    expect(padded.subarray(100).every((b) => b === 0)).toBe(true);
+  });
+
+  it("leaves a chunk that already clears the floor alone", () => {
+    const full = Buffer.alloc(MIN_CHUNK_BYTES + 5, 0x01);
+    expect(padToFloor(full)).toBe(full);
+  });
+
+  it("names the three refusals that cannot be retried", () => {
+    for (const type of ["CHUNK_SIZE_TOO_SMALL", "CHUNK_ID_MISMATCH_WITH_TOTAL", "INPUT_ERROR"]) {
+      expect(parseEvent(JSON.stringify({ message_type: type }))).toEqual({
+        kind: "desynced",
+        detail: type,
+      });
+    }
   });
 });

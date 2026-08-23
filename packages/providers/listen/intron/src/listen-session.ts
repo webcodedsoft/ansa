@@ -5,6 +5,7 @@ import {
   buildUrl,
   encodeAudioChunk,
   encodeCommit,
+  padToFloor,
   parseEvent,
   splitForSend,
   SESSION_LIMIT_MS,
@@ -160,6 +161,15 @@ export const openIntronSession = (
           for (const listener of finals) listener(transcript(event.text));
           return;
         }
+        case "desynced": {
+          /* The counter is out of step and nothing sent on this leg will be accepted
+             again. Replacing it is the only recovery, and the pre-opened leg is what
+             makes that cost nothing the caller can hear. */
+          log.warn("intron rejected a chunk; replacing the leg", { detail: event.detail });
+          for (const listener of vendorErrors) listener(`intron: ${event.detail}`);
+          if (leg === current) rotate();
+          return;
+        }
         case "expired": {
           // The 300s ceiling with no resume. Rotating early is what stops a caller
           // mid-sentence falling into a closed socket.
@@ -248,7 +258,9 @@ export const openIntronSession = (
       // where the answer usually is — never reaches the model.
       if (leg.pending.length > 0) {
         leg.ack += 1;
-        leg.socket.send(encodeAudioChunk(leg.pending, leg.ack));
+        // Padded, never short. A sub-floor chunk is refused and the refusal takes the
+        // whole session with it — see MIN_CHUNK_BYTES.
+        leg.socket.send(encodeAudioChunk(padToFloor(leg.pending), leg.ack));
         leg.pending = Buffer.alloc(0);
       }
       leg.socket.send(encodeCommit());

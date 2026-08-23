@@ -9,7 +9,14 @@ import type { AudioFormat } from "@ansa/shared";
  * transcriber interface documents as "not the same as low".
  */
 
-/** Base64 PCM16 in JSON, so the floor and ceiling are on the decoded bytes. */
+/**
+ * On the decoded bytes, not the base64. Probed 2026-08-23: 640 is refused, 1024 accepted.
+ *
+ * A refusal is not survivable. `ack_id` has to stay in lockstep with the server's count of
+ * *accepted* chunks, so one `CHUNK_SIZE_TOO_SMALL` desynchronises the counter and every
+ * chunk after it comes back `CHUNK_ID_MISMATCH_WITH_TOTAL`. On the call at 12:37 that was
+ * the whole session: one short tail, then thirty seconds of rejected audio.
+ */
 export const MIN_CHUNK_BYTES = 1024;
 export const MAX_CHUNK_BYTES = 32 * 1024;
 
@@ -44,6 +51,17 @@ export const buildUrl = (host: string, options: IntronOptions): string => {
   return url.toString();
 };
 
+/**
+ * Silence on the end of a short tail, rather than a short chunk or a dropped one.
+ *
+ * The last audio of a turn is where the answer is, and it is almost never a round
+ * kilobyte. Zeros are PCM16 silence, so this adds nothing a transcriber can hear.
+ */
+export const padToFloor = (pcm: Buffer): Buffer =>
+  pcm.length >= MIN_CHUNK_BYTES
+    ? pcm
+    : Buffer.concat([pcm, Buffer.alloc(MIN_CHUNK_BYTES - pcm.length)]);
+
 export const encodeAudioChunk = (pcm: Buffer, ackId: number): string =>
   JSON.stringify({
     message_type: "INPUT_AUDIO_CHUNK",
@@ -58,6 +76,7 @@ export type IntronEvent =
   | { readonly kind: "interim"; readonly text: string }
   | { readonly kind: "final"; readonly text: string }
   | { readonly kind: "expired" }
+  | { readonly kind: "desynced"; readonly detail: string }
   | { readonly kind: "ack" }
   | { readonly kind: "other"; readonly type: string };
 
@@ -107,6 +126,12 @@ export const parseEvent = (raw: string): IntronEvent | null => {
     }
     case "SESSION_TIME_LIMIT_EXCEEDED":
       return { kind: "expired" };
+    /* Unrecoverable, all three: the chunk counter is out of step with the server's and
+       nothing sent afterwards will be accepted. The leg has to be replaced, not retried. */
+    case "CHUNK_SIZE_TOO_SMALL":
+    case "CHUNK_ID_MISMATCH_WITH_TOTAL":
+    case "INPUT_ERROR":
+      return { kind: "desynced", detail: type };
     /* Undocumented, one per chunk, and the vendor's own spelling. Named so it does not
        arrive as an unknown message on every frame of every call. */
     case "AUDIO_CHUCK_ACK":

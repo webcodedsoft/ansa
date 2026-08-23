@@ -3,6 +3,7 @@ export {
   buildUrl,
   encodeAudioChunk,
   encodeCommit,
+  padToFloor,
   parseEvent,
   splitForSend,
   DEFAULT_SAMPLE_RATE,
