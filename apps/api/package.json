@@ -14,6 +14,7 @@
   "dependencies": {
     "@ansa/db": "workspace:*",
     "@ansa/deepgram-listen": "workspace:*",
+    "@ansa/intron-listen": "workspace:*",
     "@ansa/llm": "workspace:*",
     "@ansa/normalizer": "workspace:*",
     "@ansa/openai-listen": "workspace:*",

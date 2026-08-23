@@ -33,6 +33,16 @@ import type { ListenSession } from "../orchestrator/orchestrator";
 export interface TranscriptSource {
   readonly transcripts: ListenSession["transcripts"];
   write(chunk: AudioChunk): void;
+  /**
+   * Ask for a final now, for a provider whose final only arrives when the client asks.
+   *
+   * Absent on providers that decide for themselves. Intron is the reason it exists: its
+   * COMMIT is what produces a `COMMITTED_TRANSCRIPT`, and only this layer knows a turn
+   * ended — the words half is deliberately blind to turns. Putting a silence timer in the
+   * adapter instead would be a transcriber inventing endpointing, which is the fusion the
+   * two interfaces exist to prevent.
+   */
+  commit?(): void;
   onFailure(listener: (reason: string) => void): void;
   onVendorError(listener: (message: string) => void): void;
   close(): void;
@@ -65,7 +75,16 @@ export const composeListen = (parts: {
   log.info("listening via two providers", {
     words: parts.wordsName,
     turns: parts.turnsName,
+    commitsOnTurnEnd: words.commit !== undefined,
   });
+
+  /* The correlation, in the one place that holds both halves. `onEndOfTurn` pushes rather
+     than replaces, so this does not take the listener the orchestrator registers later. */
+  if (words.commit !== undefined) {
+    turns.turns.onEndOfTurn(() => {
+      words.commit?.();
+    });
+  }
 
   return {
     // The single fan-out point R4.1.7 asks for. Both providers see identical audio, so a

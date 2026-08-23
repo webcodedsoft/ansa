@@ -120,3 +120,39 @@ describe("composeListen", () => {
     expect(c.turns.closed()).toBe(1);
   });
 });
+
+describe("a transcriber whose final only comes when asked", () => {
+  it("commits when the turn detector says the caller stopped", () => {
+    /* Intron's COMMIT is what produces a transcript, and this is the only layer holding
+       both halves. Without the wiring the agent streams to a socket that never answers
+       and the transcript watchdog fires on every turn of every call. */
+    const words = fakeSide("words");
+    const turns = fakeSide("turns");
+    const commits: number[] = [];
+
+    composeListen({
+      words: { ...words.session, commit: () => commits.push(1) },
+      turns: turns.session,
+      log: silentLog,
+      wordsName: "intron",
+      turnsName: "deepgram",
+    });
+    turns.emitEot();
+
+    expect(commits).toHaveLength(1);
+  });
+
+  it("does not ask a provider that commits on its own", () => {
+    // OpenAI ends its own turns. A commit from here would be a second endpointer.
+    const words = fakeSide("words");
+    const turns = fakeSide("turns");
+    composeListen({
+      words: words.session,
+      turns: turns.session,
+      log: silentLog,
+      wordsName: "openai",
+      turnsName: "deepgram",
+    });
+    expect(() => turns.emitEot()).not.toThrow();
+  });
+});

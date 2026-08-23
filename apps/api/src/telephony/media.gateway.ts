@@ -44,7 +44,10 @@ import { ALL_GREETING_LEADS, chooseGreetingLead } from "./greeting-lead";
 import { describeSituation } from "../conversation/situation";
 import { forSpeech, GREETING_TEXT, outboundOpener } from "./greeting";
 import { cacheKey, createAudioCache, type AudioCache } from "./prerender";
+import { openIntronSession, type IntronLanguage } from "@ansa/intron-listen";
+
 import { composeListen, type TranscriptSource } from "./composite-listen";
+import { openIntronSocket } from "./ws-intron-socket";
 import { createHandoff } from "../handoff/handoff";
 import { withHandoffJournal } from "../handoff/journal";
 import { withEventPublisher } from "../events/publisher";
@@ -369,6 +372,8 @@ export class MediaGateway implements OnApplicationShutdown {
 
   /** The transcriber, when it is not Flux itself. Swappable for an accent-tuned vendor. */
   private openWords(format: AudioFormat, keyterms: readonly string[]): TranscriptSource {
+    if (this.config.listenWords === "intron") return this.openIntronWords(format);
+
     this.log.info("transcription via openai", {
       model: this.config.transcriptionModel,
       sendAsPcm: this.config.openAiSendPcm,
@@ -390,6 +395,36 @@ export class MediaGateway implements OnApplicationShutdown {
       // Carried for interface parity; this provider cannot act on them.
       keyterms,
       sendAsPcm: this.config.openAiSendPcm,
+    });
+  }
+
+  /**
+   * Intron: the accent-tuned transcriber, and the reason the words half is swappable.
+   *
+   * Measured 2026-08-23 on `recordings/control-sikiru.ulaw`, clean and noisy: Intron
+   * returned "Sikiru" from both. On live calls the same name came back from Flux as
+   * "Abijo" and then "BQ BQ", each at confidence 1.000.
+   *
+   * What it costs is in the adapter, not here: no word confidence, no keyterms, and a
+   * socket per turn because COMMIT closes the connection.
+   */
+  private openIntronWords(format: AudioFormat): TranscriptSource {
+    if (this.config.intronApiKey === "") {
+      // Louder than a 401 mid-call. A missing key is a deployment mistake and belongs at
+      // the moment the choice is made, not in a caller's silence.
+      throw new Error("LISTEN_WORDS=intron requires INTRON_API_KEY");
+    }
+    this.log.info("transcription via intron", {
+      host: this.config.intronHost,
+      language: this.config.intronLanguage,
+      sampleRate: format.sampleRate,
+    });
+    return openIntronSession((url) => openIntronSocket(url, this.config.intronApiKey), {
+      host: this.config.intronHost,
+      format,
+      language: this.config.intronLanguage as IntronLanguage,
+      log: this.log,
+      startedAtMs: Date.now(),
     });
   }
 

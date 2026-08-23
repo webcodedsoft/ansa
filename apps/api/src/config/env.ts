@@ -110,6 +110,11 @@ export interface AppConfig {
    */
   readonly listenWords: string;
   readonly deepgramApiKey: string;
+  /** Only read when `listenWords` selects it, so a deployment without Intron needs no key. */
+  readonly intronApiKey: string;
+  readonly intronHost: string;
+  /** `en`, or a code-switched Nigerian model: `pcm`, `yo`, `ig`, `ha`. */
+  readonly intronLanguage: string;
   readonly deepgramModel: string;
   /** `api.deepgram.com`, or `api.eu.deepgram.com` — nearer to Lagos, and worth measuring. */
   readonly deepgramHost: string;
@@ -273,6 +278,13 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
     deepgramHost: optional(env, "DEEPGRAM_HOST") ?? "api.deepgram.com",
     deepgramEotThreshold: Number(env["DEEPGRAM_EOT_THRESHOLD"] ?? 0.8),
     deepgramEotTimeoutMs: Number(env["DEEPGRAM_EOT_TIMEOUT_MS"] ?? 4000),
+
+    /* Unlike Deepgram's, optional: Intron is one of the choices for words and a deployment
+       that has not chosen it should not need a key to boot. `openWords` refuses at connect
+       time when it is selected without one. */
+    intronApiKey: optional(env, "INTRON_API_KEY") ?? "",
+    intronHost: optional(env, "INTRON_HOST") ?? "infer.voice.intron.io",
+    intronLanguage: optional(env, "INTRON_LANGUAGE") ?? "en",
 
     databaseUrl: optional(env, "DATABASE_URL"),
     viewerToken: optional(env, "VIEWER_TOKEN"),
