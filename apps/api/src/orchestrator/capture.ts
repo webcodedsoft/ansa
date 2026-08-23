@@ -356,7 +356,19 @@ const nameFrom = (text: string): string | null => {
  * Also grammar, not names: these are the English words a caller uses to say "pardon?" or
  * "hello", and a bare-name parse must not turn one of them into somebody's name.
  */
-const NOT_A_NAME = /\b(yes|yeah|no|nope|sorry|hello|hi|what|pardon|okay|thanks|thank)\b/i;
+/**
+ * Words that are an answer to something, never an answer to "and your name?".
+ *
+ * The pronouns were missing, and on the call at 20:24 the caller was cut off mid-sentence,
+ * said "You do?", and heard "You — have I got that right?" back. A pronoun is not a risk
+ * worth weighing against a real name: in the one position this parser runs — directly after
+ * the agent asked who it is speaking to — nobody answers with "you" or "them".
+ *
+ * Filler is here for the same reason. "Uh" and "erm" arrive as words from this transcriber
+ * and are what somebody says while being interrupted.
+ */
+const NOT_A_NAME =
+  /\b(yes|yeah|no|nope|sorry|hello|hi|what|pardon|okay|thanks|thank|you|me|him|her|them|us|we|they|he|she|it|this|that|there|here|uh|um|erm|please|wait|hold)\b/i;
 
 /**
  * A bare name, for when the agent has just asked "and your name?" and the answer is one

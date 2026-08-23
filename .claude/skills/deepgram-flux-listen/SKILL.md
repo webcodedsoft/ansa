@@ -62,7 +62,7 @@ Full parameter table with ranges, defaults and every message field:
 | `model` | `flux-general-en`, `flux-general-multi` | required | `flux-general-en` | Multi buys no African language, costs more. |
 | `encoding` | `linear16 linear32 mulaw alaw opus ogg-opus` | required | `mulaw` | What Twilio sends. |
 | `sample_rate` | — | required with `encoding` | `8000` | What Twilio sends. |
-| `eot_threshold` | 0.5–0.9 | **0.7** | **0.8** | Higher = fewer mid-sentence chops, slightly more latency. Our history is chopping callers. |
+| `eot_threshold` | 0.5–0.9 | **0.7** | **0.9** | Raised from 0.8 on 2026-08-23. At 0.8, a caller saying "Hi. Good morning. Uh, my name is." was committed before the name, on a call where 99% of the audio arrived. 0.9 is the ceiling; there is nowhere further to go and the next lever is the capture engine. |
 | `eot_timeout_ms` | 500–60000 | **5000** | **4000** | Silence backstop, fires regardless of confidence. |
 | `eager_eot_threshold` | 0.3–0.9 | unset | **deliberately unset** | See below. |
 | `keyterm` | ≤100 terms, ≤500 tokens total | — | per-organization | One `keyterm=` per term. |

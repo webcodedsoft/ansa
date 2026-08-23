@@ -34,6 +34,43 @@ const press = (state: CaptureState, digit: string) => advance(state, { kind: "ke
  * asked again five times. Flux decides on silence and the pause is real, so this is the
  * capture engine's problem to solve rather than a threshold to tune.
  */
+/**
+ * Read off the call at 20:24 on 2026-08-23, where 99% of the audio arrived and the
+ * conversation still failed:
+ *
+ *   caller  Hi. Good morning. Uh, my name is.        (cut off before the name)
+ *   agent   Sorry — And your name?
+ *   caller  You do?
+ *   agent   You — have I got that right?
+ *
+ * The turn detector chopped them mid-sentence, and the parser took the confused fragment
+ * that followed as what they were called.
+ */
+describe("what is never somebody's name", () => {
+  it("does not take a pronoun from a caller who is asking a question back", () => {
+    /* Asserted on the state, not on `captured`: nothing is captured until the caller has
+       agreed the readback, so `captured` is null here whether or not the parser took it —
+       which is how the first version of this test passed with the guard removed. */
+    expect(speak(expecting("name").state, "You do?").state.kind).not.toBe("confirming");
+  });
+
+  it("does not take filler from a caller who was interrupted", () => {
+    for (const said of ["Uh", "Erm...", "Um, wait"]) {
+      const r = speak(expecting("name").state, said);
+      expect(r.state.kind, said).not.toBe("confirming");
+    }
+  });
+
+  it("still takes a real name in the same position", () => {
+    /* The guard has to stay narrow. Excluding too much would send a caller with an
+       ordinary name round the spelling loop, which is the failure it exists to prevent. */
+    for (const said of ["Sikiru", "Adaeze", "Chukwuemeka", "Mary Grace"]) {
+      const r = speak(expecting("name").state, said);
+      expect(r.state.kind, said).toBe("confirming");
+    }
+  });
+});
+
 describe("digits split across two turns", () => {
   it("joins the halves into the number that was actually said", () => {
     const asked = expecting("phone").state;
