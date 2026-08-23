@@ -139,6 +139,21 @@ silence or noise; on a live call this produced a phantom caller turn reading *"E
 terms: Ansa, policy, premium, naira."* which the agent then answered. The `NOTE:` in
 `encodeSessionUpdate` is load-bearing.
 
+**And do not reach for a better-written prompt.** Measured 2026-08-23 on one real recording,
+four designs against the no-prompt control:
+
+| prompt | caller's first turn |
+|---|---|
+| none | "my name is Sikiru" — correct, in both runs |
+| "Nigerian English and names are expected" | "Chukwu", then "Sekou" on a repeat |
+| register only, no proper nouns | "Good afternoon." — the name gone |
+| transcript fragment carrying digits | the prompt returned word for word as speech |
+
+Instructions prime the set and the model picks the wrong member confidently — the same way
+keyterms turned "Sikiru" into "Akiro". A transcript fragment is what the field actually is,
+so the model continues it and it arrives as the caller's turn. Anything specific enough to
+help is specific enough to be spoken.
+
 ### Events we act on
 
 `parseEvent` pins these to `RealtimeServerEvent["type"]`, so a vendor rename breaks the build:

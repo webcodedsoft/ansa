@@ -101,8 +101,22 @@ export const encodeSessionUpdate = (options: SessionOptions): string => {
           // Passing keyterms that way produced phantom caller turns reading "Expect
           // these terms: Ansa, policy, premium, naira." on a live call, which the agent
           // then answered. Keyterm biasing needs a provider that supports it as real
-          // vocabulary boosting (R4.1.3), not as prompt text — another thing for Gate A
-          // to weigh.
+          // vocabulary boosting (R4.1.3), not as prompt text.
+          //
+          // Retested properly on 2026-08-23, because "use a better prompt" is the obvious
+          // objection to the paragraph above. Four designs, same recording, against the
+          // no-prompt control:
+          //
+          //   no prompt                      -> "my name is Sikiru"      (correct, twice)
+          //   "expect Nigerian names"        -> "Chukwu", then "Sekou"   (both wrong)
+          //   register only, no proper nouns -> "Good afternoon."        (name lost)
+          //   transcript fragment w/ digits  -> the prompt, word for word, as caller speech
+          //
+          // The last two are the important ones. Written as instructions it primes the
+          // set and the model picks the wrong member confidently; written as a transcript
+          // fragment — which is what the field actually is — the model continues it, and
+          // the caller's first turn comes back as the prompt itself. Anything specific
+          // enough to help is specific enough to be spoken. The field is not usable here.
           transcription: { model: options.model, language: "en" },
           turn_detection:
             options.turnDetection.type === "semantic_vad"

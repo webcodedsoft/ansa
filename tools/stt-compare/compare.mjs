@@ -30,6 +30,12 @@ const env = Object.fromEntries(
     .map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]),
 );
 
+/* Every run is real-time paced, so the full matrix on a 37-second recording is ten
+   minutes. `--only` narrows it while iterating on one provider; without it nothing is
+   filtered and the whole matrix runs as before. */
+const onlyAt = process.argv.indexOf("--only");
+const only = onlyAt === -1 ? null : process.argv[onlyAt + 1];
+
 const file = process.argv[2];
 if (!file) throw new Error("Pass a .ulaw recording, e.g. recordings/CAxxxx.ulaw");
 const audio = readFileSync(file);
@@ -66,17 +72,41 @@ const pace = async (send) => {
 };
 
 /**
- * The context sentence, written as speech rather than as instructions.
+ * Prompt candidates, and the reasoning they are testing.
  *
- * `protocol.ts` refuses to send a prompt at all, because a keyterm list passed this way
- * produced a phantom caller turn on a live call — the model regurgitated "Expect these
- * terms: Ansa, policy, premium, naira." into silence and the agent answered it. This is a
- * different shape of prompt and the same risk, which is why the harness pads every run
- * with a hundred frames of comfort noise: regurgitation shows up there or nowhere.
+ * The first attempt told the model what to expect — "Nigerian English and Nigerian names
+ * are expected" — and it got the name wrong in both runs, once as "Chukwu" and once as
+ * "Sekou". Both are plausible African names and neither is the one that was said. Priming
+ * the *set* makes the model confident about the wrong member of it, which is the same way
+ * keyterms turned "Sikiru" into "Akiro".
+ *
+ * So these are written as transcript fragments rather than instructions, because that is
+ * what the field is: text the model continues from. Three rules follow from the failure.
+ *
+ *  - **No personal names, ever.** That is the one thing being transcribed that the prompt
+ *    must not bias, and the whole reason the first attempt lost.
+ *  - **Show format rather than describe it.** "4,500,000 naira" and "0803 123 4567" are
+ *    the fix being tested for "PM8592625" coming back as "a member of the Senate".
+ *  - **Short.** A long prompt is what regurgitates into silence, and this codebase has
+ *    already answered a phantom caller turn once.
  */
-const NIGERIAN_PROMPT =
-  "This is a phone call with a Nigerian speaker. Nigerian English and Nigerian names, " +
-  "places and spellings are expected.";
+const PROMPTS = {
+  /* Register alone: a Nigerian caller on a telephone, nothing primed. If this wins, the
+     benefit was never vocabulary — it was matching how the line actually sounds. */
+  register:
+    "Good afternoon. Thank you for calling. I am calling to ask about a property.",
+
+  /* Register plus the shape of a number, aimed squarely at the digit failure. */
+  digits:
+    "Good afternoon. My budget is 4,500,000 naira per year and my number is 0803 123 4567.",
+
+  /* Everything a caller here plausibly says, minus anybody's name: place, domain term,
+     amount, phone number. The widest prompt worth trying before the risk outweighs it. */
+  full:
+    "Good afternoon. I am calling about a three-bedroom flat in Lekki Phase One. " +
+    "My budget is 4,500,000 naira per year and my number is 0803 123 4567. " +
+    "Does the property have a Certificate of Occupancy?",
+};
 
 const openai = ({ asPcm, prompt }) =>
   new Promise((resolve) => {
@@ -289,7 +319,9 @@ const KEYTERMS = ["Ansa", "policy", "policy number", "premium", "naira", "claim"
 const runs = [
   ["openai mu-law 8k    ", () => openai({ asPcm: false })],
   ["openai pcm 24k      ", () => openai({ asPcm: true })],
-  ["openai pcm + prompt ", () => openai({ asPcm: true, prompt: NIGERIAN_PROMPT })],
+  ["openai pcm register ", () => openai({ asPcm: true, prompt: PROMPTS.register })],
+  ["openai pcm digits   ", () => openai({ asPcm: true, prompt: PROMPTS.digits })],
+  ["openai pcm full     ", () => openai({ asPcm: true, prompt: PROMPTS.full })],
   ["deepgram mu-law 8k  ", () => deepgram({ keyterms: [] })],
   ["deepgram + keyterms ", () => deepgram({ keyterms: KEYTERMS })],
   // The caller's own name, boosted. Tested on Deepgram's console first: the same audio
@@ -304,7 +336,9 @@ const runs = [
 ];
 
 const results = [];
-for (const [label, run] of runs) {
+const selected = only === null ? runs : runs.filter(([label]) => label.includes(only));
+if (selected.length === 0) throw new Error(`--only ${only} matched none of: ${runs.map(([l]) => l.trim()).join(", ")}`);
+for (const [label, run] of selected) {
   process.stdout.write(`${label} … `);
   const { finals, notes } = await run();
   console.log(`${finals.length} turn(s)${notes.length > 0 ? `  [${notes.length} note(s)]` : ""}`);
