@@ -457,6 +457,13 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       }) =>
       send<{
         readonly id: string;
+        readonly captured: readonly ({
+        readonly fieldKey: string;
+        readonly fieldType: string;
+        readonly value: string;
+        readonly attempts: number;
+        readonly confirmedAt: string;
+      })[];
         readonly carrierCallId: string;
         readonly direction: string;
         readonly dialled: string;
@@ -524,6 +531,33 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly correctedAt: string;
         readonly changed: boolean;
       }>(options, "POST", `/api/v1/calls/${encodeURIComponent(input.path.callId)}/transcripts/${encodeURIComponent(input.path.transcriptId)}/corrections`, input),
+
+    /**
+     * Values callers gave, across calls
+     * One row per confirmed value, newest call first. Filter by `agentId` and by a `from`/`to` window on when the value was confirmed; `from` is inclusive and `to` exclusive. `truncated` is true when more values matched than one request returns, so a partial export is never mistaken for a complete one. Values are returned as the caller gave them and nothing is masked.
+     */
+    captures: (input: {
+        readonly query?: {
+          readonly agentId?: string;
+          readonly from?: string;
+          readonly to?: string;
+        };
+      }) =>
+      send<{
+        readonly rows: readonly ({
+        readonly callId: string;
+        readonly carrierCallId: string;
+        readonly caller: string | null;
+        readonly agentId: string | null;
+        readonly calledAt: string;
+        readonly fieldKey: string;
+        readonly fieldType: string;
+        readonly value: string;
+        readonly attempts: number;
+        readonly confirmedAt: string;
+      })[];
+        readonly truncated: boolean;
+      }>(options, "GET", `/api/v1/calls/captures`, input),
 
     /**
      * Phrasings appearing in more than 15% of recent calls
@@ -1656,7 +1690,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly checkedAt: string;
         readonly configVersion: number;
         readonly checks: readonly ({
-        readonly id: "number.attached" | "number.carrier_webhook" | "number.traffic" | "greeting" | "voice" | "consent_policy" | "business_hours" | "tools" | "credentials" | "events" | "escalation";
+        readonly id: "number.attached" | "number.carrier_webhook" | "number.traffic" | "greeting" | "voice" | "consent_policy" | "business_hours" | "tools" | "credentials" | "events" | "escalation" | "crisis";
         readonly title: string;
         readonly state: "ok" | "attention" | "blocked" | "unknown";
         readonly detail: string;

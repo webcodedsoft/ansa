@@ -53,6 +53,7 @@ const countingRecorder = () => {
     transcript: () => calls.push("transcript"),
     turn: () => calls.push("turn"),
     latency: () => calls.push("latency"),
+    capture: () => undefined,
     ended: () => calls.push("ended"),
   };
   return { calls, recorder };

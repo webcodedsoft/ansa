@@ -27,6 +27,7 @@ const recorder = () => {
     transcript: () => undefined,
     turn: () => undefined,
     latency: () => undefined,
+    capture: () => undefined,
     ended: () => undefined,
   };
   return { record, events, kinds: () => events.map((e) => e.kind) };

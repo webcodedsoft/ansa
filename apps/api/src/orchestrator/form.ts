@@ -129,6 +129,14 @@ export interface FormDirector {
    * birth, and carrying the count across would escalate calls that were going fine.
    */
   reject(key: string): { readonly again: boolean };
+  /**
+   * How many goes this field took, counting the one that worked.
+   *
+   * Stored with the value so the console can show which questions callers struggle with.
+   * A field averaging three attempts has a prompt that needs rewriting, and that is only
+   * visible if the number survives the call.
+   */
+  attemptsFor(key: string): number;
   /** Nothing required is still outstanding. Optional fields do not hold a call open. */
   complete(): boolean;
   readonly values: ReadonlyMap<string, CapturedValue>;
@@ -194,6 +202,8 @@ export const createForm = (fields: readonly CollectedField[]): FormDirector => {
       // A caller who first declined and then gave it has given it.
       skipped.delete(key);
     },
+
+    attemptsFor: (key) => (rejections.get(key) ?? 0) + 1,
 
     reject: (key) => {
       const field = ordered.find((candidate) => candidate.key === key);

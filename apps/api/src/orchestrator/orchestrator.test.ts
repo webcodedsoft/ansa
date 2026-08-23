@@ -877,6 +877,60 @@ describe("a caller who says hello while the form is listening", () => {
     },
   ];
 
+  it("stores the value once the caller agrees to it", () => {
+    /* The whole point of a form. Everything downstream — the call page, the dataset, the
+       export — reads this row, and before it existed the value survived only as an
+       `entity_candidate` event that had to be paired back to a confirmation by character
+       count. */
+    const captured: { fieldKey: string; fieldType: string; value: string; attempts: number }[] = [];
+    const h = setup({
+      fields: NAME_FIELD,
+      recorder: {
+        started: () => undefined,
+        event: () => undefined,
+        transcript: () => undefined,
+        turn: () => undefined,
+        latency: () => undefined,
+        capture: (c: { fieldKey: string; fieldType: string; value: string; attempts: number }) =>
+          captured.push(c),
+        ended: () => undefined,
+      } as unknown as CallRecorder,
+    });
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("My name is Sikiru.");
+    h.listen.final("Yes, that is right.");
+
+    expect(captured).toEqual([
+      { fieldKey: "callerName", fieldType: "name", value: "Sikiru", attempts: 1 },
+    ]);
+  });
+
+  it("stores nothing until the caller has agreed", () => {
+    /* A readback is a question, not a record. Storing the candidate would put a
+       misheard name in the organisation's dataset and then never correct it. */
+    const captured: unknown[] = [];
+    const h = setup({
+      fields: NAME_FIELD,
+      recorder: {
+        started: () => undefined,
+        event: () => undefined,
+        transcript: () => undefined,
+        turn: () => undefined,
+        latency: () => undefined,
+        capture: (c: unknown) => captured.push(c),
+        ended: () => undefined,
+      } as unknown as CallRecorder,
+    });
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("My name is Sikiru.");
+
+    expect(captured).toEqual([]);
+  });
+
   it("answers how it is, and reads the name back, in one turn", () => {
     const h = setup({ fields: NAME_FIELD });
     h.tts.last().done();

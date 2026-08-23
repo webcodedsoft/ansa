@@ -124,3 +124,25 @@ export type CallTrends = Awaited<ReturnType<typeof callTrends>>;
 export type TrendRow = CallTrends["versions"][number];
 export type ReviewQueue = Awaited<ReturnType<typeof listReviewQueue>>;
 export type FlaggedCall = ReviewQueue["calls"][number];
+
+/**
+ * Every value the agents collected, for the dataset page and its export.
+ *
+ * One row per value, which is the shape the API returns and the shape the export writes.
+ * The table pivots it into a column per field — see `pivot` — and that cannot happen here
+ * or in the API, because two agents have different forms and the column list depends on
+ * which rows came back.
+ */
+export const listCaptures = async (filters: {
+  readonly agentId?: string;
+  readonly from?: string;
+  readonly to?: string;
+} = {}) => {
+  const query: Record<string, string> = {};
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== "") query[key] = value;
+  }
+  return (await api()).calls.captures({ query });
+};
+
+export type CapturedRow = Awaited<ReturnType<typeof listCaptures>>["rows"][number];

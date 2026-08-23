@@ -73,6 +73,7 @@ const recordingRecorder = (): CallLog => {
          that is the one `scoreCalls` reads. A second copy here would be a second thing to
          keep in step. */
       latency: () => undefined,
+      capture: () => undefined,
       ended: () => undefined,
     },
   };
@@ -167,6 +168,10 @@ const tee = (first: CallRecorder, second: CallRecorder | undefined): CallRecorde
         event: (kind, detail, offsetMs) => {
           first.event(kind, detail, offsetMs);
           second.event(kind, detail, offsetMs);
+        },
+        capture: (c) => {
+          first.capture(c);
+          second.capture(c);
         },
         transcript: (t) => {
           first.transcript(t);

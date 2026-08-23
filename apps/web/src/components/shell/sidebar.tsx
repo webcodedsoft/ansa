@@ -2,7 +2,7 @@
 
 import {
   Activity, Bot, ChevronsUpDown, FileText, KeyRound, Link2, ListChecks, LogOut,
-  Phone, PhoneCall, Plus, ScrollText, ShieldCheck, Users, Wrench,
+  Phone, PhoneCall, Plus, ScrollText, ShieldCheck, Table2, Users, Wrench,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -17,6 +17,7 @@ const ICONS: Record<string, ComponentType<{ className?: string }>> = {
   "/calls": PhoneCall,
   "/live": Activity,
   "/review": ListChecks,
+  "/data": Table2,
   "/metrics": FileText,
   "/agents": Bot,
   "/agents/new": Plus,

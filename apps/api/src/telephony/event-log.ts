@@ -2,6 +2,7 @@ import {
   recordCallEnded,
   recordCallEvents,
   recordCallStarted,
+  recordCaptures,
   recordLatencies,
   recordTranscripts,
   recordTurns,
@@ -10,6 +11,7 @@ import {
   type RecordedTranscript,
   type RecordedTurn,
   type StartedCall,
+  type RecordCaptureInput,
 } from "@ansa/db";
 import type { Logger } from "@ansa/shared";
 
@@ -57,6 +59,17 @@ export interface CallRecorder {
    * come off one `measure()` call, so they cannot disagree.
    */
   latency(latency: RecordedLatency): void;
+  /**
+   * A value the caller gave and agreed to, against the field that asked for it.
+   *
+   * Its own table rather than an event, for the reason `transcript` is: `call_events`
+   * already holds the value as an `entity_candidate`, but only as part of the story of the
+   * call. This is the answer on its own, keyed to a field, so the console can show an
+   * organisation what they collected and export it. Recovering that from events means
+   * pairing a `value confirmed` character count to a candidate of equal length, which is a
+   * guess whenever two fields have answers the same length.
+   */
+  capture(capture: RecordCaptureInput): void;
   ended(reason: string, carrierStatus?: string | null, durationSeconds?: number | null): void;
 }
 
@@ -67,6 +80,7 @@ export const nullRecorder: CallRecorder = {
   transcript: () => undefined,
   turn: () => undefined,
   latency: () => undefined,
+  capture: () => undefined,
   ended: () => undefined,
 };
 
@@ -90,6 +104,7 @@ export const createCallRecorder = (deps: {
   let transcripts: RecordedTranscript[] = [];
   let turns: RecordedTurn[] = [];
   let latencies: RecordedLatency[] = [];
+  let captures: RecordCaptureInput[] = [];
   let timer: NodeJS.Timeout | null = null;
   let closed = false;
   /**
@@ -151,6 +166,17 @@ export const createCallRecorder = (deps: {
       latencies = [];
       void recordLatencies(dataSource, organizationId, callRowId, batch).catch((error: unknown) => {
         log.error("could not write latencies", {
+          dropped: batch.length,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
+
+    if (captures.length > 0) {
+      const batch = captures;
+      captures = [];
+      void recordCaptures(dataSource, organizationId, callRowId, batch).catch((error: unknown) => {
+        log.error("could not write captured values", {
           dropped: batch.length,
           error: error instanceof Error ? error.message : String(error),
         });
@@ -231,6 +257,15 @@ export const createCallRecorder = (deps: {
       if (latencies.length > FLUSH_AT * 4) latencies = latencies.slice(-FLUSH_AT * 4);
       if (latencies.length >= FLUSH_AT) flush();
       else arm();
+    },
+
+    capture: (c) => {
+      if (closed) return;
+      /* Not capped like `latencies`. A form has a handful of fields, a re-confirmed one
+         replaces its row rather than adding one, and dropping the oldest here would throw
+         away the caller's name to keep their postcode. */
+      captures.push(c);
+      flush();
     },
 
     ended: (reason, carrierStatus, durationSeconds) => {

@@ -148,6 +148,12 @@ export const withEventPublisher = (
       inner.started(call);
     },
 
+    // Forwarded, not stubbed. This wrapper publishes events to an organisation's
+    // receivers; it has no opinion about captured values and must not swallow them.
+    capture: (c) => {
+      inner.capture(c);
+    },
+
     event: (kind, detail, offsetMs) => {
       inner.event(kind, detail, offsetMs);
       const fields = isRecord(detail) ? detail : {};

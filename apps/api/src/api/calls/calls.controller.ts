@@ -1,6 +1,8 @@
 import {
   applyTranscriptCorrection,
   listCallPage,
+  readCallCaptures,
+  readCapturedRows,
   loadCallDetail,
   readCallRecords,
   readStageLatencies,
@@ -190,8 +192,57 @@ const callEvent = object({
   }),
 });
 
+/**
+ * One value a caller gave, as the console shows it.
+ *
+ * `fieldKey` rather than the operator's prompt: prompts get reworded and the key is what a
+ * value is filed under, so a column keeps its identity across an edit. The console resolves
+ * a human label from the agent's current form and falls back to the key.
+ */
+const capturedValue = object({
+  fieldKey: text({ maxLength: 128 }),
+  fieldType: text({ maxLength: 32 }),
+  value: text({ maxLength: 4096 }),
+  /** Including the one that worked, so 1 means first time. */
+  attempts: integer({ minimum: 1 }),
+  confirmedAt: timestamp(),
+});
+
+const capturesQuery = object({
+  agentId: optional(uuid()),
+  /** Inclusive. */
+  from: optional(timestamp()),
+  /** Exclusive. */
+  to: optional(timestamp()),
+});
+
+const capturedRow = object({
+  callId: uuid(),
+  carrierCallId: text({ maxLength: 128 }),
+  caller: nullable(text({ maxLength: 32 })),
+  agentId: nullable(uuid()),
+  calledAt: timestamp(),
+  fieldKey: text({ maxLength: 128 }),
+  fieldType: text({ maxLength: 32 }),
+  value: text({ maxLength: 4096 }),
+  attempts: integer({ minimum: 1 }),
+  confirmedAt: timestamp(),
+});
+
+const capturesResponse = object({
+  /**
+   * One row per value, not per call. Two agents have different forms, so a fixed column
+   * per field would be wrong for whichever agent it was not built from; the console pivots.
+   */
+  rows: list(capturedRow),
+  /** True when more values matched than one request returns. Reported, never silent. */
+  truncated: flag(),
+});
+
 const callDetail = object({
   id: uuid(),
+  /** What the caller told the agent and agreed to. Empty when the agent has no form. */
+  captured: list(capturedValue),
   carrierCallId: text({ maxLength: 128 }),
   direction: text({ maxLength: 16 }),
   dialled: text({ maxLength: 32 }),
@@ -440,6 +491,15 @@ const latencyResponse = object({
  * Refusing loudly rather than clamping quietly: a caller who asks for a year and receives
  * a month has no way to tell, and would read the answer as a year's percentiles.
  */
+/** A query timestamp, refused rather than silently treated as the epoch. */
+const asDate = (value: string, field: string): Date => {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new UnprocessableEntityException(`${field} must be a timestamp`);
+  }
+  return parsed;
+};
+
 const toLatencyRange = (query: Infer<typeof latencyQuery>): LatencyRange => {
   const to = query.to === undefined ? new Date() : new Date(query.to);
   const from =
@@ -757,6 +817,62 @@ export class CallsController {
     };
   }
 
+  /**
+   * Everything the agents collected, across calls.
+   *
+   * The answer to "how do I get the data" — a call at a time is a debugging view, not a
+   * dataset. One row per value rather than per call, because two agents have different
+   * forms and a fixed column per field would be wrong for whichever agent it was not built
+   * from. The console pivots into columns; the export writes the same rows flat.
+   *
+   * Values are returned in the clear, including a NIN, a BVN or a one-time code. That is
+   * the rule this system already runs on (R5.2.4): the organisation is the data controller
+   * and this is their record of their own calls. A masked export would be a different
+   * product decision, not a safer version of this one.
+   *
+   * Declared before `:callId` for the reason at the top of this file.
+   */
+  @Get("captures")
+  @Endpoint({
+    summary: "Values callers gave, across calls",
+    description:
+      "One row per confirmed value, newest call first. Filter by `agentId` and by a `from`/`to` window on when the value was confirmed; `from` is inclusive and `to` exclusive. `truncated` is true when more values matched than one request returns, so a partial export is never mistaken for a complete one. Values are returned as the caller gave them and nothing is masked.",
+    capability: "calls:read",
+    query: capturesQuery,
+    response: capturesResponse,
+  })
+  async captures(
+    @FromQuery() query: Infer<typeof capturesQuery>,
+  ): Promise<Infer<typeof capturesResponse>> {
+    const limit = 5_000;
+    const rows = await this.db.tx((scope) =>
+      readCapturedRows(scope, {
+        agentId: query.agentId ?? null,
+        // Timestamps arrive as strings on the wire, as `toLatencyRange` also has to handle.
+        since: query.from === undefined ? null : asDate(query.from, "from"),
+        until: query.to === undefined ? null : asDate(query.to, "to"),
+        // One more than we will return, which is how `truncated` is known rather than
+        // guessed from a full page.
+        limit: limit + 1,
+      }),
+    );
+    return {
+      rows: rows.slice(0, limit).map((row) => ({
+        callId: row.callId,
+        carrierCallId: row.carrierCallId,
+        caller: row.caller,
+        agentId: row.agentId,
+        calledAt: row.calledAt.toISOString(),
+        fieldKey: row.fieldKey,
+        fieldType: row.fieldType,
+        value: row.value,
+        attempts: row.attempts,
+        confirmedAt: row.confirmedAt.toISOString(),
+      })),
+      truncated: rows.length > limit,
+    };
+  }
+
   @Get(":callId")
   @Endpoint({
     summary: "One call, turn by turn",
@@ -767,13 +883,18 @@ export class CallsController {
     response: callDetail,
   })
   async detail(@FromPath() path: Infer<typeof callPath>): Promise<Infer<typeof callDetail>> {
-    const detail = await this.db.tx((scope) => loadCallDetail(scope, path.callId));
+    const { detail, captured } = await this.db.tx(async (scope) => ({
+      detail: await loadCallDetail(scope, path.callId),
+      // One transaction, so the call and its values cannot come from different moments.
+      captured: await readCallCaptures(scope, path.callId),
+    }));
     // 404 rather than 403 for another organisation's call, as everywhere else: under RLS
     // "not yours" and "not there" are one query result, and answering differently would
     // confirm the id exists.
     if (detail === null) throw new NotFoundException();
     return {
       ...detail,
+      captured: captured.map((c) => ({ ...c, confirmedAt: c.confirmedAt.toISOString() })),
       transcripts: detail.transcripts.map((t) => ({
         ...t,
         // Postgres `real`, so it arrives as a float. Rendered rather than rounded for the

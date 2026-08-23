@@ -2541,6 +2541,28 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       if (target !== null && target !== undefined) {
         form.satisfy(target.key, captured, true);
       }
+
+      /* The answer, kept as data.
+       *
+       * Here rather than at `value confirmed` because here is where the field is known:
+       * the pattern check has passed and `target` says which question this answers. The
+       * event log records the same moment without the value, and reconstructing the pair
+       * from it means matching character counts — a guess whenever two fields have answers
+       * the same length.
+       *
+       * Buffered by the recorder like every other call-path write. Nothing here waits on
+       * Postgres.
+       *
+       * Reactive captures on a formless agent are recorded too, under the fact field the
+       * value landed in: a caller who volunteers their name has still given it. */
+      if (field !== undefined) {
+        record.capture({
+          fieldKey: field,
+          fieldType: capturedKind,
+          value: captured,
+          attempts: target === null || target === undefined ? 1 : form.attemptsFor(target.key),
+        });
+      }
       if (field !== undefined) {
         const change = deps.facts?.observe(
           target !== null && target !== undefined

@@ -57,6 +57,11 @@ export const withHandoffJournal = (inner: CallRecorder): HandoffJournal => {
       started: (call) => {
         inner.started(call);
       },
+      // Forwarded. The journal keeps a subset of events for the handoff summary and is
+      // not a place captured values should stop.
+      capture: (c) => {
+        inner.capture(c);
+      },
       event: (kind, detail, offsetMs) => {
         inner.event(kind, detail, offsetMs);
         if (!KEPT.has(kind)) return;

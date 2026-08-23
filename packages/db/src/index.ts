@@ -10,6 +10,7 @@ export * from "./organization-config";
 export * from "./organizations";
 export * from "./onboarding";
 export * from "./call-log";
+export * from "./call-captures";
 export * from "./call-records";
 export * from "./event-deliveries";
 export * from "./corrections";

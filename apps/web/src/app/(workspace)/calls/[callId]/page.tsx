@@ -6,6 +6,7 @@ import { findCall } from "@/features/calls/calls.service";
 import { CallFlags } from "@/features/calls/components/call-flags";
 import { CallStats, computeCallStats } from "@/features/calls/components/call-stats";
 import { CallTimeline, EventTable, linesOf } from "@/features/calls/components/call-timeline";
+import { CollectedValues } from "@/features/calls/components/collected-values";
 import { duration, humanise, when } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +45,10 @@ const CallDetailPage = async ({
       <CallFlags call={call} />
 
       <CallStats stats={stats} />
+
+      {/* Above the transcript: "what did we get" is the question an operator opens a call
+          with, and the transcript is the evidence for it rather than the other way round. */}
+      <CollectedValues call={call} />
 
       <Card
         title="Transcript"
