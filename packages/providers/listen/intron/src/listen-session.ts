@@ -75,6 +75,8 @@ interface Leg {
   pending: Buffer;
   ack: number;
   committed: boolean;
+  /** A commit asked for before `SESSION_CREATED`. Sent the moment the leg is usable. */
+  commitWhenReady: boolean;
   openedAtMs: number;
 }
 
@@ -120,6 +122,18 @@ export const openIntronSession = (
     }
   };
 
+  const sendCommit = (leg: Leg): void => {
+    // Everything under the floor still has to go, or the tail of the turn — which is where
+    // the answer usually is — never reaches the model. Padded, never short: a sub-floor
+    // chunk is refused and the refusal desynchronises the counter for good.
+    if (leg.pending.length > 0) {
+      leg.ack += 1;
+      leg.socket.send(encodeAudioChunk(padToFloor(leg.pending), leg.ack));
+      leg.pending = Buffer.alloc(0);
+    }
+    leg.socket.send(encodeCommit());
+  };
+
   const openLeg = (): Leg => {
     const socket = connect(url);
     const leg: Leg = {
@@ -129,6 +143,7 @@ export const openIntronSession = (
       pending: Buffer.alloc(0),
       ack: 0,
       committed: false,
+      commitWhenReady: false,
       openedAtMs: Date.now(),
     };
 
@@ -150,6 +165,10 @@ export const openIntronSession = (
           leg.pending = Buffer.concat([leg.backlog, leg.pending]);
           leg.backlog = Buffer.alloc(0);
           flush(leg);
+          if (leg.commitWhenReady) {
+            leg.commitWhenReady = false;
+            sendCommit(leg);
+          }
           return;
         }
         case "interim": {
@@ -218,7 +237,16 @@ export const openIntronSession = (
   const rotate = (): void => {
     if (closed) return;
     const promoted = next ?? openLeg();
+    /* The warm leg's rolling buffer is its whole point, and `ready` is the only other place
+       that drains it — which for a warm leg fired long before any of it arrived. Promoting
+       without this left two seconds of the caller stuck in `backlog` for the rest of the
+       call, so every turn began deaf to its own opening words. */
+    if (promoted.backlog.length > 0) {
+      promoted.pending = Buffer.concat([promoted.backlog, promoted.pending]);
+      promoted.backlog = Buffer.alloc(0);
+    }
     current = promoted;
+    if (promoted.ready) flush(promoted);
     next = openLeg();
   };
 
@@ -266,18 +294,17 @@ export const openIntronSession = (
       if (closed || current === null || current.committed) return;
       const leg = current;
       leg.committed = true;
-      // Everything under the floor still has to go, or the tail of the turn — which is
-      // where the answer usually is — never reaches the model.
-      if (leg.pending.length > 0) {
-        leg.ack += 1;
-        // Padded, never short. A sub-floor chunk is refused and the refusal takes the
-        // whole session with it — see MIN_CHUNK_BYTES.
-        leg.socket.send(encodeAudioChunk(padToFloor(leg.pending), leg.ack));
-        leg.pending = Buffer.alloc(0);
+      /* A leg promoted moments ago may not have its session yet — connecting takes about
+         660ms — and a COMMIT sent before `SESSION_CREATED` comes back INPUT_ERROR, which
+         desynchronises the counter and costs the turn. Deferred rather than dropped: the
+         caller has finished either way and still needs their answer. */
+      if (!leg.ready) {
+        leg.commitWhenReady = true;
+        return;
       }
-      leg.socket.send(encodeCommit());
-      // Not rotated yet: the final still arrives on this leg, and `current` is what
-      // decides whether a transcript is delivered.
+      sendCommit(leg);
+      // Not rotated here: the final still arrives on this leg, and `current` is what
+      // decides whether a transcript is delivered. Rotation happens on that final.
     },
 
     onFailure: (listener) => failures.push(listener),

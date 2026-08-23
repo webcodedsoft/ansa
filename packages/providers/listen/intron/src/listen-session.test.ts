@@ -211,6 +211,46 @@ describe("the audio fan-out point", () => {
   });
 });
 
+describe("promoting the warm leg", () => {
+  it("hands over the audio it was holding, rather than stranding it", () => {
+    /* `ready` is the only other place that drains the backlog, and for a warm leg it fires
+       long before any of it arrives. Without draining on promotion, two seconds of the
+       caller stayed in `backlog` for the rest of the call and every turn began deaf to its
+       own opening words. */
+    const { session, legs } = setup();
+    legs[0]?.ready();
+    legs[1]?.ready();
+    for (let i = 0; i < 20; i += 1) session.write(audio(160));
+
+    expect(legs[1]?.sent).toHaveLength(0);
+    legs[0]?.say("SESSION_TIME_LIMIT_EXCEEDED", {});
+
+    const bytes = (legs[1]?.sent ?? [])
+      .map((raw) => Buffer.from(String((JSON.parse(raw) as Record<string, unknown>)["audio_base_64"]), "base64").length)
+      .reduce((n, b) => n + b, 0);
+    expect(bytes).toBeGreaterThan(0);
+  });
+
+  it("waits for the session before committing a leg that has just been promoted", () => {
+    /* Connecting takes about 660ms. A COMMIT sent before SESSION_CREATED comes back
+       INPUT_ERROR, which desynchronises the counter and costs the turn — two of those
+       landed on the call at 14:16, right as the first turn ended. */
+    const { session, legs } = setup();
+    legs[0]?.ready();
+    session.commit();
+    legs[0]?.say("COMMITTED_TRANSCRIPT", { transcript_text: "one" });
+
+    // legs[1] is now current and has never had SESSION_CREATED.
+    session.commit();
+    expect(legs[1]?.sent.map((r) => (JSON.parse(r) as { message_type: string }).message_type))
+      .not.toContain("COMMIT");
+
+    legs[1]?.ready();
+    expect(legs[1]?.sent.map((r) => (JSON.parse(r) as { message_type: string }).message_type))
+      .toContain("COMMIT");
+  });
+});
+
 describe("a chunk the server refuses", () => {
   it("replaces the leg, because the counter never resynchronises", () => {
     /* `ack_id` tracks the server's count of accepted chunks. A rejection desynchronises
