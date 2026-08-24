@@ -89,10 +89,18 @@ have, the section is cut, not faked.
 - The showcase tabs are radio inputs + labels, zero JS. The radios must be
   `position: fixed` — focusing an absolutely-positioned hidden radio makes the browser
   scroll its static position into view, and every tab click yanked the page until it was.
-- The scroll-pinned stepper: a tall wrapper (`height: 280vh; view-timeline: --how`) with a
-  `position: sticky` panel inside; each step and its isometric plane runs `animation-range`
-  slices of the same named timeline, lighting cumulatively. Without support, everything is
-  simply lit.
+- The scroll-pinned stepper is driven by `components/motion.tsx` (`ScrollScene`), not by
+  CSS `animation-timeline` — scroll-driven CSS is Chrome/Safari only and the signature
+  effect must fire everywhere. The component writes `--p` (continuous 0..1) and
+  `data-step` onto a 320vh wrapper with a sticky panel; CSS couples the isometric stack's
+  rotation and plane spread to `--p` via calc() (continuous — the geometry moves with the
+  scroll, which is what beats the reference's discrete swaps) and swaps exclusive step
+  states, the progress rail and the status line off `data-step`. Do NOT throttle the
+  scroll handler through requestAnimationFrame: rAF starves entirely in occluded tabs and
+  the queue flag wedges — one getBoundingClientRect per scroll event needs no throttle.
+- Reveals are IntersectionObserver-driven (`Reveal` in the same file) for the same
+  every-browser reason. Hidden initial states exist only under `html.js`, set by a
+  synchronous inline script — no JavaScript means nothing is ever hidden.
 
 - Scroll reveals: `@supports (animation-timeline: view())` progressive enhancement —
   visible-by-default, animated where supported. Never hide content behind JS.

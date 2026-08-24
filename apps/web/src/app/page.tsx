@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { Reveal, ScrollScene } from "@/components/motion";
+
 import styles from "./page.module.css";
 
 export const metadata: Metadata = {
@@ -23,6 +25,13 @@ export const metadata: Metadata = {
  * numbers. Server component, zero client JS: tabs are radio inputs, the stepper is
  * scroll-driven CSS behind @supports, and all motion dies under prefers-reduced-motion.
  */
+
+/** The hero matrix's 20 columns: phase variant and start delay, fixed so SSR agrees. */
+const EQ: readonly (readonly [variant: 0 | 1 | 2, delayMs: number])[] = [
+  [0, 0], [1, 140], [2, 260], [0, 90], [1, 380], [2, 40], [0, 300], [1, 180], [2, 420],
+  [0, 240], [1, 60], [2, 340], [0, 160], [1, 460], [2, 120], [0, 400], [1, 220], [2, 20],
+  [0, 360], [1, 280],
+];
 
 type Tok = readonly [kind: "cmt" | "str" | "key" | "plain", text: string];
 
@@ -144,6 +153,9 @@ const marqueeRow = (pairs: readonly (readonly [string, string])[]) => (
 
 const LandingPage = () => (
   <div className={styles.landing}>
+    {/* Synchronous on purpose: reveal styles hide content only under html.js, so the
+        class must exist before first paint or sections flash. No JS, no hiding at all. */}
+    <script dangerouslySetInnerHTML={{ __html: "document.documentElement.classList.add('js')" }} />
     <Link href="/sign-in" className={styles.banner}>
       NEW · EXPORT COLLECTED CALL DATA TO EXCEL, PDF AND JSON →
     </Link>
@@ -171,7 +183,16 @@ const LandingPage = () => (
     <main>
       <section className={styles.hero}>
         <div className={styles.container}>
-          <div className={styles.matrix} aria-hidden style={{ marginInline: "auto" }} />
+          <div className={styles.matrix} aria-hidden style={{ marginInline: "auto" }}>
+            {EQ.map(([variant, delay], index) => (
+              <span
+                // A fixed literal; the index is a stable identity.
+                key={index}
+                className={`${styles.eqCol} ${variant === 1 ? styles.eqB : variant === 2 ? styles.eqC : ""}`}
+                style={{ animationDelay: `${delay}ms` }}
+              />
+            ))}
+          </div>
           <h1 className={styles.h1}>
             A phone agent that <span className={styles.tinted}>understands</span> your callers
           </h1>
@@ -380,8 +401,8 @@ const LandingPage = () => (
         </div>
       </section>
 
-      <section className={`${styles.codeSection} ${styles.reveal}`}>
-        <div className={styles.container}>
+      <section className={styles.codeSection}>
+        <Reveal className={`${styles.container} ${styles.reveal}`}>
           <span className={styles.eyebrow}>Simple and powerful API</span>
           <h2 className={styles.h2}>
             Configure, publish, <span className={styles.tinted}>dial</span>
@@ -461,10 +482,10 @@ const LandingPage = () => (
               <span className={styles.quickGo}>IN THE CONSOLE →</span>
             </Link>
           </div>
-        </div>
+        </Reveal>
       </section>
 
-      <section id="how" className={styles.howTall}>
+      <ScrollScene id="how" steps={4} className={styles.howTall}>
         <div className={styles.howSticky}>
           <div className={styles.container}>
             <div className={styles.howPanel}>
@@ -473,6 +494,7 @@ const LandingPage = () => (
                 <h2 className={styles.h2}>
                   How a <span className={styles.tinted}>call</span> works
                 </h2>
+                <div className={styles.howProgress} aria-hidden />
                 <div className={styles.steps}>
                   <div className={`${styles.step} ${styles.step1}`}>
                     <span className={styles.stepNo}>1</span>
@@ -518,29 +540,38 @@ const LandingPage = () => (
                   </a>
                 </div>
               </div>
-              <div className={styles.iso} aria-hidden>
-                <div className={styles.isoStack}>
-                  <div className={`${styles.plane} ${styles.plane1}`}>
-                    <span className={styles.planeTag}>PHONE LINE</span>
+              <div>
+                <div className={styles.iso} aria-hidden>
+                  <div className={styles.isoStack}>
+                    <div className={`${styles.plane} ${styles.plane1}`}>
+                      <span className={styles.planeTag}>PHONE LINE</span>
+                    </div>
+                    <div className={`${styles.plane} ${styles.plane2}`}>
+                      <span className={styles.planeTag}>LISTEN</span>
+                    </div>
+                    <div className={`${styles.plane} ${styles.plane3}`}>
+                      <span className={styles.planeTag}>DECIDE</span>
+                    </div>
+                    <div className={`${styles.plane} ${styles.plane4}`}>
+                      <span className={styles.planeTag}>SPEAK</span>
+                    </div>
+                    <span className={styles.signal} />
                   </div>
-                  <div className={`${styles.plane} ${styles.plane2}`}>
-                    <span className={styles.planeTag}>LISTEN</span>
-                  </div>
-                  <div className={`${styles.plane} ${styles.plane3}`}>
-                    <span className={styles.planeTag}>DECIDE</span>
-                  </div>
-                  <div className={`${styles.plane} ${styles.plane4}`}>
-                    <span className={styles.planeTag}>SPEAK</span>
-                  </div>
+                </div>
+                <div className={styles.isoStatus} aria-hidden>
+                  <span>T = 0 MS · FRAMES ARRIVING</span>
+                  <span>WORDS + TURN BOUNDARY, SEPARATELY</span>
+                  <span>KNOWLEDGE · TOOLS · POLICIES</span>
+                  <span>T ≈ 227 MS · SPEAKING — INTERRUPTIBLE</span>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </section>
+      </ScrollScene>
 
       <section className={styles.infra}>
-        <div className={styles.container}>
+        <Reveal className={`${styles.container} ${styles.reveal}`}>
           <div className={styles.infraHead}>
             <span className={styles.eyebrow}>Built for phone lines</span>
             <h2 className={styles.h2}>
@@ -591,11 +622,11 @@ const LandingPage = () => (
               </div>
             </div>
           </div>
-        </div>
+        </Reveal>
       </section>
 
-      <section className={`${styles.marqueeSection} ${styles.reveal}`}>
-        <div className={styles.container}>
+      <section className={styles.marqueeSection}>
+        <Reveal className={`${styles.container} ${styles.reveal}`}>
           <div className={styles.marqueeHead}>
             <span className={styles.eyebrow}>The normalizer</span>
             <h2 className={styles.h2}>
@@ -607,7 +638,7 @@ const LandingPage = () => (
               into speech before they are spoken.
             </p>
           </div>
-        </div>
+        </Reveal>
         <div className={styles.marquee} aria-hidden>
           <div className={styles.marqueeTrack}>{marqueeRow(TICKER.slice(0, 4))}</div>
           <div className={styles.marqueeTrack}>{marqueeRow(TICKER.slice(0, 4))}</div>
@@ -618,8 +649,8 @@ const LandingPage = () => (
         </div>
       </section>
 
-      <section id="platform" className={`${styles.platform} ${styles.reveal}`}>
-        <div className={styles.container}>
+      <section id="platform" className={styles.platform}>
+        <Reveal className={`${styles.container} ${styles.reveal}`}>
           <span className={styles.eyebrow}>The platform</span>
           <h2 className={styles.h2}>
             Everything a phone line <span className={styles.tinted}>needs</span>
@@ -639,11 +670,11 @@ const LandingPage = () => (
               </div>
             ))}
           </div>
-        </div>
+        </Reveal>
       </section>
 
-      <section id="security" className={`${styles.security} ${styles.reveal}`}>
-        <div className={styles.container}>
+      <section id="security" className={styles.security}>
+        <Reveal className={`${styles.container} ${styles.reveal}`}>
           <span className={styles.eyebrow}>Guarantees</span>
           <h2 className={styles.h2}>
             Code, not <span className={styles.tinted}>promises</span>
@@ -675,7 +706,7 @@ const LandingPage = () => (
               </dd>
             </div>
           </dl>
-        </div>
+        </Reveal>
       </section>
 
       <section className={styles.cta}>
