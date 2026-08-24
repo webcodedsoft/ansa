@@ -1,28 +1,27 @@
 /*
- * The landing page's own skin.
+ * The landing page's skin. Studied from livekit.com (see
+ * .claude/skills/livekit-grade-landing) and rebuilt after the first attempt kept the
+ * palette but missed the weight: the near-full-viewport hero, the tabbed showcase, the
+ * code editor, the scroll-pinned stepper with isometric art, the hairline column grid
+ * behind giant stats, and the two-row marquee. Those structures are the page.
  *
- * Deliberately dark for every visitor — scoped literals rather than the console's themable
- * tokens, so this page commits to one look (see .claude/skills/livekit-grade-landing) and
- * the console's light/dark switching is untouched. Same family as the console's dark
- * palette: blue-black ground, teal accent, hairline panels.
- *
- * Three type voices, never blurred: a light display face for headlines, a mono for every
- * label, stat, eyebrow and caption, and the body face for prose. The light display weight
- * on a dark ground is most of the feel; the mono is most of the credibility.
+ * Dark for every visitor — scoped literals, not the console's themable tokens, so the
+ * console's light/dark switching is untouched.
  */
 
 .landing {
   --ground: #03070a;
   --panel: #070f13;
   --panel-2: #0b151b;
-  --line: rgb(255 255 255 / 13%);
+  --line: rgb(255 255 255 / 14%);
   --line-soft: rgb(255 255 255 / 7%);
   --ink: #f3f9f9;
-  --ink-2: rgb(243 249 249 / 76%);
-  --ink-3: rgb(243 249 249 / 52%);
+  --ink-2: rgb(243 249 249 / 74%);
+  --ink-3: rgb(243 249 249 / 48%);
   --teal: #4fe8cb;
+  --teal-dim: rgb(79 232 203 / 55%);
   --teal-ink: #032420;
-  --teal-soft: rgb(79 232 203 / 14%);
+  --teal-soft: rgb(79 232 203 / 13%);
   --ok: #6ee3a5;
 
   --display: -apple-system, "SF Pro Display", BlinkMacSystemFont, "Segoe UI", Roboto,
@@ -46,22 +45,22 @@
 
 .container {
   margin: 0 auto;
-  max-width: 1120px;
+  max-width: 1140px;
   padding: 0 24px;
 }
 
-/* ---- announcement ------------------------------------------------------- */
+/* ---- announcement + nav -------------------------------------------------- */
 
 .banner {
-  background: #050d12;
+  background: #04090d;
   border-bottom: 1px solid var(--line-soft);
+  color: var(--ink-3);
   display: block;
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.08em;
-  padding: 8px 16px;
+  padding: 9px 16px;
   text-align: center;
-  color: var(--ink-3);
   text-decoration: none;
 }
 
@@ -69,22 +68,20 @@
   color: var(--teal);
 }
 
-/* ---- nav ---------------------------------------------------------------- */
-
 .nav {
-  backdrop-filter: blur(14px);
-  background: rgb(3 7 10 / 82%);
+  backdrop-filter: blur(16px);
+  background: rgb(3 7 10 / 78%);
   border-bottom: 1px solid var(--line-soft);
   position: sticky;
   top: 0;
-  z-index: 20;
+  z-index: 30;
 }
 
 .navInner {
   align-items: center;
   display: flex;
-  gap: 28px;
-  height: 60px;
+  gap: 30px;
+  height: 62px;
 }
 
 .wordmark {
@@ -101,7 +98,7 @@
 
 .navLinks {
   display: flex;
-  gap: 22px;
+  gap: 24px;
 }
 
 .navLinks a {
@@ -118,7 +115,7 @@
   flex: 1;
 }
 
-/* ---- buttons ------------------------------------------------------------ */
+/* ---- buttons ------------------------------------------------------------- */
 
 .btn {
   align-items: center;
@@ -128,12 +125,12 @@
   font-family: var(--display);
   font-size: 13px;
   font-weight: 560;
-  gap: 8px;
+  gap: 9px;
   height: 36px;
   padding: 0 14px;
   text-decoration: none;
   transition: 0.15s ease;
-  transition-property: background, border-color, color, transform;
+  transition-property: background, border-color, color;
 }
 
 .btnPrimary {
@@ -151,20 +148,27 @@
 }
 
 .btnGhost:hover {
-  border-color: rgb(255 255 255 / 30%);
+  border-color: rgb(255 255 255 / 32%);
 }
 
 .btnLarge {
   font-size: 14px;
-  height: 42px;
-  padding: 0 20px;
+  height: 44px;
+  padding: 0 22px;
 }
 
-/* ---- shared section furniture ------------------------------------------ */
-
-.section {
-  padding: 110px 0 0;
+.kbd {
+  background: rgb(255 255 255 / 8%);
+  border: 1px solid var(--line-soft);
+  border-radius: 3px;
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 5px;
 }
+
+/* ---- shared furniture ---------------------------------------------------- */
 
 .eyebrow {
   color: var(--ink-3);
@@ -172,18 +176,18 @@
   font-family: var(--mono);
   font-size: 11px;
   font-weight: 500;
-  letter-spacing: 0.22em;
-  margin-bottom: 14px;
+  letter-spacing: 0.24em;
+  margin-bottom: 16px;
   text-transform: uppercase;
 }
 
 .h2 {
   color: var(--ink);
-  font-size: clamp(30px, 4.4vw, 44px);
+  font-size: clamp(32px, 4.6vw, 46px);
   font-weight: 300;
   letter-spacing: -0.022em;
-  line-height: 1.06;
-  margin: 0 0 16px;
+  line-height: 1.05;
+  margin: 0 0 18px;
   text-wrap: balance;
 }
 
@@ -197,12 +201,10 @@
   max-width: 620px;
 }
 
-/* Scroll reveal: visible by default, animated only where the browser can drive it from
-   scroll. Content is never hidden behind a script. */
 @supports (animation-timeline: view()) {
   .reveal {
     animation: rise both;
-    animation-range: entry 0% entry 60%;
+    animation-range: entry 0% entry 55%;
     animation-timeline: view();
   }
 }
@@ -210,7 +212,7 @@
 @keyframes rise {
   from {
     opacity: 0.05;
-    transform: translateY(22px);
+    transform: translateY(24px);
   }
 
   to {
@@ -219,66 +221,71 @@
   }
 }
 
-/* ---- hero --------------------------------------------------------------- */
+/* ---- hero ----------------------------------------------------------------
+   Most of a viewport of air. The scale IS the design: a small animated dot grid, one
+   light headline, one grey sentence, two quiet buttons, and nothing else competing. */
 
 .hero {
-  padding: 84px 0 96px;
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: calc(100vh - 110px);
+  padding: 60px 0 90px;
   text-align: center;
 }
 
-/* A voice product, so the dots draw a voice: columns of dots in a speech envelope, with a
-   glow that travels left to right — LiveKit's dot-matrix sweep, reshaped into a waveform. */
-.wave {
-  align-items: center;
-  display: flex;
-  gap: 6px;
+/* LiveKit's dot-matrix block, rebuilt: a dim dot grid, and a brighter copy of the same
+   grid revealed through a narrow moving band — their `background-position: 140% → -40%`
+   sweep, done with a mask so only the band lights. */
+.matrix {
+  background-image: radial-gradient(circle, rgb(79 232 203 / 26%) 1.2px, transparent 1.7px);
+  background-size: 11px 11px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
   height: 96px;
-  justify-content: center;
-  margin: 0 auto 52px;
-  width: min(560px, 88%);
+  margin-bottom: 58px;
+  position: relative;
+  width: 138px;
 }
 
-.waveBar {
-  animation: glow 3.8s ease-in-out infinite;
-  background-image: radial-gradient(circle, var(--teal) 1.1px, transparent 1.6px);
-  background-position: center bottom;
-  background-size: 7px 7px;
-  border-radius: 2px;
-  flex: 1;
-  opacity: 0.3;
+.matrix::after {
+  animation: sweep 4.6s linear infinite;
+  background-image: radial-gradient(circle, var(--teal) 1.2px, transparent 1.7px);
+  background-size: 11px 11px;
+  content: "";
+  inset: 0;
+  mask-image: linear-gradient(100deg, transparent 38%, #000 50%, transparent 62%);
+  mask-size: 300% 100%;
+  position: absolute;
 }
 
-@keyframes glow {
-  0%,
-  100% {
-    opacity: 0.22;
+@keyframes sweep {
+  from {
+    mask-position: 140% 0;
   }
 
-  8% {
-    opacity: 1;
-  }
-
-  22% {
-    opacity: 0.35;
+  to {
+    mask-position: -40% 0;
   }
 }
 
 .h1 {
   color: var(--ink);
-  font-size: clamp(38px, 6.4vw, 64px);
+  font-size: clamp(40px, 6.6vw, 68px);
   font-weight: 200;
-  letter-spacing: -0.025em;
-  line-height: 1.02;
-  margin: 0 auto 22px;
-  max-width: 820px;
+  letter-spacing: -0.026em;
+  line-height: 1.03;
+  margin: 0 auto 24px;
+  max-width: 900px;
   text-wrap: balance;
 }
 
 .heroSub {
   color: var(--ink-2);
-  font-size: 16.5px;
-  margin: 0 auto 34px;
-  max-width: 640px;
+  font-size: 17px;
+  margin: 0 auto 36px;
+  max-width: 660px;
 }
 
 .heroActions {
@@ -291,19 +298,129 @@
   color: var(--ink-3);
   font-family: var(--mono);
   font-size: 11px;
-  letter-spacing: 0.06em;
-  margin-top: 26px;
+  letter-spacing: 0.08em;
+  margin-top: 30px;
 }
 
-/* ---- transcript panel --------------------------------------------------- */
+/* ---- tabbed showcase ------------------------------------------------------
+   LiveKit's VOICE AI / VIDEO AI / ROBOTICS control: mono uppercase tabs on a pill,
+   swapping a big panel. Radio inputs, so it works with zero JavaScript. */
 
-.callPanel {
+.showcase {
+  padding: 40px 0 0;
+}
+
+.tabRadio {
+  /* Fixed, not absolute: clicking a label focuses the input, and the browser scrolls a
+     focused element into view. An absolutely-positioned radio sits at the section top, so
+     every tab click yanked the page there. A fixed element never triggers that scroll. */
+  opacity: 0;
+  pointer-events: none;
+  position: fixed;
+  top: 0;
+}
+
+.tabBar {
   background: var(--panel);
   border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  display: inline-flex;
+  gap: 4px;
+  margin-bottom: 14px;
+  padding: 4px;
+}
+
+.tabLabel {
+  border-radius: 5px;
+  color: var(--ink-3);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  padding: 8px 16px;
+  text-transform: uppercase;
+  transition: 0.15s ease;
+  transition-property: background, color;
+}
+
+.tabLabel:hover {
+  color: var(--ink);
+}
+
+.radioIn:checked ~ .tabBar .labelIn,
+.radioOut:checked ~ .tabBar .labelOut,
+.radioConsole:checked ~ .tabBar .labelConsole {
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.pane {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: 16px;
+  display: none;
+  gap: 52px;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  min-height: 460px;
+  padding: 52px;
+}
+
+.radioIn:checked ~ .paneIn,
+.radioOut:checked ~ .paneOut,
+.radioConsole:checked ~ .paneConsole {
+  display: grid;
+}
+
+.paneCopy {
+  align-self: center;
+}
+
+.paneCopy h3 {
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  margin: 0 0 14px;
+}
+
+.paneCopy p {
+  color: var(--ink-2);
+  font-size: 14.5px;
+  margin: 0 0 22px;
+}
+
+.paneFacts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.paneFacts li {
+  color: var(--ink-3);
+  display: flex;
+  font-family: var(--mono);
+  font-size: 12px;
+  gap: 10px;
+  letter-spacing: 0.03em;
+}
+
+.paneFacts li::before {
+  color: var(--teal);
+  content: "◆";
+  font-size: 8px;
+  line-height: 2;
+}
+
+/* ---- transcript (inbound pane art) --------------------------------------- */
+
+.callPanel {
+  background: var(--ground);
+  border: 1px solid var(--line-soft);
   border-radius: 12px;
-  margin-top: 64px;
   overflow: hidden;
-  text-align: left;
 }
 
 .callHead {
@@ -312,10 +429,10 @@
   color: var(--ink-3);
   display: flex;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 10.5px;
   gap: 10px;
   letter-spacing: 0.1em;
-  padding: 12px 20px;
+  padding: 11px 18px;
 }
 
 .liveDot {
@@ -340,20 +457,20 @@
 .turns {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 26px 24px 30px;
+  gap: 16px;
+  padding: 22px 20px 24px;
 }
 
 .turn {
   display: grid;
-  gap: 4px 18px;
-  grid-template-columns: 64px 1fr auto;
+  gap: 3px 14px;
+  grid-template-columns: 52px 1fr auto;
 }
 
 .speaker {
   color: var(--ink-3);
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 10px;
   letter-spacing: 0.14em;
   padding-top: 3px;
 }
@@ -364,8 +481,8 @@
 
 .utterance {
   color: var(--ink);
-  font-size: 15px;
-  line-height: 1.55;
+  font-size: 13.5px;
+  line-height: 1.5;
   margin: 0;
 }
 
@@ -381,9 +498,9 @@
   border-radius: 3px;
   color: var(--ink-3);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 9.5px;
   letter-spacing: 0.08em;
-  padding: 3px 7px;
+  padding: 3px 6px;
   white-space: nowrap;
 }
 
@@ -395,114 +512,232 @@
 .turnNote {
   color: var(--ink-3);
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 10px;
   grid-column: 2;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
 }
 
-/* ---- stats -------------------------------------------------------------- */
+/* ---- dispatch checklist (outbound pane art) ------------------------------- */
 
-.stats {
-  border-bottom: 1px solid var(--line-soft);
-  border-top: 1px solid var(--line-soft);
-  display: grid;
-  gap: 1px;
-  grid-template-columns: repeat(4, 1fr);
-  margin-top: 110px;
-}
-
-.stat {
+.terminal {
+  align-self: center;
   background: var(--ground);
-  outline: 1px solid var(--line-soft);
-  padding: 34px 28px 30px;
-  /* The hero centres everything above; numbers read as data when they rag left. */
-  text-align: left;
-}
-
-.statValue {
-  color: var(--ink);
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
   font-family: var(--mono);
-  font-size: clamp(26px, 3vw, 34px);
-  font-weight: 400;
-  letter-spacing: -0.02em;
+  font-size: 12.5px;
+  line-height: 2.1;
+  padding: 26px 28px;
 }
 
-.statValue em {
-  color: var(--teal);
-  font-style: normal;
-}
-
-.statLabel {
+.terminal .cmt {
   color: var(--ink-3);
+}
+
+.terminal .okLine {
+  color: var(--ink-2);
+}
+
+.terminal .okLine::before {
+  color: var(--ok);
+  content: "✓ ";
+}
+
+.terminal .go {
+  color: var(--teal);
+}
+
+/* ---- turn table (console pane art) ---------------------------------------- */
+
+.miniTable {
+  align-self: center;
+  background: var(--ground);
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.miniTable table {
+  border-collapse: collapse;
   font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.18em;
-  margin-top: 10px;
+  font-size: 11.5px;
+  width: 100%;
+}
+
+.miniTable th {
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink-3);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  padding: 10px 16px;
+  text-align: left;
   text-transform: uppercase;
 }
 
-/* ---- normalizer ticker --------------------------------------------------- */
+.miniTable td {
+  border-bottom: 1px solid rgb(255 255 255 / 4%);
+  color: var(--ink-2);
+  padding: 9px 16px;
+}
 
-.ticker {
+.miniTable td:last-child {
+  color: var(--teal);
+  text-align: right;
+}
+
+/* ---- code section ---------------------------------------------------------
+   LiveKit's editor: file tabs, line numbers, real syntax colour. The code is the API
+   this console actually exposes, not pseudocode. */
+
+.codeSection {
+  padding: 170px 0 0;
+}
+
+.editor {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  margin-top: 44px;
+  overflow: hidden;
+}
+
+.editorTabs {
   border-bottom: 1px solid var(--line-soft);
   display: flex;
-  overflow: hidden;
-  padding: 18px 0;
+}
+
+.editorTab {
+  border-right: 1px solid var(--line-soft);
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding: 10px 18px;
+}
+
+.editorTabOn {
+  background: var(--ground);
+  color: var(--ink);
+}
+
+.code {
+  display: block;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.85;
+  overflow-x: auto;
+  padding: 22px 0 26px;
+}
+
+.codeLine {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  padding-right: 24px;
+  white-space: pre;
+}
+
+.lineNo {
+  color: rgb(243 249 249 / 22%);
+  padding-right: 22px;
+  text-align: right;
   user-select: none;
 }
 
-.tickerTrack {
-  animation: slide 46s linear infinite;
-  display: flex;
-  flex-shrink: 0;
-  gap: 56px;
-  padding-right: 56px;
-}
-
-.ticker:hover .tickerTrack {
-  animation-play-state: paused;
-}
-
-@keyframes slide {
-  to {
-    transform: translateX(-100%);
-  }
-}
-
-.pair {
+.tokCmt {
   color: var(--ink-3);
-  font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
 }
 
-.pair b {
-  color: var(--ink);
-  font-weight: 500;
-}
-
-.pair span {
+.tokStr {
   color: var(--teal);
 }
 
-/* ---- how it works ------------------------------------------------------- */
+.tokKey {
+  color: #9ad7f5;
+}
+
+.tokPlain {
+  color: var(--ink-2);
+}
+
+.quickRow {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(4, 1fr);
+  margin-top: 14px;
+}
+
+.quick {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  display: block;
+  padding: 20px;
+  text-decoration: none;
+  transition: border-color 0.18s ease;
+}
+
+.quick:hover {
+  border-color: rgb(79 232 203 / 30%);
+}
+
+.quickTitle {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 560;
+  margin-bottom: 6px;
+}
+
+.quickBody {
+  color: var(--ink-3);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.quickGo {
+  color: var(--teal);
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  margin-top: 14px;
+}
+
+/* ---- how a call works: scroll-pinned stepper -------------------------------
+   The wrapper is tall; the panel is sticky; each step and its matching layer light up
+   cumulatively as scroll progresses through the wrapper. Without scroll-driven
+   animation support everything is simply lit. */
+
+.howTall {
+  padding-top: 170px;
+}
+
+@supports (animation-timeline: view()) {
+  .howTall {
+    height: 280vh;
+    view-timeline: --how block;
+  }
+}
+
+.howSticky {
+  position: sticky;
+  top: 96px;
+}
 
 .howPanel {
   background: var(--panel);
   border: 1px solid var(--line-soft);
-  border-radius: 14px;
+  border-radius: 16px;
   display: grid;
-  gap: 48px;
+  gap: 56px;
   grid-template-columns: minmax(0, 5fr) minmax(0, 4fr);
-  margin-top: 48px;
-  padding: 52px 48px;
+  padding: 54px 52px;
 }
 
 .steps {
   display: flex;
   flex-direction: column;
-  margin-top: 26px;
+  margin-top: 28px;
 }
 
 .step {
@@ -513,7 +748,6 @@
   position: relative;
 }
 
-/* the hairline spine connecting the numbered dots */
 .step:not(:last-child)::before {
   background: var(--line-soft);
   content: "";
@@ -539,7 +773,7 @@
 
 .stepTitle {
   color: var(--ink);
-  font-size: 15px;
+  font-size: 15.5px;
   font-weight: 560;
   padding-top: 2px;
 }
@@ -552,73 +786,333 @@
   max-width: 46ch;
 }
 
-/* the pipeline, drawn as offset layers with a dotted spine */
-.layers {
+@supports (animation-timeline: view()) {
+  .step {
+    animation: stepOn both;
+    animation-timeline: --how;
+    opacity: 0.32;
+  }
+
+  .step1 {
+    animation-range: 5% 20%;
+  }
+
+  .step2 {
+    animation-range: 25% 40%;
+  }
+
+  .step3 {
+    animation-range: 45% 60%;
+  }
+
+  .step4 {
+    animation-range: 65% 80%;
+  }
+}
+
+@keyframes stepOn {
+  to {
+    opacity: 1;
+  }
+}
+
+/* Isometric layer art: real rotated planes with dot-grid texture — LiveKit's exploded
+   stack. Labels ride the planes; the skew is part of the drawing. */
+.iso {
   align-self: center;
+  height: 380px;
+  perspective: 1400px;
+  position: relative;
+  width: 100%;
+}
+
+.isoStack {
+  height: 100%;
+  position: relative;
+  transform: rotateX(55deg) rotateZ(-42deg);
+  transform-style: preserve-3d;
+  width: 100%;
+}
+
+.plane {
+  background-image: radial-gradient(circle, rgb(255 255 255 / 9%) 1px, transparent 1.4px);
+  background-size: 14px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  height: 230px;
+  left: 50%;
+  margin: -115px 0 0 -115px;
+  position: absolute;
+  top: 50%;
+  width: 230px;
+}
+
+.planeTag {
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 10px;
+  left: 14px;
+  letter-spacing: 0.16em;
+  position: absolute;
+  top: 12px;
+}
+
+.plane1 {
+  transform: translateZ(0);
+}
+
+.plane2 {
+  transform: translateZ(64px);
+}
+
+.plane3 {
+  transform: translateZ(128px);
+}
+
+.plane4 {
+  transform: translateZ(192px);
+}
+
+@supports (animation-timeline: view()) {
+  .plane {
+    animation: planeOn both;
+    animation-timeline: --how;
+  }
+
+  .plane1 {
+    animation-range: 5% 20%;
+  }
+
+  .plane2 {
+    animation-range: 25% 40%;
+  }
+
+  .plane3 {
+    animation-range: 45% 60%;
+  }
+
+  .plane4 {
+    animation-range: 65% 80%;
+  }
+}
+
+@keyframes planeOn {
+  to {
+    background-image: radial-gradient(circle, rgb(79 232 203 / 35%) 1px, transparent 1.4px);
+    border-color: var(--teal-dim);
+    box-shadow: 0 0 34px rgb(79 232 203 / 8%);
+  }
+}
+
+.howButtons {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+/* ---- infrastructure: hairline columns, giant numbers, ticking feed --------- */
+
+.infra {
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--line-soft) 0,
+    var(--line-soft) 1px,
+    transparent 1px,
+    transparent 140px
+  );
+  border-bottom: 1px solid var(--line-soft);
+  border-top: 1px solid var(--line-soft);
+  margin-top: 190px;
+  padding: 120px 0 130px;
+}
+
+.infraHead {
+  text-align: center;
+}
+
+.infraHead .lede {
+  margin: 0 auto;
+}
+
+.infraGrid {
+  display: grid;
+  gap: 80px;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  margin-top: 90px;
+}
+
+.bigStats {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 44px;
+}
+
+.bigStat .n {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: clamp(34px, 4.4vw, 52px);
+  letter-spacing: -0.02em;
+}
+
+.bigStat .n em {
+  color: var(--teal);
+  font-style: normal;
+}
+
+.bigStat .l {
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.2em;
+  margin-top: 6px;
+  text-transform: uppercase;
+}
+
+.feed {
+  border-left: 1px solid var(--line-soft);
+  height: 340px;
+  overflow: hidden;
+  padding-left: 44px;
   position: relative;
 }
 
-.layers::before {
-  border-left: 1px dashed rgb(255 255 255 / 16%);
+.feed::before,
+.feed::after {
   content: "";
-  height: 100%;
-  left: 50%;
+  height: 60px;
+  left: 0;
   position: absolute;
+  right: 0;
+  z-index: 1;
+}
+
+.feed::before {
+  background: linear-gradient(var(--ground), transparent);
   top: 0;
 }
 
-.layer {
-  background: var(--panel-2);
-  border: 1px solid var(--line-soft);
-  border-radius: 8px;
-  color: var(--ink-2);
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.16em;
-  padding: 16px 18px;
-  position: relative;
-  transform: perspective(900px) rotateX(14deg);
+.feed::after {
+  background: linear-gradient(transparent, var(--ground));
+  bottom: 0;
 }
 
-.layer small {
+.feedTrack {
+  animation: feedUp 26s linear infinite;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+@keyframes feedUp {
+  to {
+    transform: translateY(-50%);
+  }
+}
+
+.feedLine {
   color: var(--ink-3);
-  display: block;
-  font-size: 10px;
-  letter-spacing: 0.05em;
-  margin-top: 4px;
-  text-transform: none;
+  display: flex;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  justify-content: space-between;
+  letter-spacing: 0.06em;
 }
 
-.layer:nth-child(odd) {
-  margin-left: 28px;
+.feedLine b {
+  color: var(--ink-2);
+  font-weight: 400;
 }
 
-.layer:nth-child(even) {
-  margin-right: 28px;
-}
-
-.layerAccent {
-  border-color: rgb(79 232 203 / 35%);
+.feedLine span {
   color: var(--teal);
 }
 
-/* ---- platform grid ------------------------------------------------------ */
+/* ---- normalizer marquee: two staggered rows of cards ----------------------- */
+
+.marqueeSection {
+  padding: 170px 0 0;
+}
+
+.marqueeHead {
+  margin-bottom: 44px;
+}
+
+.marquee {
+  display: flex;
+  overflow: hidden;
+}
+
+.marquee + .marquee {
+  margin-top: 14px;
+}
+
+.marqueeTrack {
+  animation: slide 52s linear infinite;
+  display: flex;
+  flex-shrink: 0;
+  gap: 14px;
+  padding-right: 14px;
+}
+
+.marqueeSlow .marqueeTrack {
+  animation-direction: reverse;
+  animation-duration: 68s;
+}
+
+.marquee:hover .marqueeTrack {
+  animation-play-state: paused;
+}
+
+@keyframes slide {
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+.tickCard {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  padding: 16px 20px;
+  white-space: nowrap;
+}
+
+.tickCard .raw {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.tickCard .spoken {
+  color: var(--ink-3);
+  display: block;
+  font-size: 12.5px;
+  margin-top: 5px;
+}
+
+.tickCard .spoken i {
+  color: var(--teal);
+  font-style: normal;
+}
+
+/* ---- platform grid --------------------------------------------------------- */
+
+.platform {
+  padding: 170px 0 0;
+}
 
 .grid {
   display: grid;
   gap: 14px;
   grid-template-columns: repeat(3, 1fr);
-  margin-top: 46px;
+  margin-top: 48px;
 }
 
 .card {
   background: var(--panel);
   border: 1px solid var(--line-soft);
-  border-radius: 10px;
-  padding: 24px 22px 26px;
+  border-radius: 12px;
+  padding: 26px 24px 28px;
   transition: border-color 0.18s ease, transform 0.18s ease;
 }
 
@@ -638,7 +1132,7 @@
   color: var(--ink);
   font-size: 15.5px;
   font-weight: 560;
-  margin: 12px 0 8px;
+  margin: 14px 0 8px;
 }
 
 .cardBody {
@@ -648,15 +1142,19 @@
   margin: 0;
 }
 
-/* ---- guarantees --------------------------------------------------------- */
+/* ---- guarantees ------------------------------------------------------------ */
+
+.security {
+  padding: 170px 0 0;
+}
 
 .guarantees {
   border-top: 1px solid var(--line-soft);
   display: grid;
-  gap: 40px;
+  gap: 44px;
   grid-template-columns: repeat(3, 1fr);
-  margin-top: 46px;
-  padding-top: 40px;
+  margin-top: 48px;
+  padding-top: 44px;
 }
 
 .guarantee dt {
@@ -673,31 +1171,29 @@
   margin: 0;
 }
 
-/* ---- closing CTA -------------------------------------------------------- */
+/* ---- CTA + footer ----------------------------------------------------------- */
 
 .cta {
-  padding: 130px 0 120px;
+  padding: 190px 0 150px;
 }
 
 .ctaActions {
   display: flex;
   gap: 12px;
-  margin-top: 30px;
+  margin-top: 32px;
 }
 
 .ctaMeta {
   color: var(--ink-3);
   font-family: var(--mono);
   font-size: 11px;
-  letter-spacing: 0.06em;
-  margin-top: 24px;
+  letter-spacing: 0.08em;
+  margin-top: 26px;
 }
-
-/* ---- footer ------------------------------------------------------------- */
 
 .footer {
   border-top: 1px solid var(--line-soft);
-  padding: 56px 0 40px;
+  padding: 60px 0 40px;
 }
 
 .footerGrid {
@@ -762,11 +1258,12 @@
   width: 6px;
 }
 
-/* ---- responsive --------------------------------------------------------- */
+/* ---- responsive ------------------------------------------------------------- */
 
-@media (max-width: 900px) {
-  .stats {
-    grid-template-columns: repeat(2, 1fr);
+@media (max-width: 940px) {
+  .pane {
+    grid-template-columns: 1fr;
+    padding: 30px 24px;
   }
 
   .howPanel {
@@ -774,10 +1271,25 @@
     padding: 36px 26px;
   }
 
-  .grid {
+  .iso {
+    height: 300px;
+  }
+
+  .infraGrid {
+    gap: 48px;
     grid-template-columns: 1fr;
   }
 
+  .feed {
+    border-left: 0;
+    padding-left: 0;
+  }
+
+  .quickRow {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .grid,
   .guarantees {
     grid-template-columns: 1fr;
   }
@@ -793,20 +1305,27 @@
 
 /* Motion is decoration here; none of it carries information. */
 @media (prefers-reduced-motion: reduce) {
-  .waveBar,
-  .tickerTrack,
+  .matrix::after,
+  .marqueeTrack,
+  .feedTrack,
   .liveDot,
   .statusDot {
     animation: none;
   }
 
-  .waveBar {
-    opacity: 0.5;
-  }
-
   @supports (animation-timeline: view()) {
-    .reveal {
+    .reveal,
+    .step,
+    .plane {
       animation: none;
+    }
+
+    .step {
+      opacity: 1;
+    }
+
+    .howTall {
+      height: auto;
     }
   }
 }

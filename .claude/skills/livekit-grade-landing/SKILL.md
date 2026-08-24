@@ -86,6 +86,14 @@ have, the section is cut, not faked.
 
 ## Mechanics worth keeping
 
+- The showcase tabs are radio inputs + labels, zero JS. The radios must be
+  `position: fixed` — focusing an absolutely-positioned hidden radio makes the browser
+  scroll its static position into view, and every tab click yanked the page until it was.
+- The scroll-pinned stepper: a tall wrapper (`height: 280vh; view-timeline: --how`) with a
+  `position: sticky` panel inside; each step and its isometric plane runs `animation-range`
+  slices of the same named timeline, lighting cumulatively. Without support, everything is
+  simply lit.
+
 - Scroll reveals: `@supports (animation-timeline: view())` progressive enhancement —
   visible-by-default, animated where supported. Never hide content behind JS.
 - Marquee: two copies of the row, `translateX(-50%)` loop, `animation-play-state: paused`
