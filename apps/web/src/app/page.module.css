@@ -1,0 +1,812 @@
+/*
+ * The landing page's own skin.
+ *
+ * Deliberately dark for every visitor — scoped literals rather than the console's themable
+ * tokens, so this page commits to one look (see .claude/skills/livekit-grade-landing) and
+ * the console's light/dark switching is untouched. Same family as the console's dark
+ * palette: blue-black ground, teal accent, hairline panels.
+ *
+ * Three type voices, never blurred: a light display face for headlines, a mono for every
+ * label, stat, eyebrow and caption, and the body face for prose. The light display weight
+ * on a dark ground is most of the feel; the mono is most of the credibility.
+ */
+
+.landing {
+  --ground: #03070a;
+  --panel: #070f13;
+  --panel-2: #0b151b;
+  --line: rgb(255 255 255 / 13%);
+  --line-soft: rgb(255 255 255 / 7%);
+  --ink: #f3f9f9;
+  --ink-2: rgb(243 249 249 / 76%);
+  --ink-3: rgb(243 249 249 / 52%);
+  --teal: #4fe8cb;
+  --teal-ink: #032420;
+  --teal-soft: rgb(79 232 203 / 14%);
+  --ok: #6ee3a5;
+
+  --display: -apple-system, "SF Pro Display", BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+    monospace;
+
+  background: var(--ground);
+  color: var(--ink-2);
+  font-family: var(--display);
+  font-size: 15px;
+  line-height: 1.6;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+.landing ::selection {
+  background: var(--teal-soft);
+  color: var(--ink);
+}
+
+.container {
+  margin: 0 auto;
+  max-width: 1120px;
+  padding: 0 24px;
+}
+
+/* ---- announcement ------------------------------------------------------- */
+
+.banner {
+  background: #050d12;
+  border-bottom: 1px solid var(--line-soft);
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  padding: 8px 16px;
+  text-align: center;
+  color: var(--ink-3);
+  text-decoration: none;
+}
+
+.banner:hover {
+  color: var(--teal);
+}
+
+/* ---- nav ---------------------------------------------------------------- */
+
+.nav {
+  backdrop-filter: blur(14px);
+  background: rgb(3 7 10 / 82%);
+  border-bottom: 1px solid var(--line-soft);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.navInner {
+  align-items: center;
+  display: flex;
+  gap: 28px;
+  height: 60px;
+}
+
+.wordmark {
+  color: var(--ink);
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+}
+
+.wordmark span {
+  color: var(--teal);
+}
+
+.navLinks {
+  display: flex;
+  gap: 22px;
+}
+
+.navLinks a {
+  color: var(--ink-2);
+  font-size: 13.5px;
+  text-decoration: none;
+}
+
+.navLinks a:hover {
+  color: var(--ink);
+}
+
+.navSpacer {
+  flex: 1;
+}
+
+/* ---- buttons ------------------------------------------------------------ */
+
+.btn {
+  align-items: center;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  font-family: var(--display);
+  font-size: 13px;
+  font-weight: 560;
+  gap: 8px;
+  height: 36px;
+  padding: 0 14px;
+  text-decoration: none;
+  transition: 0.15s ease;
+  transition-property: background, border-color, color, transform;
+}
+
+.btnPrimary {
+  background: var(--teal);
+  color: var(--teal-ink);
+}
+
+.btnPrimary:hover {
+  background: #6cf0d8;
+}
+
+.btnGhost {
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+
+.btnGhost:hover {
+  border-color: rgb(255 255 255 / 30%);
+}
+
+.btnLarge {
+  font-size: 14px;
+  height: 42px;
+  padding: 0 20px;
+}
+
+/* ---- shared section furniture ------------------------------------------ */
+
+.section {
+  padding: 110px 0 0;
+}
+
+.eyebrow {
+  color: var(--ink-3);
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  margin-bottom: 14px;
+  text-transform: uppercase;
+}
+
+.h2 {
+  color: var(--ink);
+  font-size: clamp(30px, 4.4vw, 44px);
+  font-weight: 300;
+  letter-spacing: -0.022em;
+  line-height: 1.06;
+  margin: 0 0 16px;
+  text-wrap: balance;
+}
+
+.tinted {
+  color: var(--teal);
+}
+
+.lede {
+  color: var(--ink-2);
+  font-size: 16px;
+  max-width: 620px;
+}
+
+/* Scroll reveal: visible by default, animated only where the browser can drive it from
+   scroll. Content is never hidden behind a script. */
+@supports (animation-timeline: view()) {
+  .reveal {
+    animation: rise both;
+    animation-range: entry 0% entry 60%;
+    animation-timeline: view();
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0.05;
+    transform: translateY(22px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---- hero --------------------------------------------------------------- */
+
+.hero {
+  padding: 84px 0 96px;
+  text-align: center;
+}
+
+/* A voice product, so the dots draw a voice: columns of dots in a speech envelope, with a
+   glow that travels left to right — LiveKit's dot-matrix sweep, reshaped into a waveform. */
+.wave {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  height: 96px;
+  justify-content: center;
+  margin: 0 auto 52px;
+  width: min(560px, 88%);
+}
+
+.waveBar {
+  animation: glow 3.8s ease-in-out infinite;
+  background-image: radial-gradient(circle, var(--teal) 1.1px, transparent 1.6px);
+  background-position: center bottom;
+  background-size: 7px 7px;
+  border-radius: 2px;
+  flex: 1;
+  opacity: 0.3;
+}
+
+@keyframes glow {
+  0%,
+  100% {
+    opacity: 0.22;
+  }
+
+  8% {
+    opacity: 1;
+  }
+
+  22% {
+    opacity: 0.35;
+  }
+}
+
+.h1 {
+  color: var(--ink);
+  font-size: clamp(38px, 6.4vw, 64px);
+  font-weight: 200;
+  letter-spacing: -0.025em;
+  line-height: 1.02;
+  margin: 0 auto 22px;
+  max-width: 820px;
+  text-wrap: balance;
+}
+
+.heroSub {
+  color: var(--ink-2);
+  font-size: 16.5px;
+  margin: 0 auto 34px;
+  max-width: 640px;
+}
+
+.heroActions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.heroMeta {
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  margin-top: 26px;
+}
+
+/* ---- transcript panel --------------------------------------------------- */
+
+.callPanel {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  margin-top: 64px;
+  overflow: hidden;
+  text-align: left;
+}
+
+.callHead {
+  align-items: center;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink-3);
+  display: flex;
+  font-family: var(--mono);
+  font-size: 11px;
+  gap: 10px;
+  letter-spacing: 0.1em;
+  padding: 12px 20px;
+}
+
+.liveDot {
+  animation: pulse 2.2s ease-in-out infinite;
+  background: var(--ok);
+  border-radius: 50%;
+  height: 7px;
+  width: 7px;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(110 227 165 / 45%);
+  }
+
+  55% {
+    box-shadow: 0 0 0 6px rgb(110 227 165 / 0%);
+  }
+}
+
+.turns {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 26px 24px 30px;
+}
+
+.turn {
+  display: grid;
+  gap: 4px 18px;
+  grid-template-columns: 64px 1fr auto;
+}
+
+.speaker {
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  padding-top: 3px;
+}
+
+.speakerAgent {
+  color: var(--teal);
+}
+
+.utterance {
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.55;
+  margin: 0;
+}
+
+.unheard {
+  color: var(--ink-3);
+  text-decoration: line-through;
+  text-decoration-color: rgb(255 154 144 / 55%);
+}
+
+.chip {
+  align-self: start;
+  border: 1px solid var(--line-soft);
+  border-radius: 3px;
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  padding: 3px 7px;
+  white-space: nowrap;
+}
+
+.chipTeal {
+  border-color: rgb(79 232 203 / 30%);
+  color: var(--teal);
+}
+
+.turnNote {
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  grid-column: 2;
+  letter-spacing: 0.05em;
+}
+
+/* ---- stats -------------------------------------------------------------- */
+
+.stats {
+  border-bottom: 1px solid var(--line-soft);
+  border-top: 1px solid var(--line-soft);
+  display: grid;
+  gap: 1px;
+  grid-template-columns: repeat(4, 1fr);
+  margin-top: 110px;
+}
+
+.stat {
+  background: var(--ground);
+  outline: 1px solid var(--line-soft);
+  padding: 34px 28px 30px;
+  /* The hero centres everything above; numbers read as data when they rag left. */
+  text-align: left;
+}
+
+.statValue {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: clamp(26px, 3vw, 34px);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+
+.statValue em {
+  color: var(--teal);
+  font-style: normal;
+}
+
+.statLabel {
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  margin-top: 10px;
+  text-transform: uppercase;
+}
+
+/* ---- normalizer ticker --------------------------------------------------- */
+
+.ticker {
+  border-bottom: 1px solid var(--line-soft);
+  display: flex;
+  overflow: hidden;
+  padding: 18px 0;
+  user-select: none;
+}
+
+.tickerTrack {
+  animation: slide 46s linear infinite;
+  display: flex;
+  flex-shrink: 0;
+  gap: 56px;
+  padding-right: 56px;
+}
+
+.ticker:hover .tickerTrack {
+  animation-play-state: paused;
+}
+
+@keyframes slide {
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+.pair {
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.pair b {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.pair span {
+  color: var(--teal);
+}
+
+/* ---- how it works ------------------------------------------------------- */
+
+.howPanel {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  display: grid;
+  gap: 48px;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 4fr);
+  margin-top: 48px;
+  padding: 52px 48px;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  margin-top: 26px;
+}
+
+.step {
+  display: grid;
+  gap: 2px 16px;
+  grid-template-columns: 26px 1fr;
+  padding-bottom: 26px;
+  position: relative;
+}
+
+/* the hairline spine connecting the numbered dots */
+.step:not(:last-child)::before {
+  background: var(--line-soft);
+  content: "";
+  height: calc(100% - 30px);
+  left: 12.5px;
+  position: absolute;
+  top: 28px;
+  width: 1px;
+}
+
+.stepNo {
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--ink-2);
+  display: flex;
+  font-family: var(--mono);
+  font-size: 11px;
+  height: 25px;
+  justify-content: center;
+  width: 25px;
+}
+
+.stepTitle {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 560;
+  padding-top: 2px;
+}
+
+.stepBody {
+  color: var(--ink-3);
+  font-size: 13.5px;
+  grid-column: 2;
+  line-height: 1.55;
+  max-width: 46ch;
+}
+
+/* the pipeline, drawn as offset layers with a dotted spine */
+.layers {
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  position: relative;
+}
+
+.layers::before {
+  border-left: 1px dashed rgb(255 255 255 / 16%);
+  content: "";
+  height: 100%;
+  left: 50%;
+  position: absolute;
+  top: 0;
+}
+
+.layer {
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  padding: 16px 18px;
+  position: relative;
+  transform: perspective(900px) rotateX(14deg);
+}
+
+.layer small {
+  color: var(--ink-3);
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  margin-top: 4px;
+  text-transform: none;
+}
+
+.layer:nth-child(odd) {
+  margin-left: 28px;
+}
+
+.layer:nth-child(even) {
+  margin-right: 28px;
+}
+
+.layerAccent {
+  border-color: rgb(79 232 203 / 35%);
+  color: var(--teal);
+}
+
+/* ---- platform grid ------------------------------------------------------ */
+
+.grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(3, 1fr);
+  margin-top: 46px;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  padding: 24px 22px 26px;
+  transition: border-color 0.18s ease, transform 0.18s ease;
+}
+
+.card:hover {
+  border-color: rgb(79 232 203 / 28%);
+  transform: translateY(-2px);
+}
+
+.cardIcon {
+  color: var(--teal);
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+
+.cardTitle {
+  color: var(--ink);
+  font-size: 15.5px;
+  font-weight: 560;
+  margin: 12px 0 8px;
+}
+
+.cardBody {
+  color: var(--ink-3);
+  font-size: 13.5px;
+  line-height: 1.55;
+  margin: 0;
+}
+
+/* ---- guarantees --------------------------------------------------------- */
+
+.guarantees {
+  border-top: 1px solid var(--line-soft);
+  display: grid;
+  gap: 40px;
+  grid-template-columns: repeat(3, 1fr);
+  margin-top: 46px;
+  padding-top: 40px;
+}
+
+.guarantee dt {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 560;
+  margin-bottom: 8px;
+}
+
+.guarantee dd {
+  color: var(--ink-3);
+  font-size: 13.5px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* ---- closing CTA -------------------------------------------------------- */
+
+.cta {
+  padding: 130px 0 120px;
+}
+
+.ctaActions {
+  display: flex;
+  gap: 12px;
+  margin-top: 30px;
+}
+
+.ctaMeta {
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  margin-top: 24px;
+}
+
+/* ---- footer ------------------------------------------------------------- */
+
+.footer {
+  border-top: 1px solid var(--line-soft);
+  padding: 56px 0 40px;
+}
+
+.footerGrid {
+  display: grid;
+  gap: 40px;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+}
+
+.footerBrand p {
+  color: var(--ink-3);
+  font-size: 13px;
+  margin: 10px 0 0;
+  max-width: 30ch;
+}
+
+.footerCol h3 {
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  margin: 0 0 14px;
+  text-transform: uppercase;
+}
+
+.footerCol a {
+  color: var(--ink-2);
+  display: block;
+  font-size: 13.5px;
+  margin-bottom: 9px;
+  text-decoration: none;
+}
+
+.footerCol a:hover {
+  color: var(--ink);
+}
+
+.footerBottom {
+  align-items: center;
+  border-top: 1px solid var(--line-soft);
+  color: var(--ink-3);
+  display: flex;
+  font-family: var(--mono);
+  font-size: 11px;
+  justify-content: space-between;
+  letter-spacing: 0.06em;
+  margin-top: 48px;
+  padding-top: 22px;
+}
+
+.status {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.statusDot {
+  animation: pulse 2.2s ease-in-out infinite;
+  background: var(--ok);
+  border-radius: 50%;
+  height: 6px;
+  width: 6px;
+}
+
+/* ---- responsive --------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  .stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .howPanel {
+    grid-template-columns: 1fr;
+    padding: 36px 26px;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .guarantees {
+    grid-template-columns: 1fr;
+  }
+
+  .footerGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .navLinks {
+    display: none;
+  }
+}
+
+/* Motion is decoration here; none of it carries information. */
+@media (prefers-reduced-motion: reduce) {
+  .waveBar,
+  .tickerTrack,
+  .liveDot,
+  .statusDot {
+    animation: none;
+  }
+
+  .waveBar {
+    opacity: 0.5;
+  }
+
+  @supports (animation-timeline: view()) {
+    .reveal {
+      animation: none;
+    }
+  }
+}
