@@ -4,7 +4,17 @@ import { useActionState, useEffect, useState } from "react";
 
 import Link from "next/link";
 
-import { Blip, Button, Modal, Notice, SubmitButton, Tabs, Tag, TextAreaField } from "@/components/ui";
+import {
+  Blip,
+  Button,
+  Modal,
+  Notice,
+  SubmitButton,
+  Tabs,
+  Tag,
+  TextAreaField,
+  buttonClass,
+} from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 import { dayLabel, when } from "@/lib/format";
 import { useFormToast } from "@/stores/toast.store";
@@ -283,18 +293,12 @@ export const AgentWorkspace = ({
           </div>
         </div>
         <div className="flex flex-none flex-wrap items-center gap-2">
-          <Link
-            href="/agents"
-            className="inline-flex h-8 items-center rounded-lg border border-[var(--hairline)] bg-[var(--glass-hi)] px-3 text-[13px] font-medium shadow-[var(--spec)]"
-          >
+          <Link href="/agents" className={buttonClass()}>
             All agents
           </Link>
           {/* Anchors to the test-call card rather than duplicating the control. Two
               buttons that place a call is one too many ways to do one thing. */}
-          <Link
-            href="#test-call"
-            className="inline-flex h-8 items-center rounded-lg border border-[var(--hairline)] bg-[var(--glass-hi)] px-3 text-[13px] font-medium shadow-[var(--spec)]"
-          >
+          <Link href="#test-call" className={buttonClass()}>
             Test call
           </Link>
           {/* Retiring is a form of its own rather than a button on the publish form, because it
@@ -310,7 +314,9 @@ export const AgentWorkspace = ({
             }}
           >
             <input type="hidden" name="agentId" value={agent.agentId} />
-            <SubmitButton pending={retiring} idle="Retire" busy="Retiring…" size="sm" />
+            {/* Danger, not primary. `SubmitButton` defaults to primary, so taking an agent off
+                the phone rendered in the same accent as publishing a new configuration to it. */}
+            <SubmitButton pending={retiring} idle="Retire" busy="Retiring…" variant="danger" />
           </form>
 
           {/* Discard first, and only when there is something to discard. A button offering to

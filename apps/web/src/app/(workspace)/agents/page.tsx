@@ -2,7 +2,7 @@ import { Plus } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { EmptyState, PageHeader, SectionHead, Stat } from "@/components/ui";
+import { EmptyState, PageHeader, SectionHead, Stat, buttonClass } from "@/components/ui";
 import { liveAgents, readTools, readinessReport } from "@/features/agents/agents.service";
 import {
   AgentTable,
@@ -140,10 +140,7 @@ const AgentsPage = async () => {
         title="Agents"
         meta="Each agent answers its own numbers with its own script, vocabulary and tools. Calls, metrics and versions all belong to one."
         actions={
-          <Link
-            href="/agents/new"
-            className="inline-flex h-[34px] items-center gap-2 rounded-lg bg-[var(--accent)] px-3.5 text-sm font-semibold text-[var(--accent-on)] shadow-[var(--shadow-s),var(--spec)] transition-opacity hover:opacity-90"
-          >
+          <Link href="/agents/new" className={buttonClass("primary")}>
             <Plus aria-hidden className="size-4" />
             New agent
           </Link>

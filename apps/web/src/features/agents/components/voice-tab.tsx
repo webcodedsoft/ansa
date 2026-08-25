@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Pause, Play, Search } from "lucide-react";
 
 import {
+  Button,
   Card,
   CONTROL,
   Notice,
@@ -138,7 +139,7 @@ const LoadingVoices = () => (
           <Bar className="h-3.5 w-40" />
           <Bar className="mt-2 h-3 w-64" />
         </span>
-        <Bar className="h-8 w-28 rounded-lg" />
+        <Bar className="h-[34px] w-28 rounded-[4px]" />
       </div>
     </div>
 
@@ -208,8 +209,7 @@ const Sample = ({
 
   return (
     <>
-      <button
-        type="button"
+      <Button
         onClick={() => {
           const element = audio.current;
           if (element === null) return;
@@ -219,11 +219,11 @@ const Sample = ({
             void element.play();
           }
         }}
-        className="inline-flex h-8 flex-none items-center gap-1.5 rounded-lg border border-[var(--hairline)] bg-[var(--glass-hi)] px-3 text-[13px] font-medium shadow-[var(--spec)]"
+        className="flex-none"
       >
         {playing ? <Pause aria-hidden className="size-3.5" /> : <Play aria-hidden className="size-3.5" />}
         {playing ? "Stop sample" : "Play sample"}
-      </button>
+      </Button>
       <audio
         ref={audio}
         src={url}

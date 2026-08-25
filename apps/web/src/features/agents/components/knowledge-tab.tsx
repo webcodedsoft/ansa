@@ -238,8 +238,10 @@ const RetireSource = ({ sourceId, name }: { readonly sourceId: string; readonly 
     action(form);
   };
 
+  // Danger rather than secondary: retiring a source stops retrieval for every agent using it,
+  // and it read as ordinary as the button beside it.
   return (
-    <Button type="button" variant="secondary" onClick={retire} disabled={pending}>
+    <Button type="button" variant="danger" onClick={retire} disabled={pending}>
       {pending ? "Retiring…" : "Retire"}
     </Button>
   );

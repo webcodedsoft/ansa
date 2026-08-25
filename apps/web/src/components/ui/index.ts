@@ -6,7 +6,7 @@
  * modules; importing them from a Server Component is fine, rendering them there
  * is not, which React enforces on its own.
  */
-export { Button, IconButton, SubmitButton, type ButtonProps, type ButtonVariant } from "./button";
+export { Button, IconButton, SubmitButton, buttonClass, type ButtonProps, type ButtonVariant } from "./button";
 export { Card, GlassPanel, PageHeader, Panel, PanelBody, Row, SectionHead, Stack, Stat } from "./card";
 export {
   Blip,

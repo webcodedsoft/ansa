@@ -74,7 +74,7 @@ const LinkLabel = ({ children }: { readonly children: ReactNode }) => {
 };
 
 const STEP =
-  "inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--hairline)] px-2.5 text-[13px] font-medium transition-colors";
+  "inline-flex h-8 items-center gap-1 rounded-[4px] border border-[var(--hairline)] px-2.5 text-[13px] font-medium transition-colors";
 
 export const Pagination = ({
   basePath,
@@ -164,7 +164,7 @@ export const Pagination = ({
                     aria-current={entry === page ? "page" : undefined}
                     aria-label={`Page ${entry}`}
                     className={cn(
-                      "inline-flex h-8 min-w-8 items-center justify-center rounded-lg border px-2 text-[13px] tabular-nums transition-colors",
+                      "inline-flex h-8 min-w-8 items-center justify-center rounded-[4px] border px-2 text-[13px] tabular-nums transition-colors",
                       entry === page
                         ? "border-transparent bg-[var(--accent)] font-semibold text-[var(--accent-on)]"
                         : "border-[var(--hairline)] text-[var(--ink-2)] hover:border-[var(--ink-3)] hover:text-[var(--ink)]",

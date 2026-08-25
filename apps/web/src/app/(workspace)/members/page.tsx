@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { Card, PageHeader, Pagination } from "@/components/ui";
+import { Card, PageHeader, Pagination, buttonClass } from "@/components/ui";
 import { currentPrincipal } from "@/features/auth/auth.service";
 import { MemberTable } from "@/features/org/components/member-table";
 import { listMembers } from "@/features/org/org.service";
@@ -28,7 +28,7 @@ const MembersPage = async ({
         eyebrow="Organisation"
         title="Members"
         actions={
-          <Link href="/invitations" className="inline-flex h-[34px] items-center rounded-lg border border-[var(--hairline)] bg-[var(--glass-hi)] px-3.5 text-sm font-medium shadow-[var(--spec)]">
+          <Link href="/invitations" className={buttonClass()}>
             Invite someone
           </Link>
         }

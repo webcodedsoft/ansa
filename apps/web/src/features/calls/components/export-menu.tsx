@@ -1,5 +1,7 @@
 import { FileJson, FileSpreadsheet, FileText, Table2 } from "lucide-react";
 
+import { buttonClass } from "@/components/ui";
+
 /**
  * The same view, in whichever format the operator needs it.
  *
@@ -48,8 +50,7 @@ export const ExportMenu = ({
     if (value !== undefined && value !== "") search.set(key, value);
   }
 
-  const className =
-    "inline-flex h-[34px] items-center gap-1.5 rounded-lg border border-[var(--hairline)] bg-[var(--glass-hi)] px-3 text-sm font-medium shadow-[var(--spec)]";
+  const className = buttonClass();
 
   return (
     <div className="flex items-center gap-1.5">

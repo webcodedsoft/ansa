@@ -2,8 +2,7 @@ import { ListFilter, PhoneOutgoing } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { Button, PageHeader, Pagination, SelectField, TextField } from "@/components/ui";
-import { cn } from "@/lib/cn";
+import { Button, PageHeader, Pagination, SelectField, TextField, buttonClass } from "@/components/ui";
 import { readPaging } from "@/lib/paging";
 import { currentConfiguration, soleLiveAgentId } from "@/features/agents/agents.service";
 import { listCalls, type CallFilters } from "@/features/calls/calls.service";
@@ -100,11 +99,14 @@ const CallsPage = async ({
                 another control would be a second way to do one thing. */}
             <Link
               href={filterOpen ? "/calls" : "/calls?filter=1"}
-              className={cn(
-                "inline-flex h-[34px] items-center gap-2 rounded-lg border px-3.5 text-sm font-medium shadow-[var(--spec)]",
+              className={buttonClass(
+                "secondary",
+                "md",
+                /* A filter that is doing something says so in the accent, still as an
+                   outline — a fill here would compete with the one solid button beside it. */
                 activeFilters > 0
                   ? "border-[color-mix(in_srgb,var(--accent)_34%,transparent)] bg-[var(--accent-soft)] text-[var(--accent)]"
-                  : "border-[var(--hairline)] bg-[var(--glass-hi)]",
+                  : undefined,
               )}
             >
               <ListFilter aria-hidden className="size-4" />
@@ -112,14 +114,10 @@ const CallsPage = async ({
             </Link>
             {/* Submits the toolbar's form from up here. No client state is
                 needed for that — `form` is a plain HTML attribute. */}
-            <button
-              type="submit"
-              form="test-call-form"
-              className="inline-flex h-[34px] items-center gap-2 rounded-lg border border-transparent bg-[linear-gradient(178deg,color-mix(in_srgb,var(--accent)_88%,#fff),var(--accent))] px-3.5 text-sm font-semibold text-[var(--accent-on)] shadow-[inset_0_1px_0_rgb(255_255_255/34%),0_1px_2px_rgb(6_20_26/22%),0_8px_20px_-8px_color-mix(in_srgb,var(--accent)_66%,transparent)]"
-            >
+            <Button type="submit" form="test-call-form" variant="primary">
               <PhoneOutgoing aria-hidden className="size-4" />
               Test call
-            </button>
+            </Button>
           </>
         }
       />
@@ -155,10 +153,7 @@ const CallsPage = async ({
                 <Button type="submit" variant="primary">
                   Apply
                 </Button>
-                <Link
-                  href="/calls"
-                  className="inline-flex h-[34px] items-center rounded-lg px-3 text-sm text-[var(--ink-3)] hover:text-[var(--ink)]"
-                >
+                <Link href="/calls" className={buttonClass("ghost")}>
                   Clear
                 </Link>
               </div>

@@ -16,27 +16,52 @@ import { cn } from "@/lib/cn";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 
+/*
+ * One solid button, everything else a hairline.
+ *
+ * These used to be filled pills: `secondary` a blurred glass surface with its own shadow,
+ * `primary` a gradient with an inset highlight and a coloured glow beneath. Five of them in
+ * a row — which is what an agent header actually holds — read as five things of equal
+ * importance, and the accent one had to shout over the others to be found.
+ *
+ * So the emphasis now comes from fill rather than from decoration: exactly one button on a
+ * screen is solid, and the rest are an outline of the same shape. The radius is tight
+ * against the soft panels they sit on, which is what keeps a control reading as a control.
+ */
 const VARIANTS: Record<ButtonVariant, string> = {
-  /* The one saturated surface in the interface, so it gets the most care: a
-     slight gradient reading as a curved face, and a coloured glow beneath. */
   primary:
-    "border-transparent text-[var(--accent-on)] font-semibold " +
-    "bg-[linear-gradient(178deg,color-mix(in_srgb,var(--accent)_88%,#fff),var(--accent))] " +
-    "shadow-[inset_0_1px_0_rgb(255_255_255/34%),0_1px_2px_rgb(6_20_26/22%),0_8px_20px_-8px_color-mix(in_srgb,var(--accent)_66%,transparent)] " +
-    "hover:brightness-[1.07] hover:saturate-[1.04]",
-  secondary:
-    "bg-[var(--glass-hi)] backdrop-blur-xl border-[var(--hairline)] text-[var(--ink)] " +
-    "shadow-[var(--spec)] hover:shadow-[var(--spec),var(--shadow-s)]",
-  ghost: "border-transparent bg-transparent text-[var(--ink-2)] hover:bg-[var(--glass-hi)] hover:text-[var(--ink)]",
-  danger: "border-transparent bg-[var(--bad-soft)] text-[var(--bad)] hover:brightness-[1.05]",
+    "border-transparent bg-[var(--accent)] text-[var(--accent-on)] font-semibold " +
+    "hover:brightness-[1.06]",
+  secondary: "bg-transparent border-[var(--hairline)] text-[var(--ink)] hover:border-[var(--hairline-hi)]",
+  ghost:
+    "border-transparent bg-transparent text-[var(--ink-2)] hover:bg-[var(--glass-hi)] hover:text-[var(--ink)]",
+  /* Outlined like the rest rather than filled, so destructive reads as a different colour of
+     the same control and not as a second kind of emphasis competing with the accent. */
+  danger:
+    "bg-transparent border-[color-mix(in_srgb,var(--bad)_42%,transparent)] text-[var(--bad)] " +
+    "hover:bg-[var(--bad-soft)]",
 };
 
 const BASE =
-  "inline-flex items-center justify-center gap-2 rounded-lg border px-3.5 text-sm font-medium " +
-  "transition-[transform,box-shadow,background,filter] duration-100 active:translate-y-px " +
+  "inline-flex items-center justify-center gap-2 rounded-[4px] border px-3.5 text-[13px] font-medium " +
+  "transition-[transform,box-shadow,background,border-color,filter] duration-100 active:translate-y-px " +
   "disabled:cursor-not-allowed disabled:opacity-55 disabled:active:translate-y-0";
 
 const SIZES = { sm: "h-7 px-2.5 text-[12.5px]", md: "h-[34px]" } as const;
+
+/**
+ * The same shape as a bare class string, for controls that cannot be a `<button>`.
+ *
+ * A control that navigates has to be an `<a>` — that is where middle-click, open-in-new-tab
+ * and the browser's own affordances live. Before this existed each such call site re-typed
+ * the classes by hand, and they drifted: the agent header, the members page and the export
+ * menu were still wearing the filled pill after the buttons beside them had stopped.
+ */
+export const buttonClass = (
+  variant: ButtonVariant = "secondary",
+  size: keyof typeof SIZES = "md",
+  className?: string,
+) => cn(BASE, SIZES[size], VARIANTS[variant], className);
 
 export interface ButtonProps extends ComponentPropsWithoutRef<"button"> {
   readonly variant?: ButtonVariant;
@@ -113,7 +138,7 @@ export const IconButton = ({ className, type, ...rest }: ComponentPropsWithoutRe
   <button
     type={type ?? "button"}
     className={cn(
-      "grid size-[30px] place-items-center rounded-lg border border-transparent bg-transparent",
+      "grid size-[30px] place-items-center rounded-[4px] border border-transparent bg-transparent",
       "text-[var(--ink-2)] transition-colors hover:border-[var(--hairline)] hover:bg-[var(--glass-hi)] hover:text-[var(--ink)]",
       className,
     )}
