@@ -129,6 +129,19 @@ node carries its world position, each link a length and an angle from `atan2`. A
 to node *edges* by treating the tile as an ellipse (`1 / hypot(cos/halfW, sin/halfH)`) —
 a fixed inset gaps the horizontal runs and buries the vertical ones.
 
+**How the connectors carry current.** Read off the reference's own DOM: the whole network is
+one `<path>` with `stroke-dasharray="1 1"` — a *dotted* run — painted with
+`stroke="url(#grad)"`, and a single SMIL `<animateTransform>` slides that gradient
+(`attributeName="gradientTransform"`, `type="translate"`, `-3 0` → `3 0`, 3s, indefinite).
+So what travels is a **band of brightness moving along a dotted line**, not an object moving
+past it. One path, one animation, one coherent circuit.
+
+Ansa does the same thing without SVG: the run is a `repeating-linear-gradient` of dots, and a
+teal copy of those dots sits on top revealed through a narrow moving `mask-image` band. Give
+each link an `animation-delay` proportional to its distance from the source so the
+brightness crosses the network in the direction a call actually travels. A dot riding each
+line — the obvious first instinct — reads as beads on strings and is visibly worse.
+
 - Scroll reveals: `@supports (animation-timeline: view())` progressive enhancement —
   visible-by-default, animated where supported. Never hide content behind JS.
 - Marquee: two copies of the row, `translateX(-50%)` loop, `animation-play-state: paused`

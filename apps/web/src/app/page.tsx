@@ -607,8 +607,8 @@ const LandingPage = () => (
                         />
                         <span className={styles.linkTag}>{label}</span>
                         <span
-                          className={styles.packet}
-                          style={{ ["--delay" as string]: `${index * 0.34}s` }}
+                          className={styles.linkGlow}
+                          style={{ ["--delay" as string]: `${index * 0.3}s` }}
                         />
                       </div>
                     );
