@@ -102,6 +102,33 @@ have, the section is cut, not faked.
   every-browser reason. Hidden initial states exist only under `html.js`, set by a
   synchronous inline script — no JavaScript means nothing is ever hidden.
 
+## Drawing an isometric world (what the reference actually does)
+
+Studied from the "How it works" and "The complete stack" sections. The planes and tiles are
+the least of it — four things do the work, and skipping any of them leaves a diagram rather
+than a world:
+
+1. **A lattice far wider than the artwork**, radially masked so it dissolves at the rim
+   instead of ending on an edge. Plus one or two long dashed construction lines crossing
+   everything. This is what makes the scene read as continuing past the panel.
+2. **Content lying ON the surfaces** — the reference puts device mockups and icon grids on
+   its layers. Ansa draws what each stage actually handles: 20ms frames, the listen dot
+   matrix, knowledge/tool chips, the reply envelope. Keep it *fine* texture at low alpha:
+   fat marks drown the surface and the layer stops reading as a layer.
+3. **Labels riding the perspective**, not counter-rotated flat. Anything parented inside the
+   transformed container inherits the isometric transform for free — put a tag on a plane
+   edge or a name on a connector and it lies in the world like the reference's
+   "GLOBAL EDGE NETWORK" and "WebRTC".
+4. **Bleeding off the viewport.** The diagram is scaled up and given a negative margin so it
+   runs past its column to the screen edge, clipped by the section. A drawing that stops
+   politely inside its grid cell looks like a picture; one that runs off the edge looks like
+   a world you are seeing part of.
+
+For a node graph, keep the geometry in the markup and let CSS only place and rotate: each
+node carries its world position, each link a length and an angle from `atan2`. Attach links
+to node *edges* by treating the tile as an ellipse (`1 / hypot(cos/halfW, sin/halfH)`) —
+a fixed inset gaps the horizontal runs and buries the vertical ones.
+
 - Scroll reveals: `@supports (animation-timeline: view())` progressive enhancement —
   visible-by-default, animated where supported. Never hide content behind JS.
 - Marquee: two copies of the row, `translateX(-50%)` loop, `animation-play-state: paused`

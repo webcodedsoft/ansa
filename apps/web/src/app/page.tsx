@@ -33,6 +33,15 @@ const EQ: readonly (readonly [variant: 0 | 1 | 2, delayMs: number])[] = [
   [0, 360], [1, 280],
 ];
 
+/** Frames arriving on the line, and the shape of the reply going back out. Fixed so the
+    server and the browser draw the same thing. */
+const BARS: readonly number[] = [
+  22, 40, 62, 34, 78, 50, 28, 66, 44, 88, 56, 32, 70, 46, 24, 60, 38, 74, 30, 52,
+];
+const REPLY: readonly number[] = [
+  14, 30, 52, 74, 92, 68, 84, 46, 62, 96, 58, 36, 70, 88, 50, 26, 64, 42, 78, 34, 56, 20,
+];
+
 type Tok = readonly [kind: "cmt" | "str" | "key" | "plain", text: string];
 
 /** The editor's contents — the API this console actually exposes, not pseudocode. */
@@ -137,6 +146,66 @@ const CARDS: readonly { readonly mark: string; readonly title: string; readonly 
     body: "Configuration is versioned. A live call reads what you published — never a draft, never an experiment.",
   },
 ];
+
+/**
+ * Ansa's pipeline as a drawing: where each part sits in a 900 x 660 world, and what runs
+ * between them. Every node and every edge is a real part of a call — the two listen
+ * providers really are separate, tools really are gated, and the voice really is
+ * interruptible.
+ */
+interface Node {
+  readonly x: number;
+  readonly y: number;
+  readonly icon: string;
+  readonly name: string;
+  readonly sub: string;
+  readonly key?: true;
+}
+
+const NODES: Readonly<Record<string, Node>> = {
+  phone: { x: 450, y: 40, icon: "☏", name: "PHONE", sub: "your own number", key: true },
+  carrier: { x: 450, y: 185, icon: "≋", name: "CARRIER", sub: "media stream" },
+  words: { x: 215, y: 330, icon: "⌗", name: "TRANSCRIBE", sub: "Nigerian accent" },
+  turns: { x: 685, y: 330, icon: "⊣", name: "TURN DETECT", sub: "boundaries" },
+  know: { x: 120, y: 465, icon: "≡", name: "KNOWLEDGE", sub: "FAQs · listings" },
+  orch: { x: 450, y: 465, icon: "◆", name: "ORCHESTRATOR", sub: "published config", key: true },
+  tools: { x: 780, y: 465, icon: "⚙", name: "TOOLS", sub: "risk tiered" },
+  voice: { x: 450, y: 615, icon: "◗", name: "VOICE", sub: "interruptible", key: true },
+};
+
+const LINKS: readonly (readonly [from: string, to: string, label: string])[] = [
+  ["phone", "carrier", "8 kHz μ-law"],
+  ["carrier", "words", "fan-out"],
+  ["carrier", "turns", "same audio"],
+  ["words", "orch", "words"],
+  ["turns", "orch", "end of turn"],
+  ["know", "orch", "search"],
+  ["orch", "tools", "confirm first"],
+  ["orch", "voice", "normalized"],
+];
+
+/**
+ * Where a link should meet a node's edge.
+ *
+ * The tiles are wider than they are tall, so a fixed inset would leave a gap on the
+ * horizontal runs and bury the vertical ones. Treating the tile as an ellipse gives the
+ * right distance from any angle, and the run lands on the edge from every direction.
+ */
+const edgeOffset = (radians: number): number =>
+  1 / Math.hypot(Math.cos(radians) / 62, Math.sin(radians) / 46);
+
+/** Everything CSS needs to place one run: where it starts, how long, and at what angle. */
+const runOf = (from: Node, to: Node) => {
+  const radians = Math.atan2(to.y - from.y, to.x - from.x);
+  const gap = Math.hypot(to.x - from.x, to.y - from.y);
+  const startAt = edgeOffset(radians);
+  return {
+    left: from.x + Math.cos(radians) * startAt,
+    top: from.y + Math.sin(radians) * startAt,
+    length: Math.max(0, gap - startAt - edgeOffset(radians + Math.PI)),
+    degrees: (radians * 180) / Math.PI,
+  };
+};
 
 const marqueeRow = (pairs: readonly (readonly [string, string])[]) => (
   <>
@@ -485,6 +554,88 @@ const LandingPage = () => (
         </Reveal>
       </section>
 
+      <Reveal className={styles.stackSection}>
+        <div className={styles.container}>
+          <div className={styles.stackGrid}>
+            <div>
+              <span className={styles.eyebrow}>Developer platform</span>
+              <h2 className={styles.h2}>
+                The <span className={styles.tinted}>complete</span> stack for a phone line
+              </h2>
+              <ul className={styles.checklist}>
+                <li>
+                  <b>{"</>"}</b> Two listen providers on one call — best words, best boundaries
+                </li>
+                <li>
+                  <b>{"[≡]"}</b> Knowledge the agent searches before it says it does not know
+                </li>
+                <li>
+                  <b>{"[⚙]"}</b> Tools gated by risk tier, enforced in code and not in a prompt
+                </li>
+                <li>
+                  <b>{"[☏]"}</b> Inbound and outbound telephony on your own number
+                </li>
+                <li>
+                  <b>{"[▤]"}</b> Every turn, millisecond and captured value recorded
+                </li>
+              </ul>
+              <Link href="/sign-up" className={`${styles.btn} ${styles.btnGhost}`}>
+                Explore the console
+              </Link>
+            </div>
+
+            <div className={styles.world} aria-hidden>
+              <div className={styles.worldStack}>
+                <div className={styles.worldGrid} />
+                <div className={styles.plan}>
+                  {LINKS.map(([from, to, label], index) => {
+                    const run = runOf(NODES[from]!, NODES[to]!);
+                    return (
+                      <div
+                        key={`${from}-${to}`}
+                        className={styles.link}
+                        style={{
+                          left: `${run.left}px`,
+                          top: `${run.top}px`,
+                          width: `${run.length}px`,
+                          transform: `rotate(${run.degrees}deg)`,
+                        }}
+                      >
+                        <span
+                          className={styles.linkLine}
+                          style={{ transitionDelay: `${index * 90}ms` }}
+                        />
+                        <span className={styles.linkTag}>{label}</span>
+                        <span
+                          className={styles.packet}
+                          style={{ ["--delay" as string]: `${index * 0.34}s` }}
+                        />
+                      </div>
+                    );
+                  })}
+
+                  {Object.entries(NODES).map(([id, node], index) => (
+                    <div
+                      key={id}
+                      className={`${styles.node} ${node.key === true ? styles.nodeKey : ""}`}
+                      style={{
+                        left: `${node.x}px`,
+                        top: `${node.y}px`,
+                        transitionDelay: `${index * 70}ms`,
+                      }}
+                    >
+                      <span className={styles.nodeIcon}>{node.icon}</span>
+                      <span className={styles.nodeName}>{node.name}</span>
+                      <span className={styles.nodeSub}>{node.sub}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Reveal>
+
       <ScrollScene id="how" steps={4} className={styles.howTall}>
         <div className={styles.howSticky}>
           <div className={styles.container}>
@@ -543,18 +694,54 @@ const LandingPage = () => (
               <div>
                 <div className={styles.iso} aria-hidden>
                   <div className={styles.isoStack}>
+                    {/* The world the stack sits in: a lattice wider than the artwork and two
+                        construction lines crossing it, so the scene reads as continuing past
+                        the panel rather than stopping at the drawing's edge. */}
+                    <div className={styles.isoGrid} />
+                    <div className={styles.isoGuide} />
+                    <div className={`${styles.isoGuide} ${styles.isoGuide2}`} />
+
                     <div className={`${styles.plane} ${styles.plane1}`}>
-                      <span className={styles.planeTag}>PHONE LINE</span>
+                      <div className={styles.planeArt}>
+                        <div className={styles.artFrames}>
+                          {BARS.map((height, index) => (
+                            // A fixed literal; the index is a stable identity.
+                            <i key={index} style={{ height: `${height}%` }} />
+                          ))}
+                        </div>
+                      </div>
+                      <span className={styles.planeTag}>PHONE LINE · 20 MS FRAMES</span>
                     </div>
+
                     <div className={`${styles.plane} ${styles.plane2}`}>
-                      <span className={styles.planeTag}>LISTEN</span>
+                      <div className={styles.planeArt}>
+                        <div className={styles.artDots} />
+                      </div>
+                      <span className={styles.planeTag}>LISTEN · WORDS + TURNS</span>
                     </div>
+
                     <div className={`${styles.plane} ${styles.plane3}`}>
-                      <span className={styles.planeTag}>DECIDE</span>
+                      <div className={styles.planeArt}>
+                        <div className={styles.artChips}>
+                          {Array.from({ length: 9 }, (_, index) => (
+                            <i key={index} />
+                          ))}
+                        </div>
+                      </div>
+                      <span className={styles.planeTag}>DECIDE · KNOWLEDGE + TOOLS</span>
                     </div>
+
                     <div className={`${styles.plane} ${styles.plane4}`}>
-                      <span className={styles.planeTag}>SPEAK</span>
+                      <div className={styles.planeArt}>
+                        <div className={styles.artWave}>
+                          {REPLY.map((height, index) => (
+                            <i key={index} style={{ height: `${height}%` }} />
+                          ))}
+                        </div>
+                      </div>
+                      <span className={styles.planeTag}>SPEAK · INTERRUPTIBLE</span>
                     </div>
+
                     <span className={styles.signal} />
                   </div>
                 </div>
