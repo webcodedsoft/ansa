@@ -418,6 +418,10 @@ const EditSource = ({
       }
   >({ status: "loading" });
   const [units, setUnits] = useState<readonly EditableUnit[]>([]);
+  /* Which piece the right-hand pane is showing. The list is the navigation, so this is the
+     only thing that decides what is on screen — and every mutation below has to keep it
+     pointing at the piece the person was looking at, not at whatever slid into that index. */
+  const [selected, setSelected] = useState(0);
   const [state, action, pending] = useActionState(saveKnowledgeUnitsAction, START);
 
   useFormToast(state, () => {
@@ -466,6 +470,25 @@ const EditSource = ({
       return next;
     });
 
+  /* Selection travels with the piece. Moving something and then finding yourself editing
+     its neighbour is the kind of small betrayal that costs somebody a paragraph. */
+  const moveSelected = (by: number) => {
+    const to = selected + by;
+    if (to < 0 || to >= units.length) return;
+    move(selected, by);
+    setSelected(to);
+  };
+
+  const removeSelected = () => {
+    setUnits(units.filter((_, at) => at !== selected));
+    setSelected(Math.max(0, Math.min(selected, units.length - 2)));
+  };
+
+  const addPiece = () => {
+    setUnits([...units, { question: "", body: "" }]);
+    setSelected(units.length);
+  };
+
   if (loaded.status === "loading") {
     return (
       <Card title="Loading" description="Fetching what this source holds.">
@@ -507,6 +530,8 @@ const EditSource = ({
     action(form);
   };
 
+  const current = units[selected];
+
   return (
     <div>
       <Stack>
@@ -518,80 +543,115 @@ const EditSource = ({
               change on its next call.
             </p>
           </div>
-          <Button type="button" variant="secondary" onClick={onDone}>
-            Back
-          </Button>
+          {/* Save sits with the title. It used to be below every piece, which on an
+              eighteen-piece source put four screens between an edit and the button that
+              keeps it. */}
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="secondary" onClick={onDone}>
+              Back
+            </Button>
+            <Button type="button" onClick={save} disabled={pending || empty}>
+              {pending ? "Saving…" : "Save changes"}
+            </Button>
+          </div>
         </div>
 
         {(state.status === "failed" || state.status === "invalid") && (
           <Notice tone="error">{state.message}</Notice>
         )}
 
-        <Card
-          title="What it holds"
-          description="Each piece is retrieved on its own and read out on its own. If one would not answer a question by itself, split it."
-        >
-          <div className="flex flex-col gap-3">
-            {units.map((unit, index) => (
-              <div
-                key={index}
-                className="rounded-lg border border-[var(--surface-line)] bg-[var(--surface-2)] p-3"
-              >
-                <div className="mb-2 flex items-center gap-2">
-                  <Tag>{index + 1}</Tag>
-                  <span className="flex-1" />
-                  <Button type="button" variant="secondary" onClick={() => move(index, -1)}>
-                    Up
-                  </Button>
-                  <Button type="button" variant="secondary" onClick={() => move(index, 1)}>
-                    Down
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => setUnits(units.filter((_, at) => at !== index))}
-                  >
-                    Remove
-                  </Button>
-                </div>
-                <Stack gap="sm">
-                  <TextField
-                    label="Question it answers"
-                    value={unit.question}
-                    onChange={(event) => edit(index, { question: event.target.value })}
-                    placeholder="Optional — blank is fine for a passage or a row"
-                  />
-                  <TextAreaField
-                    label="What the agent says"
-                    value={unit.body}
-                    onChange={(event) => edit(index, { body: event.target.value })}
-                    rows={3}
-                  />
-                </Stack>
+        {empty && (
+          <Notice tone="warn">
+            A source with nothing in it retrieves nothing, which sounds exactly like it having
+            been deleted. Retire it instead — that says so.
+          </Notice>
+        )}
+
+        {/* The list navigates and the pane edits, each scrolling on its own, so the page
+            behind them does not scroll at all. Eight hundred pieces cost the same screen as
+            eighteen — which is the whole reason for the shape. */}
+        <div className="grid h-[min(620px,calc(100vh-320px))] grid-cols-[minmax(0,264px)_minmax(0,1fr)] overflow-hidden rounded-xl border border-[var(--surface-line)] max-md:h-auto max-md:grid-cols-1">
+          <div className="flex min-h-0 flex-col border-r border-[var(--surface-line)] max-md:border-r-0 max-md:border-b">
+            <p className="border-b border-[var(--surface-line)] px-3 py-2 font-mono text-[10.5px] tracking-[0.14em] text-[var(--ink-3)] uppercase">
+              {units.length} {units.length === 1 ? "piece" : "pieces"}
+            </p>
+            <div className="min-h-0 flex-1 overflow-y-auto p-2 max-md:max-h-[180px]">
+              {units.map((unit, index) => (
+                <button
+                  // Position is the identity here; a piece has no id until it is saved.
+                  key={index}
+                  type="button"
+                  aria-current={index === selected}
+                  onClick={() => setSelected(index)}
+                  className={`flex w-full gap-2 rounded-md px-2.5 py-2 text-left text-[12.5px] ${
+                    index === selected
+                      ? "bg-[var(--accent-soft)] text-[var(--accent)]"
+                      : "text-[var(--ink-2)] hover:bg-[var(--surface-2)]"
+                  }`}
+                >
+                  <span className="font-mono text-[10.5px] text-[var(--ink-3)]">{index + 1}</span>
+                  {/* Falls back to the answer, then to a placeholder: a piece with no question
+                      yet still has to be findable in the list it lives in. */}
+                  <span className="min-w-0 flex-1 truncate">
+                    {unit.question.trim() !== ""
+                      ? unit.question
+                      : unit.body.trim() !== ""
+                        ? unit.body
+                        : "Empty piece"}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="border-t border-[var(--surface-line)] p-2">
+              <Button type="button" variant="secondary" onClick={addPiece}>
+                Add a piece
+              </Button>
+            </div>
+          </div>
+
+          {current === undefined ? (
+            <div className="grid place-items-center p-8 text-center text-[13px] text-[var(--ink-3)]">
+              Nothing in here yet. Add a piece to start.
+            </div>
+          ) : (
+            <div className="flex min-h-0 flex-col gap-3 overflow-y-auto p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <Tag>{selected + 1}</Tag>
+                <span className="flex-1" />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => moveSelected(-1)}
+                  disabled={selected === 0}
+                >
+                  Move up
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => moveSelected(1)}
+                  disabled={selected >= units.length - 1}
+                >
+                  Move down
+                </Button>
+                <Button type="button" variant="secondary" onClick={removeSelected}>
+                  Remove
+                </Button>
               </div>
-            ))}
-          </div>
-
-          <div className="mt-3">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setUnits([...units, { question: "", body: "" }])}
-            >
-              Add a piece
-            </Button>
-          </div>
-        </Card>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <Button type="button" onClick={save} disabled={pending || empty}>
-            {pending ? "Saving…" : "Save changes"}
-          </Button>
-          {empty && (
-            <span className="max-w-[58ch] text-[12.5px] text-[var(--ink-3)]">
-              A source with nothing in it retrieves nothing, which sounds exactly like it
-              having been deleted. Retire it instead — that says so.
-            </span>
+              <TextField
+                label="Question it answers"
+                value={current.question}
+                onChange={(event) => edit(selected, { question: event.target.value })}
+                placeholder="Optional — blank is fine for a passage or a row"
+              />
+              <TextAreaField
+                label="What the agent says"
+                value={current.body}
+                onChange={(event) => edit(selected, { body: event.target.value })}
+                rows={12}
+                hint="Retrieved on its own and read out on its own. If it would not answer a question by itself, split it."
+              />
+            </div>
           )}
         </div>
       </Stack>
