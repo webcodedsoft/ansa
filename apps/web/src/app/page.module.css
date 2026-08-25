@@ -313,8 +313,12 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  min-height: calc(100vh - 110px);
-  padding: 52px 0 72px;
+  /* Capped, not just proportional. `100vh` on a tall monitor gave a 1229px hero holding
+     500px of content — 728px of air in one section, and the largest single piece of
+     emptiness on the page by a wide margin. A hero should fill a laptop screen, not grow
+     forever on a big one. */
+  min-height: min(86vh, 720px);
+  padding: 40px 0;
   text-align: center;
 }
 
