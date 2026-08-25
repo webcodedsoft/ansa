@@ -615,8 +615,10 @@ const EditSource = ({
               </div>
             ) : (
               <div className="flex min-h-0 flex-col gap-3 overflow-y-auto p-4">
-                {/* Quiet controls. Three full-size buttons shouted louder than the sentence
-                    they act on, which was the complaint about the screen this replaces. */}
+                {/* Named, not drawn. A bare ↑ says nothing about what moves or where it goes,
+                    and "earlier in the list" is the thing being changed — order decides
+                    nothing on a call, but it decides whether a person can find a piece
+                    again. The label carries that; an arrow glyph made the reader guess. */}
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-[11px] text-[var(--ink-3)]">
                     Piece {selected + 1} of {units.length}
@@ -625,24 +627,20 @@ const EditSource = ({
                   <Button
                     type="button"
                     size="sm"
-                    variant="ghost"
-                    aria-label="Move this piece earlier"
                     onClick={() => moveSelected(-1)}
                     disabled={selected === 0}
                   >
-                    ↑
+                    Move up
                   </Button>
                   <Button
                     type="button"
                     size="sm"
-                    variant="ghost"
-                    aria-label="Move this piece later"
                     onClick={() => moveSelected(1)}
                     disabled={selected >= units.length - 1}
                   >
-                    ↓
+                    Move down
                   </Button>
-                  <Button type="button" size="sm" variant="ghost" onClick={removeSelected}>
+                  <Button type="button" size="sm" variant="danger" onClick={removeSelected}>
                     Remove
                   </Button>
                 </div>
