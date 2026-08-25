@@ -1,9 +1,12 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+
+import { FileText } from "lucide-react";
 
 import {
   Button,
+  CONTROL,
   Card,
   CheckboxField,
   EmptyState,
@@ -13,25 +16,28 @@ import {
   SelectField,
   Stack,
   Table,
-  Tag,
   Td,
   TextAreaField,
   TextField,
   Th,
   Tr,
 } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import { idleForm } from "@/lib/form-state";
 import { when } from "@/lib/format";
 import { useFormToast } from "@/stores/toast.store";
 
 import {
+  extractFileAction,
   loadKnowledgeUnits,
   removeKnowledgeSourceAction,
   saveAgentKnowledgeAction,
   saveKnowledgeSourceAction,
   saveKnowledgeUnitsAction,
+  type ExtractState,
   type KnowledgeState,
 } from "../agents.actions";
+import { ACCEPTED_EXTENSIONS } from "../extract/accepted";
 import type { AgentSummary, KnowledgeDocument } from "../agents.service";
 import {
   KINDS,
@@ -63,6 +69,25 @@ const KIND_TAG: Readonly<Record<Kind, string>> = {
   table: "rows",
   document: "passages",
 };
+
+const EXTRACT_START: ExtractState = idleForm();
+
+type Route = "paste" | "upload";
+
+/**
+ * How the content arrives, as an explicit first choice.
+ *
+ * Upload used not to exist at all, and adding it as a line of small print under the textarea
+ * would have left it undiscovered by exactly the person it is for — somebody holding a PDF who
+ * would otherwise open it, select all, and paste. Two routes rather than three: fetching a
+ * page from a URL is in the design but not in the product, and a card that does nothing is
+ * worse than a card that is missing.
+ */
+const ROUTES: readonly { readonly route: Route; readonly title: string; readonly hint: string }[] =
+  [
+    { route: "paste", title: "Paste it in", hint: "Type it, or paste from anywhere" },
+    { route: "upload", title: "Upload a file", hint: "PDF, Word, CSV, plain text" },
+  ];
 
 const SAMPLE: Readonly<Record<Kind, string>> = {
   faq: "How do I renew my motor policy?\nCall us or use the portal. Renewal opens 30 days before expiry.\n\nWhat do I need to renew?\nYour policy number and a valid means of identification.",
@@ -255,16 +280,32 @@ const RetireSource = ({ sourceId, name }: { readonly sourceId: string; readonly 
  * mid-clause. After this, the next sight of it is a caller being read the result.
  */
 const AddSource = ({ onDone }: { readonly onDone: () => void }) => {
+  const [route, setRoute] = useState<Route>("paste");
   const [name, setName] = useState("");
   const [kind, setKind] = useState<Kind>("faq");
   const [raw, setRaw] = useState("");
+  const [fileName, setFileName] = useState<string | null>(null);
   const [showProblems, setShowProblems] = useState(false);
   const [state, action, pending] = useActionState(saveKnowledgeSourceAction, START);
+  const [read, extract, reading] = useActionState(extractFileAction, EXTRACT_START);
 
   useFormToast(state, () => {
     onDone();
     return "Stored.";
   });
+
+  /* What came out of the file fills the same fields a paste would have, so the operator edits
+     and checks an extraction exactly as they would their own typing. The name only takes the
+     file's if they have not written one — overwriting what somebody typed because they then
+     uploaded something is the kind of thing that loses work silently. */
+  useEffect(() => {
+    if (read.status !== "succeeded") return;
+    const document = read.data;
+    if (document === null || document === undefined) return;
+    setRaw(document.text);
+    setKind(document.suggests);
+    setName((current) => (current.trim() === "" ? document.name : current));
+  }, [read]);
 
   const units = useMemo(() => parseUnits(kind, raw), [kind, raw]);
   const problems = problemsWith(name, units);
@@ -279,107 +320,244 @@ const AddSource = ({ onDone }: { readonly onDone: () => void }) => {
     action(form);
   };
 
+  const takeFile = (file: File | null | undefined) => {
+    if (file === null || file === undefined) return;
+    setFileName(file.name);
+    const form = new FormData();
+    form.set("file", file);
+    extract(form);
+  };
+
   return (
     <div>
       <Stack>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-[17px] font-semibold tracking-[-0.018em]">Add a source</h2>
-          <Button type="button" variant="secondary" onClick={onDone}>
-            Back
-          </Button>
-        </div>
-
         {(state.status === "failed" || state.status === "invalid") && (
           <Notice tone="error">{state.message}</Notice>
         )}
+        {read.status === "failed" && <Notice tone="error">{read.message}</Notice>}
 
-        <Card
-          title="What it is"
-          description="Stored for the organisation, so any of its agents can be given it."
-        >
-          <Stack>
-            <TextField
-              label="Name"
-              name="name"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              error={problem("name")}
-              placeholder="Motor policy FAQ"
-              hint="How somebody tells this apart from the others later."
-            />
-            <SelectField
-              label="Shape"
-              name="kind"
-              value={kind}
-              onChange={(event) => setKind(event.target.value as Kind)}
-              hint={KIND_HINT[kind]}
-            >
-              {KINDS.map((option) => (
-                <option key={option} value={option}>
-                  {KIND_LABEL[option]}
-                </option>
-              ))}
-            </SelectField>
-          </Stack>
-        </Card>
+        <div className="overflow-hidden rounded-xl border border-[var(--surface-line)]">
+          <div className="flex items-center gap-3 border-b border-[var(--surface-line)] bg-[var(--surface-2)] px-4 py-2.5">
+            <span className="font-mono text-[11px] tracking-[0.14em] text-[var(--ink-2)] uppercase">
+              Add a source
+            </span>
+            <span className="flex-1" />
+            <Button type="button" size="sm" variant="secondary" onClick={onDone}>
+              Back
+            </Button>
+            {/* Primary, and in the bar rather than at the bottom. It used to sit under a page
+                that grew as you typed, so the more you pasted the further away the button that
+                kept it got. */}
+            <Button type="button" size="sm" variant="primary" onClick={store} disabled={pending}>
+              {pending ? "Storing…" : "Store source"}
+            </Button>
+          </div>
 
-        <Card title="Paste it in" description="Split as you type. Check the preview before storing.">
-          <Stack>
-            <TextAreaField
-              label="Content"
-              value={raw}
-              onChange={(event) => setRaw(event.target.value)}
-              rows={12}
-              className="font-mono text-[12.5px]"
-              placeholder={SAMPLE[kind]}
-            />
-            {problem("content") !== undefined && <FieldError>{problem("content")}</FieldError>}
-            {raw.trim() === "" && (
-              <div>
-                <Button type="button" variant="secondary" onClick={() => setRaw(SAMPLE[kind])}>
-                  Use an example
-                </Button>
+          {/* What you are writing on the left, what it became on the right. The preview is the
+              only chance anybody gets to notice that a table lost a column or a document split
+              mid-clause, and as a card below the paste box it was off screen by the time it
+              had anything in it. */}
+          <div className="grid h-[min(620px,calc(100vh-320px))] grid-cols-[minmax(0,1fr)_minmax(0,380px)] max-md:h-auto max-md:grid-cols-1">
+            <div className="flex min-h-0 flex-col gap-3 overflow-y-auto border-r border-[var(--surface-line)] p-4 max-md:border-r-0 max-md:border-b">
+              <div className="grid grid-cols-2 gap-2">
+                {ROUTES.map((option) => (
+                  <button
+                    key={option.route}
+                    type="button"
+                    aria-pressed={route === option.route}
+                    onClick={() => setRoute(option.route)}
+                    className={`rounded-[6px] border px-3 py-2.5 text-left transition-colors ${
+                      route === option.route
+                        ? "border-[color-mix(in_srgb,var(--accent)_45%,transparent)] bg-[var(--accent-soft)]"
+                        : "border-[var(--hairline)] hover:border-[var(--ink-3)]"
+                    }`}
+                  >
+                    <span
+                      className={`block text-[12.5px] font-semibold ${route === option.route ? "text-[var(--accent)]" : ""}`}
+                    >
+                      {option.title}
+                    </span>
+                    <span className="mt-0.5 block text-[11px] leading-snug text-[var(--ink-3)]">
+                      {option.hint}
+                    </span>
+                  </button>
+                ))}
               </div>
-            )}
-          </Stack>
-        </Card>
 
-        {units.length > 0 && (
-          <Card
-            title={`${units.length} piece${units.length === 1 ? "" : "s"}`}
-            description="Each is retrieved on its own and read out on its own. If one of these would not answer a question by itself, it is split wrong."
-          >
-            <div className="flex flex-col gap-2">
-              {units.slice(0, 30).map((unit, index) => (
-                <div
-                  key={index}
-                  className="flex items-start gap-2 rounded-lg border border-[var(--surface-line)] bg-[var(--surface-2)] px-3 py-2"
-                >
-                  <Tag>{index + 1}</Tag>
-                  <p className="min-w-0 flex-1 text-[13px] leading-relaxed text-[var(--ink-2)]">
-                    {spokenForm(unit)}
-                  </p>
+              {route === "upload" ? (
+                <Upload
+                  fileName={fileName}
+                  reading={reading}
+                  ready={read.status === "succeeded"}
+                  onPick={takeFile}
+                />
+              ) : (
+                <div className="flex min-h-0 flex-1 flex-col">
+                  <span className="mb-1.5 block text-[12.5px] font-medium">Content</span>
+                  <textarea
+                    value={raw}
+                    onChange={(event) => setRaw(event.target.value)}
+                    placeholder={SAMPLE[kind]}
+                    className={cn(
+                      CONTROL,
+                      "min-h-40 flex-1 resize-none font-mono text-[12.5px] leading-relaxed",
+                    )}
+                  />
                 </div>
-              ))}
-              {units.length > 30 && (
-                <p className="text-[12.5px] text-[var(--ink-3)]">
-                  …and {units.length - 30} more. All of them are stored; this shows thirty so
-                  the page stays readable.
-                </p>
               )}
-            </div>
-          </Card>
-        )}
 
-        <div className="flex flex-wrap items-center gap-3">
-          <Button type="button" onClick={store} disabled={pending}>
-            {pending ? "Storing…" : "Store source"}
-          </Button>
-          <span className="text-[12.5px] text-[var(--ink-3)]">
-            Storing does not give it to any agent. Tick it on the list afterwards.
+              {problem("content") !== undefined && <FieldError>{problem("content")}</FieldError>}
+              {route === "paste" && raw.trim() === "" && (
+                <div>
+                  <Button type="button" size="sm" onClick={() => setRaw(SAMPLE[kind])}>
+                    Use an example
+                  </Button>
+                </div>
+              )}
+
+              <TextField
+                label="Name"
+                name="name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                error={problem("name")}
+                placeholder="Motor policy FAQ"
+                hint="How somebody tells this apart from the others later."
+              />
+              <SelectField
+                label="Shape"
+                name="kind"
+                value={kind}
+                onChange={(event) => setKind(event.target.value as Kind)}
+                hint={KIND_HINT[kind]}
+              >
+                {KINDS.map((option) => (
+                  <option key={option} value={option}>
+                    {KIND_LABEL[option]}
+                  </option>
+                ))}
+              </SelectField>
+            </div>
+
+            <div className="flex min-h-0 flex-col">
+              <div className="flex items-center gap-2 border-b border-[var(--surface-line)] px-4 py-2">
+                <span className="font-mono text-[10.5px] tracking-[0.13em] text-[var(--ink-3)] uppercase">
+                  {units.length === 0
+                    ? "Nothing yet"
+                    : `${units.length} piece${units.length === 1 ? "" : "s"}`}
+                </span>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto p-3 max-md:max-h-[280px]">
+                {units.length === 0 ? (
+                  <p className="px-1 text-[12.5px] leading-relaxed text-[var(--ink-3)]">
+                    Each piece is retrieved on its own and read out on its own. If one of them
+                    would not answer a question by itself, it is split wrong — which is what
+                    this pane is for.
+                  </p>
+                ) : (
+                  units.map((unit, index) => (
+                    <div
+                      key={index}
+                      className="mb-1.5 flex gap-2.5 rounded-md border border-[var(--surface-line)] px-2.5 py-2"
+                    >
+                      <span className="pt-px font-mono text-[10.5px] text-[var(--ink-3)]">
+                        {index + 1}
+                      </span>
+                      <p className="min-w-0 flex-1 text-[12.5px] leading-relaxed text-[var(--ink-2)]">
+                        {spokenForm(unit)}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <p className="text-[12.5px] text-[var(--ink-3)]">
+          Storing does not give it to any agent. Tick it on the list afterwards.
+        </p>
+      </Stack>
+    </div>
+  );
+};
+
+/**
+ * Pick a file, and say what became of it.
+ *
+ * A drop target as well as a button because a document being added to a knowledge base is
+ * almost always already open in a window next to this one. The extension list is shown rather
+ * than only enforced: being told afterwards that a .doc is not a .docx is a worse moment than
+ * reading it beforehand.
+ */
+const Upload = ({
+  fileName,
+  reading,
+  ready,
+  onPick,
+}: {
+  readonly fileName: string | null;
+  readonly reading: boolean;
+  readonly ready: boolean;
+  readonly onPick: (file: File | null | undefined) => void;
+}) => {
+  const input = useRef<HTMLInputElement>(null);
+  const [over, setOver] = useState(false);
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-2.5">
+      <div
+        onDragOver={(event) => {
+          event.preventDefault();
+          setOver(true);
+        }}
+        onDragLeave={() => setOver(false)}
+        onDrop={(event) => {
+          event.preventDefault();
+          setOver(false);
+          onPick(event.dataTransfer.files[0]);
+        }}
+        className={cn(
+          "flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-7 text-center transition-colors",
+          over
+            ? "border-[color-mix(in_srgb,var(--accent)_55%,transparent)] bg-[var(--accent-soft)]"
+            : "border-[var(--hairline)]",
+        )}
+      >
+        <p className="text-[12.5px] font-medium">Drop a document here</p>
+        <Button type="button" size="sm" onClick={() => input.current?.click()} disabled={reading}>
+          {reading ? "Reading…" : "Choose a file"}
+        </Button>
+        <p className="font-mono text-[10px] tracking-[0.12em] text-[var(--ink-3)] uppercase">
+          {ACCEPTED_EXTENSIONS.join(" · ")}
+        </p>
+        <input
+          ref={input}
+          type="file"
+          accept={ACCEPTED_EXTENSIONS.join(",")}
+          className="hidden"
+          onChange={(event) => {
+            onPick(event.target.files?.[0]);
+            // Cleared so that picking the same file twice — after fixing it — fires again.
+            event.target.value = "";
+          }}
+        />
+      </div>
+
+      {fileName !== null && (
+        <div className="flex items-center gap-2.5 rounded-md border border-[var(--surface-line)] bg-[var(--surface-2)] px-2.5 py-2">
+          <FileText aria-hidden className="size-4 flex-none text-[var(--ink-3)]" />
+          <span className="min-w-0 flex-1 truncate text-[12px]">{fileName}</span>
+          <span className="font-mono text-[10px] tracking-[0.1em] text-[var(--ink-3)] uppercase">
+            {reading ? "reading" : ready ? "read" : "—"}
           </span>
         </div>
-      </Stack>
+      )}
+
+      <p className="text-[11.5px] leading-relaxed text-[var(--ink-3)]">
+        We keep the text, never the file. Check it on the right and edit it by switching to
+        Paste — what you see there is what gets stored.
+      </p>
     </div>
   );
 };

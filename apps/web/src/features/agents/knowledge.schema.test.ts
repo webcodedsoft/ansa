@@ -29,6 +29,41 @@ describe("question and answer pairs", () => {
       { question: null, body: "Renewals open 30 days before expiry." },
     ]);
   });
+
+  it("pairs a question with the block under it when they are separate paragraphs", () => {
+    /* What a FAQ written in Word looks like once extracted: every paragraph is its own block.
+       Left unpaired, the question retrieves for the one caller it cannot answer. */
+    expect(parseUnits("faq", "How do I renew?\n\nCall us, or use the portal.")).toEqual([
+      { question: "How do I renew?", body: "Call us, or use the portal." },
+    ]);
+  });
+
+  it("does not pair two questions in a row", () => {
+    // A run of questions is a contents list. Answering one with the next would invent a fact.
+    expect(parseUnits("faq", "How do I renew?\n\nWhat do I need?")).toEqual([
+      { question: null, body: "How do I renew?" },
+      { question: null, body: "What do I need?" },
+    ]);
+  });
+
+  it("leaves a statement followed by a statement alone", () => {
+    // Only a question reaches forward; two facts are two facts.
+    expect(
+      parseUnits("faq", "Renewals open 30 days early.\n\nCancellations take 14 days."),
+    ).toHaveLength(2);
+  });
+
+  it("starts a new pair at each question when nothing is separated by a blank line", () => {
+    /* Text lifted out of a PDF has one newline per printed line and no blank lines at all.
+       Without cutting at the question, the whole page is one unit: the first question, answered
+       by every other question and answer on it, read out in full to whoever asked any of them. */
+    const flat =
+      "What are your agency fees?\nAgency is ten per cent.\nDo you handle short lets?\nYes, from one week upward.";
+    expect(parseUnits("faq", flat)).toEqual([
+      { question: "What are your agency fees?", body: "Agency is ten per cent." },
+      { question: "Do you handle short lets?", body: "Yes, from one week upward." },
+    ]);
+  });
 });
 
 describe("a pasted table", () => {

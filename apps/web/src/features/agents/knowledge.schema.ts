@@ -41,21 +41,64 @@ const blocks = (raw: string): readonly string[] =>
     .filter((block) => block !== "");
 
 /**
- * Question on the first line, answer beneath.
+ * A block, cut again wherever a new question starts.
  *
- * A block with only one line is kept as an answer with no question rather than dropped. It
- * is still a true thing the organisation wrote down, and losing it silently would be worse
- * than retrieving it with nothing to match the question against.
+ * A blank line between pairs is what the hint asks for, and it is not what arrives. Text lifted
+ * out of a PDF has one newline per printed line and no blank lines at all, so without this the
+ * whole page is one block: the first question becomes the question and every other question and
+ * answer on the page becomes its answer. One unit, read out in full, to whoever asked any of
+ * them.
  */
-const parseFaq = (raw: string): readonly DraftUnit[] =>
-  blocks(raw).map((block) => {
-    const lines = block.split("\n").map((line) => line.trim());
-    const [first, ...rest] = lines;
+const segmentsOf = (block: string): readonly (readonly string[])[] => {
+  const out: string[][] = [];
+  for (const line of block.split("\n").map((line) => line.trim()).filter((line) => line !== "")) {
+    const last = out[out.length - 1];
+    if (last === undefined || line.endsWith("?")) out.push([line]);
+    else last.push(line);
+  }
+  return out;
+};
+
+/**
+ * Question first, answer beneath.
+ *
+ * A segment with no answer is kept rather than dropped when it is a statement: it is still a
+ * true thing the organisation wrote down, and losing it silently would be worse than retrieving
+ * it with nothing to match the question against.
+ *
+ * A lone question is different — it is half of a fact, and stored by itself it retrieves for
+ * exactly the caller it cannot help. So a question with nothing under it takes the next segment
+ * as its answer, provided that segment is not itself a question. That is what a FAQ written in
+ * Word looks like once extracted, where every paragraph is its own block, and it is what
+ * somebody pasting with a blank line between question and answer meant. Two questions in a row
+ * stay apart: that is a contents list, not a pair.
+ */
+const parseFaq = (raw: string): readonly DraftUnit[] => {
+  const segments = blocks(raw).flatMap((block) => segmentsOf(block));
+  const out: DraftUnit[] = [];
+
+  for (let at = 0; at < segments.length; at += 1) {
+    const [first, ...rest] = segments[at] ?? [];
     const answer = rest.join(" ").trim();
-    return answer === ""
-      ? { question: null, body: first ?? "" }
-      : { question: first ?? null, body: answer };
-  });
+
+    if (answer !== "") {
+      out.push({ question: first ?? null, body: answer });
+      continue;
+    }
+
+    const next = segments[at + 1];
+    const isQuestion = first?.endsWith("?") === true;
+    if (isQuestion && next !== undefined && next[0]?.endsWith("?") !== true) {
+      out.push({ question: first ?? null, body: next.join(" ").trim() });
+      at += 1;
+      continue;
+    }
+
+    out.push({ question: null, body: first ?? "" });
+  }
+
+  return out;
+};
 
 /** Tab first, then comma: a spreadsheet paste is tab-separated, a CSV file is not. */
 const cells = (line: string): readonly string[] =>

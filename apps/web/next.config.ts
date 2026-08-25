@@ -24,6 +24,19 @@ const config: NextConfig = {
    */
   allowedDevOrigins: ["127.0.0.1", "localhost"],
 
+  /**
+   * Uploading a knowledge source sends the file through a Server Action, and the default cap
+   * on one of those is 1MB — small enough that a forty-page PDF is refused by the framework
+   * before any of our own code sees it, with an error naming no file and suggesting nothing.
+   *
+   * 10MB rather than the 8MB `MAX_UPLOAD_BYTES` the extractor enforces, so that the refusal an
+   * operator reads is ours and says what to do about it. See
+   * `src/features/agents/extract/index.ts`.
+   */
+  experimental: {
+    serverActions: { bodySizeLimit: "10mb" },
+  },
+
   // `typedRoutes` is deliberately off. It writes its route union into `.next/types` during a
   // build, so `pnpm typecheck` on a clean checkout fails until something has been built —
   // a typecheck that depends on a build is a typecheck that gets skipped.

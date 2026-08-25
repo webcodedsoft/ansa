@@ -4,9 +4,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
-import { failureMessage } from "@/lib/api/server";
+import { failureMessage, readSessionToken } from "@/lib/api/server";
 import { failedForm, invalidForm, succeededForm, type FormState } from "@/lib/form-state";
 
+import { extractText, nameFromFile } from "./extract";
 import {
   httpToolBodySchema,
 } from "./http-tool.schema";
@@ -706,6 +707,42 @@ export const tryToolAction = async (
   }
 };
 
+
+export type ExtractState = FormState<{
+  readonly text: string;
+  readonly suggests: "faq" | "table" | "document";
+  readonly name: string;
+}>;
+
+/**
+ * Read an uploaded document and hand back its text. Nothing is stored.
+ *
+ * On the server because that is where a ZIP can be inflated and a PDF taken apart, and because
+ * doing it in the browser would mean shipping a parser to every page that never uploads
+ * anything. What comes back fills the same textarea a paste would have filled, so the operator
+ * sees and can correct the extraction before any of it is saved — a file that lands straight in
+ * the database is a bad split nobody looked at.
+ *
+ * A session is required even though this touches no organisation data. Without that check the
+ * console is an open document-parsing endpoint for anyone who finds it.
+ */
+export const extractFileAction = async (
+  _previous: ExtractState,
+  form: FormData,
+): Promise<ExtractState> => {
+  if ((await readSessionToken()) === null) {
+    return failedForm("Your session has expired. Sign in again and re-upload the file.");
+  }
+
+  const file = form.get("file");
+  if (!(file instanceof File)) return failedForm("No file arrived. Choose one and try again.");
+
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const { text, refusal, suggests } = extractText(file.name, bytes);
+  if (refusal !== null) return failedForm(refusal);
+
+  return succeededForm({ text, suggests, name: nameFromFile(file.name) }, `Read ${file.name}.`);
+};
 
 export type KnowledgeState = FormState<{ readonly sourceId: string }>;
 
