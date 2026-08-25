@@ -218,14 +218,10 @@ export const FieldBuilder = ({
                 )}
               </button>
             ))}
-            <button
-              type="button"
-              onClick={add}
-              className="mt-1 flex items-center gap-1.5 rounded-[10px] border border-dashed border-[var(--hairline)] px-2.5 py-2 text-[13px] text-[var(--ink-2)] hover:text-[var(--ink)]"
-            >
+            <Button type="button" size="sm" onClick={add} className="mt-1">
               <Plus aria-hidden className="size-3.5" />
               Add field
-            </button>
+            </Button>
           </div>
         </Panel>
 
@@ -250,13 +246,9 @@ export const FieldBuilder = ({
                     {current.key === "" ? "Untitled field" : current.key}
                   </h3>
                 </div>
-                <button
-                  type="button"
-                  onClick={remove}
-                  className="flex-none text-[13px] font-medium text-[var(--bad)] hover:underline"
-                >
+                <Button type="button" size="sm" variant="danger" onClick={remove} className="flex-none">
                   Remove
-                </button>
+                </Button>
               </div>
 
               <div className="flex flex-col gap-4">

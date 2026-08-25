@@ -4,6 +4,7 @@ import { PanelLeft } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
+import { IconButton } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
 import { CommandPalette } from "./command-palette";
@@ -70,15 +71,14 @@ export const WorkspaceChrome = ({
 
       <div className="flex min-h-0 min-w-0 flex-col">
         <header className="glass flex h-14 flex-none items-center gap-2.5 rounded-none border-x-0 border-t-0 px-[18px]">
-          <button
-            type="button"
+          <IconButton
             onClick={() => setCollapsed((was) => !was)}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            className="hidden size-[30px] place-items-center rounded-lg border border-transparent text-[var(--ink-2)] transition-colors hover:border-[var(--hairline)] hover:bg-[var(--glass-hi)] hover:text-[var(--ink)] sm:grid"
+            className="hidden sm:grid"
           >
             <PanelLeft className="size-4" />
-          </button>
+          </IconButton>
 
           <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2 text-[13px]">
             <span className="truncate text-[var(--ink-3)]">{organisation}</span>

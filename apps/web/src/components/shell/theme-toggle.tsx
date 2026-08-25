@@ -3,6 +3,8 @@
 import { Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { IconButton } from "@/components/ui";
+
 /**
  * Light and dark.
  *
@@ -27,14 +29,12 @@ export const ThemeToggle = () => {
   };
 
   return (
-    <button
-      type="button"
+    <IconButton
       onClick={flip}
       title={dark ? "Switch to light" : "Switch to dark"}
       aria-label={dark ? "Switch to light" : "Switch to dark"}
-      className="grid size-[30px] place-items-center rounded-lg border border-transparent text-[var(--ink-2)] transition-colors hover:border-[var(--hairline)] hover:bg-[var(--glass-hi)] hover:text-[var(--ink)]"
     >
       {dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
-    </button>
+    </IconButton>
   );
 };

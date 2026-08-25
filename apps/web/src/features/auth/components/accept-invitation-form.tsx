@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useActionState } from "react";
 
-import { Notice, Stack, SubmitButton, TextField } from "@/components/ui";
+import { Notice, Stack, SubmitButton, TextField, buttonClass } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
 import { acceptInvite, type AcceptInvitationState } from "../auth.actions";
@@ -22,10 +22,10 @@ export const AcceptInvitationForm = ({ token }: { readonly token: string }) => {
             : "You have joined the organisation."}{" "}
           Sign in with the address the invitation was sent to.
         </Notice>
-        <Link
-          href="/sign-in"
-          className="inline-flex justify-center rounded-md border border-transparent bg-[var(--color-accent)] px-3.5 py-2 text-sm font-medium text-white hover:bg-[var(--color-accent-hover)]"
-        >
+        {/* This was the oldest button in the app and it showed: white ink on the light teal
+            accent, and a hover colour `--color-accent-hover` that no stylesheet defines, so
+            it never changed under the pointer. */}
+        <Link href="/sign-in" className={buttonClass("primary", "md", "w-full")}>
           Sign in
         </Link>
       </Stack>

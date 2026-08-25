@@ -103,7 +103,7 @@ export const Segmented = <T extends string>({
   <div
     role="radiogroup"
     aria-label={label}
-    className="inline-flex gap-0.5 rounded-lg border border-[var(--hairline)] bg-[var(--surface-2)] p-0.5"
+    className="inline-flex gap-0.5 rounded-[6px] border border-[var(--hairline)] bg-[var(--surface-2)] p-0.5"
   >
     {options.map((option) => (
       <button
@@ -113,7 +113,7 @@ export const Segmented = <T extends string>({
         aria-checked={option === value}
         onClick={() => onChange(option)}
         className={cn(
-          "rounded-md px-2.5 py-1 text-[12.5px] transition-colors",
+          "rounded-[4px] px-2.5 py-1 text-[12.5px] transition-colors",
           option === value
             ? "bg-[var(--surface-solid)] font-medium text-[var(--ink)] shadow-[var(--shadow-s)]"
             : "text-[var(--ink-3)] hover:text-[var(--ink-2)]",

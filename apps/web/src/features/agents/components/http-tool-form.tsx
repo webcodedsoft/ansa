@@ -552,7 +552,7 @@ export const HttpToolForm = ({
                   type="button"
                   onClick={() => edit({ riskTier: tier })}
                   aria-pressed={draft.riskTier === tier}
-                  className={`rounded-lg border px-3 py-1.5 text-[13px] font-medium transition ${
+                  className={`rounded-[4px] border px-3 py-1.5 text-[13px] font-medium transition ${
                     draft.riskTier === tier
                       ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
                       : "border-[var(--surface-line)] text-[var(--ink-2)] hover:border-[var(--ink-3)]"
@@ -602,7 +602,7 @@ export const HttpToolForm = ({
                           onClick={() =>
                             edit({ speechTemplate: `${draft.speechTemplate}{${field.path}}` })
                           }
-                          className="rounded-md border border-[var(--surface-line)] px-2 py-1 font-mono text-[11.5px] text-[var(--ink-2)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                          className="rounded-[4px] border border-[var(--surface-line)] px-2 py-1 font-mono text-[11.5px] text-[var(--ink-2)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
                           title={field.sample}
                         >
                           {field.path}
@@ -809,7 +809,7 @@ const SampleStep = ({
               {found.map((field) => (
                 <span
                   key={field.path}
-                  className="rounded-md border border-[var(--surface-line)] px-2 py-1 font-mono text-[11.5px] text-[var(--ink-2)]"
+                  className="rounded-[4px] border border-[var(--surface-line)] px-2 py-1 font-mono text-[11.5px] text-[var(--ink-2)]"
                 >
                   {field.path}
                   <span className="ml-1.5 text-[var(--ink-3)]">{field.sample}</span>

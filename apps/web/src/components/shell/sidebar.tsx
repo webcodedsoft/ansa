@@ -8,6 +8,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ComponentType } from "react";
 
+import { IconButton } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
 import { NAV_GROUPS, allowedDestinations, type Destination } from "./navigation";
@@ -155,14 +156,14 @@ export const Sidebar = ({
           </span>
         )}
         <form action={signOut}>
-          <button
+          <IconButton
             type="submit"
             title="Sign out"
             aria-label="Sign out"
-            className="grid size-[26px] place-items-center rounded-lg text-[var(--ink-3)] transition-colors hover:bg-[var(--glass-hi)] hover:text-[var(--ink)]"
+            className="size-[26px] text-[var(--ink-3)]"
           >
             <LogOut className="size-3.5" />
-          </button>
+          </IconButton>
         </form>
       </div>
     </aside>

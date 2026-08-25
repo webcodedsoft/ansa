@@ -54,7 +54,7 @@ export const CommandPalette = ({ capabilities }: { readonly capabilities: readon
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex h-[30px] items-center gap-2 rounded-lg border border-[var(--hairline)] bg-[var(--glass-lo)] px-2.5 text-[12.5px] text-[var(--ink-3)] transition-colors hover:bg-[var(--glass-hi)] hover:text-[var(--ink-2)]"
+        className="flex h-[30px] items-center gap-2 rounded-[4px] border border-[var(--hairline)] bg-[var(--glass-lo)] px-2.5 text-[12.5px] text-[var(--ink-3)] transition-colors hover:bg-[var(--glass-hi)] hover:text-[var(--ink-2)]"
       >
         <Search className="size-3.5" />
         Search
