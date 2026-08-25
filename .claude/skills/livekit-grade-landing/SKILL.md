@@ -100,7 +100,23 @@ have, the section is cut, not faked.
   the queue flag wedges — one getBoundingClientRect per scroll event needs no throttle.
 - Reveals are IntersectionObserver-driven (`Reveal` in the same file) for the same
   every-browser reason. Hidden initial states exist only under `html.js`, set by a
-  synchronous inline script — no JavaScript means nothing is ever hidden.
+  synchronous inline script — no JavaScript means nothing is ever hidden. Reveal on
+  `isIntersecting` **or** `boundingClientRect.bottom < 0`: one large jump (a fling, an
+  in-page anchor, a restored scroll position) can carry a section from below the fold to
+  above it without ever intersecting, and it then stays at opacity 0 for good.
+
+## Verifying this page in a driven browser
+
+A backgrounded tab freezes the animation clock: `requestAnimationFrame` never fires, CSS
+transitions report `playState: "running"` and never advance, and every reveal-gated section
+screenshots as a black hole. This looks exactly like a layout bug and is not one — it cost
+a full debugging detour once already.
+
+Confirm it in one call: if `await new Promise(r => requestAnimationFrame(r))` times out, the
+clock is frozen and nothing animation-driven can be trusted. To judge **layout** regardless,
+run `document.documentElement.classList.remove('js')` first — every hidden state is gated on
+that class, so removing it shows the true page with nothing suppressed. Note the scroll
+runway collapses to auto-height in that mode, so the page measures shorter than it really is.
 
 ## Drawing an isometric world (what the reference actually does)
 

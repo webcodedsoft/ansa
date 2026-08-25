@@ -25,6 +25,9 @@
   --ok: #6ee3a5;
 
   --ease: cubic-bezier(0.22, 0.7, 0.2, 1);
+  /* The gap between sections, in one place. It was 170px repeated in eight rules, which
+     is a lot of nothing to scroll past between two things that belong together. */
+  --section-gap: 104px;
 
   --display: -apple-system, "SF Pro Display", BlinkMacSystemFont, "Segoe UI", Roboto,
     "Helvetica Neue", sans-serif;
@@ -311,7 +314,7 @@
   flex-direction: column;
   justify-content: center;
   min-height: calc(100vh - 110px);
-  padding: 60px 0 90px;
+  padding: 52px 0 72px;
   text-align: center;
 }
 
@@ -809,7 +812,7 @@
    this console actually exposes, not pseudocode. */
 
 .codeSection {
-  padding: 170px 0 0;
+  padding: var(--section-gap) 0 0;
 }
 
 .editor {
@@ -932,11 +935,11 @@
 
    Without JavaScript the wrapper stays auto-height and every step renders open. */
 .howTall {
-  padding-top: 170px;
+  padding-top: var(--section-gap);
 }
 
 :global(html.js) .howTall {
-  height: 320vh;
+  height: 280vh;
 }
 
 .howSticky {
@@ -1442,8 +1445,8 @@
   );
   border-bottom: 1px solid var(--line-soft);
   border-top: 1px solid var(--line-soft);
-  margin-top: 190px;
-  padding: 120px 0 130px;
+  margin-top: var(--section-gap);
+  padding: 88px 0 96px;
 }
 
 .infraHead {
@@ -1550,7 +1553,7 @@
 /* ---- normalizer marquee: two staggered rows of cards ----------------------- */
 
 .marqueeSection {
-  padding: 170px 0 0;
+  padding: var(--section-gap) 0 0;
 }
 
 .marqueeHead {
@@ -1626,7 +1629,7 @@
 
 .stackSection {
   overflow: hidden;
-  padding: 170px 0 0;
+  padding: var(--section-gap) 0 0;
 }
 
 .stackGrid {
@@ -1662,7 +1665,7 @@
 }
 
 .world {
-  height: 640px;
+  height: 560px;
   perspective: 1700px;
   position: relative;
   /* Bleeds past its column toward the page edge, the way the reference's diagram runs off
@@ -1858,7 +1861,7 @@
 /* ---- platform grid --------------------------------------------------------- */
 
 .platform {
-  padding: 170px 0 0;
+  padding: var(--section-gap) 0 0;
 }
 
 .grid {
@@ -1905,7 +1908,7 @@
 /* ---- guarantees ------------------------------------------------------------ */
 
 .security {
-  padding: 170px 0 0;
+  padding: var(--section-gap) 0 0;
 }
 
 .guarantees {
@@ -1934,7 +1937,7 @@
 /* ---- CTA + footer ----------------------------------------------------------- */
 
 .cta {
-  padding: 190px 0 150px;
+  padding: 124px 0 112px;
 }
 
 .ctaActions {

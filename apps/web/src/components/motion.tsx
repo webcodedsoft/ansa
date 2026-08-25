@@ -35,7 +35,12 @@ export const Reveal = ({
     const io = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          if (entry.isIntersecting) {
+          /* Revealed once it is on screen — or once it is already above it. A single large
+             jump (a fling, an in-page anchor, a restored scroll position) can carry an
+             element from below the fold to above it without ever intersecting, and the
+             observer then reports it as simply not visible. Without the second test that
+             section stays at opacity 0 for good, and reads as a hole in the page. */
+          if (entry.isIntersecting || entry.boundingClientRect.bottom < 0) {
             el.classList.add("in");
             io.disconnect();
           }
