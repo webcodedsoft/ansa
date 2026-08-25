@@ -535,27 +535,6 @@ const EditSource = ({
   return (
     <div>
       <Stack>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-[17px] font-semibold tracking-[-0.018em]">{loaded.name}</h2>
-            <p className="mt-0.5 text-[12.5px] text-[var(--ink-3)]">
-              {units.length} {KIND_TAG[loaded.kind]} · every agent using this source sees the
-              change on its next call.
-            </p>
-          </div>
-          {/* Save sits with the title. It used to be below every piece, which on an
-              eighteen-piece source put four screens between an edit and the button that
-              keeps it. */}
-          <div className="flex items-center gap-2">
-            <Button type="button" variant="secondary" onClick={onDone}>
-              Back
-            </Button>
-            <Button type="button" onClick={save} disabled={pending || empty}>
-              {pending ? "Saving…" : "Save changes"}
-            </Button>
-          </div>
-        </div>
-
         {(state.status === "failed" || state.status === "invalid") && (
           <Notice tone="error">{state.message}</Notice>
         )}
@@ -567,93 +546,127 @@ const EditSource = ({
           </Notice>
         )}
 
-        {/* The list navigates and the pane edits, each scrolling on its own, so the page
-            behind them does not scroll at all. Eight hundred pieces cost the same screen as
-            eighteen — which is the whole reason for the shape. */}
-        <div className="grid h-[min(620px,calc(100vh-320px))] grid-cols-[minmax(0,264px)_minmax(0,1fr)] overflow-hidden rounded-xl border border-[var(--surface-line)] max-md:h-auto max-md:grid-cols-1">
-          <div className="flex min-h-0 flex-col border-r border-[var(--surface-line)] max-md:border-r-0 max-md:border-b">
-            <p className="border-b border-[var(--surface-line)] px-3 py-2 font-mono text-[10.5px] tracking-[0.14em] text-[var(--ink-3)] uppercase">
-              {units.length} {units.length === 1 ? "piece" : "pieces"}
-            </p>
-            <div className="min-h-0 flex-1 overflow-y-auto p-2 max-md:max-h-[180px]">
-              {units.map((unit, index) => (
-                <button
-                  // Position is the identity here; a piece has no id until it is saved.
-                  key={index}
-                  type="button"
-                  aria-current={index === selected}
-                  onClick={() => setSelected(index)}
-                  className={`flex w-full gap-2 rounded-md px-2.5 py-2 text-left text-[12.5px] ${
-                    index === selected
-                      ? "bg-[var(--accent-soft)] text-[var(--accent)]"
-                      : "text-[var(--ink-2)] hover:bg-[var(--surface-2)]"
-                  }`}
-                >
-                  <span className="font-mono text-[10.5px] text-[var(--ink-3)]">{index + 1}</span>
-                  {/* Falls back to the answer, then to a placeholder: a piece with no question
-                      yet still has to be findable in the list it lives in. */}
-                  <span className="min-w-0 flex-1 truncate">
-                    {unit.question.trim() !== ""
-                      ? unit.question
-                      : unit.body.trim() !== ""
-                        ? unit.body
-                        : "Empty piece"}
-                  </span>
-                </button>
-              ))}
-            </div>
-            <div className="border-t border-[var(--surface-line)] p-2">
-              <Button type="button" variant="secondary" onClick={addPiece}>
-                Add a piece
-              </Button>
-            </div>
+        {/* One surface, with the source's own name in its own bar. The name used to sit
+            above the panel as a page heading, which left the panel looking like furniture
+            belonging to nothing. */}
+        <div className="overflow-hidden rounded-xl border border-[var(--surface-line)]">
+          <div className="flex items-center gap-3 border-b border-[var(--surface-line)] bg-[var(--surface-2)] px-4 py-2.5">
+            <span className="truncate font-mono text-[11px] tracking-[0.14em] text-[var(--ink-2)] uppercase">
+              {loaded.name}
+            </span>
+            <span className="flex-1" />
+            <Button type="button" size="sm" variant="secondary" onClick={onDone}>
+              Back
+            </Button>
+            {/* Primary, because it is the one thing on this screen that keeps the work. */}
+            <Button type="button" size="sm" variant="primary" onClick={save} disabled={pending || empty}>
+              {pending ? "Saving…" : "Save changes"}
+            </Button>
           </div>
 
-          {current === undefined ? (
-            <div className="grid place-items-center p-8 text-center text-[13px] text-[var(--ink-3)]">
-              Nothing in here yet. Add a piece to start.
-            </div>
-          ) : (
-            <div className="flex min-h-0 flex-col gap-3 overflow-y-auto p-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <Tag>{selected + 1}</Tag>
-                <span className="flex-1" />
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => moveSelected(-1)}
-                  disabled={selected === 0}
-                >
-                  Move up
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => moveSelected(1)}
-                  disabled={selected >= units.length - 1}
-                >
-                  Move down
-                </Button>
-                <Button type="button" variant="secondary" onClick={removeSelected}>
-                  Remove
+          {/* The list navigates and the pane edits, each scrolling on its own, so the page
+              behind them does not scroll at all. Eight hundred pieces cost the same screen as
+              eighteen — which is the whole reason for the shape. */}
+          <div className="grid h-[min(600px,calc(100vh-340px))] grid-cols-[minmax(0,300px)_minmax(0,1fr)] max-md:h-auto max-md:grid-cols-1">
+            <div className="flex min-h-0 flex-col border-r border-[var(--surface-line)] max-md:border-r-0 max-md:border-b">
+              <div className="min-h-0 flex-1 overflow-y-auto p-2 max-md:max-h-[200px]">
+                {units.map((unit, index) => (
+                  <button
+                    // Position is the identity here; a piece has no id until it is saved.
+                    key={index}
+                    type="button"
+                    aria-current={index === selected}
+                    onClick={() => setSelected(index)}
+                    className={`flex w-full gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] leading-snug ${
+                      index === selected
+                        ? "bg-[var(--accent-soft)] text-[var(--accent)]"
+                        : "text-[var(--ink-2)] hover:bg-[var(--surface-2)]"
+                    }`}
+                  >
+                    <span className="pt-px font-mono text-[10.5px] text-[var(--ink-3)]">
+                      {index + 1}
+                    </span>
+                    {/* Wrapped to two lines rather than truncated. Half this organisation's
+                        questions open "Do you have a two-bedroom…", so a single clipped line
+                        makes neighbouring pieces impossible to tell apart in the one place
+                        you pick between them. */}
+                    <span className="min-w-0 flex-1 line-clamp-2">
+                      {unit.question.trim() !== ""
+                        ? unit.question
+                        : unit.body.trim() !== ""
+                          ? unit.body
+                          : "Empty piece"}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div className="border-t border-[var(--surface-line)] p-2">
+                <Button type="button" size="sm" variant="secondary" onClick={addPiece}>
+                  Add a piece
                 </Button>
               </div>
-              <TextField
-                label="Question it answers"
-                value={current.question}
-                onChange={(event) => edit(selected, { question: event.target.value })}
-                placeholder="Optional — blank is fine for a passage or a row"
-              />
-              <TextAreaField
-                label="What the agent says"
-                value={current.body}
-                onChange={(event) => edit(selected, { body: event.target.value })}
-                rows={12}
-                hint="Retrieved on its own and read out on its own. If it would not answer a question by itself, split it."
-              />
             </div>
-          )}
+
+            {current === undefined ? (
+              <div className="grid place-items-center p-8 text-center text-[13px] text-[var(--ink-3)]">
+                Nothing in here yet. Add a piece to start.
+              </div>
+            ) : (
+              <div className="flex min-h-0 flex-col gap-3 overflow-y-auto p-4">
+                {/* Quiet controls. Three full-size buttons shouted louder than the sentence
+                    they act on, which was the complaint about the screen this replaces. */}
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[11px] text-[var(--ink-3)]">
+                    Piece {selected + 1} of {units.length}
+                  </span>
+                  <span className="flex-1" />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    aria-label="Move this piece earlier"
+                    onClick={() => moveSelected(-1)}
+                    disabled={selected === 0}
+                  >
+                    ↑
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    aria-label="Move this piece later"
+                    onClick={() => moveSelected(1)}
+                    disabled={selected >= units.length - 1}
+                  >
+                    ↓
+                  </Button>
+                  <Button type="button" size="sm" variant="ghost" onClick={removeSelected}>
+                    Remove
+                  </Button>
+                </div>
+                <TextField
+                  label="Question it answers"
+                  value={current.question}
+                  onChange={(event) => edit(selected, { question: event.target.value })}
+                  placeholder="Optional — blank is fine for a passage or a row"
+                />
+                <TextAreaField
+                  label="What the agent says"
+                  value={current.body}
+                  onChange={(event) => edit(selected, { body: event.target.value })}
+                  rows={12}
+                  hint="Retrieved on its own and read out on its own. If it would not answer a question by itself, split it."
+                />
+              </div>
+            )}
+          </div>
         </div>
+
+        <p className="text-[12.5px] text-[var(--ink-3)]">
+          {units.length} {KIND_TAG[loaded.kind]} · every agent using this source sees the change
+          on its next call.
+        </p>
+
       </Stack>
     </div>
   );
