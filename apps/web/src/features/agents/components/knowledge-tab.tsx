@@ -505,7 +505,10 @@ const Upload = ({
   const [over, setOver] = useState(false);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2.5">
+    /* Sized to its content, deliberately not `flex-1`. The paste route grows because a textarea
+       has somewhere to put the height; this one has nothing to fill it with, and stretching it
+       opened a hand's width of nothing between the last sentence here and the Name field. */
+    <div className="flex flex-col gap-2.5">
       <div
         onDragOver={(event) => {
           event.preventDefault();
