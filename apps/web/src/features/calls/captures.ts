@@ -161,3 +161,61 @@ export const healthForAgent = (
     worstAttempts: seen.get(column.key)?.worst ?? 0,
   }));
 };
+
+export interface Answer {
+  readonly value: string;
+  readonly count: number;
+  /** Of the answers given, not of the calls — a question nobody answered has no share. */
+  readonly share: number;
+}
+
+export interface QuestionDetail {
+  readonly key: string;
+  readonly type: string;
+  readonly answers: readonly Answer[];
+  readonly total: number;
+  readonly retried: number;
+  readonly worstAttempts: number;
+  /** Rows for this question alone, newest call first, as the API returned them. */
+  readonly rows: readonly CapturedRow[];
+}
+
+/**
+ * One question, with what people actually answered.
+ *
+ * Ranked by how often each answer was given, which is the only ordering that makes a
+ * distribution readable. For a `choice` field the configured options are folded in at zero
+ * even when nobody has ever picked them — the same argument as showing a question nobody
+ * answers, one level further down: an option the agent offers and no caller takes is either
+ * an option to drop or a prompt that never reaches it.
+ *
+ * Free text is included as-is and will mostly be a list of ones. That is honest: it says this
+ * question does not have answers so much as responses, which is worth seeing before somebody
+ * tries to report on it.
+ */
+export const questionDetail = (
+  rows: readonly CapturedRow[],
+  key: string,
+  type: string,
+  options: readonly string[] = [],
+): QuestionDetail => {
+  const mine = rows.filter((row) => row.fieldKey === key);
+  const counts = new Map<string, number>();
+  for (const option of options) counts.set(option, 0);
+  let retried = 0;
+  let worst = 0;
+  for (const row of mine) {
+    counts.set(row.value, (counts.get(row.value) ?? 0) + 1);
+    if (row.attempts > 1) retried += 1;
+    worst = Math.max(worst, row.attempts);
+  }
+  const answers = [...counts.entries()]
+    .map(([value, count]) => ({
+      value,
+      count,
+      share: mine.length === 0 ? 0 : count / mine.length,
+    }))
+    .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+
+  return { key, type, answers, total: mine.length, retried, worstAttempts: worst, rows: mine };
+};

@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { Table, Tag, Td, Th, Tr } from "@/components/ui";
 
 import { label, type AgentFieldHealth } from "../captures";
@@ -19,8 +21,11 @@ const STRUGGLING = 0.34;
 
 export const AgentFieldHealthTable = ({
   fields,
+  agentId,
 }: {
   readonly fields: readonly AgentFieldHealth[];
+  /** Each row opens that one question. The list is the navigation. */
+  readonly agentId: string;
 }) => (
   <Table>
     <thead>
@@ -37,7 +42,12 @@ export const AgentFieldHealthTable = ({
         return (
           <Tr key={field.key}>
             <Td className="font-medium">
-              {label(field.key)}
+              <Link
+                href={`/data?agentId=${agentId}&field=${encodeURIComponent(field.key)}`}
+                className="hover:text-[var(--accent)] hover:underline"
+              >
+                {label(field.key)}
+              </Link>
               <span className="ml-1.5 font-mono text-[10.5px] font-normal text-[var(--ink-3)]">
                 {field.type}
               </span>

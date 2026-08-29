@@ -3,11 +3,12 @@ import Link from "next/link";
 
 import { Button, Card, Notice, PageHeader, Panel, Stat, TextField, buttonClass } from "@/components/ui";
 import { liveAgents } from "@/features/agents/agents.service";
-import { columnsForAgent, healthForAgent, pivot } from "@/features/calls/captures";
+import { columnsForAgent, healthForAgent, pivot, questionDetail } from "@/features/calls/captures";
 import { listCaptures } from "@/features/calls/calls.service";
 import { AgentDataset } from "@/features/calls/components/agent-dataset";
 import { AgentFieldHealthTable } from "@/features/calls/components/agent-field-health";
 import { ExportMenu } from "@/features/calls/components/export-menu";
+import { QuestionView } from "@/features/calls/components/question-view";
 import { cn } from "@/lib/cn";
 
 export const metadata: Metadata = { title: "Collected data · Ansa" };
@@ -32,6 +33,8 @@ export const dynamic = "force-dynamic";
  */
 type DataSearch = {
   readonly agentId?: string;
+  /** One question, drilled into from the list. Absent means the list. */
+  readonly field?: string;
   readonly from?: string;
   readonly to?: string;
 };
@@ -66,6 +69,21 @@ const DataPage = async ({ searchParams }: { readonly searchParams: Promise<DataS
   });
 
   const rows = captures.rows;
+
+  /* Third level: one question. Reached by clicking a row in the list below, and rendered from
+     the rows already fetched — the whole agent's range is in hand, so drilling into a question
+     is a filter rather than a round trip. */
+  const asked = chosen.capturedFields.find((field) => field.key === search.field);
+  if (search.field !== undefined && asked !== undefined) {
+    return (
+      <QuestionView
+        detail={questionDetail(rows, asked.key, asked.type, asked.options)}
+        agentId={chosen.agentId}
+        prompt={asked.prompt}
+      />
+    );
+  }
+
   const pivoted = pivot(rows);
   const form = chosen.capturedFields.map((field) => ({ key: field.key, type: field.type }));
   const columns = columnsForAgent(rows, form);
@@ -184,9 +202,9 @@ const DataPage = async ({ searchParams }: { readonly searchParams: Promise<DataS
         {health.length > 0 && (
           <Card
             title="How the questions are doing"
-            description="Every question this agent asks, in the order it asks them. A field repeated often is a prompt to rewrite; a field never answered is one to reword or drop."
+            description="Every question this agent asks, in the order it asks them. Open one to see what people answered."
           >
-            <AgentFieldHealthTable fields={health} />
+            <AgentFieldHealthTable fields={health} agentId={chosen.agentId} />
           </Card>
         )}
 
