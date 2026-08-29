@@ -84,3 +84,44 @@ export const label = (key: string): string => {
   if (spaced === "") return key;
   return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase();
 };
+
+export interface FieldSummary {
+  readonly key: string;
+  /** Values collected for this field across the range. */
+  readonly count: number;
+  /** How many of them the agent had to ask for more than once. */
+  readonly retried: number;
+  /** The worst single case, which is what somebody rewriting a prompt wants to see. */
+  readonly worstAttempts: number;
+}
+
+/**
+ * How each field is behaving, not just how often it appears.
+ *
+ * `attempts` has been stored since the table existed and shown nowhere. The migration that
+ * added it says why it is kept: a field that regularly takes three goes is a field whose
+ * prompt needs rewriting, and that is invisible unless somebody counts. This is the count.
+ *
+ * Derived from the rows on screen rather than from a separate aggregate query. Those rows
+ * are the whole filtered range unless the API says it truncated them, and the page says so
+ * loudly when it does — so a second round trip would buy a number that is already right.
+ */
+export const summarise = (rows: readonly CapturedRow[]): readonly FieldSummary[] => {
+  const byField = new Map<string, { count: number; retried: number; worst: number }>();
+  for (const row of rows) {
+    const seen = byField.get(row.fieldKey) ?? { count: 0, retried: 0, worst: 1 };
+    seen.count += 1;
+    if (row.attempts > 1) seen.retried += 1;
+    seen.worst = Math.max(seen.worst, row.attempts);
+    byField.set(row.fieldKey, seen);
+  }
+  return [...byField.entries()]
+    .map(([key, seen]) => ({
+      key,
+      count: seen.count,
+      retried: seen.retried,
+      worstAttempts: seen.worst,
+    }))
+    // Most-retried first: the point of the panel is what needs attention, not an index.
+    .sort((a, b) => b.retried - a.retried || b.count - a.count);
+};
