@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { EmptyState, GroupRow, Panel, Table, Td, Th, Tr } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import { when } from "@/lib/format";
 
 import { nameOf } from "../contacts.display";
@@ -41,6 +42,27 @@ const initialsOf = (person: ContactSummary): string => {
   }
   return person.phone.replace(/\D/g, "").slice(-2);
 };
+
+/**
+ * How many times this person has rung, as one pill in two colours.
+ *
+ * The same shape whether they have called once or twenty times — a row where the figure
+ * changes shape as well as value reads as two different kinds of row. Colour carries the
+ * difference on its own: a repeat caller takes the accent because they are the reason a
+ * callback list exists, and everybody else takes the hairline.
+ */
+const CallCount = ({ count }: { readonly count: number }) => (
+  <span
+    className={cn(
+      "inline-flex items-center rounded-[4px] border px-2 py-0.5 text-[12px] font-medium tabular-nums",
+      count > 1
+        ? "border-[color-mix(in_srgb,var(--accent)_34%,transparent)] bg-[var(--accent-soft)] text-[var(--accent)]"
+        : "border-[var(--hairline)] text-[var(--ink-3)]",
+    )}
+  >
+    {count} {count === 1 ? "call" : "calls"}
+  </span>
+);
 
 const COLUMNS = 3;
 
@@ -112,16 +134,7 @@ export const ContactsDirectory = ({ people }: { readonly people: readonly Contac
                   </Link>
                 </Td>
                 <Td className="text-right">
-                  <span
-                    className={
-                      person.callCount > 1
-                        ? "inline-flex items-center rounded-[4px] border border-[color-mix(in_srgb,var(--accent)_34%,transparent)] bg-[var(--accent-soft)] px-2 py-0.5 text-[12px] font-medium tabular-nums text-[var(--accent)]"
-                        : "text-[12.5px] tabular-nums text-[var(--ink-3)]"
-                    }
-                  >
-                    {person.callCount}
-                    {person.callCount > 1 && " calls"}
-                  </span>
+                  <CallCount count={person.callCount} />
                 </Td>
                 <Td className="text-right text-[12.5px] whitespace-nowrap text-[var(--ink-3)]">
                   {person.lastCallAt === null ? "—" : when(person.lastCallAt)}
