@@ -126,7 +126,7 @@ const CallsPage = async ({
         <TestCallForm configVersion={configVersion} />
 
         {filterOpen && (
-          <form method="get" id="filter" className="glass scroll-mt-6 rounded-[18px] p-4">
+          <form method="get" id="filter" className="glass scroll-mt-6 rounded-xl p-4">
             {/* Keeps the panel open across a submit, so applying one filter and
                 then adding a second does not collapse it in between. */}
             <input type="hidden" name="filter" value="1" />

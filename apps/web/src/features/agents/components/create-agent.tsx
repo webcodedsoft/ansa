@@ -44,7 +44,7 @@ const Card = ({
     onClick={onSelect}
     aria-pressed={selected}
     className={cn(
-      "surface flex flex-col items-start gap-1 rounded-[14px] border p-3.5 text-left transition-colors",
+      "surface flex flex-col items-start gap-1 rounded-xl border p-3.5 text-left transition-colors",
       selected
         ? "border-[color-mix(in_srgb,var(--accent)_42%,transparent)] bg-[var(--accent-soft)]"
         : "border-[var(--hairline)] hover:border-[var(--ink-3)]",
@@ -166,7 +166,7 @@ export const CreateAgent = () => {
         </div>
       </div>
 
-      <div className="glass self-start rounded-[18px] p-4 lg:sticky lg:top-4">
+      <div className="glass self-start rounded-xl p-4 lg:sticky lg:top-4">
         <h3 className="text-[13.5px] font-semibold">How this will sound</h3>
         <p className="mt-1 mb-3.5 text-[12.5px] text-[var(--ink-3)]">
           The call this template produces, generated from its own settings.

@@ -64,7 +64,7 @@ export const CallTable = ({ calls }: { readonly calls: readonly CallSummary[] })
   }
 
   return (
-    <div className="surface overflow-hidden rounded-[18px]">
+    <div className="surface overflow-hidden rounded-xl">
       <Table>
         <thead>
           <tr>

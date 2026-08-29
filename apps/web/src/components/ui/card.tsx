@@ -19,13 +19,13 @@ interface SurfaceProps {
 }
 
 export const Panel = ({ className, id, children }: SurfaceProps) => (
-  <section id={id} className={cn("surface overflow-hidden rounded-[18px]", className)}>
+  <section id={id} className={cn("surface overflow-hidden rounded-xl", className)}>
     {children}
   </section>
 );
 
 export const GlassPanel = ({ className, id, children }: SurfaceProps) => (
-  <section id={id} className={cn("glass rounded-[18px]", className)}>
+  <section id={id} className={cn("glass rounded-xl", className)}>
     {children}
   </section>
 );
@@ -56,19 +56,27 @@ export const Card = ({
   readonly className?: string;
   readonly children: ReactNode;
 }) => (
-  <Panel className={cn("p-5", className)}>
+  <Panel className={className}>
+    {/* The heading sits in its own band, divided from the body by a hairline, rather than
+        floating above it on a margin. A card is a small document: a rule under the title is
+        what tells you where the title stops and the thing itself starts, and it is the same
+        move the source editor's panel makes at a larger size. */}
     {(title !== undefined || actions !== undefined) && (
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          {title !== undefined && <h2 className="text-base font-semibold tracking-tight">{title}</h2>}
+      <div className="flex items-start justify-between gap-3 border-b border-[var(--surface-line)] px-4 py-3">
+        <div className="min-w-0">
+          {title !== undefined && (
+            <h2 className="text-[13.5px] leading-tight font-semibold tracking-[-0.012em]">{title}</h2>
+          )}
           {description !== undefined && (
-            <p className="mt-1 text-sm text-[var(--ink-3)]">{description}</p>
+            <p className="mt-1 max-w-[72ch] text-[12.5px] leading-relaxed text-[var(--ink-3)]">
+              {description}
+            </p>
           )}
         </div>
-        {actions}
+        {actions !== undefined && <div className="flex flex-none items-center gap-2">{actions}</div>}
       </div>
     )}
-    {children}
+    <div className="p-4">{children}</div>
   </Panel>
 );
 
@@ -145,7 +153,7 @@ export const Stat = ({
   readonly trend?: ReactNode;
   readonly tone?: "up" | "down" | "flat";
 }) => (
-  <GlassPanel className="px-5 py-[18px]">
+  <Panel className="px-4 py-[15px]">
     <div className="text-[12px] text-[var(--ink-3)]">{label}</div>
     {/* The figure carries the card, so it is set well above the label rather than a step
         up from it — at 27px the two read as one block and the eye has nowhere to land. */}
@@ -167,5 +175,5 @@ export const Stat = ({
         {trend}
       </div>
     )}
-  </GlassPanel>
+  </Panel>
 );

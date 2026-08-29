@@ -265,7 +265,7 @@ export const FlowCanvas = () => {
       </Notice>
 
       <div className="grid items-start gap-3.5 lg:grid-cols-[186px_minmax(0,1fr)_280px]">
-        <div className="surface flex flex-col gap-0.5 rounded-[18px] p-2.5">
+        <div className="surface flex flex-col gap-0.5 rounded-xl p-2.5">
           {PALETTE.map((group) => (
             <div key={group.group}>
               <h6 className="mt-1 mb-1 ml-1.5 font-mono text-[9.5px] tracking-[0.13em] text-[var(--ink-3)] uppercase">
@@ -289,7 +289,7 @@ export const FlowCanvas = () => {
         <div
           ref={canvasRef}
           className={cn(
-            "relative h-[560px] touch-none overflow-hidden rounded-[18px] border border-[var(--hairline)] bg-[var(--surface-2)] shadow-[var(--spec)]",
+            "relative h-[560px] touch-none overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--surface-2)] shadow-[var(--spec)]",
             panRef.current ? "cursor-grabbing" : "cursor-grab",
           )}
           style={{ backgroundImage: "radial-gradient(circle, var(--hairline) 1px, transparent 1px)", backgroundSize: "20px 20px" }}
@@ -411,7 +411,7 @@ export const FlowCanvas = () => {
           </div>
         </div>
 
-        <div className="surface rounded-[18px] p-4">
+        <div className="surface rounded-xl p-4">
           {selectedNode === null ? (
             <p className="py-6 text-center text-[12.5px] leading-relaxed text-[var(--ink-3)]">
               Select a node to edit what it says and how it behaves.

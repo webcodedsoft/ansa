@@ -191,12 +191,17 @@
     box-shadow: var(--shadow-m), var(--spec);
   }
 
+  /* The content layer: flat, and deliberately not glass.
+     `GlassPanel` is the control layer and blurs what is behind it, which is right for a
+     toolbar floating over scrolling content. A panel holding a transcript is not floating
+     over anything — it is the content — and it carried a 14px backdrop blur and a drop
+     shadow anyway, so every card sat above the page instead of on it. Hairline and fill
+     only now; the specular top edge stays because it is what keeps an edge visible against
+     the ground. */
   .surface {
     background: var(--surface);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
     border: 1px solid var(--hairline);
-    box-shadow: var(--shadow-m), var(--spec);
+    box-shadow: var(--spec);
   }
 }
 

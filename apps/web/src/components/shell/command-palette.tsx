@@ -74,7 +74,7 @@ export const CommandPalette = ({ capabilities }: { readonly capabilities: readon
             role="dialog"
             aria-modal="true"
             aria-label="Search"
-            className="ansa-enter w-[min(100%-2rem,560px)] overflow-hidden rounded-[18px] border border-[var(--hairline)] bg-[var(--glass-hi)] shadow-[var(--shadow-l),var(--spec)] backdrop-blur-[40px] backdrop-saturate-200"
+            className="ansa-enter w-[min(100%-2rem,560px)] overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--glass-hi)] shadow-[var(--shadow-l),var(--spec)] backdrop-blur-[40px] backdrop-saturate-200"
           >
             <input
               autoFocus

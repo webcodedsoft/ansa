@@ -65,7 +65,7 @@ export const Modal = ({
       }}
       aria-labelledby="modal-title"
       className={cn(
-        "m-auto w-[min(100%-2rem,520px)] rounded-[18px] border border-[var(--hairline)] p-0",
+        "m-auto w-[min(100%-2rem,520px)] rounded-xl border border-[var(--hairline)] p-0",
         "bg-[var(--glass-hi)] text-[var(--ink)] shadow-[var(--shadow-l),var(--spec)]",
         "backdrop-blur-[40px] backdrop-saturate-200",
         "backdrop:bg-[rgb(4_10_12/42%)] backdrop:backdrop-blur-[3px]",

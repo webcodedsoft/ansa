@@ -154,7 +154,7 @@ export const OverviewTab = ({
     </div>
 
     <SectionHead>Recent calls</SectionHead>
-    <div className="surface overflow-hidden rounded-[18px]">
+    <div className="surface overflow-hidden rounded-xl">
       {recentCalls.length === 0 ? (
         <EmptyState title="No calls yet">
           Place a test call from the header and it will appear here.

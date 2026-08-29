@@ -38,7 +38,17 @@ export const Tabs = ({ tabs, initial }: { readonly tabs: readonly TabDef[]; read
 
   return (
     <>
-      <div role="tablist" className="mb-[22px] flex gap-0.5 overflow-x-auto border-b border-[var(--hairline)] pt-1">
+      {/* `overflow-y-hidden` is doing real work. Setting `overflow-x` to auto forces the other
+          axis from `visible` to `auto` — CSS will not let one axis clip while the other spills —
+          and the tabs' `-mb-px`, which drops the active underline onto the container's border,
+          leaves the content one pixel taller than the box. One pixel of overflow is enough: the
+          browser drew a full vertical scrollbar down the right of the tab strip, eleven pixels
+          wide, to scroll that pixel. Clipping the axis that must never scroll removes it and
+          leaves the horizontal scrolling a narrow window still needs. */}
+      <div
+        role="tablist"
+        className="mb-[22px] flex gap-0.5 overflow-x-auto overflow-y-hidden border-b border-[var(--hairline)] pt-1"
+      >
         {tabs.map((tab) => {
           const on = tab.id === open;
           return (

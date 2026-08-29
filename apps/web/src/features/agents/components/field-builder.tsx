@@ -379,7 +379,7 @@ export const FieldBuilder = ({
         {/* Generated from the settings rather than written by hand: the exchange is what is
             being designed, and seeing it is how somebody notices that "keypad" plus "spell
             back" asks a caller to spell out digits they already typed. */}
-        <div className="glass self-start rounded-[18px] p-4">
+        <div className="glass self-start rounded-xl p-4">
           <h3 className="text-[13.5px] font-semibold">How this will sound</h3>
           <p className="mt-1 text-[12.5px] text-[var(--ink-3)]">
             Generated from the settings on the left. This is the exchange the caller hears.

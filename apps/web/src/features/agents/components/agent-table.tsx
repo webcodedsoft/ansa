@@ -89,7 +89,7 @@ const percent = (rate: number | null): string =>
   rate === null ? "—" : `${Math.round(rate * 100)}%`;
 
 export const AgentTable = ({ agents }: { readonly agents: readonly AgentRow[] }) => (
-  <div className="surface overflow-hidden rounded-[18px]">
+  <div className="surface overflow-hidden rounded-xl">
     <Table>
       <thead>
         <tr>

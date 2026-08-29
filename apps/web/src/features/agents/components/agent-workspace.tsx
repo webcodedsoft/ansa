@@ -261,7 +261,7 @@ export const AgentWorkspace = ({
           an identity — mark, status, the number it answers on, and who published it last.
           The three controls sit here because they act on the whole agent rather than on
           whichever tab happens to be open. */}
-      <header className="glass mb-3.5 flex flex-wrap items-center gap-3.5 rounded-[18px] p-4">
+      <header className="glass mb-3.5 flex flex-wrap items-center gap-3.5 rounded-xl p-4">
         <span className="grid size-[38px] flex-none place-items-center rounded-[11px] bg-[linear-gradient(150deg,var(--accent),color-mix(in_srgb,var(--accent)_55%,#2a6ad4))] text-[15px] font-bold text-[var(--accent-on)] shadow-[var(--shadow-s)]">
           {agent.name.slice(0, 2).toUpperCase()}
         </span>

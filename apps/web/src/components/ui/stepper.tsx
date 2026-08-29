@@ -114,7 +114,7 @@ export const Stepper = ({
           {here.panel}
         </div>
 
-        <div className="glass sticky bottom-4 mt-4 flex items-center gap-2.5 rounded-[18px] px-4 py-3.5">
+        <div className="glass sticky bottom-4 mt-4 flex items-center gap-2.5 rounded-xl px-4 py-3.5">
           <span className="text-[12.5px] tabular-nums text-[var(--ink-3)]">
             Step {at + 1} of {steps.length} · {here.title}
           </span>
