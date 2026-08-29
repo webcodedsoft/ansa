@@ -2,11 +2,12 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 
-import { Card, PageHeader, Panel, Table, Td, Th, Tr, Tag, buttonClass } from "@/components/ui";
-import { nameOf, valueLabel } from "@/features/contacts/contacts.display";
+import { Card, PageHeader, Pagination, Panel, Table, Td, Th, Tr, Tag, buttonClass } from "@/components/ui";
+import { nameOf } from "@/features/contacts/contacts.display";
 import { readContactDetail } from "@/features/contacts/contacts.service";
 import { refusedWith } from "@/lib/api/server";
-import { duration, when } from "@/lib/format";
+import { readPaging } from "@/lib/paging";
+import { directionLabel, duration, when } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Contact · Ansa" };
 export const dynamic = "force-dynamic";
@@ -17,15 +18,23 @@ export const dynamic = "force-dynamic";
  * The call list is the reason this page is worth opening rather than reading the row on the
  * list. Somebody rings back and the question is never "what is their name" — it is "what did
  * we say to them last time", and that is one click from here.
+ *
+ * What they told the agent is not shown here either. It lives on Collected data, which is
+ * built for it: every value, filterable, exportable. Two places rendering the same values is
+ * two places to keep in step, and the one with the export wins.
  */
 const ContactPage = async ({
   params,
+  searchParams,
 }: {
   readonly params: Promise<{ readonly contactId: string }>;
+  readonly searchParams: Promise<{ readonly page?: string; readonly perPage?: string }>;
 }) => {
   const { contactId } = await params;
+  const search = await searchParams;
+  const requested = readPaging(search);
 
-  const detail = await readContactDetail(contactId).catch((error: unknown) => {
+  const detail = await readContactDetail(contactId, requested).catch((error: unknown) => {
     // Another organisation's contact looks exactly like one that does not exist, which is
     // deliberate on the API side. Both are a 404 here too.
     if (refusedWith(error, 404)) return null;
@@ -34,7 +43,6 @@ const ContactPage = async ({
   if (detail === null) notFound();
 
   const { contact, calls } = detail;
-  const collected = contact.values.filter((value) => value.fieldType !== "name");
 
   return (
     <>
@@ -53,39 +61,10 @@ const ContactPage = async ({
 
       <div className="flex flex-col gap-3.5">
         <Card
-          title="What they told us"
-          description="Collected across every call, most recent answer winning. A value with no call behind it was typed in here."
-        >
-          {collected.length === 0 ? (
-            <p className="text-[13px] text-[var(--ink-3)]">
-              Nothing beyond their number yet. Values appear here as the agent confirms them.
-            </p>
-          ) : (
-            <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
-              {collected.map((value) => (
-                <div key={value.fieldKey}>
-                  <dt className="text-[11.5px] tracking-[0.04em] text-[var(--ink-3)] uppercase">
-                    {valueLabel(value.fieldKey)}
-                  </dt>
-                  <dd className="mt-1 text-[13.5px]">
-                    {value.value}
-                    {value.sourceCallId === null && (
-                      <span className="ml-2 align-middle">
-                        <Tag>entered by hand</Tag>
-                      </span>
-                    )}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          )}
-        </Card>
-
-        <Card
           title="Call history"
           description="Every call from this number, newest first — including the ones that collected nothing."
         >
-          {calls.length === 0 ? (
+          {calls.items.length === 0 ? (
             <p className="text-[13px] text-[var(--ink-3)]">No calls recorded against this number.</p>
           ) : (
             <Panel className="overflow-hidden">
@@ -99,7 +78,7 @@ const ContactPage = async ({
                   </Tr>
                 </thead>
                 <tbody>
-                  {calls.map((call) => (
+                  {calls.items.map((call) => (
                     <Tr key={call.callId}>
                       <Td>
                         <Link
@@ -109,7 +88,7 @@ const ContactPage = async ({
                           {when(call.calledAt)}
                         </Link>
                       </Td>
-                      <Td className="text-[12.5px] text-[var(--ink-3)]">{call.direction}</Td>
+                      <Td className="text-[12.5px] text-[var(--ink-3)]">{directionLabel(call.direction)}</Td>
                       <Td align="right" className="tabular-nums">
                         {call.durationSeconds === null ? "—" : duration(call.durationSeconds)}
                       </Td>
@@ -127,6 +106,18 @@ const ContactPage = async ({
             </Panel>
           )}
         </Card>
+
+        {/* Outside the card, like every other list in the console, so the control that moves
+            between pages is not inside the thing it is paging. */}
+        <Pagination
+          basePath={`/contacts/${contactId}`}
+          page={calls.page}
+          perPage={calls.perPage}
+          totalPages={calls.totalPages}
+          total={calls.total}
+          params={search}
+          unit="calls"
+        />
       </div>
     </>
   );

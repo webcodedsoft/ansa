@@ -8434,6 +8434,25 @@
               "format": "uuid",
               "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
             }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "perPage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
           }
         ],
         "responses": {
@@ -8544,61 +8563,90 @@
                       "additionalProperties": false
                     },
                     "calls": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "callId": {
-                            "type": "string",
-                            "format": "uuid",
-                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-                          },
-                          "carrierCallId": {
-                            "type": "string",
-                            "maxLength": 128
-                          },
-                          "agentId": {
-                            "type": [
-                              "string",
-                              "null"
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "callId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                              },
+                              "carrierCallId": {
+                                "type": "string",
+                                "maxLength": 128
+                              },
+                              "agentId": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "uuid",
+                                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                              },
+                              "calledAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "endReason": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "maxLength": 64
+                              },
+                              "durationSeconds": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ],
+                                "minimum": 0
+                              },
+                              "direction": {
+                                "type": "string",
+                                "maxLength": 16
+                              }
+                            },
+                            "required": [
+                              "callId",
+                              "carrierCallId",
+                              "agentId",
+                              "calledAt",
+                              "endReason",
+                              "durationSeconds",
+                              "direction"
                             ],
-                            "format": "uuid",
-                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-                          },
-                          "calledAt": {
-                            "type": "string",
-                            "format": "date-time"
-                          },
-                          "endReason": {
-                            "type": [
-                              "string",
-                              "null"
-                            ],
-                            "maxLength": 64
-                          },
-                          "durationSeconds": {
-                            "type": [
-                              "integer",
-                              "null"
-                            ],
-                            "minimum": 0
-                          },
-                          "direction": {
-                            "type": "string",
-                            "maxLength": 16
+                            "additionalProperties": false
                           }
                         },
-                        "required": [
-                          "callId",
-                          "carrierCallId",
-                          "agentId",
-                          "calledAt",
-                          "endReason",
-                          "durationSeconds",
-                          "direction"
-                        ],
-                        "additionalProperties": false
-                      }
+                        "page": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "perPage": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "total": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "totalPages": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "page",
+                        "perPage",
+                        "total",
+                        "totalPages"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [

@@ -1,5 +1,7 @@
 import type { OrganizationId } from "@ansa/shared";
 
+import { pageOrder, pageParams, TOTAL_COLUMN, toSlice, type PageRequest, type PageSlice, type WithTotal }
+  from "./paging";
 import type { OrganizationScope } from "./organization-scope";
 
 /**
@@ -229,19 +231,21 @@ export interface ContactCall {
 export const readContactCalls = async (
   scope: OrganizationScope,
   contactId: string,
-  limit = 100,
-): Promise<readonly ContactCall[]> => {
-  const rows = await scope.query<Record<string, unknown>>(
+  page: PageRequest,
+): Promise<PageSlice<ContactCall>> => {
+  /* The contact id binds first, so the limit and offset start at $2 — `pageOrder`'s `from`
+     exists for exactly this, and without it a filtered list has to bind its own parameter
+     after the limit, which is how a uuid ends up bound to `limit`. */
+  const rows = await scope.query<Record<string, unknown> & WithTotal>(
     `select c.id, c.carrier_call_id, c.agent_id, c.created_at, c.end_reason,
-            c.duration_seconds, c.direction
+            c.duration_seconds, c.direction, ${TOTAL_COLUMN}
        from calls c
        join contacts ct on ct.phone = c.caller
       where ct.id = $1
-      order by c.created_at desc
-      limit $2`,
-    [contactId, Math.min(Math.max(1, Math.trunc(limit)), 500)],
+      ${pageOrder("c.created_at", "c.id", 2)}`,
+    [contactId, ...pageParams(page)],
   );
-  return rows.map((row) => ({
+  return toSlice(rows, (row) => ({
     callId: String(row["id"]),
     carrierCallId: String(row["carrier_call_id"]),
     agentId: row["agent_id"] === null ? null : String(row["agent_id"]),

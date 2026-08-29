@@ -14,8 +14,10 @@ export const listContacts = async (search?: string) => {
   return (await api()).contacts.list({ query });
 };
 
-export const readContactDetail = async (contactId: string) =>
-  (await api()).contacts.detail({ path: { contactId } });
+export const readContactDetail = async (
+  contactId: string,
+  paging: { readonly page?: number; readonly perPage?: number } = {},
+) => (await api()).contacts.detail({ path: { contactId }, query: paging });
 
 export type ContactSummary = Awaited<ReturnType<typeof listContacts>>["items"][number];
 export type ContactDetail = Awaited<ReturnType<typeof readContactDetail>>;

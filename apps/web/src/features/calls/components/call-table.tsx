@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { Blip, GroupRow, Table, Tag, Td, Th, type Tone } from "@/components/ui";
-import { dayLabel, duration, humanise, millis, phone, timeOfDay } from "@/lib/format";
+import { dayLabel, directionLabel, duration, humanise, millis, phone, timeOfDay } from "@/lib/format";
 
 import type { CallSummary } from "../calls.service";
 
@@ -101,7 +101,7 @@ export const CallTable = ({ calls }: { readonly calls: readonly CallSummary[] })
                       sources for one number. */}
                   <Td className="whitespace-nowrap tabular-nums">{timeOfDay(call.createdAt)}</Td>
                   <Td>
-                    <Tag>{call.direction}</Tag>
+                    <Tag>{directionLabel(call.direction)}</Tag>
                   </Td>
                   <Td className="font-mono text-[13px] font-medium">
                     {/* The number is the link, and there is no separate "Read"

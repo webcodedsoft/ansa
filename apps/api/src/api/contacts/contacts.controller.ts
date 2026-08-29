@@ -8,6 +8,13 @@ import {
 import { Controller, Get, Inject, NotFoundException, Patch, Put } from "@nestjs/common";
 
 import { Endpoint } from "../http/endpoint";
+import {
+  pageQuery,
+  pageResponse,
+  toPageBody,
+  toPageRequest,
+  type PageQuery,
+} from "../http/pagination";
 import { apiRoute, FromBody, FromPath, FromQuery } from "../http/request";
 import { integer, list, nullable, object, optional, text, type Infer } from "../http/schema";
 import { timestamp, uuid } from "../schemas";
@@ -68,8 +75,14 @@ const contactCall = object({
 
 const contactDetail = object({
   contact,
-  /** Every call from this number, newest first, whether or not it collected anything. */
-  calls: list(contactCall),
+  /**
+   * Every call from this number, newest first, whether or not it collected anything.
+   *
+   * Paginated for the reason the calls list is: a number that rings a contact centre weekly
+   * has hundreds, and a page that renders all of them is slow for the one person who wanted
+   * the last three.
+   */
+  calls: pageResponse(contactCall),
 });
 
 const rename = object({ displayName: nullable(text({ maxLength: 200 })) });
@@ -107,28 +120,38 @@ export class ContactsController {
       "The call list is matched on the number rather than through a key, so calls made before this contact existed are still theirs.",
     capability: "contacts:read",
     params: contactPath,
+    query: pageQuery,
     response: contactDetail,
   })
-  async detail(@FromPath() path: Infer<typeof contactPath>): Promise<Infer<typeof contactDetail>> {
+  async detail(
+    @FromPath() path: Infer<typeof contactPath>,
+    @FromQuery() query: PageQuery,
+  ): Promise<Infer<typeof contactDetail>> {
     const found = await this.db.tx(async (scope) => {
       const person = await readContact(scope, path.contactId);
       if (person === null) return null;
-      return { person, calls: await readContactCalls(scope, path.contactId) };
+      return { person, calls: await readContactCalls(scope, path.contactId, toPageRequest(query)) };
     });
     // Not ours, which under RLS is also what another organisation's contact looks like.
     // Answering 404 to both is the point: a 403 would confirm the id exists.
     if (found === null) throw new NotFoundException();
     return {
       contact: asBody(found.person),
-      calls: found.calls.map((call) => ({
-        callId: call.callId,
-        carrierCallId: call.carrierCallId,
-        agentId: call.agentId,
-        calledAt: call.calledAt.toISOString(),
-        endReason: call.endReason,
-        durationSeconds: call.durationSeconds,
-        direction: call.direction,
-      })),
+      calls: toPageBody(
+        {
+          items: found.calls.items.map((call) => ({
+            callId: call.callId,
+            carrierCallId: call.carrierCallId,
+            agentId: call.agentId,
+            calledAt: call.calledAt.toISOString(),
+            endReason: call.endReason,
+            durationSeconds: call.durationSeconds,
+            direction: call.direction,
+          })),
+          total: found.calls.total,
+        },
+        query,
+      ),
     };
   }
 

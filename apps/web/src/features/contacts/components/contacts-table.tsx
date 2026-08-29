@@ -3,15 +3,18 @@ import Link from "next/link";
 import { EmptyState, Panel, Table, Td, Th, Tr } from "@/components/ui";
 import { when } from "@/lib/format";
 
-import { nameOf, valueLabel } from "../contacts.display";
+import { nameOf } from "../contacts.display";
 import type { ContactSummary } from "../contacts.service";
 
 /**
  * Everyone who has called, one row each.
  *
  * The row is the person, not the call — which is the whole reason this page exists beside
- * Collected data. Somebody who rang three times is here once, carrying what all three calls
- * taught us.
+ * Collected data. Somebody who rang three times is here once.
+ *
+ * What they told the agent is deliberately not here. Collected data already answers that,
+ * one row per confirmed value and exportable; repeating three of them per person makes this
+ * page a worse version of that one. This page answers who, and how often.
  */
 export const ContactsTable = ({ people }: { readonly people: readonly ContactSummary[] }) => {
   if (people.length === 0) {
@@ -33,7 +36,6 @@ export const ContactsTable = ({ people }: { readonly people: readonly ContactSum
           <Tr>
             <Th>Name</Th>
             <Th>Number</Th>
-            <Th>What we know</Th>
             <Th align="right">Calls</Th>
             <Th align="right">Last call</Th>
           </Tr>
@@ -50,17 +52,6 @@ export const ContactsTable = ({ people }: { readonly people: readonly ContactSum
                 </Link>
               </Td>
               <Td className="font-mono text-[12.5px]">{person.phone}</Td>
-              <Td>
-                {/* The fields themselves rather than a count: "3 values" tells nobody whether
-                    this is the person they are looking for. */}
-                <span className="text-[12.5px] text-[var(--ink-3)]">
-                  {person.values
-                    .filter((value) => value.fieldType !== "name")
-                    .slice(0, 3)
-                    .map((value) => `${valueLabel(value.fieldKey)}: ${value.value}`)
-                    .join(" · ") || "—"}
-                </span>
-              </Td>
               <Td align="right" className="tabular-nums">
                 {person.callCount}
               </Td>

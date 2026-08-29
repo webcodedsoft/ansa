@@ -1210,6 +1210,10 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly path: {
           readonly contactId: string;
         };
+        readonly query?: {
+          readonly page?: number;
+          readonly perPage?: number;
+        };
       }) =>
       send<{
         readonly contact: {
@@ -1229,7 +1233,8 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly createdAt: string;
         readonly updatedAt: string;
       };
-        readonly calls: readonly ({
+        readonly calls: {
+        readonly items: readonly ({
         readonly callId: string;
         readonly carrierCallId: string;
         readonly agentId: string | null;
@@ -1238,6 +1243,11 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly durationSeconds: number | null;
         readonly direction: string;
       })[];
+        readonly page: number;
+        readonly perPage: number;
+        readonly total: number;
+        readonly totalPages: number;
+      };
       }>(options, "GET", `/api/v1/contacts/${encodeURIComponent(input.path.contactId)}`, input),
 
     /**

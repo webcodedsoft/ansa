@@ -70,6 +70,20 @@ export const offset = (ms: number | null): string => {
 };
 
 /** Snake or kebab case from the API as something readable, without inventing wording. */
+/**
+ * What a call's direction is called on screen.
+ *
+ * The stored values stay `inbound` and `outbound` — they are the carrier's vocabulary, the
+ * column's check constraint and what every comparison in this app tests against. This is the
+ * label only. "Incoming" and "outgoing" are what somebody running a phone line says, and the
+ * mapping lives here so the four places that show it cannot drift into three spellings.
+ */
+export const directionLabel = (direction: string): string => {
+  if (direction === "inbound") return "incoming";
+  if (direction === "outbound") return "outgoing";
+  return direction;
+};
+
 export const humanise = (value: string | null): string =>
   value === null || value === "" ? "—" : value.replace(/[_-]+/g, " ");
 

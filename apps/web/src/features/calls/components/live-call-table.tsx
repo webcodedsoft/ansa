@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { Blip, EmptyState, Table, Tag, Td, Th, Tr } from "@/components/ui";
-import { duration, when } from "@/lib/format";
+import { directionLabel, duration, when } from "@/lib/format";
 
 import type { LiveCall } from "../calls.service";
 
@@ -50,7 +50,7 @@ export const LiveCallTable = ({ calls }: { readonly calls: readonly LiveCall[] }
               </span>
             </Td>
             <Td>
-              <Tag>{call.direction}</Tag>
+              <Tag>{directionLabel(call.direction)}</Tag>
             </Td>
             <Td className="font-mono text-[13px]">{counterparty(call)}</Td>
             <Td className="tabular-nums">{when(call.createdAt)}</Td>

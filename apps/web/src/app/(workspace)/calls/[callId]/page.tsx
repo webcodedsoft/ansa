@@ -7,7 +7,7 @@ import { CallFlags } from "@/features/calls/components/call-flags";
 import { CallStats, computeCallStats } from "@/features/calls/components/call-stats";
 import { CallTimeline, EventTable, linesOf } from "@/features/calls/components/call-timeline";
 import { CollectedValues } from "@/features/calls/components/collected-values";
-import { duration, humanise, when } from "@/lib/format";
+import { directionLabel, duration, humanise, when } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +35,7 @@ const CallDetailPage = async ({
             All calls
           </Link>
         }
-        meta={`${when(call.createdAt)} · ${call.direction} · ${duration(
+        meta={`${when(call.createdAt)} · ${directionLabel(call.direction)} · ${duration(
           call.durationSeconds,
         )} · ${call.endedAt === null ? "in progress" : humanise(call.endReason)}${
           call.configVersion === null ? "" : ` · configuration version ${call.configVersion}`
