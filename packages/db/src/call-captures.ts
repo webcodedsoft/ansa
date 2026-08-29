@@ -1,5 +1,6 @@
 import type { OrganizationId } from "@ansa/shared";
 
+import { mergeCapturesIntoContact } from "./contacts";
 import type { Db } from "./data-source";
 import { withOrganization } from "./organization-scope";
 import type { OrganizationScope } from "./organization-scope";
@@ -39,41 +40,6 @@ export interface RecordCaptureInput {
   readonly value: string;
   readonly attempts: number;
 }
-
-/**
- * Store one confirmed value.
- *
- * Upserts on the field. A caller who corrects their number has one number, and the second
- * reading is the right one — the first is still in `call_events` for anyone asking how the
- * conversation went, which is a different question from what they told us.
- *
- * `organization_id` comes from the scope rather than the caller, so a call id from another
- * organisation writes a row RLS then refuses rather than a row filed under the wrong
- * organisation.
- */
-export const recordCapture = async (
-  scope: OrganizationScope,
-  input: RecordCaptureInput & { readonly callId: string },
-): Promise<void> => {
-  await scope.query(
-    `insert into call_captures
-       (organization_id, call_id, field_key, field_type, value, attempts, confirmed_at)
-     values ($1, $2, $3, $4, $5, $6, now())
-     on conflict (call_id, field_key) do update
-       set value = excluded.value,
-           field_type = excluded.field_type,
-           attempts = excluded.attempts,
-           confirmed_at = excluded.confirmed_at`,
-    [
-      scope.organizationId,
-      input.callId,
-      input.fieldKey,
-      input.fieldType,
-      input.value,
-      Math.max(1, Math.trunc(input.attempts)),
-    ],
-  );
-};
 
 /** Everything collected on one call, in the order the agent asked for it. */
 export const readCallCaptures = async (
@@ -188,5 +154,13 @@ export const recordCaptures = async (
              confirmed_at = now()`,
       values,
     );
+
+    /* The same values, folded onto the person who gave them.
+     *
+     * Inside the scope and after the insert, so it reads rows this batch has already
+     * written and cannot see another organisation's. It is one more statement on a write
+     * that is already off the call path — the recorder flushes this in the background and
+     * nothing in the conversation waits for it. */
+    await mergeCapturesIntoContact(scope, callRowId);
   });
 };
