@@ -85,43 +85,79 @@ export const label = (key: string): string => {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase();
 };
 
-export interface FieldSummary {
+export interface FormField {
   readonly key: string;
-  /** Values collected for this field across the range. */
+  readonly type: string;
+}
+
+export interface AgentColumn {
+  readonly key: string;
+  readonly type: string;
+  /** Values collected for it in this range. Zero is the interesting case. */
   readonly count: number;
-  /** How many of them the agent had to ask for more than once. */
-  readonly retried: number;
-  /** The worst single case, which is what somebody rewriting a prompt wants to see. */
-  readonly worstAttempts: number;
+  /** In the data but not in the agent's form any more. Its history is still real. */
+  readonly retired: boolean;
 }
 
 /**
- * How each field is behaving, not just how often it appears.
+ * The columns of one agent's dataset, taken from its form rather than from its answers.
  *
- * `attempts` has been stored since the table existed and shown nowhere. The migration that
- * added it says why it is kept: a field that regularly takes three goes is a field whose
- * prompt needs rewriting, and that is invisible unless somebody counts. This is the count.
+ * This is the whole point of reading the data per agent. Deriving columns from the values
+ * that came back cannot show a question nobody ever answered — no value, no column — and a
+ * question that never gets answered is the most broken question there is. The form knows it
+ * was asked; the values only know it was not answered.
  *
- * Derived from the rows on screen rather than from a separate aggregate query. Those rows
- * are the whole filtered range unless the API says it truncated them, and the page says so
- * loudly when it does — so a second round trip would buy a number that is already right.
+ * Order is the operator's own, because that is the order the caller is asked in, and a table
+ * whose columns run in the order of the conversation is readable in a way a frequency ranking
+ * is not. Anything present in the range but missing from the form is appended and marked
+ * retired: somebody removed the question and last month's answers are still real.
  */
-export const summarise = (rows: readonly CapturedRow[]): readonly FieldSummary[] => {
-  const byField = new Map<string, { count: number; retried: number; worst: number }>();
+export const columnsForAgent = (
+  rows: readonly CapturedRow[],
+  form: readonly FormField[],
+): readonly AgentColumn[] => {
+  const counts = new Map<string, number>();
+  const typeOf = new Map<string, string>();
   for (const row of rows) {
-    const seen = byField.get(row.fieldKey) ?? { count: 0, retried: 0, worst: 1 };
-    seen.count += 1;
-    if (row.attempts > 1) seen.retried += 1;
-    seen.worst = Math.max(seen.worst, row.attempts);
-    byField.set(row.fieldKey, seen);
+    counts.set(row.fieldKey, (counts.get(row.fieldKey) ?? 0) + 1);
+    typeOf.set(row.fieldKey, row.fieldType);
   }
-  return [...byField.entries()]
-    .map(([key, seen]) => ({
-      key,
-      count: seen.count,
-      retried: seen.retried,
-      worstAttempts: seen.worst,
-    }))
-    // Most-retried first: the point of the panel is what needs attention, not an index.
-    .sort((a, b) => b.retried - a.retried || b.count - a.count);
+
+  const configured = form.map((field) => ({
+    key: field.key,
+    type: field.type,
+    count: counts.get(field.key) ?? 0,
+    retired: false,
+  }));
+
+  const known = new Set(form.map((field) => field.key));
+  const retired = [...counts.entries()]
+    .filter(([key]) => !known.has(key))
+    .map(([key, count]) => ({ key, type: typeOf.get(key) ?? "text", count, retired: true }));
+
+  return [...configured, ...retired];
+};
+
+export interface AgentFieldHealth extends AgentColumn {
+  readonly retried: number;
+  readonly worstAttempts: number;
+}
+
+/** The same columns, with how hard each one was to collect. */
+export const healthForAgent = (
+  rows: readonly CapturedRow[],
+  form: readonly FormField[],
+): readonly AgentFieldHealth[] => {
+  const seen = new Map<string, { retried: number; worst: number }>();
+  for (const row of rows) {
+    const at = seen.get(row.fieldKey) ?? { retried: 0, worst: 1 };
+    if (row.attempts > 1) at.retried += 1;
+    at.worst = Math.max(at.worst, row.attempts);
+    seen.set(row.fieldKey, at);
+  }
+  return columnsForAgent(rows, form).map((column) => ({
+    ...column,
+    retried: seen.get(column.key)?.retried ?? 0,
+    worstAttempts: seen.get(column.key)?.worst ?? 0,
+  }));
 };

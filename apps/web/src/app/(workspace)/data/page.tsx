@@ -1,28 +1,34 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { Button, Card, Notice, PageHeader, Panel, SelectField, Stat, TextField, buttonClass } from "@/components/ui";
+import { Button, Card, Notice, PageHeader, Panel, Stat, TextField, buttonClass } from "@/components/ui";
 import { liveAgents } from "@/features/agents/agents.service";
-import { pivot, summarise } from "@/features/calls/captures";
+import { columnsForAgent, healthForAgent, pivot } from "@/features/calls/captures";
 import { listCaptures } from "@/features/calls/calls.service";
-import { CapturesTable } from "@/features/calls/components/captures-table";
+import { AgentDataset } from "@/features/calls/components/agent-dataset";
+import { AgentFieldHealthTable } from "@/features/calls/components/agent-field-health";
 import { ExportMenu } from "@/features/calls/components/export-menu";
-import { FieldHealth } from "@/features/calls/components/field-health";
+import { cn } from "@/lib/cn";
 
 export const metadata: Metadata = { title: "Collected data · Ansa" };
 export const dynamic = "force-dynamic";
 
 /**
- * Everything the agents collected from callers, in one place.
+ * What one agent collected from its callers.
  *
- * The call page answers "what happened on this call". This answers two questions the call
- * page cannot: what did we get across every call, and — the one nothing could answer before
- * — which of our questions is not working. `attempts` has been recorded on every value since
- * the table existed and was shown nowhere, so a field the agent has to ask for three times
- * looked exactly like one it gets first time.
+ * The agent is the axis, not a filter. That is not a presentation choice — it follows from
+ * the data: a value belongs to a call, a call belongs to one agent, and the questions asked
+ * are that agent's form. Showing every agent at once produces a union of forms that no column
+ * list is right for, which is what the previous version did and why most of its cells were
+ * empty.
  *
- * Filters live in the URL rather than in client state, as everywhere else in the console, so
- * a filtered view is a link somebody can send and the back button behaves.
+ * Reading it per agent buys the thing the old page could not do at all. Columns come from the
+ * agent's configured fields rather than from the values that came back, so a question nobody
+ * has ever answered still appears — with a zero against it. No value, no column meant the
+ * worst question in the form was the one you could not see.
+ *
+ * Filters stay in the URL, as everywhere else in the console, so a view is a link somebody
+ * can send and the back button behaves.
  */
 type DataSearch = {
   readonly agentId?: string;
@@ -33,79 +39,108 @@ type DataSearch = {
 const DataPage = async ({ searchParams }: { readonly searchParams: Promise<DataSearch> }) => {
   const search = await searchParams;
 
-  /* Both at once. The agent picker is a filter control, not a dependency of the rows, so
-     making the table wait on it would be a second round trip for a dropdown.
-     `allSettled` on the agents because a picker that fails to load must not take the data
-     down with it — the table is the page. */
-  const [captures, agents] = await Promise.allSettled([
-    listCaptures({ agentId: search.agentId, from: search.from, to: search.to }),
-    liveAgents(),
-  ]);
-  if (captures.status === "rejected") throw captures.reason;
+  /* The agents come first here, unlike the previous version where they were a dropdown that
+     could fail without consequence. The chosen agent decides the columns, so the page cannot
+     be drawn without one — a failure to load them is a failure to load the page. */
+  const agents = await liveAgents();
+  const chosen = agents.find((agent) => agent.agentId === search.agentId) ?? agents[0];
 
-  const rows = captures.value.rows;
+  if (chosen === undefined) {
+    return (
+      <>
+        <PageHeader eyebrow="Operate" title="Collected data" />
+        <Panel>
+          <div className="p-8 text-center text-[13.5px] text-[var(--ink-3)]">
+            No agent is answering yet. Build one, give it questions to ask, and what callers
+            tell it will appear here.
+          </div>
+        </Panel>
+      </>
+    );
+  }
+
+  const captures = await listCaptures({
+    agentId: chosen.agentId,
+    from: search.from,
+    to: search.to,
+  });
+
+  const rows = captures.rows;
   const pivoted = pivot(rows);
-  const fields = summarise(rows);
-  const agentOptions = agents.status === "fulfilled" ? agents.value : [];
+  const form = chosen.capturedFields.map((field) => ({ key: field.key, type: field.type }));
+  const columns = columnsForAgent(rows, form);
+  const health = healthForAgent(rows, form);
+  const unanswered = health.filter((field) => field.count === 0 && !field.retired).length;
   const retried = rows.filter((row) => row.attempts > 1).length;
-  const filtered = [search.agentId, search.from, search.to].some(
-    (value) => value !== undefined && value !== "",
-  );
+  const dated = [search.from, search.to].some((value) => value !== undefined && value !== "");
 
   return (
     <>
       <PageHeader
         eyebrow="Operate"
         title="Collected data"
-        meta="What callers told the agents and confirmed, newest call first."
+        meta="What callers told this agent and confirmed, newest call first."
         actions={
           <ExportMenu
-            query={{ agentId: search.agentId, from: search.from, to: search.to }}
+            query={{ agentId: chosen.agentId, from: search.from, to: search.to }}
             disabled={pivoted.calls.length === 0}
           />
         }
       />
 
+      {/* The axis. One agent is a caption; several are a choice, and it is the first choice on
+          the page rather than a field inside a filter panel. */}
+      {agents.length > 1 ? (
+        <div className="mb-3.5 flex flex-wrap gap-1.5">
+          {agents.map((agent) => {
+            const on = agent.agentId === chosen.agentId;
+            return (
+              <Link
+                key={agent.agentId}
+                href={`/data?agentId=${agent.agentId}`}
+                className={cn(
+                  "rounded-[4px] border px-3 py-1.5 text-[13px] transition-colors",
+                  on
+                    ? "border-[color-mix(in_srgb,var(--accent)_45%,transparent)] bg-[var(--accent-soft)] font-medium text-[var(--accent)]"
+                    : "border-[var(--hairline)] text-[var(--ink-2)] hover:border-[var(--ink-3)]",
+                )}
+              >
+                {agent.name}
+              </Link>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="mb-3.5 font-mono text-[11px] tracking-[0.13em] text-[var(--ink-3)] uppercase">
+          {chosen.name}
+        </p>
+      )}
+
       <div className="grid gap-3.5 sm:grid-cols-3">
-        <Stat label="Values collected" value={rows.length} />
         <Stat
-          label="Calls that gave us something"
-          value={pivoted.calls.length}
-          trend={`${fields.length} ${fields.length === 1 ? "field" : "fields"} in use`}
+          label="Values collected"
+          value={rows.length}
+          trend={`across ${pivoted.calls.length} ${pivoted.calls.length === 1 ? "call" : "calls"}`}
         />
-        {/* The figure this page exists to surface. A caller repeating themselves is the
-            cheapest signal there is that a question is badly worded. */}
         <Stat
           label="Asked more than once"
           value={retried}
           tone={retried === 0 ? "flat" : "down"}
-          trend={
-            rows.length === 0
-              ? undefined
-              : `${Math.round((retried / rows.length) * 100)}% of values`
-          }
+          trend={rows.length === 0 ? undefined : `${Math.round((retried / rows.length) * 100)}% of values`}
+        />
+        {/* The figure only a form-driven view can produce. */}
+        <Stat
+          label="Never answered"
+          value={unanswered}
+          tone={unanswered === 0 ? "flat" : "down"}
+          trend={`of ${form.length} ${form.length === 1 ? "question" : "questions"} asked`}
         />
       </div>
 
       <div className="mt-[26px] flex flex-col gap-3.5">
-        {/* A plain GET form, and it now has a button. It did not: a `<select>` does not
-            submit a form on change, so choosing an agent used to do nothing at all until
-            somebody happened to press return inside one of the date fields. */}
         <Panel>
           <form method="get" className="flex flex-wrap items-end gap-3 p-4">
-            <SelectField
-              name="agentId"
-              label="Agent"
-              defaultValue={search.agentId ?? ""}
-              className="min-w-[200px] flex-1"
-            >
-              <option value="">All agents</option>
-              {agentOptions.map((agent) => (
-                <option key={agent.agentId} value={agent.agentId}>
-                  {agent.name}
-                </option>
-              ))}
-            </SelectField>
+            <input type="hidden" name="agentId" value={chosen.agentId} />
             <TextField
               name="from"
               label="From"
@@ -120,16 +155,13 @@ const DataPage = async ({ searchParams }: { readonly searchParams: Promise<DataS
               defaultValue={search.to ?? ""}
               className="min-w-[160px]"
             />
-            {/* The note sits under the row, not on the last field. As a `hint` it added its
-                own height to one control in a row aligned on its baseline, which lifted that
-                field a line above the other two. */}
             <div className="flex items-center gap-2">
               <Button type="submit" variant="primary">
                 Apply
               </Button>
-              {filtered && (
-                <Link href="/data" className={buttonClass("ghost")}>
-                  Clear
+              {dated && (
+                <Link href={`/data?agentId=${chosen.agentId}`} className={buttonClass("ghost")}>
+                  Clear dates
                 </Link>
               )}
             </div>
@@ -139,27 +171,27 @@ const DataPage = async ({ searchParams }: { readonly searchParams: Promise<DataS
           </form>
         </Panel>
 
-        {captures.value.truncated && (
-          /* Said out loud rather than left to be discovered. An export that quietly stopped
-             at a limit is worse than no export, because it looks complete. */
+        {captures.truncated && (
+          /* Said out loud rather than left to be discovered. An export that quietly stopped at
+             a limit is worse than no export, because it looks complete. */
           <Notice tone="warn">
-            More values matched than one page returns. Narrow the date range before
-            exporting, or the file will be missing the oldest of them — and the figures above
-            describe only what is shown.
+            More values matched than one page returns. Narrow the date range before exporting,
+            or the file will be missing the oldest of them — and the figures above describe only
+            what is shown.
           </Notice>
         )}
 
-        {fields.length > 0 && (
+        {health.length > 0 && (
           <Card
             title="How the questions are doing"
-            description="Every value records how many times the agent had to ask for it. A field repeated often is a prompt to rewrite, not a caller to blame."
+            description="Every question this agent asks, in the order it asks them. A field repeated often is a prompt to rewrite; a field never answered is one to reword or drop."
           >
-            <FieldHealth fields={fields} />
+            <AgentFieldHealthTable fields={health} />
           </Card>
         )}
 
         <Card
-          title="Every value"
+          title="Every answer"
           description={
             rows.length === 0
               ? "Nothing collected in this range."
@@ -168,7 +200,7 @@ const DataPage = async ({ searchParams }: { readonly searchParams: Promise<DataS
                 }, one row per call`
           }
         >
-          <CapturesTable pivoted={pivoted} />
+          <AgentDataset pivoted={pivoted} columns={columns} />
         </Card>
       </div>
     </>
