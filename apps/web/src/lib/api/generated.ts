@@ -336,7 +336,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly name: string;
       };
         readonly role: "owner" | "admin" | "member";
-        readonly capabilities: readonly ("calls:read" | "calls:write" | "members:read" | "members:write" | "invitations:read" | "invitations:write" | "config:read" | "config:write")[];
+        readonly capabilities: readonly ("calls:read" | "calls:write" | "contacts:read" | "contacts:write" | "members:read" | "members:write" | "invitations:read" | "invitations:write" | "config:read" | "config:write")[];
       }>(options, "GET", `/api/v1/auth/me`, {}),
 
     /**
@@ -1170,6 +1170,124 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly restoredFrom: number | null;
         readonly updatedAt: string;
       }>(options, "POST", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}/config/versions/${encodeURIComponent(input.path.version)}/rollback`, input),
+  },
+
+  contacts: {
+    /**
+     * Everyone who has called, most recent first
+     * One record per caller number, carrying what they have told the agent across every call. `search` matches the number, an operator's corrected name, or any value they gave, so looking up a name finds the person. Values are returned as the caller gave them and nothing is masked.
+     */
+    list: (input: {
+        readonly query?: {
+          readonly search?: string;
+        };
+      }) =>
+      send<{
+        readonly items: readonly ({
+        readonly id: string;
+        readonly phone: string;
+        readonly displayName: string | null;
+        readonly callCount: number;
+        readonly firstCallAt: string | null;
+        readonly lastCallAt: string | null;
+        readonly values: readonly ({
+        readonly fieldKey: string;
+        readonly fieldType: string;
+        readonly value: string;
+        readonly sourceCallId: string | null;
+        readonly updatedAt: string;
+      })[];
+        readonly createdAt: string;
+        readonly updatedAt: string;
+      })[];
+      }>(options, "GET", `/api/v1/contacts`, input),
+
+    /**
+     * One person, and every call they have made
+     * The call list is matched on the number rather than through a key, so calls made before this contact existed are still theirs.
+     */
+    detail: (input: {
+        readonly path: {
+          readonly contactId: string;
+        };
+      }) =>
+      send<{
+        readonly contact: {
+        readonly id: string;
+        readonly phone: string;
+        readonly displayName: string | null;
+        readonly callCount: number;
+        readonly firstCallAt: string | null;
+        readonly lastCallAt: string | null;
+        readonly values: readonly ({
+        readonly fieldKey: string;
+        readonly fieldType: string;
+        readonly value: string;
+        readonly sourceCallId: string | null;
+        readonly updatedAt: string;
+      })[];
+        readonly createdAt: string;
+        readonly updatedAt: string;
+      };
+        readonly calls: readonly ({
+        readonly callId: string;
+        readonly carrierCallId: string;
+        readonly agentId: string | null;
+        readonly calledAt: string;
+        readonly endReason: string | null;
+        readonly durationSeconds: number | null;
+        readonly direction: string;
+      })[];
+      }>(options, "GET", `/api/v1/contacts/${encodeURIComponent(input.path.contactId)}`, input),
+
+    /**
+     * Correct the name on a record
+     * Stored beside the captured name, never over it, so the next call cannot put the old one back. Send null to clear the correction and let the captured name show again.
+     */
+    rename: (input: {
+        readonly path: {
+          readonly contactId: string;
+        };
+        readonly body: {
+          readonly displayName: string | null;
+        };
+      }) =>
+      send<{
+        readonly id: string;
+        readonly displayName: string | null;
+      }>(options, "PATCH", `/api/v1/contacts/${encodeURIComponent(input.path.contactId)}`, input),
+
+    /**
+     * Correct a collected value, or add one
+     * The value's provenance becomes null, which is the honest record: this did not come from a call and must not claim one.
+     */
+    setValue: (input: {
+        readonly path: {
+          readonly contactId: string;
+        };
+        readonly body: {
+          readonly fieldKey: string;
+          readonly fieldType: string;
+          readonly value: string;
+        };
+      }) =>
+      send<{
+        readonly id: string;
+        readonly phone: string;
+        readonly displayName: string | null;
+        readonly callCount: number;
+        readonly firstCallAt: string | null;
+        readonly lastCallAt: string | null;
+        readonly values: readonly ({
+        readonly fieldKey: string;
+        readonly fieldType: string;
+        readonly value: string;
+        readonly sourceCallId: string | null;
+        readonly updatedAt: string;
+      })[];
+        readonly createdAt: string;
+        readonly updatedAt: string;
+      }>(options, "PUT", `/api/v1/contacts/${encodeURIComponent(input.path.contactId)}/values`, input),
   },
 
   credentials: {

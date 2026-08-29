@@ -19,6 +19,9 @@
       "name": "config"
     },
     {
+      "name": "contacts"
+    },
+    {
       "name": "credentials"
     },
     {
@@ -5695,6 +5698,8 @@
                         "enum": [
                           "calls:read",
                           "calls:write",
+                          "contacts:read",
+                          "contacts:write",
                           "members:read",
                           "members:write",
                           "invitations:read",
@@ -8187,6 +8192,812 @@
           },
           "403": {
             "description": "The caller's role does not hold calls:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/contacts": {
+      "get": {
+        "operationId": "contacts.list",
+        "tags": [
+          "contacts"
+        ],
+        "summary": "Everyone who has called, most recent first",
+        "description": "One record per caller number, carrying what they have told the agent across every call. `search` matches the number, an operator's corrected name, or any value they gave, so looking up a name finds the person. Values are returned as the caller gave them and nothing is masked.",
+        "x-ansa-capability": "contacts:read",
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                          },
+                          "phone": {
+                            "type": "string",
+                            "maxLength": 32
+                          },
+                          "displayName": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 200
+                          },
+                          "callCount": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "firstCallAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time"
+                          },
+                          "lastCallAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time"
+                          },
+                          "values": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "fieldKey": {
+                                  "type": "string",
+                                  "maxLength": 128
+                                },
+                                "fieldType": {
+                                  "type": "string",
+                                  "maxLength": 32
+                                },
+                                "value": {
+                                  "type": "string",
+                                  "maxLength": 4096
+                                },
+                                "sourceCallId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "format": "uuid",
+                                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                                },
+                                "updatedAt": {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              },
+                              "required": [
+                                "fieldKey",
+                                "fieldType",
+                                "value",
+                                "sourceCallId",
+                                "updatedAt"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "updatedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "phone",
+                          "displayName",
+                          "callCount",
+                          "firstCallAt",
+                          "lastCallAt",
+                          "values",
+                          "createdAt",
+                          "updatedAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold contacts:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/contacts/{contactId}": {
+      "get": {
+        "operationId": "contacts.detail",
+        "tags": [
+          "contacts"
+        ],
+        "summary": "One person, and every call they have made",
+        "description": "The call list is matched on the number rather than through a key, so calls made before this contact existed are still theirs.",
+        "x-ansa-capability": "contacts:read",
+        "parameters": [
+          {
+            "name": "contactId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "contact": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                        },
+                        "phone": {
+                          "type": "string",
+                          "maxLength": 32
+                        },
+                        "displayName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 200
+                        },
+                        "callCount": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "firstCallAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "lastCallAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "values": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "fieldKey": {
+                                "type": "string",
+                                "maxLength": 128
+                              },
+                              "fieldType": {
+                                "type": "string",
+                                "maxLength": 32
+                              },
+                              "value": {
+                                "type": "string",
+                                "maxLength": 4096
+                              },
+                              "sourceCallId": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "uuid",
+                                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                              },
+                              "updatedAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              }
+                            },
+                            "required": [
+                              "fieldKey",
+                              "fieldType",
+                              "value",
+                              "sourceCallId",
+                              "updatedAt"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "phone",
+                        "displayName",
+                        "callCount",
+                        "firstCallAt",
+                        "lastCallAt",
+                        "values",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "calls": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "callId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                          },
+                          "carrierCallId": {
+                            "type": "string",
+                            "maxLength": 128
+                          },
+                          "agentId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "uuid",
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                          },
+                          "calledAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "endReason": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 64
+                          },
+                          "durationSeconds": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ],
+                            "minimum": 0
+                          },
+                          "direction": {
+                            "type": "string",
+                            "maxLength": 16
+                          }
+                        },
+                        "required": [
+                          "callId",
+                          "carrierCallId",
+                          "agentId",
+                          "calledAt",
+                          "endReason",
+                          "durationSeconds",
+                          "direction"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "contact",
+                    "calls"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold contacts:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "contacts.rename",
+        "tags": [
+          "contacts"
+        ],
+        "summary": "Correct the name on a record",
+        "description": "Stored beside the captured name, never over it, so the next call cannot put the old one back. Send null to clear the correction and let the captured name show again.",
+        "x-ansa-capability": "contacts:write",
+        "parameters": [
+          {
+            "name": "contactId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "displayName": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "displayName"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "displayName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 200
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "displayName"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold contacts:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/contacts/{contactId}/values": {
+      "put": {
+        "operationId": "contacts.setValue",
+        "tags": [
+          "contacts"
+        ],
+        "summary": "Correct a collected value, or add one",
+        "description": "The value's provenance becomes null, which is the honest record: this did not come from a call and must not claim one.",
+        "x-ansa-capability": "contacts:write",
+        "parameters": [
+          {
+            "name": "contactId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fieldKey": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "fieldType": {
+                    "type": "string",
+                    "maxLength": 32
+                  },
+                  "value": {
+                    "type": "string",
+                    "maxLength": 4096
+                  }
+                },
+                "required": [
+                  "fieldKey",
+                  "fieldType",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "phone": {
+                      "type": "string",
+                      "maxLength": 32
+                    },
+                    "displayName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 200
+                    },
+                    "callCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "firstCallAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "lastCallAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "values": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "fieldKey": {
+                            "type": "string",
+                            "maxLength": 128
+                          },
+                          "fieldType": {
+                            "type": "string",
+                            "maxLength": 32
+                          },
+                          "value": {
+                            "type": "string",
+                            "maxLength": 4096
+                          },
+                          "sourceCallId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "uuid",
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                          },
+                          "updatedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "fieldKey",
+                          "fieldType",
+                          "value",
+                          "sourceCallId",
+                          "updatedAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "phone",
+                    "displayName",
+                    "callCount",
+                    "firstCallAt",
+                    "lastCallAt",
+                    "values",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold contacts:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -13570,6 +14381,8 @@
   "x-ansa-capabilities": [
     "calls:read",
     "calls:write",
+    "contacts:read",
+    "contacts:write",
     "members:read",
     "members:write",
     "invitations:read",

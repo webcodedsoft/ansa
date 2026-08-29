@@ -11,6 +11,7 @@ import { AuthService } from "./auth/auth.service";
 import { CallsController } from "./calls/calls.controller";
 import { loadApiConfig } from "./api-config";
 import { ConfigController } from "./config/config.controller";
+import { ContactsController } from "./contacts/contacts.controller";
 import { EndpointInterceptor } from "./http/endpoint.interceptor";
 import { ProblemFilter } from "./http/problem";
 import { OrganizationRateLimitGuard } from "./http/organization-rate-limit.guard";
@@ -45,6 +46,7 @@ export const API_CONTROLLERS = [
   AuthController,
   CallsController,
   ConfigController,
+  ContactsController,
   CredentialsController,
   EventSubscriptionsController,
   InvitationsController,

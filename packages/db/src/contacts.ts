@@ -208,6 +208,50 @@ export const readContact = async (
   };
 };
 
+export interface ContactCall {
+  readonly callId: string;
+  readonly carrierCallId: string;
+  readonly agentId: string | null;
+  readonly calledAt: Date;
+  readonly endReason: string | null;
+  readonly durationSeconds: number | null;
+  readonly direction: string;
+}
+
+/**
+ * Every call this person has made or been made, newest first.
+ *
+ * Matched on the number rather than through a foreign key, because a call belongs to a
+ * caller before any contact exists for them — the contact is created by the first confirmed
+ * value, and the calls before that one are still theirs. A key would have to be backfilled
+ * and would go stale the moment a number was re-used.
+ */
+export const readContactCalls = async (
+  scope: OrganizationScope,
+  contactId: string,
+  limit = 100,
+): Promise<readonly ContactCall[]> => {
+  const rows = await scope.query<Record<string, unknown>>(
+    `select c.id, c.carrier_call_id, c.agent_id, c.created_at, c.end_reason,
+            c.duration_seconds, c.direction
+       from calls c
+       join contacts ct on ct.phone = c.caller
+      where ct.id = $1
+      order by c.created_at desc
+      limit $2`,
+    [contactId, Math.min(Math.max(1, Math.trunc(limit)), 500)],
+  );
+  return rows.map((row) => ({
+    callId: String(row["id"]),
+    carrierCallId: String(row["carrier_call_id"]),
+    agentId: row["agent_id"] === null ? null : String(row["agent_id"]),
+    calledAt: new Date(String(row["created_at"])),
+    endReason: row["end_reason"] === null ? null : String(row["end_reason"]),
+    durationSeconds: row["duration_seconds"] === null ? null : Number(row["duration_seconds"]),
+    direction: String(row["direction"]),
+  }));
+};
+
 /**
  * Correct the name on a record.
  *

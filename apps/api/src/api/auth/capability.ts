@@ -22,6 +22,17 @@ export type Capability =
    * exactly one thing: saying what the caller actually said.
    */
   | "calls:write"
+  /** Read the people who have called, and what they have told the agent. */
+  | "contacts:read"
+  /**
+   * Correct a contact: their name, or a value the agent misheard.
+   *
+   * Separate from `calls:write`, which is documented above as granting exactly one thing.
+   * A contact is not part of a call record — it is the organisation's own view of a person,
+   * assembled across calls and meant to be edited — so it needs a capability of its own
+   * rather than a quiet widening of one whose whole point is that it is narrow.
+   */
+  | "contacts:write"
   /** See who else is in the organisation. */
   | "members:read"
   /** Change someone's role, or remove them. */
@@ -48,10 +59,12 @@ export type Capability =
  * change to this table and to that test — not a quiet grant here.
  */
 const GRANTS: Readonly<Record<MemberRole, readonly Capability[]>> = {
-  member: ["calls:read", "members:read", "config:read"],
+  member: ["calls:read", "contacts:read", "members:read", "config:read"],
   admin: [
     "calls:read",
     "calls:write",
+    "contacts:read",
+    "contacts:write",
     "members:read",
     "config:read",
     "config:write",
@@ -60,6 +73,8 @@ const GRANTS: Readonly<Record<MemberRole, readonly Capability[]>> = {
   owner: [
     "calls:read",
     "calls:write",
+    "contacts:read",
+    "contacts:write",
     "members:read",
     "members:write",
     "invitations:read",
