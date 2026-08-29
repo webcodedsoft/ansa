@@ -57,8 +57,11 @@ const placeCall = async (
   return id;
 };
 
+/** A page big enough that these tests never have to think about paging. */
+const PAGE = { limit: 50, offset: 0 };
+
 const contactsOf = async (organization: typeof A) =>
-  withOrganization(ds, organization, (s) => readContacts(s));
+  (await withOrganization(ds, organization, (s) => readContacts(s, PAGE))).items;
 
 describe.skipIf(url === undefined)("the person behind the calls", () => {
   beforeAll(async () => {
@@ -168,7 +171,8 @@ describe.skipIf(url === undefined)("the person behind the calls", () => {
   });
 
   it("finds a person by something they said, not just by their number", async () => {
-    const found = await withOrganization(ds, A, (s) => readContacts(s, { search: "Lekki" }));
+    const found = (await withOrganization(ds, A, (s) => readContacts(s, PAGE, { search: "Lekki" })))
+      .items;
     expect(found).toHaveLength(1);
     expect(found[0]?.phone).toBe(CALLER);
   });

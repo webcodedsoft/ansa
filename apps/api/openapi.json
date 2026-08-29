@@ -8234,6 +8234,25 @@
         "x-ansa-capability": "contacts:read",
         "parameters": [
           {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "perPage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
             "name": "search",
             "in": "query",
             "required": false,
@@ -8251,111 +8270,164 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "string",
-                            "format": "uuid",
-                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-                          },
-                          "phone": {
-                            "type": "string",
-                            "maxLength": 32
-                          },
-                          "displayName": {
-                            "type": [
-                              "string",
-                              "null"
-                            ],
-                            "maxLength": 200
-                          },
-                          "callCount": {
-                            "type": "integer",
-                            "minimum": 0
-                          },
-                          "firstCallAt": {
-                            "type": [
-                              "string",
-                              "null"
-                            ],
-                            "format": "date-time"
-                          },
-                          "lastCallAt": {
-                            "type": [
-                              "string",
-                              "null"
-                            ],
-                            "format": "date-time"
-                          },
-                          "values": {
-                            "type": "array",
-                            "items": {
-                              "type": "object",
-                              "properties": {
-                                "fieldKey": {
-                                  "type": "string",
-                                  "maxLength": 128
-                                },
-                                "fieldType": {
-                                  "type": "string",
-                                  "maxLength": 32
-                                },
-                                "value": {
-                                  "type": "string",
-                                  "maxLength": 4096
-                                },
-                                "sourceCallId": {
-                                  "type": [
-                                    "string",
-                                    "null"
+                    "page": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                              },
+                              "phone": {
+                                "type": "string",
+                                "maxLength": 32
+                              },
+                              "displayName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "maxLength": 200
+                              },
+                              "callCount": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "firstCallAt": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "date-time"
+                              },
+                              "lastCallAt": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "date-time"
+                              },
+                              "values": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "fieldKey": {
+                                      "type": "string",
+                                      "maxLength": 128
+                                    },
+                                    "fieldType": {
+                                      "type": "string",
+                                      "maxLength": 32
+                                    },
+                                    "value": {
+                                      "type": "string",
+                                      "maxLength": 4096
+                                    },
+                                    "sourceCallId": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ],
+                                      "format": "uuid",
+                                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                                    },
+                                    "updatedAt": {
+                                      "type": "string",
+                                      "format": "date-time"
+                                    }
+                                  },
+                                  "required": [
+                                    "fieldKey",
+                                    "fieldType",
+                                    "value",
+                                    "sourceCallId",
+                                    "updatedAt"
                                   ],
-                                  "format": "uuid",
-                                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-                                },
-                                "updatedAt": {
-                                  "type": "string",
-                                  "format": "date-time"
+                                  "additionalProperties": false
                                 }
                               },
-                              "required": [
-                                "fieldKey",
-                                "fieldType",
-                                "value",
-                                "sourceCallId",
-                                "updatedAt"
-                              ],
-                              "additionalProperties": false
-                            }
-                          },
-                          "createdAt": {
-                            "type": "string",
-                            "format": "date-time"
-                          },
-                          "updatedAt": {
-                            "type": "string",
-                            "format": "date-time"
+                              "createdAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "updatedAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "phone",
+                              "displayName",
+                              "callCount",
+                              "firstCallAt",
+                              "lastCallAt",
+                              "values",
+                              "createdAt",
+                              "updatedAt"
+                            ],
+                            "additionalProperties": false
                           }
                         },
-                        "required": [
-                          "id",
-                          "phone",
-                          "displayName",
-                          "callCount",
-                          "firstCallAt",
-                          "lastCallAt",
-                          "values",
-                          "createdAt",
-                          "updatedAt"
-                        ],
-                        "additionalProperties": false
-                      }
+                        "page": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "perPage": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "total": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "totalPages": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "page",
+                        "perPage",
+                        "total",
+                        "totalPages"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "stats": {
+                      "type": "object",
+                      "properties": {
+                        "people": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "repeatCallers": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "newThisWeek": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "people",
+                        "repeatCallers",
+                        "newThisWeek"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
-                    "items"
+                    "page",
+                    "stats"
                   ],
                   "additionalProperties": false
                 }

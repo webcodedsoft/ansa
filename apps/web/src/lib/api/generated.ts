@@ -1179,10 +1179,13 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
      */
     list: (input: {
         readonly query?: {
+          readonly page?: number;
+          readonly perPage?: number;
           readonly search?: string;
         };
       }) =>
       send<{
+        readonly page: {
         readonly items: readonly ({
         readonly id: string;
         readonly phone: string;
@@ -1200,6 +1203,16 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly createdAt: string;
         readonly updatedAt: string;
       })[];
+        readonly page: number;
+        readonly perPage: number;
+        readonly total: number;
+        readonly totalPages: number;
+      };
+        readonly stats: {
+        readonly people: number;
+        readonly repeatCallers: number;
+        readonly newThisWeek: number;
+      };
       }>(options, "GET", `/api/v1/contacts`, input),
 
     /**

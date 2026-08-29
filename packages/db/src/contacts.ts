@@ -113,7 +113,6 @@ export const mergeCapturesIntoContact = async (
 export interface ContactQuery {
   /** Matches the number or any stored value, so searching a name finds the person. */
   readonly search?: string | null;
-  readonly limit?: number;
 }
 
 /**
@@ -125,16 +124,20 @@ export interface ContactQuery {
  */
 export const readContacts = async (
   scope: OrganizationScope,
+  page: PageRequest,
   query: ContactQuery = {},
-): Promise<readonly ContactSummary[]> => {
-  const limit = Math.min(Math.max(1, Math.trunc(query.limit ?? 200)), 1_000);
+): Promise<PageSlice<ContactSummary>> => {
   const search = query.search?.trim() ?? "";
 
-  const rows = await scope.query<Record<string, unknown>>(
+  /* `count(*) over()` counts groups, not rows, because window functions are evaluated after
+     GROUP BY — so the total is the number of people matching, which is what the pager needs,
+     and not the number of their calls. */
+  const rows = await scope.query<Record<string, unknown> & WithTotal>(
     `select ct.id, ct.phone, ct.display_name, ct.created_at, ct.updated_at,
             count(c.id)::int          as call_count,
             min(c.created_at)         as first_call_at,
-            max(c.created_at)         as last_call_at
+            max(c.created_at)         as last_call_at,
+            ${TOTAL_COLUMN}
        from contacts ct
        left join calls c on c.caller = ct.phone
       where ($1 = ''
@@ -144,10 +147,10 @@ export const readContacts = async (
                          where v.contact_id = ct.id and v.value ilike '%' || $1 || '%'))
       group by ct.id
       order by max(c.created_at) desc nulls last, ct.updated_at desc
-      limit $2`,
-    [search, limit],
+      limit $2 offset $3`,
+    [search, page.limit, page.offset],
   );
-  if (rows.length === 0) return [];
+  if (rows.length === 0) return { items: [], total: 0 };
 
   const values = await scope.query<Record<string, unknown>>(
     `select contact_id, field_key, field_type, value, source_call_id, updated_at
@@ -165,13 +168,49 @@ export const readContacts = async (
     byContact.set(key, list);
   }
 
-  return rows.map((row) => ({
+  return toSlice(rows, (row) => ({
     ...asContact(row),
     callCount: Number(row["call_count"]),
     firstCallAt: row["first_call_at"] === null ? null : new Date(String(row["first_call_at"])),
     lastCallAt: row["last_call_at"] === null ? null : new Date(String(row["last_call_at"])),
     values: byContact.get(String(row["id"])) ?? [],
   }));
+};
+
+export interface ContactStats {
+  readonly total: number;
+  /** People who have rung more than once — the ones a callback list is actually about. */
+  readonly repeatCallers: number;
+  /** First heard from in the last seven days. */
+  readonly newThisWeek: number;
+}
+
+/**
+ * The three numbers the directory is worth stating.
+ *
+ * Counted across the whole organisation rather than the page on screen. A total derived from
+ * the rows a page happens to hold is wrong the moment there is a second page, and a number
+ * that is wrong is worse than no number.
+ */
+export const readContactStats = async (scope: OrganizationScope): Promise<ContactStats> => {
+  const rows = await scope.query<Record<string, unknown>>(
+    `with per as (
+       select ct.id, ct.created_at, count(c.id)::int as calls
+         from contacts ct
+         left join calls c on c.caller = ct.phone
+        group by ct.id
+     )
+     select count(*)::int                                                    as total,
+            count(*) filter (where calls > 1)::int                           as repeat_callers,
+            count(*) filter (where created_at >= now() - interval '7 days')::int as new_this_week
+       from per`,
+  );
+  const row = rows[0];
+  return {
+    total: Number(row?.["total"] ?? 0),
+    repeatCallers: Number(row?.["repeat_callers"] ?? 0),
+    newThisWeek: Number(row?.["new_this_week"] ?? 0),
+  };
 };
 
 /** One person, or null when this organisation holds no such contact. */

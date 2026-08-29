@@ -8,8 +8,11 @@ import { api } from "@/lib/api/server";
  * this", which is the question somebody working through enquiries actually asks.
  */
 
-export const listContacts = async (search?: string) => {
-  const query: Record<string, string> = {};
+export const listContacts = async (
+  search: string | undefined,
+  paging: { readonly page?: number; readonly perPage?: number } = {},
+) => {
+  const query: Record<string, string | number> = { ...paging };
   if (search !== undefined && search.trim() !== "") query["search"] = search.trim();
   return (await api()).contacts.list({ query });
 };
@@ -19,6 +22,6 @@ export const readContactDetail = async (
   paging: { readonly page?: number; readonly perPage?: number } = {},
 ) => (await api()).contacts.detail({ path: { contactId }, query: paging });
 
-export type ContactSummary = Awaited<ReturnType<typeof listContacts>>["items"][number];
+export type ContactSummary = Awaited<ReturnType<typeof listContacts>>["page"]["items"][number];
 export type ContactDetail = Awaited<ReturnType<typeof readContactDetail>>;
 export type ContactValue = ContactSummary["values"][number];

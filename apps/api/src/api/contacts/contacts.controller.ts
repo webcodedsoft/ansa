@@ -1,6 +1,7 @@
 import {
   readContact,
   readContactCalls,
+  readContactStats,
   readContacts,
   renameContact,
   setContactValue,
@@ -9,6 +10,7 @@ import { Controller, Get, Inject, NotFoundException, Patch, Put } from "@nestjs/
 
 import { Endpoint } from "../http/endpoint";
 import {
+  PAGE_PROPS,
   pageQuery,
   pageResponse,
   toPageBody,
@@ -55,11 +57,31 @@ const contact = object({
 });
 
 const contactsQuery = object({
+  ...PAGE_PROPS,
   /** Matches the number, the corrected name, or any value they gave. */
   search: optional(text({ maxLength: 200 })),
 });
 
-const contactsResponse = object({ items: list(contact) });
+/**
+ * Three counts taken across the whole organisation, not the page.
+ *
+ * Derived here rather than by the client because a total worked out from the rows one page
+ * happens to hold is wrong the moment there is a second page, and a number that is wrong is
+ * worse than no number.
+ */
+const contactStats = object({
+  people: integer({ minimum: 0 }),
+  /** People who have rung more than once — what a callback list is actually about. */
+  repeatCallers: integer({ minimum: 0 }),
+  newThisWeek: integer({ minimum: 0 }),
+});
+
+const contactsPage = pageResponse(contact);
+
+const contactsResponse = object({
+  page: contactsPage,
+  stats: contactStats,
+});
 
 const contactPath = object({ contactId: uuid() });
 
@@ -109,8 +131,18 @@ export class ContactsController {
   async list(
     @FromQuery() query: Infer<typeof contactsQuery>,
   ): Promise<Infer<typeof contactsResponse>> {
-    const rows = await this.db.tx((scope) => readContacts(scope, { search: query.search ?? null }));
-    return { items: rows.map(asBody) };
+    const { slice, stats } = await this.db.tx(async (scope) => ({
+      slice: await readContacts(scope, toPageRequest(query), { search: query.search ?? null }),
+      stats: await readContactStats(scope),
+    }));
+    return {
+      page: toPageBody({ items: slice.items.map(asBody), total: slice.total }, query),
+      stats: {
+        people: stats.total,
+        repeatCallers: stats.repeatCallers,
+        newThisWeek: stats.newThisWeek,
+      },
+    };
   }
 
   @Get(":contactId")
