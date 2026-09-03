@@ -307,7 +307,7 @@ const RECORD_ANSWER: ToolDefinition = {
   summarise: (result) => {
     const recorded = result as RecordedAnswer;
     return recorded.accepted
-      ? `Recorded ${recorded.field}: ${recorded.answer}. Carry on.`
+      ? `Recorded ${recorded.field}: ${recorded.answer}.`
       : `Not recorded: ${recorded.reason}`;
   },
 };

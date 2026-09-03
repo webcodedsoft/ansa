@@ -185,6 +185,21 @@ export type CaptureState =
        * fragments of a name or an address would invent values nobody said.
        */
       readonly partial?: string;
+      /**
+       * Armed by the director, but the agent has not put the question yet.
+       *
+       * The director arms the engine the moment it knows what it wants next — at the start
+       * of the call, or the instant the previous answer lands — and the model asks the
+       * question in its own words on its next turn. Between those two moments a caller
+       * says whatever they rang to say. Treating that as a botched answer produced
+       * "Thank you for calling. — Sorry, and your name?" on every call to an agent whose
+       * first question was a name, and the model never heard the sentence.
+       *
+       * So a primed state gives one non-answer a free pass to the model, and stays armed.
+       * The next non-answer is a caller who was asked and did not answer, which is the case
+       * the "Sorry —" re-ask was written for.
+       */
+      readonly primed?: true;
     }
   | {
       readonly kind: "confirming";
@@ -1256,8 +1271,29 @@ const confirming = (
  * a bare name can be read at all: "the fourteenth" and "Sikiru" are not recognisable as
  * values in free speech, and are unambiguous in answer to a question.
  */
+/**
+ * Whether a non-answer is the caller saying something, as opposed to fumbling the answer.
+ *
+ * Five words is past what any answer the engine hears runs to — a name is three at most, a
+ * number is digits. A question of four is talk too: "what promotion is that?" is a caller
+ * asking, and the model should answer. But "Sorry, what?" and "I can't hear you" are a
+ * caller who did not catch the question, and the re-ask is exactly what they need — so a
+ * short question and a short statement both stay with the engine.
+ */
+const TALK_WORDS = 5;
+const isTalk = (text: string): boolean => {
+  const trimmed = text.trim();
+  const words = trimmed.split(/\s+/).length;
+  return words >= TALK_WORDS || (trimmed.endsWith("?") && words >= TALK_WORDS - 1);
+};
+
 const awaiting = (
-  state: { readonly expect: EntityKind; readonly attempt: number; readonly partial?: string },
+  state: {
+    readonly expect: EntityKind;
+    readonly attempt: number;
+    readonly partial?: string;
+    readonly primed?: true;
+  },
   text: string,
   atMs: number,
   confidence?: number | null,
@@ -1285,6 +1321,25 @@ const awaiting = (
       // point the join is no longer a number anybody said.
       partial: (joined ?? value).slice(-MAX_PARTIAL_DIGITS),
     });
+  }
+
+  /* Not an answer, and either nobody has asked yet or the caller said something rather
+     than fumbling something. Both go to the model — it answers what was said and puts the
+     question, in its own words — and the engine stays armed with no attempt spent.
+
+     "Said something" is a sentence: several words, or a question. A caller who mumbles two
+     syllables at a question they were just asked gets the re-ask below, which is what it
+     was written for. A caller who asks "sorry, what promotion is that?" or says "I don't
+     have it in front of me" is not failing to answer, and "Sorry — and your name?" is the
+     wrong reply to either. */
+  if (state.primed === true || isTalk(text)) {
+    return {
+      state: { kind: "awaiting", expect: state.expect, attempt: state.attempt },
+      say: null,
+      captured: null,
+      capturedKind: null,
+      handled: false,
+    };
   }
 
   if (state.attempt >= spokenAttemptsFor(state.expect, confidence)) {
@@ -1355,10 +1410,10 @@ const onKeypad = (
  * Used when the agent, not the caller, opens the exchange — "and your email address?".
  * The returned `say` is the question; the state makes the next turn parse as that kind.
  */
-export const expecting = (kind: EntityKind): CaptureResult => ({
+export const expecting = (kind: EntityKind, options: { readonly primed?: true } = {}): CaptureResult => ({
   // Attempt one: the question has been asked. Starting at zero gave the caller three
   // goes at a question they had already shown they could not hear.
-  state: { kind: "awaiting", expect: kind, attempt: 1 },
+  state: { kind: "awaiting", expect: kind, attempt: 1, ...options },
   say: forSpeech(ENTITY_POLICY[kind].ask),
   captured: null,
   capturedKind: null,

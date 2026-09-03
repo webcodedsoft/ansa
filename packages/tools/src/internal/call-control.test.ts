@@ -107,7 +107,7 @@ describe("the platform tool set", () => {
 });
 
 describe("record_answer", () => {
-  it("records a listed answer to a choice question and tells the model to carry on", async () => {
+  it("records a listed answer to a choice question", async () => {
     const { call, recorded } = setup();
 
     const outcome = await call("record_answer", { field: "intent", answer: "Rent" });

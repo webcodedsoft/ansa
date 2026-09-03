@@ -120,6 +120,8 @@ export interface ScenarioOptions {
    * forms existed, which is what every other scenario in this file exercises.
    */
   readonly fields?: OrchestratorDeps["fields"];
+  /** The agent's graph, for a scenario about a call conducted by one. */
+  readonly flow?: OrchestratorDeps["flow"];
   /** The call's fact store, for a scenario asking where a captured value ended up. */
   readonly facts?: OrchestratorDeps["facts"];
 }

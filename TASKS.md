@@ -3780,6 +3780,17 @@ the gaps were silent:
   module. Neither fires at the start of a call, so a blank canvas cannot become an agent
   that greets and hangs up. `complete()` guards the effect, which gives it its consumer.
 
+- *Second review (2026-09-03, late).* Three found by running the call, all fixed: the hangup
+  rode whatever turn came next and on the gave-up path that was the engine's own "let us
+  carry on without it" — it now waits for a turn told to say goodbye; a hand-over let a model
+  turn start under the handoff's departure line — it returns early now, as the model's own
+  transfer does; `say`/`tool` steps were repeated every turn until the next answer — shown
+  once and until run, respectively. One pre-existing and older than the graph: the director
+  arms the engine before the model has asked, so a caller's opening sentence was answered
+  with "Sorry — and your name?" and never reached the model. A primed state, and any
+  sentence-shaped non-answer, now go to the model. Rollback restores a version's questions,
+  which `agent_prompt_versions.captured_fields` has held since 0029 and nothing read back.
+
 Still true after all of it: **nothing has been dialled.**
 
 **What the graph owns — one tab of ten.** An agent is far more than its conversation shape,

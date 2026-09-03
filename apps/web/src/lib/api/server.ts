@@ -148,6 +148,13 @@ export const failureMessage = (
     if (errors !== undefined && errors.length > 0) {
       return sentences(
         errors.map((entry) => {
+          /* A problem with the flow is written for the canvas — "This step leads to a step
+             that is no longer here" — and lands on a node, not a field. Read as a field it
+             came out "Flow nodes ask name This step leads to…". It says where to look instead:
+             the tab, and the step. */
+          const step = /^body\.flow\.nodes\.(.+)$/.exec(entry.path);
+          if (step !== null) return `On the Flow tab, at the step "${step[1]}": ${entry.message}`;
+          if (entry.path === "body.flow") return `On the Flow tab: ${entry.message}`;
           const path =
             options.within === undefined ? entry.path : withoutPrefix(entry.path, options.within);
           return `${fieldName(path)} ${entry.message}`;

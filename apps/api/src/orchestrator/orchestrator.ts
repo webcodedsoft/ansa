@@ -724,7 +724,9 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     if (capture.kind !== "idle") return;
     const next = form.outstanding();
     if (next === null) return;
-    capture = expecting(next.entity).state;
+    /* Primed, not asked: the model puts the question on its next turn, and until it has,
+       what the caller says is not an answer to it. See `primed` on the awaiting state. */
+    capture = expecting(next.entity, { primed: true }).state;
     form.beginAsking(next);
     log.debug("expecting a configured field", { key: next.key, entity: next.entity });
   };
@@ -743,30 +745,49 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
    * treating it as "greet and hang up" would turn a blank canvas into a hostile agent. From
    * there the model is steered to wrap up and does so conversationally.
    *
-   * Ending goes through `endCallWhenHeard`, so the goodbye the next turn is steered to say
-   * plays out first, and a caller who starts talking again cancels it exactly as they cancel
-   * the model's own `end_call`. Transfer goes through the handoff module like every other
-   * transfer; with no handoff configured the steering is all there is, and the model's
-   * `transfer_to_human` reaches the same honest "nothing to transfer to" line.
+   * Ending is not queued here. It is queued when the model is next asked to speak *with the
+   * goodbye steering in front of it* — see where `steering` is rendered — so the hangup
+   * always rides a turn that was told to say goodbye. Queued here, it rode whatever turn came
+   * next, and on the path where the engine gives up on a value that turn is the engine's own
+   * "let us carry on without it" line: the caller heard that, and then the click. A caller
+   * who starts talking again cancels it exactly as they cancel the model's own `end_call`.
+   *
+   * Transfer goes through the handoff module like every other transfer, and it goes now: the
+   * handoff speaks its own departure line, so there is no goodbye to wait for. With no
+   * handoff configured the steering is all there is, and the model's `transfer_to_human`
+   * reaches the same honest "nothing to transfer to" line.
    *
    * `complete()` is the guard. A walk standing on a terminal is complete by construction —
    * it is the invariant `outstanding() === null` implies `complete()` — and this is the one
    * place an irreversible effect rides on it, so it is checked rather than assumed.
    */
   let flowHandedOver = false;
-  const followTheGraph = (): void => {
+  let flowEndReached = false;
+  /** The `say` texts already put in front of the model, and the tools that have run. */
+  const coveredOnCall = new Set<string>();
+  const toolsUsedOnCall = new Set<string>();
+  /** True when the handoff module now owns the call, so the caller must not start a turn. */
+  const followTheGraph = (): boolean => {
     const next = form.guidance()?.next;
-    if (next === undefined || !form.complete()) return;
+    if (next === undefined || !form.complete()) return false;
     if (next.kind === "end") {
-      endCallWhenHeard("the flow reached its end");
-      return;
+      if (!flowEndReached) {
+        flowEndReached = true;
+        log.info("the flow reached its end; the call ends after the next goodbye");
+        record.event("flow_end_reached", {});
+      }
+      return false;
     }
     if (next.kind === "transfer" && !flowHandedOver) {
-      flowHandedOver = true;
       log.info("the flow hands this call to a person");
       record.event("flow_transfer_requested", {});
-      escalate(watch.needsAPerson("the flow hands this call to a person"));
+      /* Only when a handoff is configured: `escalate` says whether it took the call. With
+         none, the steering is all there is and the model's own `transfer_to_human` reaches
+         the honest "nothing to transfer to" line — so the model still has to speak. */
+      flowHandedOver = escalate(watch.needsAPerson("the flow hands this call to a person"));
+      return flowHandedOver;
     }
+    return false;
   };
 
   let turnSeq = 0;
@@ -2143,7 +2164,32 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
        stated once in the standing prompt. Beside the situation, and after it, because it is
        the one thing here that changes with every answer the caller gives. */
     const guidance = form.guidance();
-    const steering = guidance === null ? "" : renderGuidance(guidance);
+    /* Said once. The director replays the graph from its start and names every `say` and
+       `tool` step between the last answered question and the next one, on every turn, until
+       that question is answered — which can be several turns if the caller has questions of
+       their own. Left as is, the model mentions the promotion three times and looks up the
+       policy three times. So a step is dropped from the steering once it has been put in
+       front of the model: a `say` after the turn it was shown on, a `tool` after it has run
+       at all — a failed run included, since a tool that failed is re-tried by the model's own
+       judgement on the result, not by a standing order to use it. */
+    const steered =
+      guidance === null
+        ? null
+        : {
+            ...guidance,
+            cover: guidance.cover.filter((text) => !coveredOnCall.has(text)),
+            tools: guidance.tools.filter((tool) => !toolsUsedOnCall.has(tool)),
+          };
+    for (const text of steered?.cover ?? []) coveredOnCall.add(text);
+    const steering = steered === null ? "" : renderGuidance(steered);
+    /* The graph has ended and this turn is being told to say goodbye, so this is the turn
+       the hangup waits for. Once: a caller who starts talking over the goodbye cancels the
+       hangup, and the model — still steered to wrap up — ends the call itself when they are
+       done, rather than every later turn re-queueing a hangup under somebody mid-question. */
+    if (flowEndReached && guidance?.next.kind === "end") {
+      flowEndReached = false;
+      endCallWhenHeard("the flow reached its end");
+    }
     const system = [deps.systemPrompt, outbound, known, situation, steering, feeling, budget.instruction]
       .filter((s) => s !== "")
       .join("\n\n");
@@ -2481,6 +2527,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
              Set beside the event rather than inside the dispatcher: the guard's question is
              "did anything happen on this exchange", which is this file's to answer. */
           toolRanThisExchange = true;
+          toolsUsedOnCall.add(outcome.name);
           record.event("tool_call", {
             organizationId,
             tool: outcome.name,
@@ -2510,6 +2557,14 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
             remember();
             return;
           }
+        }
+
+        /* A recorded answer can be the one that moves the graph onto a hand-over, and that
+           happens inside the tool call, mid-turn. The handoff has the call from here, so the
+           model is not asked to continue — exactly as it is not after `transfer_to_human`. */
+        if (flowHandedOver) {
+          remember();
+          return;
         }
 
         const transferAt = outcomes.findIndex((o) => o.kind === "transfer");
@@ -2723,7 +2778,14 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       // Whatever the form wants next, so the caller's following turn is parsed as an
       // answer to it rather than guessed at.
       armNextField();
-      followTheGraph();
+      /* The graph may have just ended in a hand-over. The handoff module speaks its own
+         departure line from here, and a model turn started underneath it would talk over
+         the very sentence telling the caller what is happening — the same early return the
+         capture-failed path makes for the same reason. The value is already recorded. */
+      if (followTheGraph()) {
+        conversation.addCaller(forModel);
+        return true;
+      }
 
       // The model finally sees the value, and sees it as confirmed. Routed through
       // respondTo so it is recorded, budgeted and spoken like any other turn. The kind
@@ -3094,6 +3156,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
              Set beside the event rather than inside the dispatcher: the guard's question is
              "did anything happen on this exchange", which is this file's to answer. */
           toolRanThisExchange = true;
+          toolsUsedOnCall.add(done.name);
           record.event("tool_call", {
             organizationId,
             tool: done.name,

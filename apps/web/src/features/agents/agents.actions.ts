@@ -31,6 +31,7 @@ import {
   diffVersions,
   discardDraft,
   saveDraft,
+  readDraft,
   readAgentFlow,
   findAgent,
   setAgentFlow,
@@ -569,8 +570,11 @@ export const rebuildAsFlow = async (
   agentId: string,
 ): Promise<{ readonly ok: true } | { readonly ok: false; readonly message: string }> => {
   try {
-    const agent = await findAgent(agentId);
-    const fields = capturedFieldsSchema.parse(agent.capturedFields);
+    /* The staged questions where there are any, the published ones otherwise — the same
+       "draft over live" every tab follows. Drawing the published list under a header that
+       says "unpublished changes" would throw away the edits the operator can see. */
+    const [agent, unpublished] = await Promise.all([findAgent(agentId), readDraft(agentId)]);
+    const fields = capturedFieldsSchema.parse(unpublished.draft?.capturedFields ?? agent.capturedFields);
     await setAgentFlow(agentId, { authoringMode: "flow", flow: flowFromFields(fields) });
     revalidatePath("/agents", "layout");
     return { ok: true };

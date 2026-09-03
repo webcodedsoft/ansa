@@ -3,10 +3,11 @@ import type { DataSource } from "typeorm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createDataSource } from "./data-source";
-import { liveAgentId, loadAgentDraft, stageAgentSelection } from "./drafts";
+import { applyCapturedFields, liveAgentId, loadAgentDraft, stageAgentSelection } from "./drafts";
 import {
   applyAgentFlow,
   loadDraftFlow,
+  loadCapturedFieldsAtVersion,
   loadFlowAtVersion,
   loadPublishedFlow,
   stageDraftFlow,
@@ -257,6 +258,29 @@ describe.skipIf(url === undefined)("publishing is what puts a graph on the phone
       loadFlowAtVersion(scope, agent, version),
     );
     expect(recorded).toEqual(drawn);
+  });
+
+  it("records the questions a version asked, and gives them back", async () => {
+    const agent = await agentOf(A);
+    const asked = [
+      { key: "policyNumber", type: "reference", prompt: "Policy number?", capture: "speech", confirm: "readback", pattern: "", attempts: 3, required: true, options: [] },
+    ];
+
+    /* Applied and published in one transaction, as the publish endpoint does, so the snapshot
+       reads the form off the agent row. */
+    const version = await withOrganization(ds, A, async (scope) => {
+      await applyCapturedFields(scope, agent, asked);
+      return publishAgentConfig(scope, agent, fields(), "One question.");
+    });
+    const later = await withOrganization(ds, A, async (scope) => {
+      await applyCapturedFields(scope, agent, []);
+      return publishAgentConfig(scope, agent, fields(), "None.");
+    });
+
+    /* The column has carried this since migration 0029 and nothing read it back, so a rollback
+       restored a version's wording under today's questions. */
+    expect(await withOrganization(ds, A, (s) => loadCapturedFieldsAtVersion(s, agent, version))).toEqual(asked);
+    expect(await withOrganization(ds, A, (s) => loadCapturedFieldsAtVersion(s, agent, later))).toEqual([]);
   });
 
   it("consumes the draft it published", async () => {

@@ -646,6 +646,64 @@ describe("20 · conducts the configured form", () => {
     expect(s.llm.completions).toHaveLength(0);
   });
 
+  /**
+   * The graph's end is a hangup, and the engine has just given up on the last question.
+   *
+   * Found on review, by running it: the hangup was queued the moment the graph reached its
+   * end, and on this path the next thing to play was the engine's own "let us carry on
+   * without it" line — so the caller heard that, and then the click. The hangup now waits
+   * for a turn that was told to say goodbye.
+   */
+  it("says goodbye before hanging up, even when the engine gave up on the last question", () => {
+    const s = scenario({
+      flow: {
+        version: 1,
+        nodes: [
+          { id: "start", kind: "start", x: 0, y: 0 },
+          {
+            id: "ask",
+            kind: "collect",
+            x: 1,
+            y: 0,
+            field: {
+              key: "policyNumber",
+              type: "reference",
+              prompt: "What is your policy number?",
+              capture: "speech",
+              confirm: "readback",
+              pattern: "PM\\d{7}",
+              attempts: 1,
+              required: true,
+              options: [],
+            },
+          },
+          { id: "end", kind: "hangup", x: 2, y: 0 },
+        ],
+        edges: [
+          { from: "start", to: "ask" },
+          { from: "ask", to: "end" },
+        ],
+      },
+    });
+    s.greetingPlays();
+    s.says("It is four one seven two nine.");
+    s.playsOut();
+    s.says("Yes, that is correct.");
+    s.playsOut();
+
+    // The engine gave up out loud. No goodbye has been said, so the line is still open.
+    expect(s.allSpoken()).toContain("carry on without it");
+    expect(s.stream.hungUp).toBe(false);
+
+    // The next thing the model is asked to say is steered to be the goodbye, and that is
+    // the turn the hangup waits for.
+    s.says("Okay.");
+    expect(s.llm.last().request.system).toContain("say goodbye");
+    s.agentAnswers("That is everything I needed. Thank you for calling, goodbye.");
+
+    expect(s.stream.hungUp).toBe(true);
+  });
+
   it("goes to a person once the configured attempts are used up", () => {
     const s = scenario({ fields: [collected({ pattern: "PM\\d{7}", attempts: 2 })] });
     s.greetingPlays();

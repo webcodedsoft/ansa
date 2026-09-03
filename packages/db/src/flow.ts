@@ -94,6 +94,28 @@ export const loadPublishedFlow = async (
 };
 
 /**
+ * The form as it was published at one version.
+ *
+ * `agent_prompt_versions.captured_fields` has carried it since migration 0029, and nothing
+ * read it back until now: a rollback restored a version's wording and left the questions
+ * as they are today, so "Restored version 3" asked whatever version 9 asked. Read straight
+ * off the row rather than through a config function, since this is a console read and not
+ * one a call makes. Null for a version older than 0029, which is the honest answer — nobody
+ * recorded what it asked.
+ */
+export const loadCapturedFieldsAtVersion = async (
+  scope: OrganizationScope,
+  agentId: string,
+  version: number,
+): Promise<readonly unknown[] | null> => {
+  const rows = await scope.query<{ captured_fields: unknown[] | null }>(
+    `select captured_fields from agent_prompt_versions where agent_id = $1 and version = $2`,
+    [agentId, version],
+  );
+  return rows[0]?.captured_fields ?? null;
+};
+
+/**
  * The graph as it was published at one version, or null when that version was a form.
  *
  * `agent_prompt_versions.flow` is non-null exactly when the version answered the phone as a

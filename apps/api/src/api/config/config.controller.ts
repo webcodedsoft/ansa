@@ -7,6 +7,8 @@ import {
   loadAgentDraft,
   loadDraftFlow,
   loadFlowAtVersion,
+  loadCapturedFieldsAtVersion,
+  stageAgentSelection,
   loadPublishedFlow,
   findAgent,
   stageDraftFlow,
@@ -751,6 +753,13 @@ export class ConfigController {
        * a form: the agent is staged back onto the list, and its canvas is left where it is so
        * a change of mind costs nothing. */
       const restoredFlow = await loadFlowAtVersion(scope, agentId, path.version);
+      /* And the questions, for the same reason. A flow version's are its projection and are
+         rewritten from the graph at publish; a form version's are the form, and until this
+         they were never restored at all. */
+      const restoredFields = await loadCapturedFieldsAtVersion(scope, agentId, path.version);
+      if (restoredFields !== null) {
+        await stageAgentSelection(scope, agentId, { capturedFields: restoredFields }, null);
+      }
       await stageDraftFlow(
         scope,
         agentId,

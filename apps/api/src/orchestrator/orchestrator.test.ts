@@ -943,6 +943,55 @@ describe("a caller who says hello while the form is listening", () => {
     ]);
   });
 
+  /**
+   * Found on review, by running it. The director arms the engine for the first question
+   * the moment the call connects, and the engine treated the caller's opening sentence as
+   * a botched answer: "Thank you for calling. — Sorry, and your name?" on every call to an
+   * agent whose first question was a name, with the model never hearing the sentence.
+   */
+  it("lets the caller's opening sentence reach the model instead of re-asking a question nobody put", () => {
+    const h = setup({ fields: NAME_FIELD });
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("I saw your listing and wanted to ask about it.");
+
+    expect(h.llm.completions).toHaveLength(1);
+    expect(h.tts.texts().join(" ")).not.toContain("Sorry —");
+    // Still armed: the model puts the question on this turn, and the answer is parsed as one.
+    h.llm.last().emit("Of course. Who am I speaking with? ");
+    h.llm.last().finish();
+    h.tts.last().done();
+    h.stream.ackAll();
+    h.listen.final("Sikiru");
+    expect(h.tts.texts().at(-1)).toContain("Sikiru");
+  });
+
+  it("still re-asks a caller who did not catch the question", () => {
+    const h = setup({ fields: NAME_FIELD });
+    h.tts.last().done();
+    h.stream.ackAll();
+    h.listen.final("I saw your listing and wanted to ask about it.");
+    h.llm.last().emit("Of course. Who am I speaking with? ");
+    h.llm.last().finish();
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("Sorry, what?");
+
+    // Handled without the model: the question is put again, and nothing about the listing
+    // is answered a second time.
+    expect(h.llm.completions).toHaveLength(1);
+    expect(h.tts.texts().at(-1)).toContain("Who am I speaking with?");
+
+    // A mumble at the question, once it has been put, is the engine's to re-ask.
+    h.tts.last().done();
+    h.stream.ackAll();
+    h.listen.final("erm");
+    expect(h.tts.texts().at(-1)).toContain("Sorry —");
+    expect(h.llm.completions).toHaveLength(1);
+  });
+
   it("stores the value once the caller agrees to it", () => {
     /* The whole point of a form. Everything downstream — the call page, the dataset, the
        export — reads this row, and before it existed the value survived only as an
@@ -1967,18 +2016,27 @@ describe("the prompt the call was configured with", () => {
   it("says nothing about hours on an ordinary in-hours turn", () => {
     /* Open is the default the prompt is written against. A block that fires every turn
        costs prompt budget for something the model was going to assume anyway. */
-    const h = setup({
-      businessHours: { opensAtHour: 0, closesAtHour: 24, openDays: [1, 2, 3, 4, 5, 6, 7] },
-    });
+    /* Pinned to the middle of the day. This read the wall clock, and "closes at 24" is
+       "closes in twenty minutes" at twenty to midnight — so it failed once a day, for
+       whoever happened to be running the suite late. */
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-03T12:00:00+01:00"));
+    try {
+      const h = setup({
+        businessHours: { opensAtHour: 0, closesAtHour: 24, openDays: [1, 2, 3, 4, 5, 6, 7] },
+      });
 
-    h.listen.final("What are your opening hours?");
+      h.listen.final("What are your opening hours?");
 
-    /* The block itself is always sent now — it carries today's date, which the agent
-       cannot derive. What must be absent on an ordinary in-hours turn is anything about
-       the hours themselves. */
-    expect(h.llm.last().request.system).not.toContain("closes in");
-    expect(h.llm.last().request.system).not.toContain("closed right now");
-    assertInvariants(h);
+      /* The block itself is always sent now — it carries today's date, which the agent
+         cannot derive. What must be absent on an ordinary in-hours turn is anything about
+         the hours themselves. */
+      expect(h.llm.last().request.system).not.toContain("closes in");
+      expect(h.llm.last().request.system).not.toContain("closed right now");
+      assertInvariants(h);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("tells the agent when turns have gone nowhere, before the hard rule transfers", () => {
@@ -3194,10 +3252,24 @@ describe("the platform tools on a call", () => {
     it("hands the call to a person through the handoff module when the graph ends in a transfer", () => {
       const spy = spyHandoff();
       const h = setup({ flow: oneQuestionThenEnd("transfer"), makeTools: platform(), makeHandoff: spy.make });
+      const before = h.llm.completions.length;
       answerTheOnlyQuestion(h);
 
       expect(spy.triggers.map((t) => t.kind)).toEqual(["needs-a-person"]);
       expect(h.stream.hungUp).toBe(false);
+      /* The handoff speaks the departure line. A model turn started here would talk over
+         it — the same reason the model's own transfer_to_human never goes back to the model. */
+      expect(h.llm.completions.length).toBe(before);
+    });
+
+    it("still lets the model speak when the graph ends in a transfer and nothing is configured to take it", () => {
+      const h = setup({ flow: oneQuestionThenEnd("transfer"), makeTools: platform() });
+      const before = h.llm.completions.length;
+      answerTheOnlyQuestion(h);
+
+      // No handoff, so the steering is all there is: the model is asked to speak, and told.
+      expect(h.llm.completions.length).toBe(before + 1);
+      expect(h.llm.last().request.system).toContain("transfer_to_human");
     });
 
     it("does not treat a graph that asks nothing as an instruction to greet and hang up", () => {
@@ -3211,6 +3283,58 @@ describe("the platform tools on a call", () => {
       h.stream.ackAll();
 
       expect(h.stream.hungUp).toBe(false);
+    });
+  });
+
+  describe("what a graph tells the model on the way to a question", () => {
+    const withASayAndATool: OrchestratorDeps["flow"] = {
+      version: 1,
+      nodes: [
+        { id: "start", kind: "start", x: 0, y: 0 },
+        { id: "promo", kind: "say", x: 1, y: 0, text: "Mention the weekend promotion" },
+        { id: "look", kind: "tool", x: 2, y: 0, tool: "business_hours" },
+        { id: "ask-name", kind: "collect", x: 3, y: 0, field: { key: "callerName", type: "name", prompt: "Who am I speaking with?", capture: "speech", confirm: "readback", required: true, pattern: "", attempts: 3, options: [] } },
+        { id: "end", kind: "hangup", x: 4, y: 0 },
+      ],
+      edges: [
+        { from: "start", to: "promo" },
+        { from: "promo", to: "look" },
+        { from: "look", to: "ask-name" },
+        { from: "ask-name", to: "end" },
+      ],
+    };
+
+    it("names a say step once, and a tool step until it has run", async () => {
+      const h = setup({ flow: withASayAndATool, makeTools: platform() });
+      started(h);
+
+      h.listen.final("I saw your listing and wanted to ask about it.");
+      const first = h.llm.last().request.system;
+      expect(first).toContain("Mention the weekend promotion");
+      expect(first).toContain("business_hours tool now");
+      h.llm.last().emit("Hi! ");
+      h.llm.last().finish();
+      h.tts.last().done();
+      h.stream.ackAll();
+
+      /* The caller has not answered the question yet, so the director still lists both. The
+         model has already been told to cover the promotion; a tool it never used is still
+         owed. */
+      h.listen.final("Sorry, what promotion is that exactly?");
+      const second = h.llm.last().request.system;
+      expect(second).not.toContain("Mention the weekend promotion");
+      expect(second).toContain("business_hours tool now");
+
+      h.llm.last().callTools([{ name: "business_hours", args: {} }]);
+      await settle();
+      h.llm.last().emit("We are open. ");
+      h.llm.last().finish();
+      h.tts.last().done();
+      h.stream.ackAll();
+
+      h.listen.final("That is useful to know, thank you.");
+      expect(h.llm.last().request.system).not.toContain("business_hours tool now");
+      expect(h.llm.last().request.system).toContain("Who am I speaking with?");
     });
   });
 
