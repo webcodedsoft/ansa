@@ -3767,6 +3767,20 @@ and they make validation much harder); live call tracing on the canvas (a differ
 needs the runtime to emit node transitions); `say` nodes as a script (the product's advantage
 is that it converses — a graph that scripts every sentence throws that away).
 
+**Two things the ownership audit surfaced, both worth deciding rather than discovering.**
+
+Office hours are *conversational context*, not a gate: they reach the call through
+`situation.ts` as `openNow`, `closesInMinutes` and `partOfDay`, so the agent knows it is
+closed and says so. Nothing routes on them. An out-of-hours call therefore runs the same
+graph from `start`, which is consistent — but somebody drawing a flow will reasonably expect
+to branch on "are we open?", and `decide` branches only on a collected value. Either branch
+conditions gain a second source (the situation) or the canvas says plainly that hours are
+handled in conversation, not in the graph. Silence on it will be read as a bug.
+
+Knowledge is always-on retrieval rather than a step, and stays that way: there is no
+`knowledge` node. Retrieval happens when the caller asks something, not when a flow reaches a
+box, and a node implying otherwise would misdescribe how the agent answers.
+
 **Open before S3.** Does a `decide` ever ask a question of its own, or is branching on an
 uncollected field simply refused at publish (assumed above)? Do a `tool` node's `ok`/`failed`
 ports really branch — that needs the graph director to observe tool dispatch, which `Form`
