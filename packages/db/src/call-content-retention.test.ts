@@ -32,8 +32,8 @@ if (url === undefined) {
  * Unique to this file. Vitest runs suites in parallel against one database and
  * `caller-history.test.ts` records what reusing another file's ids costs.
  */
-const BRIEF = asOrganizationId("c0c0c0c0-c0c0-4c0c-8c0c-c0c0c0c0c0c0");
-const PATIENT = asOrganizationId("c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1");
+const BRIEF = asOrganizationId("c8c8c8c8-c8c8-4c8c-8c8c-c8c8c8c8c8c8");
+const PATIENT = asOrganizationId("c9c9c9c9-c9c9-4c9c-8c9c-c9c9c9c9c9c9");
 
 const OLD_CALL = "ca110000-0000-4000-8000-000000000001";
 const FRESH_CALL = "ca110000-0000-4000-8000-000000000002";
