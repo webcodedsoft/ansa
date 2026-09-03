@@ -25,9 +25,11 @@ import {
   type EntityKind,
 } from "./capture";
 import type { CallerHistory } from "@ansa/db";
+import type { Flow } from "@ansa/shared";
 
 import type { CallFactsStore, IdentifierField } from "../conversation/call-facts";
 import type { CollectedField } from "../tenancy/captured-fields";
+import { createFlowForm } from "./flow-form";
 import { createForm } from "./form";
 import { renderFacts } from "../conversation/facts-prompt";
 import { OUTBOUND_LAYER } from "../prompts/outbound";
@@ -160,6 +162,14 @@ export interface OrchestratorDeps {
    * gets, and it must stay identical or this change breaks calls that worked.
    */
   readonly fields?: readonly CollectedField[];
+  /**
+   * The graph to conduct instead of `fields`, for an agent drawn as one.
+   *
+   * Not two ways to configure the same call: the caller resolves which of the two an agent
+   * uses before it gets here, so exactly one of these is ever meaningful. Absent is the
+   * common case and the one every test takes.
+   */
+  readonly flow?: Flow | null;
   /**
    * The greeting, already rendered. Fixed text in a fixed voice is deterministic, so
    * synthesising it over the network on every call spends ~500-950ms of silence at the
@@ -658,8 +668,20 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   const guardMs = deps.bargeInGuardMs ?? DEFAULT_BARGE_IN_GUARD_MS;
   const bargeInEnabled = deps.bargeIn ?? true;
   /* `CAPTURE_WIRING.md` §7: who decides when to ask. It is the agent's configuration now,
-     and an agent with no form gets a director that is inert in every direction. */
-  const form = createForm(deps.fields ?? []);
+     and an agent with no form gets a director that is inert in every direction.
+
+     Two directors, one interface, and everything below this line is blind to which it got.
+     `FormDirector` is the whole seam: `outstanding()` is a single `Array.find` over an
+     ordered list in one implementation and a replayed walk of a graph in the other, and
+     neither the engine, the prompt layer nor the capture state machine can tell.
+
+     The graph wins where there is one, and there is one only for an agent authored as a
+     graph whose stored document can actually conduct a call — the registry decided that at
+     configuration load, so this is not a mode to interpret here. An agent that is a form,
+     or one whose graph could not be walked, falls to the list and the call still runs. */
+  const form = deps.flow === undefined || deps.flow === null
+    ? createForm(deps.fields ?? [])
+    : createFlowForm(deps.flow);
 
   /**
    * Point the engine at the next field the form wants, without speaking.

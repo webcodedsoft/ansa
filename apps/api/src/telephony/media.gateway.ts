@@ -978,6 +978,11 @@ export class MediaGateway implements OnApplicationShutdown {
       // The form this agent conducts, resolved with its config at ingress so the
       // director costs no extra round trip on the answer path.
       fields: settings.capturedFields,
+      /* And the graph, for an agent drawn as one. Resolved at the same moment and from the
+         same document, so what the agent asks and the order it asks in cannot come from two
+         different reads of the configuration. Null for every agent authored as a form, which
+         is every agent that existed before the canvas did. */
+      flow: settings.flow,
       listen,
       facts,
       // Off unless the deployment turned it on. See `AppConfig.backchannel`.

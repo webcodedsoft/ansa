@@ -118,6 +118,23 @@ export interface AgentConfig {
    */
   readonly capturedFields: readonly unknown[];
   /**
+   * The published graph this agent's call walks, when it is drawn as one (migration 0060).
+   *
+   * `unknown` for the same reason `capturedFields` is. Non-null does not mean the call runs
+   * as a graph: an operator may switch back to a form and keep the canvas, so
+   * `authoringMode` decides and this is only the drawing.
+   */
+  readonly flow: unknown | null;
+  /**
+   * Which director conducts this call — the ordered list, or the graph.
+   *
+   * Read rather than inferred from whether `flow` is null. The two come apart in both
+   * directions: a form-authored agent can hold an abandoned canvas, and an agent switched to
+   * a flow before anything was drawn has a mode and no graph. Inferring would silently pick
+   * a director in both cases and be wrong in one of them.
+   */
+  readonly authoringMode: "form" | "flow";
+  /**
    * Which of the organization's own systems get pushed a record of a call, and what is masked on
    * the way (Slice 6a, R5.2.4). Null until they configure some, which is every organization.
    *
@@ -158,6 +175,9 @@ interface ConfigRow {
   barge_in?: boolean | null;
   amd_enabled?: boolean | null;
   captured_fields?: unknown[] | null;
+  /** Absent before migration 0060, which is every agent authored as a form. */
+  flow?: unknown | null;
+  authoring_mode?: "form" | "flow" | null;
   event_config: unknown;
   escalation_to_number: string | null;
   /** Migration 0055. `undefined` on a database that has not applied it. */
@@ -254,6 +274,10 @@ const toConfig = (row: ConfigRow): AgentConfig => ({
   answeringMachineDetection: row.amd_enabled ?? false,
   // Absent before migration 0022, and an agent with no form is the correct reading of that.
   capturedFields: row.captured_fields ?? [],
+  flow: row.flow ?? null,
+  /* Absent before migration 0060, and "form" is the correct reading of that: every agent
+     that existed before the graph did was conducted by the list. */
+  authoringMode: row.authoring_mode ?? "form",
   eventConfig: row.event_config ?? null,
   sealedCredentials: toSealed(row),
   configVersion: row.config_version,

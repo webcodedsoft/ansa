@@ -61,6 +61,7 @@ const setup = (
     recordDoNotCall?: OrchestratorDeps["recordDoNotCall"];
     callerHistory?: OrchestratorDeps["callerHistory"];
     fields?: OrchestratorDeps["fields"];
+    flow?: OrchestratorDeps["flow"];
   } = {},
 ) => {
   const stream = fakeStream();
@@ -864,18 +865,85 @@ describe("runConversation", () => {
  * here rather than in a layer.
  */
 describe("a caller who says hello while the form is listening", () => {
-  const NAME_FIELD: OrchestratorDeps["fields"] = [
-    {
-      key: "callerName",
-      type: "name",
-      prompt: "Who am I speaking with?",
-      capture: "speech",
-      confirm: "readback",
-      required: true,
-      pattern: "",
-      attempts: 3,
-    },
-  ];
+  /* One question, declared once, so the list test and the graph test below are asking the
+     same thing. If they drifted, the parity they claim to show would be a coincidence. */
+  const ASKS_A_NAME = {
+    key: "callerName",
+    type: "name",
+    prompt: "Who am I speaking with?",
+    capture: "speech",
+    confirm: "readback",
+    required: true,
+    pattern: "",
+    attempts: 3,
+  } as const;
+
+  const NAME_FIELD: OrchestratorDeps["fields"] = [ASKS_A_NAME];
+
+  /**
+   * The same call, conducted by a graph instead of a list.
+   *
+   * This is the test the whole seam exists for. `outstanding()` is one `Array.find` over an
+   * ordered list in `createForm` and a replayed walk of a graph in `createFlowForm`, and the
+   * claim is that nothing below the director can tell which it got. The way to check that
+   * claim is not to inspect the director — it is to run a real call through the orchestrator
+   * with a graph and assert on the row that comes out the other end, which is exactly what
+   * the form test below asserts, with the same value and the same shape.
+   *
+   * It is also the answer to the thing that goes wrong with work built in parallel: the
+   * graph director existed, was tested, and was called by nothing. A passing unit test on an
+   * unreachable module reads as progress and is inventory.
+   */
+  it("conducts the same call from a graph, and stores the same value", () => {
+    const captured: { fieldKey: string; fieldType: string; value: string; attempts: number }[] = [];
+    const h = setup({
+      flow: {
+        version: 1,
+        nodes: [
+          { id: "start", kind: "start", x: 0, y: 0 },
+          {
+            id: "ask-name",
+            kind: "collect",
+            x: 220,
+            y: 0,
+            /* `options` is the one member a graph's field carries and a list's does not —
+               it belongs to a `choice` question. Empty here, and the rest is the same
+               question the list asks. */
+            field: { ...ASKS_A_NAME, options: [] },
+          },
+          { id: "end", kind: "hangup", x: 440, y: 0 },
+        ],
+        edges: [
+          { from: "start", to: "ask-name" },
+          { from: "ask-name", to: "end" },
+        ],
+      },
+      recorder: {
+        started: () => undefined,
+        event: () => undefined,
+        transcript: () => undefined,
+        turn: () => undefined,
+        latency: () => undefined,
+        capture: (c: { fieldKey: string; fieldType: string; value: string; attempts: number }) =>
+          captured.push(c),
+        ended: () => undefined,
+      } as unknown as CallRecorder,
+    });
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    /* A bare answer, with no "my name is" in front of it, and that is the whole point.
+       Free-speech parsing cannot tell "Sikiru" from any other word in a sentence; it is
+       unambiguous only as the answer to a question that was just asked. So this line is
+       captured if and only if a director armed the engine to expect a name — which means
+       the graph is conducting this call, not merely present in the deps. */
+    h.listen.final("Sikiru");
+    h.listen.final("Yes, that is right.");
+
+    expect(captured).toEqual([
+      { fieldKey: "callerName", fieldType: "name", value: "Sikiru", attempts: 1 },
+    ]);
+  });
 
   it("stores the value once the caller agrees to it", () => {
     /* The whole point of a form. Everything downstream — the call page, the dataset, the

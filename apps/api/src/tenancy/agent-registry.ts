@@ -23,11 +23,13 @@ import {
   type PreparedEvents,
 } from "@ansa/tools";
 
+import type { Flow } from "@ansa/shared";
+
 import { knowledgeDefinitions } from "../orchestrator/knowledge";
 import { composeSystemPrompt, DEFAULT_SYSTEM_PROMPT } from "../prompts/compose";
 import { compileOrganizationLayer } from "../prompts/organization-layer";
 
-import { parseCapturedFields, type CollectedField } from "./captured-fields";
+import { parseCapturedFields, readStoredFlow, type CollectedField } from "./captured-fields";
 import { BASE_KEYTERMS, MAX_KEYTERMS } from "./defaults";
 
 /** Configuration as the call path sees it, with defaults already applied. */
@@ -98,6 +100,15 @@ export interface CallAgent {
    * anything.
    */
   readonly capturedFields: readonly CollectedField[];
+  /**
+   * The graph this agent conducts, when it is drawn as one, parsed once at config load.
+   *
+   * Null covers three different things and deliberately does not distinguish them on the
+   * answer path: the agent is a form, nobody has drawn a graph, or what was stored is not
+   * one this build can walk. All three mean the same thing to a call — conduct it with the
+   * list — and that is the reading that degrades into speech rather than into silence.
+   */
+  readonly flow: Flow | null;
   /** Outbound only: hang up on voicemail rather than talk to a greeting. */
   readonly answeringMachineDetection: boolean;
   /** Recorded on every call so a call from weeks ago can still be explained (R7.5). */
@@ -149,6 +160,7 @@ export const UNKNOWN_AGENT: CallAgent = {
   answeringMachineDetection: false,
   // An unregistered number has no agent, so there is no form to conduct.
   capturedFields: [],
+  flow: null,
   configVersion: 0,
 };
 
@@ -259,6 +271,10 @@ const toCallAgent = async (
     log,
   });
 
+  /* The graph, on the same terms as the form above: parsed once here, never on the answer
+     path, and never throwing. */
+  const flow = config.authoringMode === "flow" ? readStoredFlow(config.flow, config.agentId, log) : null;
+
   // Discovery and the MCP handshake happen here, once per configuration load, rather than
   // per call. `prepareConnectors` never throws: a organization whose endpoint is unreachable
   // gets fewer tools, never a failed call (R6.2).
@@ -319,6 +335,7 @@ const toCallAgent = async (
     events,
     bargeIn: config.bargeIn,
     capturedFields: fields,
+    flow,
     answeringMachineDetection: config.answeringMachineDetection,
     configVersion: config.configVersion,
   };

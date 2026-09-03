@@ -3681,33 +3681,43 @@ and publish. Every `collect` node writes its field into the list on publish, top
 ordered. The projection is lossy and one-way, which is exactly why the graph is stored
 rather than derived, and why flow → form is a destructive, confirmed conversion.
 
-- [ ] **S1 — Persist the graph, linear only.** Migration (`flow jsonb` and
+- [x] **S1 — Persist the graph, linear only.** Migration (`flow jsonb` and
       `authoring_mode` on `agents`, `flow jsonb` on `agent_config_drafts` and
       `agent_prompt_versions`), schema, validation, canvas save and publish, the projection.
       `decide` stays out of the palette. Calls still run the list director on the projection,
       so the call path carries no risk in this slice.
       **Done when** an agent authored entirely on the canvas answers a real call and collects
-      its fields in the drawn order.
+      its fields in the drawn order. — *Built and wired 2026-09-03. Migration 0060, the
+      `Flow`/`validateFlow`/`projectToCapturedFields` contract in `@ansa/shared`, the two
+      endpoints, canvas persistence through the workspace's own form, and the problems panel.
+      **Not yet proved by a phone call** — see "what is still open" below.*
 
-- [ ] **S2 — The graph director, behind the same interface.** `createFlowForm` satisfying
+- [x] **S2 — The graph director, behind the same interface.** `createFlowForm` satisfying
       `Form`, running *linear* graphs, selected by `authoring_mode` at call setup. No new
       behaviour; identical behaviour is the whole point. The existing form tests become a
       shared suite run against both directors — a difference is a bug in the new one, and
       that comparison is only possible while the graphs are still linear. Do not skip this to
       get to branching sooner; the window closes.
       **Done when** the shared suite passes against both directors and a real call on a flow
-      agent is indistinguishable from before.
+      agent is indistinguishable from before. — *`createFlowForm` satisfies `FormDirector`
+      unchanged; the interface needed no widening, which is the result worth recording. It
+      holds no position pointer: where the call is is recomputed by replaying the collected
+      values from `start`, so reconstruction after a reconnect is not a second code path but
+      the only one. Selected in `media.gateway.ts` from the agent's published
+      `authoring_mode`, parsed once at configuration load by `readStoredFlow`.*
 
-- [ ] **S3 — Branching.** The `decide` node, edge conditions (`equals`, `oneOf`, `isEmpty`,
+- [~] **S3 — Branching.** The `decide` node, edge conditions (`equals`, `oneOf`, `isEmpty`,
       `greaterThan` — no expression language), the static validation below, and the runtime
       cases: a value volunteered for a branch not taken is accepted and stored anyway; a
       correction to the value a branch was chosen on re-evaluates and moves, keeping what was
       collected on the abandoned branch but no longer requiring it; `complete()` means a
       terminal was reached, not that a flat list emptied.
       **Done when** a real call takes one branch, and a second real call corrects its answer
-      mid-call and moves to the other.
+      mid-call and moves to the other. — *The director already does all of this and is tested
+      for it, including the correction case, which falls out of replaying rather than holding
+      a pointer. `decide` is in the palette. What is missing is the phone call.*
 
-- [ ] **S4 — Authoring surface.** Method choice on the existing `/agents/new` screen rather
+- [~] **S4 — Authoring surface.** Method choice on the existing `/agents/new` screen rather
       than a second chooser page before it; mode locking (see the ownership rule below);
       publish errors that land on the offending node the way `FIELD_TAB` lands them on a tab;
       form → flow conversion; confirmed flow → form flattening that says how many branches it
@@ -3717,7 +3727,28 @@ rather than derived, and why flow → form is a destructive, confirmed conversio
       wiring; a new canvas that starts with Answered → End the call already wired, so the first
       gesture anybody learns is dropping a step onto a wire.
       **Done when** somebody who has not seen the canvas builds a working agent on it without
-      being told how, and a deliberately broken graph explains itself.
+      being told how, and a deliberately broken graph explains itself. — *Done: the method
+      choice on `/agents/new`, Data captured locking to a read-only list for flow agents,
+      the problems panel landing each problem on its node, a new canvas starting with
+      Answered → End the call wired, and the template's questions seeded as the flow's first
+      steps. Still open: form → flow conversion, the confirmed flow → form flattening, the
+      keyboard paths, and the small-screen state.*
+
+**What is still open, and it is the part that matters.** Rule 1 of `CLAUDE.md`: a slice is
+done when a phone call proves it. Nothing here has been dialled. Every claim above rests on
+tests, including a real call driven through `runConversation` with a graph — which was
+verified by deleting the director selection and watching that test fail, because the first
+version of it passed either way and proved nothing. That is evidence the wiring is connected;
+it is not evidence the product works. Before any of these boxes means what it says:
+
+1. Draw a two-question flow on the canvas, publish it, and ring the number.
+2. Ring it again and answer the branch the other way.
+3. Correct a branched answer mid-call and hear it move.
+
+Also unwritten: the shared suite S2 asks for — the existing form tests run against both
+directors. `flow-form.test.ts` covers the graph director thoroughly on its own terms, and a
+parity test exists inside it, but the two suites are not yet one. The window for that closes
+when graphs stop being linear.
 
 **What the graph owns — one tab of ten.** An agent is far more than its conversation shape,
 and this is the rule that keeps the two editors from fighting:

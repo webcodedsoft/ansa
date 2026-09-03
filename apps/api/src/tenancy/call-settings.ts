@@ -3,6 +3,8 @@ import type { PreparedConnectors, PreparedEvents } from "@ansa/tools";
 
 import type { CollectedField } from "./captured-fields";
 
+import type { Flow } from "@ansa/shared";
+
 import { UNKNOWN_AGENT, type CallAgent } from "./agent-registry";
 
 /**
@@ -36,6 +38,15 @@ export interface CallSettings {
   readonly bargeIn: boolean;
   /** The form this agent conducts, in the order it asks. Empty when it has none. */
   readonly capturedFields: readonly CollectedField[];
+  /**
+   * The graph this agent conducts instead, or null to conduct the list.
+   *
+   * Already decided by the time it gets here: the registry returns a graph only for an agent
+   * authored as one, and only when what was stored can actually conduct a call. So the answer
+   * path has one question to ask — is there a graph — rather than a mode to interpret and a
+   * document to trust.
+   */
+  readonly flow: Flow | null;
   /** Outbound only: hang up on voicemail instead of talking to a greeting. */
   readonly answeringMachineDetection: boolean;
   readonly name: string;
@@ -100,6 +111,7 @@ export const callSettings = (
     agentId: resolved.agentId,
     bargeIn: resolved.bargeIn,
     capturedFields: resolved.capturedFields,
+    flow: resolved.flow,
     hasKnowledgeSources: resolved.hasKnowledgeSources,
     answeringMachineDetection: resolved.answeringMachineDetection,
     name: resolved.name,

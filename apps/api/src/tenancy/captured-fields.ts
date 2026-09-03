@@ -1,4 +1,4 @@
-import type { Logger } from "@ansa/shared";
+import { validateFlow, type Flow, type Logger } from "@ansa/shared";
 
 /**
  * The stored voice form, turned into something the prompt layer can state (migration 0021).
@@ -148,4 +148,48 @@ export const parseCapturedFields = (
     });
   }
   return fields;
+};
+
+/**
+ * The stored graph, read once at configuration load and never on the answer path.
+ *
+ * Same contract as `parseCapturedFields` above and for the same reasons: it is the same kind
+ * of stored document, it must never throw, and a call must not be parsing anything per turn.
+ *
+ * It is checked even though the publish gate already refused a graph with blocking problems.
+ * The gate covers what arrived through the API; a row edited by hand, restored from a backup
+ * taken before a schema change, or written by an older build did not go through it. The cost
+ * of being wrong here is not an error message — it is a director that walks into a node with
+ * no way out and stops asking, which the caller hears as the agent going quiet.
+ *
+ * Refusing returns null, which the caller reads as "conduct this call with the list". That is
+ * the whole reason this returns rather than throws: a configuration problem must degrade into
+ * a call that still talks (R6.2), never into one that does not.
+ */
+export const readStoredFlow = (
+  raw: unknown,
+  agentId: string | null,
+  log: Logger,
+): Flow | null => {
+  if (raw === null || typeof raw !== "object") return null;
+
+  const candidate = raw as { readonly nodes?: unknown; readonly edges?: unknown };
+  if (!Array.isArray(candidate.nodes) || !Array.isArray(candidate.edges)) {
+    log.error("stored flow is not a graph", { agentId });
+    return null;
+  }
+
+  const flow = raw as Flow;
+  const blocking = validateFlow(flow).filter((problem) => problem.blocking);
+  if (blocking.length > 0) {
+    /* Error rather than warn. A published graph should not be able to reach this, so getting
+       here means something wrote past the gate — and the agent is about to answer calls with
+       its questions silently missing. */
+    log.error("stored flow cannot conduct a call, falling back to the form", {
+      agentId,
+      problems: blocking.map((problem) => problem.code),
+    });
+    return null;
+  }
+  return flow;
 };
