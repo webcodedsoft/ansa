@@ -3774,6 +3774,12 @@ the gaps were silent:
   projection counts. New warnings: a branch waiting on an answer the choice never offers, a
   branch shadowed by an earlier one, a `confirm` reading a field never read back.
 
+- *Terminal steps now act.* A `hangup` step ends the call through `endCallWhenHeard` — after
+  the goodbye the next turn is steered to say has been heard, cancelled if the caller speaks
+  again, exactly as the model's own `end_call`. A `transfer` step goes through the handoff
+  module. Neither fires at the start of a call, so a blank canvas cannot become an agent
+  that greets and hangs up. `complete()` guards the effect, which gives it its consumer.
+
 Still true after all of it: **nothing has been dialled.**
 
 **What the graph owns — one tab of ten.** An agent is far more than its conversation shape,

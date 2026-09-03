@@ -729,6 +729,46 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     log.debug("expecting a configured field", { key: next.key, entity: next.entity });
   };
 
+  /**
+   * The graph reaching its end, or its hand-over, made real.
+   *
+   * Until this existed a `hangup` step told the model to say goodbye and use `end_call`, and
+   * a `transfer` step told it to use `transfer_to_human`, and both were left to the model to
+   * act on. The steering stays — the model still has to *say* the goodbye — but the effect
+   * is no longer its decision. A graph drawn to end here ends here.
+   *
+   * Only after an answer, never at the start of a call. The check runs beside
+   * `armNextField()` at the two places a question is settled, not at the initial arm: a
+   * graph that is nothing but start → hang up is the canvas every new flow begins as, and
+   * treating it as "greet and hang up" would turn a blank canvas into a hostile agent. From
+   * there the model is steered to wrap up and does so conversationally.
+   *
+   * Ending goes through `endCallWhenHeard`, so the goodbye the next turn is steered to say
+   * plays out first, and a caller who starts talking again cancels it exactly as they cancel
+   * the model's own `end_call`. Transfer goes through the handoff module like every other
+   * transfer; with no handoff configured the steering is all there is, and the model's
+   * `transfer_to_human` reaches the same honest "nothing to transfer to" line.
+   *
+   * `complete()` is the guard. A walk standing on a terminal is complete by construction —
+   * it is the invariant `outstanding() === null` implies `complete()` — and this is the one
+   * place an irreversible effect rides on it, so it is checked rather than assumed.
+   */
+  let flowHandedOver = false;
+  const followTheGraph = (): void => {
+    const next = form.guidance()?.next;
+    if (next === undefined || !form.complete()) return;
+    if (next.kind === "end") {
+      endCallWhenHeard("the flow reached its end");
+      return;
+    }
+    if (next.kind === "transfer" && !flowHandedOver) {
+      flowHandedOver = true;
+      log.info("the flow hands this call to a person");
+      record.event("flow_transfer_requested", {});
+      escalate(watch.needsAPerson("the flow hands this call to a person"));
+    }
+  };
+
   let turnSeq = 0;
   let turn: AgentTurn | null = null;
 
@@ -1048,6 +1088,8 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     form.satisfy(field, stored, false);
     record.capture({ fieldKey: field, fieldType: question.type, value: stored, attempts: 1 });
     log.info("the model recorded an answer", { field, type: question.type });
+    armNextField();
+    followTheGraph();
     return { accepted: true, field, answer: stored };
   };
 
@@ -2621,6 +2663,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         form.skip(target.key);
         sayNow(GAVE_UP, "pattern rejected, no handoff");
         armNextField();
+        followTheGraph();
         return true;
       }
 
@@ -2680,6 +2723,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       // Whatever the form wants next, so the caller's following turn is parsed as an
       // answer to it rather than guessed at.
       armNextField();
+      followTheGraph();
 
       // The model finally sees the value, and sees it as confirmed. Routed through
       // respondTo so it is recorded, budgeted and spoken like any other turn. The kind

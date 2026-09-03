@@ -3131,6 +3131,90 @@ describe("the platform tools on a call", () => {
   });
 
   /**
+   * The end of a graph is the end of the call — in code, on the mark, not as a suggestion.
+   */
+  describe("a graph that reaches its end", () => {
+    const oneQuestionThenEnd = (terminal: "hangup" | "transfer"): OrchestratorDeps["flow"] => ({
+      version: 1,
+      nodes: [
+        { id: "start", kind: "start", x: 0, y: 0 },
+        { id: "ask-name", kind: "collect", x: 1, y: 0, field: { key: "callerName", type: "name", prompt: "Who am I speaking with?", capture: "speech", confirm: "readback", required: true, pattern: "", attempts: 3, options: [] } },
+        { id: "end", kind: terminal, x: 2, y: 0 },
+      ],
+      edges: [
+        { from: "start", to: "ask-name" },
+        { from: "ask-name", to: "end" },
+      ],
+    });
+
+    const answerTheOnlyQuestion = (h: ReturnType<typeof setup>): void => {
+      started(h);
+      h.listen.final("Sikiru");
+      // The readback: the engine speaks it, the caller agrees.
+      h.tts.last().done();
+      h.stream.ackAll();
+      h.listen.final("Yes, that is right.");
+    };
+
+    it("hangs up after the goodbye has been heard, and not before", () => {
+      const h = setup({ flow: oneQuestionThenEnd("hangup"), makeTools: platform() });
+      answerTheOnlyQuestion(h);
+
+      // The turn after the last answer is steered to wrap up, and it is that turn's audio
+      // the hangup waits for. Nothing has ended yet: the goodbye is still being written.
+      expect(h.stream.hungUp).toBe(false);
+      expect(h.llm.last().request.system).toContain("say goodbye");
+      h.llm.last().emit("Thank you Sikiru, that is everything. Goodbye. ");
+      h.llm.last().finish();
+      h.tts.last().audio(1600);
+      h.tts.last().done();
+      // Synthesised and queued at the carrier, not yet heard.
+      expect(h.stream.hungUp).toBe(false);
+
+      h.stream.ackAll();
+      expect(h.stream.hungUp).toBe(true);
+    });
+
+    it("does not hang up on a caller who starts talking again", () => {
+      const h = setup({ flow: oneQuestionThenEnd("hangup"), makeTools: platform() });
+      answerTheOnlyQuestion(h);
+      h.llm.last().emit("Thank you, goodbye. ");
+      h.llm.last().finish();
+
+      h.listen.final("Sorry, one more thing.");
+      h.llm.last().emit("Of course. ");
+      h.llm.last().finish();
+      h.tts.last().audio(1600);
+      h.tts.last().done();
+      h.stream.ackAll();
+
+      expect(h.stream.hungUp).toBe(false);
+    });
+
+    it("hands the call to a person through the handoff module when the graph ends in a transfer", () => {
+      const spy = spyHandoff();
+      const h = setup({ flow: oneQuestionThenEnd("transfer"), makeTools: platform(), makeHandoff: spy.make });
+      answerTheOnlyQuestion(h);
+
+      expect(spy.triggers.map((t) => t.kind)).toEqual(["needs-a-person"]);
+      expect(h.stream.hungUp).toBe(false);
+    });
+
+    it("does not treat a graph that asks nothing as an instruction to greet and hang up", () => {
+      const h = setup({ flow: { version: 1, nodes: [{ id: "start", kind: "start", x: 0, y: 0 }, { id: "end", kind: "hangup", x: 1, y: 0 }], edges: [{ from: "start", to: "end" }] }, makeTools: platform() });
+      started(h);
+      h.listen.final("Hello?");
+      h.llm.last().emit("Hello, how can I help? ");
+      h.llm.last().finish();
+      h.tts.last().audio(800);
+      h.tts.last().done();
+      h.stream.ackAll();
+
+      expect(h.stream.hungUp).toBe(false);
+    });
+  });
+
+  /**
    * The rent-or-buy call, end to end: the graph waits at a choice, the model is told the
    * options and the tool, records the answer, and the walk takes the branch. Every earlier
    * version of this feature had the model asking the question and the answer going nowhere,
