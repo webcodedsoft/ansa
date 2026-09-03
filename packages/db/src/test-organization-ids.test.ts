@@ -1,6 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -24,7 +23,11 @@ import { describe, expect, it } from "vitest";
  * as a duplicate key three minutes into a full run.
  */
 
-const here = dirname(fileURLToPath(import.meta.url));
+/* From the working directory rather than from `import.meta`, which this package's module
+   target does not allow — the same reason and the same shape as `mutate-not-query.test.ts`,
+   which scans this directory too. Vitest runs with the package root as cwd; if that stops
+   being true the scan finds nothing, which the second test below refuses to let pass. */
+const here = join(process.cwd(), "src");
 
 /** `asOrganizationId("…")`, which is how every one of these files names its organisations. */
 const DECLARATION = /asOrganizationId\(\s*"([0-9a-fA-F-]{36})"/g;
