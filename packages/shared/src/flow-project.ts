@@ -254,6 +254,16 @@ export const fieldsCollectedBeforeEach = (flow: Flow): ReadonlyMap<string, Reado
 export const fieldsCollectedBefore = (flow: Flow, nodeId: string): ReadonlySet<string> =>
   fieldsCollectedBeforeEach(flow).get(nodeId) ?? new Set();
 
+/**
+ * An edge as a set member: two ids, made one string without ambiguity.
+ *
+ * Node ids are operator-facing text and can contain anything the API's text schema lets
+ * through, so joining them with a separator would let two different edges collide on a
+ * chosen id. A JSON array cannot be read two ways.
+ */
+const edgeKey = (from: string, to: string): string => JSON.stringify([from, to]);
+const fromOf = (key: string): string => (JSON.parse(key) as [string, string])[0];
+
 /** One branch a call had to take to reach a step, as the Data captured tab phrases it. */
 export interface BranchTaken {
   /** The answer the branch was decided on. */
@@ -282,17 +292,17 @@ export const branchesTakenBefore = (flow: Flow, nodeId: string): readonly Branch
     if (edge.when === undefined && edge.otherwise !== true) continue;
     const on = graph.byId.get(edge.from)?.on;
     if (on === undefined || on === "") continue;
-    conditional.set(`${edge.from} -> ${edge.to}`, { on, when: edge.when ?? null });
+    conditional.set(edgeKey(edge.from, edge.to), { on, when: edge.when ?? null });
   }
 
   const held = mustHold(graph, new Set(conditional.keys()), (pred, node) => {
-    const key = `${pred} -> ${node}`;
+    const key = edgeKey(pred, node);
     return conditional.has(key) ? [key] : [];
   });
 
   const order = new Map(walk(graph).map((node, at) => [node.id, at]));
   return [...(held.get(nodeId) ?? [])]
-    .sort((a, b) => (order.get(a.split(" -> ")[0] ?? "") ?? 0) - (order.get(b.split(" -> ")[0] ?? "") ?? 0))
+    .sort((a, b) => (order.get(fromOf(a)) ?? 0) - (order.get(fromOf(b)) ?? 0))
     .map((key) => conditional.get(key))
     .filter((branch): branch is BranchTaken => branch !== undefined);
 };

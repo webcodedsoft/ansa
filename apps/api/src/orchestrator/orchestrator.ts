@@ -26,7 +26,7 @@ import {
   type EntityKind,
 } from "./capture";
 import type { CallerHistory } from "@ansa/db";
-import type { Flow } from "@ansa/shared";
+import { MAX_FLOW_FIELDS, type Flow } from "@ansa/shared";
 
 import type { CallFactsStore, IdentifierField } from "../conversation/call-facts";
 import type { CollectedField } from "../tenancy/captured-fields";
@@ -674,6 +674,16 @@ const NIGERIAN_PARTICLES = new Set([
 ]);
 
 /**
+ * What a stranger must never be asked by somebody who rang them.
+ *
+ * The same list `OUTBOUND_LAYER` gives the model, as the entity kinds the engine can arm
+ * for. `date` is deliberately absent: the prohibition is a date of birth, and the engine's
+ * `date` is any date — a callback appointment is the commonest thing an outbound call asks
+ * for. The layer still tells the model which dates it may not ask about.
+ */
+const FORBIDDEN_OUTBOUND: ReadonlySet<EntityKind> = new Set(["nin", "bvn", "otp", "address"]);
+
+/**
  * How much of a free-text answer is kept.
  *
  * The model is summarising what the caller said, and a summary that runs to a paragraph is
@@ -722,7 +732,23 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
    */
   const armNextField = (): void => {
     if (capture.kind !== "idle") return;
-    const next = form.outstanding();
+    let next = form.outstanding();
+    /* On a call the agent placed, the questions a stranger must never be asked are skipped
+       in code, before the engine is armed for them and before the model is steered to ask.
+       The outbound layer already forbids them in the prompt; this is the half a prompt
+       cannot hold. Skipped as "the caller would not give it", which is the honest record:
+       nobody asked. A required one does not hold the call open, and a graph takes its
+       gave-up branch where it has one. Bounded by the field count, so a form of nothing but
+       identifiers ends with nothing armed rather than looping. */
+    for (let guard = 0; next !== null && deps.direction === "outbound" && FORBIDDEN_OUTBOUND.has(next.entity); guard += 1) {
+      log.warn("a question a stranger must not be asked was skipped on an outbound call", {
+        key: next.key,
+        entity: next.entity,
+      });
+      record.event("outbound_question_skipped", { key: next.key, entity: next.entity });
+      form.skip(next.key);
+      next = guard < MAX_FLOW_FIELDS ? form.outstanding() : null;
+    }
     if (next === null) return;
     /* Primed, not asked: the model puts the question on its next turn, and until it has,
        what the caller says is not an answer to it. See `primed` on the awaiting state. */

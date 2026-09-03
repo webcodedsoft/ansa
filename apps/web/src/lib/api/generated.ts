@@ -1017,6 +1017,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly published: {
         readonly version: number;
         readonly note: string | null;
+        readonly shape: "form" | "flow";
         readonly publishedBy: string;
         readonly publishedAt: string;
       } | null;
@@ -1054,6 +1055,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly version: {
         readonly version: number;
         readonly note: string | null;
+        readonly shape: "form" | "flow";
         readonly publishedBy: string;
         readonly publishedAt: string;
         readonly config: {
@@ -1097,12 +1099,14 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly from: {
         readonly version: number;
         readonly note: string | null;
+        readonly shape: "form" | "flow";
         readonly publishedBy: string;
         readonly publishedAt: string;
       };
         readonly to: {
         readonly version: number;
         readonly note: string | null;
+        readonly shape: "form" | "flow";
         readonly publishedBy: string;
         readonly publishedAt: string;
       };
@@ -1115,6 +1119,22 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly keyterms: {
         readonly added: readonly (string)[];
         readonly removed: readonly (string)[];
+      };
+        readonly flow: {
+        readonly shape: {
+        readonly before: "form" | "flow";
+        readonly after: "form" | "flow";
+      };
+        readonly steps: {
+        readonly added: readonly (string)[];
+        readonly removed: readonly (string)[];
+        readonly changed: readonly (string)[];
+      };
+        readonly connections: {
+        readonly added: readonly (string)[];
+        readonly removed: readonly (string)[];
+      };
+        readonly identical: boolean;
       };
       }>(options, "GET", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}/config/diff`, input),
 
@@ -1289,6 +1309,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly items: readonly ({
         readonly version: number;
         readonly note: string | null;
+        readonly shape: "form" | "flow";
         readonly publishedBy: string;
         readonly publishedAt: string;
       })[];
@@ -1333,6 +1354,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly version: {
         readonly version: number;
         readonly note: string | null;
+        readonly shape: "form" | "flow";
         readonly publishedBy: string;
         readonly publishedAt: string;
         readonly config: {
@@ -1377,6 +1399,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       send<{
         readonly version: number;
         readonly note: string | null;
+        readonly shape: "form" | "flow";
         readonly publishedBy: string;
         readonly publishedAt: string;
         readonly config: {
@@ -2114,7 +2137,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly checkedAt: string;
         readonly configVersion: number;
         readonly checks: readonly ({
-        readonly id: "number.attached" | "number.carrier_webhook" | "number.traffic" | "greeting" | "voice" | "consent_policy" | "business_hours" | "tools" | "credentials" | "events" | "escalation" | "crisis";
+        readonly id: "number.attached" | "number.carrier_webhook" | "number.traffic" | "greeting" | "voice" | "consent_policy" | "business_hours" | "tools" | "credentials" | "events" | "escalation" | "crisis" | "flow";
         readonly title: string;
         readonly state: "ok" | "attention" | "blocked" | "unknown";
         readonly detail: string;

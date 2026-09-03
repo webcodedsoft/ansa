@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 
 import { CONTROL, IconButton, Notice, SelectField, TextAreaField, TextField } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -453,9 +453,16 @@ interface FlowCanvasProps {
    * one to a flow and found "their" canvas already there.
    */
   readonly authoringMode: "form" | "flow";
+  /**
+   * How many problems on this canvas would refuse a publish, reported on every edit.
+   *
+   * Required, not optional: the workspace disables Publish on it, and an optional callback
+   * nobody passed would be a button that lets somebody try a publish the API refuses.
+   */
+  readonly onBlockingProblems: (count: number) => void;
 }
 
-export const FlowCanvas = ({ flow, publishForm, authoringMode }: FlowCanvasProps) => {
+export const FlowCanvas = ({ flow, publishForm, authoringMode, onBlockingProblems }: FlowCanvasProps) => {
   /* Read once, on mount. Later renders keep the operator's work in front of them; the
      workspace remounts this panel with a `key` when the document underneath it changes. */
   const [loaded] = useState(() => readFlow(flow));
@@ -634,6 +641,75 @@ export const FlowCanvas = ({ flow, publishForm, authoringMode }: FlowCanvasProps
     panRef.current = null;
   };
 
+  /**
+   * The steps in the order a call meets them, for Tab.
+   *
+   * Cards are rendered in this order so that the DOM order — which is what Tab follows — is
+   * the graph's order and not the order the steps happened to be added. Breadth-first from
+   * the start, then whatever is unreachable, by position: the same shape Tidy up draws.
+   */
+  const inGraphOrder = useMemo(() => {
+    const byIdHere = new Map(nodes.map((n) => [n.id, n]));
+    const seen = new Set<string>();
+    const ordered: FlowNode[] = [];
+    const queue = nodes.filter((n) => n.kind === "start").map((n) => n.id);
+    while (queue.length > 0) {
+      const id = queue.shift();
+      if (id === undefined || seen.has(id)) continue;
+      seen.add(id);
+      const node = byIdHere.get(id);
+      if (node === undefined) continue;
+      ordered.push(node);
+      for (const edge of edges) if (edge.from === id) queue.push(edge.to);
+    }
+    const stranded = nodes.filter((n) => !seen.has(n.id)).sort((a, b) => a.y - b.y || a.x - b.x);
+    return [...ordered, ...stranded];
+  }, [nodes, edges]);
+
+  /** Wire one port to a step, the way a drop does — from the inspector, for the keyboard. */
+  const connect = (port: Port, to: string) => {
+    edit((f) => ({ ...f, edges: [...f.edges.filter((x) => !port.holds(x)), port.wire(to)] }));
+    if (port.key.startsWith("pending:") && selected !== null) {
+      const at = Number(port.key.slice("pending:".length));
+      setPending((all) => ({ ...all, [selected]: (all[selected] ?? []).filter((_, i) => i !== at) }));
+    }
+  };
+
+  /**
+   * The keyboard on a step: select, delete, nudge, leave.
+   *
+   * Connecting is not here. Dragging a wire has no keyboard shape, so the inspector offers
+   * "Connect to" on every port instead, which is a select and works with nothing but Tab and
+   * Enter. Nudging is ten pixels, forty with Shift, and is one undo entry per press.
+   */
+  const onNodeKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>, n: FlowNode) => {
+    if ((e.target as HTMLElement) !== e.currentTarget) return;
+    const step = e.shiftKey ? 40 : 10;
+    const nudge = (dx: number, dy: number) => {
+      edit((f) => ({ ...f, nodes: f.nodes.map((m) => (m.id === n.id ? { ...m, x: m.x + dx, y: m.y + dy } : m)) }));
+    };
+    switch (e.key) {
+      case "Enter":
+      case " ":
+        setSelected(n.id);
+        break;
+      case "Escape":
+        setSelected(null);
+        break;
+      case "Delete":
+      case "Backspace":
+        if (n.kind !== "start") removeNode(n.id);
+        break;
+      case "ArrowLeft": nudge(-step, 0); break;
+      case "ArrowRight": nudge(step, 0); break;
+      case "ArrowUp": nudge(0, -step); break;
+      case "ArrowDown": nudge(0, step); break;
+      default:
+        return;
+    }
+    e.preventDefault();
+  };
+
   const addNode = (kind: FlowNodeKind) => {
     const id = freshId(new Set(nodes.map((n) => n.id)));
     edit((f) => ({ ...f, nodes: [...f.nodes, blankNode(id, kind, 120 - pan.x + ((f.nodes.length % 4) * 26), 460 - pan.y)] }));
@@ -698,6 +774,10 @@ export const FlowCanvas = ({ flow, publishForm, authoringMode }: FlowCanvasProps
      most 120 nodes and the walk is linear, and a stale problem list is worse than a cheap
      one — it would tell somebody a step is fixed while the publish still refuses it. */
   const problems = validateFlow(history.present);
+  const blockingCount = problems.filter((problem) => problem.blocking).length;
+  useEffect(() => {
+    onBlockingProblems(blockingCount);
+  }, [blockingCount, onBlockingProblems]);
   /* The worst thing wrong with each step, for the mark on its card. A step with a blocking
      problem and a warning shows the blocking one; the panel below lists both. */
   const marked = useMemo(() => {
@@ -732,7 +812,15 @@ export const FlowCanvas = ({ flow, publishForm, authoringMode }: FlowCanvasProps
         </Notice>
       )}
 
-      <div className="grid items-start gap-3.5 lg:grid-cols-[186px_minmax(0,1fr)_280px]">
+      {/* A phone cannot drag a wire between two cards it cannot show side by side. Saying so
+          is more use than a canvas that pans forever; the questions themselves are one tab
+          over, and every other tab works at this width. */}
+      <Notice tone="info" className="mb-3.5 sm:hidden">
+        The canvas needs a wider screen to draw on. The questions this flow asks are on the
+        Data captured tab, and everything else about the agent can be edited here.
+      </Notice>
+
+      <div className="hidden items-start gap-3.5 sm:grid lg:grid-cols-[186px_minmax(0,1fr)_280px]">
         <div className="surface flex flex-col gap-0.5 rounded-xl p-2.5">
           {PALETTE.map((group) => (
             <div key={group.group}>
@@ -799,14 +887,21 @@ export const FlowCanvas = ({ flow, publishForm, authoringMode }: FlowCanvasProps
               )}
             </svg>
 
-            {nodes.map((n) => {
+            {inGraphOrder.map((n) => {
               const kind = NODE_KINDS[n.kind];
               const ports = portsFor(n);
               return (
                 <div
                   key={n.id}
                   data-flow-node={n.id}
+                  tabIndex={0}
+                  role="button"
+                  aria-pressed={n.id === selected}
+                  aria-label={`${kind.title}${marked.has(n.id) ? ", has a problem" : ""}. Enter selects, Delete removes, arrows move.`}
+                  onKeyDown={(e) => onNodeKeyDown(e, n)}
+                  onFocus={() => setSelected(n.id)}
                   className={cn(
+                    "focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:outline-none",
                     "glass absolute w-[208px] rounded-[13px] border select-none",
                     ready.nodes.has(n.id) || marked.get(n.id) === "blocks"
                       ? "border-[var(--bad)]"
@@ -948,6 +1043,39 @@ export const FlowCanvas = ({ flow, publishForm, authoringMode }: FlowCanvasProps
                 <p className="mb-1 font-mono text-[10px] tracking-[0.15em] text-[var(--ink-3)] uppercase">{selectedNode.kind}</p>
                 <h3 className="text-[16px] font-[640] tracking-[-0.018em]">{NODE_KINDS[selectedNode.kind].title}</h3>
               </div>
+
+              {/* Every way out of this step, and where it goes. The dots on the card do this
+                  with a drag; this does it with a select, so a keyboard can wire a graph. */}
+              {portsFor(selectedNode).length > 0 && (
+                <div className="flex flex-col gap-1.5">
+                  <p className="text-[11px] font-medium text-[var(--ink-3)]">Where each way out leads</p>
+                  {portsFor(selectedNode).map((port) => {
+                    const current = edges.find((x) => port.holds(x))?.to ?? "";
+                    return (
+                      <label key={port.key} className="flex items-center gap-2 text-[12.5px]">
+                        <span className="w-[92px] flex-none truncate font-mono text-[11px] text-[var(--ink-3)]">{port.label}</span>
+                        <select
+                          aria-label={`Where "${port.label}" leads`}
+                          value={current}
+                          onChange={(e) => {
+                            if (e.target.value !== "") connect(port, e.target.value);
+                          }}
+                          className={CONTROL}
+                        >
+                          <option value="">— nowhere yet —</option>
+                          {inGraphOrder
+                            .filter((m) => m.id !== selectedNode.id && m.kind !== "start")
+                            .map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {NODE_KINDS[m.kind].title}: {m.field?.key ?? m.text?.slice(0, 30) ?? m.tool ?? m.on ?? m.id}
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
 
               {selectedNode.kind === "say" && (
                 <TextAreaField

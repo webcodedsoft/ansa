@@ -992,6 +992,42 @@ describe("a caller who says hello while the form is listening", () => {
     expect(h.llm.completions).toHaveLength(1);
   });
 
+  /**
+   * The outbound layer tells the model never to ask a stranger for an ID. This is the half
+   * a prompt cannot hold: the engine is never armed for one, and the director is never
+   * steered to ask, whatever the form or the graph says.
+   */
+  it("never arms a question a stranger must not be asked on a call the agent placed", () => {
+    const captured: unknown[] = [];
+    const h = setup({
+      direction: "outbound",
+      fields: [
+        { ...ASKS_A_NAME, key: "nin", type: "nin", prompt: "Your NIN?" },
+        ASKS_A_NAME,
+      ],
+      recorder: {
+        started: () => undefined, event: () => undefined, transcript: () => undefined,
+        turn: () => undefined, latency: () => undefined,
+        capture: (c: unknown) => captured.push(c), ended: () => undefined,
+      } as unknown as CallRecorder,
+    });
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    // Eleven digits, which is a NIN — and on an inbound call would be read back as one.
+    h.listen.final("one two three four five six seven eight nine zero one");
+
+    expect(h.tts.texts().join(" ")).not.toMatch(/one two three|NIN/);
+    expect(captured).toEqual([]);
+    // The name, which may be asked, is what the engine is waiting for instead.
+    h.llm.last().emit("Who am I speaking with? ");
+    h.llm.last().finish();
+    h.tts.last().done();
+    h.stream.ackAll();
+    h.listen.final("Sikiru");
+    expect(h.tts.texts().at(-1)).toContain("Sikiru");
+  });
+
   it("stores the value once the caller agrees to it", () => {
     /* The whole point of a form. Everything downstream — the call page, the dataset, the
        export — reads this row, and before it existed the value survived only as an

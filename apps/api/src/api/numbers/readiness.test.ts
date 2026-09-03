@@ -33,6 +33,9 @@ const FACTS: OnboardingFacts = {
   lastCallAt: "2026-08-01T10:00:00.000Z",
   failedDeliveries: 0,
   pendingDeliveries: 0,
+  // A form, which every agent predating the graph is, and which has no graph to check.
+  flow: null,
+  authoringMode: "form",
 };
 
 const ENVIRONMENT: NumbersEnvironment = {
@@ -422,5 +425,36 @@ describe("a caller in trouble", () => {
   it("says something worse when there is no escalation either", () => {
     expect(detailOf("crisis", { crisisHandoffConfigured: false, escalationConfigured: false }))
       .toContain("reaches nobody at all");
+  });
+});
+
+describe("the published flow", () => {
+  const sound = {
+    version: 1,
+    nodes: [
+      { id: "start", kind: "start", x: 0, y: 0 },
+      { id: "end", kind: "hangup", x: 1, y: 0 },
+    ],
+    edges: [{ from: "start", to: "end" }],
+  };
+
+  it("has nothing to check on a form-authored agent", () => {
+    expect(stateOf("flow", { authoringMode: "form", flow: null })).toBe("ok");
+  });
+
+  it("passes a graph that still meets today's rules", () => {
+    expect(stateOf("flow", { authoringMode: "flow", flow: sound })).toBe("ok");
+  });
+
+  it("blocks a flow agent whose graph no longer passes, because its calls are being run as a form", () => {
+    /* A graph published under yesterday's rules: the start leads nowhere. At configuration
+       load this falls back to the list, logged at error and otherwise invisible — this is
+       where the operator finds out. */
+    const stale = { ...sound, edges: [] };
+    expect(stateOf("flow", { authoringMode: "flow", flow: stale })).toBe("blocked");
+  });
+
+  it("blocks a flow agent with no graph at all", () => {
+    expect(stateOf("flow", { authoringMode: "flow", flow: null })).toBe("blocked");
   });
 });

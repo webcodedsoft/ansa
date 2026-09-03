@@ -1,3 +1,4 @@
+import { validateFlow, type Flow } from "@ansa/shared";
 import type { OnboardingFacts } from "@ansa/db";
 import { parseConnectorConfig, parseEventConfig } from "@ansa/tools";
 
@@ -46,6 +47,7 @@ export const CHECK_IDS = [
   "events",
   "escalation",
   "crisis",
+  "flow",
 ] as const;
 
 export type CheckId = (typeof CHECK_IDS)[number];
@@ -217,6 +219,44 @@ const greetingCheck = (facts: OnboardingFacts): ReadinessCheck => {
     );
   }
   return check("greeting", title, "ok", "Callers hear this organisation's own first sentence.");
+};
+
+/**
+ * Whether the graph a call would walk still passes today's rules.
+ *
+ * The publish gate checks a graph when it is published, against the rules of that day. The
+ * rules grow — a `decide` on free text was allowed once and is refused now — and a graph
+ * published under the old rules is still the one on the agent. At configuration load
+ * `readStoredFlow` runs today's validator on it and, on a blocking problem, conducts the
+ * call as a form instead: logged at error, and invisible to everyone but whoever reads logs.
+ * This is where the operator finds out. Blocked, because the agent is not answering as the
+ * agent they published.
+ */
+const flowCheck = (facts: OnboardingFacts): ReadinessCheck => {
+  const title = "The published flow can conduct a call";
+  if (facts.authoringMode !== "flow") {
+    return check("flow", title, "ok", "This agent is built as a form, which has no graph to check.");
+  }
+  if (facts.flow === null || typeof facts.flow !== "object") {
+    return check(
+      "flow",
+      title,
+      "blocked",
+      "This agent is set to run as a flow and has no published graph, so calls are conducted as a form of whatever questions were last published.",
+      "Draw the conversation on the Flow tab and publish it.",
+    );
+  }
+  const blocking = validateFlow(facts.flow as Flow).filter((problem) => problem.blocking);
+  if (blocking.length === 0) {
+    return check("flow", title, "ok", "The published graph passes every rule a call needs.");
+  }
+  return check(
+    "flow",
+    title,
+    "blocked",
+    `The published graph no longer passes ${blocking.length === 1 ? "a rule" : `${blocking.length} rules`} that a call needs, so calls are being conducted as a form until it is fixed: ${blocking.map((problem) => problem.message).join(" ")}`,
+    "Open the Flow tab, fix the steps the problems panel names, and publish again.",
+  );
 };
 
 const voiceCheck = (probe: VoiceProbe): ReadinessCheck => {
@@ -593,6 +633,7 @@ export const evaluateReadiness = (input: ReadinessInput): ReadinessReport => {
     eventsCheck(facts, parsed),
     escalationCheck(facts, environment),
     crisisCheck(facts),
+    flowCheck(facts),
   ];
 
   return {

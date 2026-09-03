@@ -58,6 +58,14 @@ export interface OnboardingFacts {
   /** Deliveries this organisation's receivers gave up on. */
   readonly failedDeliveries: number;
   readonly pendingDeliveries: number;
+  /**
+   * The published graph and which director runs, for the readiness check that asks whether
+   * the graph a call would walk still passes today's rules.
+   *
+   * `unknown` for the same reason it is everywhere else: the API owns the shape.
+   */
+  readonly flow: unknown;
+  readonly authoringMode: "form" | "flow";
 }
 
 /**
@@ -119,7 +127,8 @@ export const loadOnboardingFacts = async (
      An id that names no live agent returns null, which reads as "not ready" — true for a
      brand-new organisation with no agent at all, and true for an archived one. */
   const agents = await scope.query<Record<string, unknown>>(
-    `select greeting, voice_id, dialled_number, escalation_to_number, escalation_from_number
+    `select greeting, voice_id, dialled_number, escalation_to_number, escalation_from_number,
+            flow, authoring_mode
        from agents
       where id = $1 and deleted_at is null`,
     [agentId],
@@ -177,5 +186,7 @@ export const loadOnboardingFacts = async (
     lastCallAt: toIsoOrNull(traffic[0]?.last_at),
     failedDeliveries: Number(deliveries[0]?.failed ?? 0),
     pendingDeliveries: Number(deliveries[0]?.pending ?? 0),
+    flow: agent["flow"] ?? null,
+    authoringMode: agent["authoring_mode"] === "flow" ? "flow" : "form",
   };
 };

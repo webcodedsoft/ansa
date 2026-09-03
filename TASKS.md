@@ -3791,6 +3791,25 @@ the gaps were silent:
   sentence-shaped non-answer, now go to the model. Rollback restores a version's questions,
   which `agent_prompt_versions.captured_fields` has held since 0029 and nothing read back.
 
+- *The edges (2026-09-03, later still).* A stranger is never asked for a NIN, BVN, OTP or
+  address on a call the agent placed — skipped in code before the engine is armed, which is
+  the half the outbound prompt layer cannot hold. A published graph that no longer passes
+  today's rules is a `blocked` readiness check, not only a log line. Publish is disabled
+  while the canvas has a blocking problem, and says how many. Versions name their shape, a
+  restore across the line asks first and counts the branches it removes, and the diff is
+  structural — a rewiring that moves no question now shows as the connection it moved. The
+  canvas has keyboard paths (Tab in graph order, Enter, Delete, arrows to nudge, and a
+  "where each way out leads" select per port, which is how a keyboard wires a graph) and
+  says plainly on a phone that it needs a wider screen.
+
+  Two things are deliberate and worth knowing rather than fixing. `record_answer` is offered
+  on every call, so a *form* agent with a free-text question now has the model record a
+  short summary of the answer instead of leaving it in the transcript — a behaviour change
+  on published agents at their next configuration load, and the one that puts those answers
+  in Collected data. And what counts as "the caller said something" rather than "the caller
+  fumbled the answer" is a heuristic — five words, or four with a question mark — chosen so
+  "Sorry, what?" gets the question again and "what promotion is that?" gets an answer.
+
 Still true after all of it: **nothing has been dialled.**
 
 **What the graph owns — one tab of ten.** An agent is far more than its conversation shape,

@@ -321,6 +321,15 @@ export interface ConfigVersionSummary {
   readonly note: string | null;
   readonly publishedBy: string;
   readonly publishedAt: string;
+  /**
+   * Whether this version answered the phone as a graph or as a list.
+   *
+   * Once an agent has been converted, its history has versions of both kinds, and a row
+   * that does not say which is a row somebody restores by mistake — a rollback across the
+   * line is a change of authoring model, and the console has to be able to say so first.
+   * `agent_prompt_versions.flow` is non-null exactly when the version was a graph.
+   */
+  readonly shape: "form" | "flow";
 }
 
 export interface ConfigVersion extends ConfigVersionSummary {
@@ -446,6 +455,8 @@ interface VersionColumns {
   readonly note: string | null;
   readonly published_by: string | null;
   readonly published_at: Date | null;
+  /** `p.flow is not null`. Absent on a read that did not ask, which reads as a form. */
+  readonly as_flow?: boolean | null;
 }
 
 /**
@@ -462,6 +473,7 @@ const toSummary = (row: VersionColumns): ConfigVersionSummary | null => {
     note: row.note,
     publishedBy: row.published_by ?? "",
     publishedAt: publishedAt.toISOString(),
+    shape: row.as_flow === true ? "flow" : "form",
   };
 };
 
@@ -499,7 +511,7 @@ export const loadCurrentAgentConfig = async (
             a.dialled_number, t.audio_retention_days, t.transcript_retention_days,
             t.consent_policy, t.consent_basis,
             t.calling_earliest_hour, t.calling_latest_hour,
-            p.version, p.note, p.published_by, p.published_at
+            p.version, p.note, p.published_by, p.published_at, (p.flow is not null) as as_flow
        from agents a
        join organizations t on t.id = a.organization_id
        left join agent_prompt_versions p
@@ -543,6 +555,7 @@ interface VersionRow {
   readonly note: string | null;
   readonly published_by: string;
   readonly published_at: Date;
+  readonly as_flow: boolean | null;
 }
 
 /**
@@ -559,7 +572,7 @@ export const listAgentConfigVersions = async (
   page: PageRequest,
 ): Promise<PageSlice<ConfigVersionSummary>> => {
   const rows = await scope.query<VersionRow & WithTotal>(
-    `select p.version, p.note, p.published_by, p.published_at, ${TOTAL_COLUMN}
+    `select p.version, p.note, p.published_by, p.published_at, (p.flow is not null) as as_flow, ${TOTAL_COLUMN}
        from agent_prompt_versions p
       where p.agent_id = $1
       ${pageOrder("p.published_at", VERSION_ORDER, 2)}`,
@@ -573,6 +586,7 @@ export const listAgentConfigVersions = async (
       note: row.note,
       publishedBy: row.published_by,
       publishedAt: row.published_at.toISOString(),
+      shape: row.as_flow === true ? "flow" : "form",
     }),
   );
 };
@@ -597,7 +611,7 @@ export const loadAgentConfigVersion = async (
   version: number,
 ): Promise<ConfigVersion | null> => {
   const rows = await scope.query<SnapshotRow>(
-    `select p.version, p.note, p.published_by, p.published_at, ${configColumns("p")}
+    `select p.version, p.note, p.published_by, p.published_at, (p.flow is not null) as as_flow, ${configColumns("p")}
        from agent_prompt_versions p
       where p.agent_id = $1 and p.version = $2`,
     [agentId, version],
@@ -625,7 +639,7 @@ export const loadConfigVersionForCall = async (
 ): Promise<CallConfigTrace | null> => {
   const rows = await scope.query<TraceRow>(
     `select c.id as call_id, c.config_version,
-            p.version, p.note, p.published_by, p.published_at, ${configColumns("p")}
+            p.version, p.note, p.published_by, p.published_at, (p.flow is not null) as as_flow, ${configColumns("p")}
        from calls c
        /* Keyed on the agent that took the call, because two agents are routinely both on
           version 3 — organization-plus-version stopped identifying a snapshot the moment an

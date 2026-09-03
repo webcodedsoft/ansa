@@ -39,6 +39,8 @@ import type {
   LiveConfiguration,
   readTools,
 } from "../agents.service";
+import { branchCount } from "../flow-questions";
+import { readFlow } from "../flow.schema";
 import { ConversationTab } from "./conversation-tab";
 import { DataCapturedTab } from "./data-captured-tab";
 import { FlowCanvas } from "./flow-canvas";
@@ -232,6 +234,9 @@ export const AgentWorkspace = ({
      agent runs on are two separate saves and either can be the only one made. */
   const stagedFlow = graph.draft?.flow ?? graph.flow;
   const stagedMode = graph.draft?.authoringMode ?? graph.authoringMode;
+  /* For the Versions tab, which counts what a restore back to a form would remove. */
+  const drawn = readFlow(stagedFlow);
+  const liveBranches = drawn === null ? 0 : branchCount(drawn);
 
   useFormToast(state, (data) => `Published version ${data.version}.`);
   useFormToast(saveState, () => "Saved. Nothing is live until you publish.");
@@ -246,6 +251,12 @@ export const AgentWorkspace = ({
   /* Held here rather than left to the textarea, so closing the dialog and opening it again
      does not lose a sentence somebody already typed. */
   const [asking, setAsking] = useState(false);
+  /* What the canvas reports each edit: how many of its problems would refuse a publish. The
+     API refuses them anyway; this is so the button says so first, and says where, instead of
+     letting somebody write a publish note for a publish that cannot happen. Only a flow's
+     problems count — a form agent's canvas is a hidden panel nobody is looking at. */
+  const [flowBlocking, setFlowBlocking] = useState(0);
+  const cannotPublish = stagedMode === "flow" && flowBlocking > 0;
   /* Offered rather than imposed: when the draft was loaded from a version, that is the most
      likely honest note, and it is the provenance the old rollback used to write by itself. */
   const [note, setNote] = useState(
@@ -366,11 +377,16 @@ export const AgentWorkspace = ({
           />
           <Button
             variant="primary"
-            disabled={pending || saving || discarding}
+            disabled={pending || saving || discarding || cannotPublish}
             aria-busy={pending}
+            title={
+              cannotPublish
+                ? `The Flow tab has ${flowBlocking === 1 ? "a problem" : `${flowBlocking} problems`} that must be fixed first.`
+                : undefined
+            }
             onClick={() => setAsking(true)}
           >
-            {pending ? "Publishing…" : "Publish"}
+            {pending ? "Publishing…" : cannotPublish ? `Fix ${flowBlocking} on the Flow tab` : "Publish"}
           </Button>
         </div>
       </header>
@@ -413,7 +429,7 @@ export const AgentWorkspace = ({
                 <OverviewTab stats={stats} attention={attention} recentCalls={recentCalls} />
               ),
             },
-            { id: "flow", label: "Flow", panel: <FlowCanvas key={shownAs([stagedFlow, stagedMode])} flow={stagedFlow} publishForm={PUBLISH_FORM} authoringMode={stagedMode} /> },
+            { id: "flow", label: "Flow", panel: <FlowCanvas key={shownAs([stagedFlow, stagedMode])} flow={stagedFlow} publishForm={PUBLISH_FORM} authoringMode={stagedMode} onBlockingProblems={setFlowBlocking} /> },
             { id: "conversation", label: "Conversation", problem: problemTabs.has("conversation"), panel: <ConversationTab key={shownAs(config)} agent={staged} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
             { id: "data", label: "Data captured", panel: <DataCapturedTab key={shownAs([staged.capturedFields, stagedFlow])} agent={staged} authoringMode={stagedMode} flow={stagedFlow} /> },
             { id: "tools", label: "Tools", panel: <ToolsTab key={shownAs(staged.enabledTools)} agent={staged} tools={tools} /> },
@@ -425,7 +441,7 @@ export const AgentWorkspace = ({
             { id: "voice", label: "Voice", problem: problemTabs.has("voice"), panel: <VoiceTab key={shownAs(config)} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
             { id: "policies", label: "Policies", problem: problemTabs.has("policies"), panel: <PolicyTab key={shownAs(config)} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
             { id: "routing", label: "Routing & hours", problem: problemTabs.has("routing"), panel: <RoutingTab key={shownAs(config)} agentId={agent.agentId} held={held} config={config} operatorManaged={operatorManaged} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
-            { id: "versions", label: "Versions", panel: <VersionsTab agentId={agent.agentId} versions={versions} liveVersion={agent.configVersion} /> },
+            { id: "versions", label: "Versions", panel: <VersionsTab agentId={agent.agentId} versions={versions} liveVersion={agent.configVersion} liveShape={stagedMode} liveBranches={liveBranches} /> },
           ]}
         />
       </form>

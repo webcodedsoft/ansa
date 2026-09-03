@@ -1,7 +1,8 @@
 import type { AgentConfigFields } from "@ansa/db";
+import type { Flow } from "@ansa/shared";
 import { describe, expect, it } from "vitest";
 
-import { diffConfigurations } from "./diff";
+import { diffConfigurations, diffFlows } from "./diff";
 
 /**
  * The comparison behind "it was working yesterday".
@@ -163,5 +164,76 @@ describe("keyterms", () => {
     expect(diff.identical).toBe(false);
     // A keyterm change is not a field change: the list is not one of the flattened leaves.
     expect(diff.fields).toEqual([]);
+  });
+});
+
+describe("what changed in a graph", () => {
+  const field = (key: string) => ({
+    key, type: "choice" as const, prompt: `${key}?`, capture: "speech" as const, confirm: "none" as const,
+    pattern: "", attempts: 3, required: true, options: ["rent", "buy"],
+  });
+  const graph = (arm: "rent" | "buy"): Flow => ({
+    version: 1,
+    nodes: [
+      { id: "start", kind: "start", x: 0, y: 0 },
+      { id: "intent", kind: "collect", x: 1, y: 0, field: field("intent") },
+      { id: "d", kind: "decide", x: 2, y: 0, on: "intent" },
+      { id: "deposit", kind: "collect", x: 3, y: 0, field: { ...field("deposit"), type: "amount", options: [] } },
+      { id: "end", kind: "hangup", x: 4, y: 0 },
+    ],
+    edges: [
+      { from: "start", to: "intent" },
+      { from: "intent", to: "d" },
+      { from: "d", to: "deposit", when: { equals: arm } },
+      { from: "d", to: "end", otherwise: true },
+      { from: "deposit", to: "end" },
+    ],
+  });
+
+  it("sees a rewiring that leaves every question where it was", () => {
+    /* The projection of both is the same list — intent, then deposit — so the field diff
+       says nothing. To a caller, the deposit question moved from the renters to the buyers,
+       which is the change most worth seeing. */
+    const change = diffFlows({ shape: "flow", flow: graph("rent") }, { shape: "flow", flow: graph("buy") });
+
+    expect(change.identical).toBe(false);
+    expect(change.steps).toEqual({ added: [], removed: [], changed: [] });
+    expect(change.connections.removed).toEqual(['decide "intent" → collect "deposit" (is "rent")']);
+    expect(change.connections.added).toEqual(['decide "intent" → collect "deposit" (is "buy")']);
+  });
+
+  it("ignores a step that only moved on the canvas", () => {
+    const moved: Flow = { ...graph("rent"), nodes: graph("rent").nodes.map((n) => ({ ...n, x: n.x + 100, y: 50 })) };
+
+    expect(diffFlows({ shape: "flow", flow: graph("rent") }, { shape: "flow", flow: moved }).identical).toBe(true);
+  });
+
+  it("names steps added, removed and changed", () => {
+    const after: Flow = {
+      ...graph("rent"),
+      nodes: [
+        ...graph("rent").nodes.filter((n) => n.id !== "deposit").map((n) =>
+          n.id === "intent" ? { ...n, field: { ...field("intent"), prompt: "Rent, or buy?" } } : n,
+        ),
+        { id: "thanks", kind: "say", x: 5, y: 0, text: "Thank them" },
+      ],
+    };
+
+    const change = diffFlows({ shape: "flow", flow: graph("rent") }, { shape: "flow", flow: after });
+
+    expect(change.steps.added).toEqual(['say "Thank them"']);
+    expect(change.steps.removed).toEqual(['collect "deposit"']);
+    expect(change.steps.changed).toEqual(['collect "intent"']);
+  });
+
+  it("reports a change of authoring model as a change, whatever else moved", () => {
+    const change = diffFlows({ shape: "form", flow: null }, { shape: "flow", flow: graph("rent") });
+
+    expect(change.identical).toBe(false);
+    expect(change.shape).toEqual({ before: "form", after: "flow" });
+  });
+
+  it("says two form versions are identical, having no graph to compare", () => {
+    expect(diffFlows({ shape: "form", flow: null }, { shape: "form", flow: null }).identical).toBe(true);
   });
 });

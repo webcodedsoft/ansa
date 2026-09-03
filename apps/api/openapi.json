@@ -2527,6 +2527,13 @@
                           ],
                           "maxLength": 500
                         },
+                        "shape": {
+                          "type": "string",
+                          "enum": [
+                            "form",
+                            "flow"
+                          ]
+                        },
                         "publishedBy": {
                           "type": "string",
                           "maxLength": 200
@@ -2539,6 +2546,7 @@
                       "required": [
                         "version",
                         "note",
+                        "shape",
                         "publishedBy",
                         "publishedAt"
                       ],
@@ -2783,6 +2791,13 @@
                           ],
                           "maxLength": 500
                         },
+                        "shape": {
+                          "type": "string",
+                          "enum": [
+                            "form",
+                            "flow"
+                          ]
+                        },
                         "publishedBy": {
                           "type": "string",
                           "maxLength": 200
@@ -2950,6 +2965,7 @@
                       "required": [
                         "version",
                         "note",
+                        "shape",
                         "publishedBy",
                         "publishedAt",
                         "config"
@@ -3091,6 +3107,13 @@
                           ],
                           "maxLength": 500
                         },
+                        "shape": {
+                          "type": "string",
+                          "enum": [
+                            "form",
+                            "flow"
+                          ]
+                        },
                         "publishedBy": {
                           "type": "string",
                           "maxLength": 200
@@ -3103,6 +3126,7 @@
                       "required": [
                         "version",
                         "note",
+                        "shape",
                         "publishedBy",
                         "publishedAt"
                       ],
@@ -3122,6 +3146,13 @@
                           ],
                           "maxLength": 500
                         },
+                        "shape": {
+                          "type": "string",
+                          "enum": [
+                            "form",
+                            "flow"
+                          ]
+                        },
                         "publishedBy": {
                           "type": "string",
                           "maxLength": 200
@@ -3134,6 +3165,7 @@
                       "required": [
                         "version",
                         "note",
+                        "shape",
                         "publishedBy",
                         "publishedAt"
                       ],
@@ -3195,6 +3227,106 @@
                         "removed"
                       ],
                       "additionalProperties": false
+                    },
+                    "flow": {
+                      "type": "object",
+                      "properties": {
+                        "shape": {
+                          "type": "object",
+                          "properties": {
+                            "before": {
+                              "type": "string",
+                              "enum": [
+                                "form",
+                                "flow"
+                              ]
+                            },
+                            "after": {
+                              "type": "string",
+                              "enum": [
+                                "form",
+                                "flow"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "before",
+                            "after"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "steps": {
+                          "type": "object",
+                          "properties": {
+                            "added": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 200
+                              },
+                              "maxItems": 120
+                            },
+                            "removed": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 200
+                              },
+                              "maxItems": 120
+                            },
+                            "changed": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 200
+                              },
+                              "maxItems": 120
+                            }
+                          },
+                          "required": [
+                            "added",
+                            "removed",
+                            "changed"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "connections": {
+                          "type": "object",
+                          "properties": {
+                            "added": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 500
+                              },
+                              "maxItems": 240
+                            },
+                            "removed": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 500
+                              },
+                              "maxItems": 240
+                            }
+                          },
+                          "required": [
+                            "added",
+                            "removed"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "identical": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "shape",
+                        "steps",
+                        "connections",
+                        "identical"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -3202,7 +3334,8 @@
                     "to",
                     "identical",
                     "fields",
-                    "keyterms"
+                    "keyterms",
+                    "flow"
                   ],
                   "additionalProperties": false
                 }
@@ -4553,6 +4686,13 @@
                             ],
                             "maxLength": 500
                           },
+                          "shape": {
+                            "type": "string",
+                            "enum": [
+                              "form",
+                              "flow"
+                            ]
+                          },
                           "publishedBy": {
                             "type": "string",
                             "maxLength": 200
@@ -4565,6 +4705,7 @@
                         "required": [
                           "version",
                           "note",
+                          "shape",
                           "publishedBy",
                           "publishedAt"
                         ],
@@ -4872,6 +5013,13 @@
                           ],
                           "maxLength": 500
                         },
+                        "shape": {
+                          "type": "string",
+                          "enum": [
+                            "form",
+                            "flow"
+                          ]
+                        },
                         "publishedBy": {
                           "type": "string",
                           "maxLength": 200
@@ -5039,6 +5187,7 @@
                       "required": [
                         "version",
                         "note",
+                        "shape",
                         "publishedBy",
                         "publishedAt",
                         "config"
@@ -5195,6 +5344,13 @@
                         "null"
                       ],
                       "maxLength": 500
+                    },
+                    "shape": {
+                      "type": "string",
+                      "enum": [
+                        "form",
+                        "flow"
+                      ]
                     },
                     "publishedBy": {
                       "type": "string",
@@ -5363,6 +5519,7 @@
                   "required": [
                     "version",
                     "note",
+                    "shape",
                     "publishedBy",
                     "publishedAt",
                     "config"
@@ -7136,7 +7293,8 @@
                               "credentials",
                               "events",
                               "escalation",
-                              "crisis"
+                              "crisis",
+                              "flow"
                             ]
                           },
                           "title": {

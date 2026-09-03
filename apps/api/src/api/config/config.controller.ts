@@ -23,7 +23,7 @@ import {
   type ConfigVersion,
   type AgentConfigFields,
 } from "@ansa/db";
-import { projectToCapturedFields, type Flow } from "@ansa/shared";
+import { FLOW_LIMITS, projectToCapturedFields, type Flow } from "@ansa/shared";
 import { Controller, Delete, Get, Inject, NotFoundException, Post, Put } from "@nestjs/common";
 
 import { LIMITS } from "../../prompts/organization-layer";
@@ -42,6 +42,7 @@ import {
   object,
   text,
   type Infer,
+  type Schema,
 } from "../http/schema";
 import {
   capturedField,
@@ -52,7 +53,9 @@ import {
 } from "../schemas";
 import { OrganizationContext } from "../tenancy/organization-context";
 
-import { diffConfigurations } from "./diff";
+import { authoringMode } from "../agents/flow.schema";
+
+import { diffConfigurations, diffFlows } from "./diff";
 import {
   effectiveKeyterms,
   flowPublicationProblems,
@@ -198,6 +201,8 @@ const publication = object({
 const VERSION_SUMMARY = {
   version: integer({ minimum: 0 }),
   note: nullable(text({ maxLength: MAX_NOTE_CHARS })),
+  /** Whether this version answered as a graph or a list. Restoring across the line asks first. */
+  shape: authoringMode(),
   /** The database role that published it. A person once the dashboard is the only writer. */
   publishedBy: text({ maxLength: 200 }),
   publishedAt: timestamp(),
@@ -315,15 +320,30 @@ const fieldChange = object({
   after: nullable(text()),
 });
 
+const stepNames = (): Schema<readonly string[]> => list(text({ maxLength: 200 }), { maxItems: FLOW_LIMITS.nodes });
+const connectionNames = (): Schema<readonly string[]> => list(text({ maxLength: 500 }), { maxItems: FLOW_LIMITS.edges });
+
 const versionDiff = object({
   from: versionSummary,
   to: versionSummary,
-  /** True when the two versions would produce the same agent. Both lists are then empty. */
+  /** True when the two versions would produce the same agent. Every list is then empty. */
   identical: flag(),
   fields: list(fieldChange),
   keyterms: object({
     added: list(text({ maxLength: MAX_KEYTERM_CHARS })),
     removed: list(text({ maxLength: MAX_KEYTERM_CHARS })),
+  }),
+  /**
+   * What changed in the graph, when either version was one.
+   *
+   * The field list is the graph's projection and a rewiring does not move it, so without
+   * this a version that sends callers down a different branch reads as "identical".
+   */
+  flow: object({
+    shape: object({ before: authoringMode(), after: authoringMode() }),
+    steps: object({ added: stepNames(), removed: stepNames(), changed: stepNames() }),
+    connections: object({ added: connectionNames(), removed: connectionNames() }),
+    identical: flag(),
   }),
 });
 
@@ -432,6 +452,7 @@ const toSummary = (version: ConfigVersion): Infer<typeof versionSummary> => ({
   note: version.note,
   publishedBy: version.publishedBy,
   publishedAt: version.publishedAt,
+  shape: version.shape,
 });
 
 const toVocabulary = (configured: readonly string[]): Infer<typeof vocabulary> => ({
@@ -502,16 +523,25 @@ export class ConfigController {
     const pair = await this.db.tx(async (scope) => ({
       from: await loadAgentConfigVersion(scope, path.agentId, query.from),
       to: await loadAgentConfigVersion(scope, path.agentId, query.to),
+      fromFlow: await loadFlowAtVersion(scope, path.agentId, query.from),
+      toFlow: await loadFlowAtVersion(scope, path.agentId, query.to),
     }));
 
     // 404 for either, and deliberately without saying which: under RLS another
     // organisation's version and one that never existed are the same query result.
     const { from, to } = pair;
     if (from === null || to === null) throw new NotFoundException();
+    const config = diffConfigurations(from.config, to.config);
+    const flow = diffFlows(
+      { shape: from.shape, flow: pair.fromFlow },
+      { shape: to.shape, flow: pair.toFlow },
+    );
     return {
       from: toSummary(from),
       to: toSummary(to),
-      ...diffConfigurations(from.config, to.config),
+      ...config,
+      flow,
+      identical: config.identical && flow.identical,
     };
   }
 
