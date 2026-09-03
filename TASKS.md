@@ -3653,6 +3653,94 @@ my own claim and did not survive checking.
       clone where `next dev` has not run, an untracked `next-env.d.ts` would fail the web
       typecheck. Left tracked.
 
+## Slice 11 — The flow builder (2026-09-03)
+
+A second way to author an agent: a node graph that branches, beside the form that exists.
+Chosen deliberately over the cheaper option — the graph is **stored and is the source of
+truth** for agents built with it, and a call follows it. This is a second execution model,
+not a drawing over a prompt.
+
+Full plan, with the data shapes and the reasoning: the Flow Builder Implementation Plan
+artifact. What follows is the part this file is for — the order, and what proves each step.
+
+**The finding the whole design rests on.** `armNextField()` asks `form.outstanding()`, and
+that method is one line in `form.ts`:
+
+```ts
+outstanding: () => ordered.find((field) => !settled(field)) ?? null,
+```
+
+That `find` *is* the linear assumption behind every call. So: **one `Form` interface, two
+directors behind it** — the list director that exists, and a graph director that walks
+nodes. The orchestrator does not change. A branch inside the orchestrator asking "am I a
+flow agent" would be the same mistake as a second tool dispatch path.
+
+**The graph projects onto `capturedFields`.** Seventeen source files read that list — the
+Collected data columns, the field builder, `call-settings.ts`, `captured-fields.ts`, drafts
+and publish. Every `collect` node writes its field into the list on publish, topologically
+ordered. The projection is lossy and one-way, which is exactly why the graph is stored
+rather than derived, and why flow → form is a destructive, confirmed conversion.
+
+- [ ] **S1 — Persist the graph, linear only.** Migration (`flow jsonb` and
+      `authoring_mode` on `agents`, `flow jsonb` on `agent_config_drafts` and
+      `agent_prompt_versions`), schema, validation, canvas save and publish, the projection.
+      `decide` stays out of the palette. Calls still run the list director on the projection,
+      so the call path carries no risk in this slice.
+      **Done when** an agent authored entirely on the canvas answers a real call and collects
+      its fields in the drawn order.
+
+- [ ] **S2 — The graph director, behind the same interface.** `createFlowForm` satisfying
+      `Form`, running *linear* graphs, selected by `authoring_mode` at call setup. No new
+      behaviour; identical behaviour is the whole point. The existing form tests become a
+      shared suite run against both directors — a difference is a bug in the new one, and
+      that comparison is only possible while the graphs are still linear. Do not skip this to
+      get to branching sooner; the window closes.
+      **Done when** the shared suite passes against both directors and a real call on a flow
+      agent is indistinguishable from before.
+
+- [ ] **S3 — Branching.** The `decide` node, edge conditions (`equals`, `oneOf`, `isEmpty`,
+      `greaterThan` — no expression language), the static validation below, and the runtime
+      cases: a value volunteered for a branch not taken is accepted and stored anyway; a
+      correction to the value a branch was chosen on re-evaluates and moves, keeping what was
+      collected on the abandoned branch but no longer requiring it; `complete()` means a
+      terminal was reached, not that a flat list emptied.
+      **Done when** a real call takes one branch, and a second real call corrects its answer
+      mid-call and moves to the other.
+
+- [ ] **S4 — Authoring surface.** Method choice on the existing `/agents/new` screen rather
+      than a second chooser page before it; mode locking so a flow agent's Conversation and
+      Data captured tabs are read-only; publish errors that land on the offending node the way
+      `FIELD_TAB` lands them on a tab; form → flow conversion; confirmed flow → form
+      flattening that says how many branches it destroys; keyboard paths for add/select/
+      connect/delete; an honest small-screen state instead of unusable wiring.
+      **Done when** somebody who has not seen the canvas builds a working agent on it without
+      being told how, and a deliberately broken graph explains itself.
+
+**Publish must refuse, naming the node:** no path to a terminal; a cycle; a `decide` on a
+field not collected on every path that reaches it (the subtlest bug this can ship, and
+statically decidable — the rule to insist on); a `decide` with no `otherwise`; duplicate
+field keys; more than one `start`, or none. Unreachable nodes are shown as unreachable
+rather than compiled in silently.
+
+**The rule that outranks those:** any flow failure at runtime degrades into speech, never
+into silence. If the director cannot decide where to go — meaning validation has a hole — it
+returns null from `outstanding()` and the call continues as an ordinary conversation, with
+the node named in the log. Plus a hard step ceiling per call, so a cycle that escaped
+validation cannot spin.
+
+**Not in this slice**, and each for a stated reason: an expression language on edges (a tool
+call is the answer); sub-flows and reusable fragments (real at eight agents, speculative now,
+and they make validation much harder); live call tracing on the canvas (a different feature,
+needs the runtime to emit node transitions); `say` nodes as a script (the product's advantage
+is that it converses — a graph that scripts every sentence throws that away).
+
+**Open before S3.** Does a `decide` ever ask a question of its own, or is branching on an
+uncollected field simply refused at publish (assumed above)? Do a `tool` node's `ok`/`failed`
+ports really branch — that needs the graph director to observe tool dispatch, which `Form`
+cannot currently see, so it is likely its own slice. And an in-flight call keeps the config
+version it started with; a stored graph inherits that, which is right but should be stated
+rather than inherited by accident.
+
 ## Session discipline
 
 - Update this file before you stop working. Check boxes, note what broke.
