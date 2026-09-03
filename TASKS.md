@@ -3742,6 +3742,13 @@ covered what the form already does:
   holds canvas actions only: fit, tidy, undo, redo. The header's unpublished-changes tag covers
   graph edits too.
 
+**Versions, once history has two shapes.** Restore already loads an old snapshot into the
+draft rather than publishing it, which is right and stays. What is new: a converted agent has
+versions that are lists and versions that are graphs, so the list names the shape per row, and
+restoring a pre-conversion version is a change of authoring model — the confirmation says so
+and counts the branches it discards. The diff must be structural: diffing only the projected
+field list reports *no changes* for a rewiring, which is the one change most worth seeing.
+
 **Publish must refuse, naming the node:** no path to a terminal; a cycle; a `decide` on a
 field not collected on every path that reaches it (the subtlest bug this can ship, and
 statically decidable — the rule to insist on); a `decide` with no `otherwise`; duplicate
