@@ -17,7 +17,7 @@
  * silently dropping the forty-first would lose it on a call instead.
  */
 
-import type { Flow, FlowField, FlowNode } from "./flow";
+import type { Flow, FlowCondition, FlowField, FlowNode } from "./flow";
 
 /**
  * Canvas order, and deliberately not insertion order.
@@ -164,30 +164,29 @@ export const projectToCapturedFields = (flow: Flow): readonly FlowField[] => {
 };
 
 /**
- * The field keys collected on *every* path that reaches this node.
+ * A must-analysis over the reachable graph: what is *certain* to have happened by the time a
+ * call arrives at each node.
  *
- * Intersection across incoming paths, never union. This populates a decide node's "branch on"
- * dropdown, and a union would offer a field collected only down the other arm — the branch
- * would then read an empty value on half its calls, which looks like a bug in the caller's
- * answer rather than in the wiring.
+ * Two questions share this one fixpoint. Which answers is the call certain to hold — what a
+ * `decide` may branch on, and the publish gate's subtlest rule. And which branches is the call
+ * certain to have taken — how the Data captured tab says "asked when looking to rent" beside
+ * a question. Both are "for every path from start to here", which is intersection across
+ * predecessors, never union: something true down one arm of a branch and not the other must
+ * not survive the merge.
  *
- * A node's own field is not collected before it, so a collect node never offers itself.
- * An unreachable node gets nothing: no path reaches it, so nothing is guaranteed.
+ * `contributed(pred, node)` is what crossing the edge pred→node adds — the answer pred saves,
+ * or the condition the edge carries — keyed by string so the sets can be compared.
+ *
+ * Every node starts optimistic and only ever loses members. Starting from everything is what
+ * makes a loop converge on the right answer instead of on nothing: a node inside a cycle
+ * would otherwise intersect against its own not-yet-computed self and empty.
  */
-export const fieldsCollectedBefore = (flow: Flow, nodeId: string): ReadonlySet<string> => {
-  const graph = readGraph(flow);
+const mustHold = (
+  graph: Graph,
+  universe: ReadonlySet<string>,
+  contributed: (predId: string, nodeId: string) => readonly string[],
+): ReadonlyMap<string, ReadonlySet<string>> => {
   const startId = graph.start?.id;
-  if (!graph.reachable.has(nodeId) || nodeId === startId) return new Set();
-
-  const universe = new Set<string>();
-  for (const id of graph.reachable) {
-    const key = collectedKey(graph.byId.get(id));
-    if (key !== undefined) universe.add(key);
-  }
-
-  // A "must" analysis, so every node starts optimistic and only ever loses keys. Starting from
-  // everything is what makes a loop converge on the right answer instead of on nothing: a node
-  // inside a cycle would otherwise intersect against its own not-yet-computed self and empty.
   const before = new Map<string, Set<string>>();
   for (const id of graph.reachable) before.set(id, id === startId ? new Set() : new Set(universe));
 
@@ -200,15 +199,14 @@ export const fieldsCollectedBefore = (flow: Flow, nodeId: string): ReadonlySet<s
       let seeded = false;
       for (const pred of graph.predecessors.get(id) ?? []) {
         if (!graph.reachable.has(pred)) continue;
-        const leaving = new Set(before.get(pred) ?? []);
-        const key = collectedKey(graph.byId.get(pred));
-        if (key !== undefined) leaving.add(key);
+        const arriving = new Set(before.get(pred) ?? []);
+        for (const added of contributed(pred, id)) arriving.add(added);
         if (!seeded) {
-          for (const held of leaving) next.add(held);
+          for (const held of arriving) next.add(held);
           seeded = true;
           continue;
         }
-        for (const held of [...next]) if (!leaving.has(held)) next.delete(held);
+        for (const held of [...next]) if (!arriving.has(held)) next.delete(held);
       }
       const current = before.get(id);
       const changed =
@@ -219,6 +217,115 @@ export const fieldsCollectedBefore = (flow: Flow, nodeId: string): ReadonlySet<s
       }
     }
   }
+  return before;
+};
 
-  return before.get(nodeId) ?? new Set();
+/**
+ * The answers a call is certain to hold on arrival at every reachable node, in one pass.
+ *
+ * The validator asks this for every `decide` on the graph, and the fixpoint above already
+ * computes the answer for all nodes at once — asking per node would rebuild the graph and
+ * re-run the fixpoint once per decide, on the answer path, where `readStoredFlow` runs it on
+ * every configuration load.
+ */
+export const fieldsCollectedBeforeEach = (flow: Flow): ReadonlyMap<string, ReadonlySet<string>> => {
+  const graph = readGraph(flow);
+  const universe = new Set<string>();
+  for (const id of graph.reachable) {
+    const key = collectedKey(graph.byId.get(id));
+    if (key !== undefined) universe.add(key);
+  }
+  return mustHold(graph, universe, (pred) => {
+    const key = collectedKey(graph.byId.get(pred));
+    return key === undefined ? [] : [key];
+  });
+};
+
+/**
+ * The answers a call is certain to hold when it arrives at `nodeId`.
+ *
+ * Certain, not possible: intersection across every path from start. Populates a decide node's
+ * "branch on" dropdown, and a union would offer a field collected only down the other arm —
+ * the branch on a value the call might not have, which is a call that stalls.
+ *
+ * Empty for the start node and for anything unreachable, because nothing has been asked yet
+ * on the way to either.
+ */
+export const fieldsCollectedBefore = (flow: Flow, nodeId: string): ReadonlySet<string> =>
+  fieldsCollectedBeforeEach(flow).get(nodeId) ?? new Set();
+
+/** One branch a call had to take to reach a step, as the Data captured tab phrases it. */
+export interface BranchTaken {
+  /** The answer the branch was decided on. */
+  readonly on: string;
+  /** Null is the catch-all — "anything else". */
+  readonly when: FlowCondition | null;
+}
+
+/**
+ * The branches a call is certain to have taken on its way to `nodeId`.
+ *
+ * "Asked when looking to rent" is only true if *every* route to the question passes through
+ * that branch — a question reachable both through a branch and around it is asked always, and
+ * saying otherwise would tell an operator a caller is spared a question they are not. So this
+ * is the same must-analysis as the answers, over conditional edges instead of collect nodes.
+ *
+ * In canvas order, so the phrasing reads as the call would meet the branches. Empty means the
+ * step is on every call.
+ */
+export const branchesTakenBefore = (flow: Flow, nodeId: string): readonly BranchTaken[] => {
+  const graph = readGraph(flow);
+  if (!graph.reachable.has(nodeId)) return [];
+
+  const conditional = new Map<string, BranchTaken>();
+  for (const edge of flow.edges) {
+    if (edge.when === undefined && edge.otherwise !== true) continue;
+    const on = graph.byId.get(edge.from)?.on;
+    if (on === undefined || on === "") continue;
+    conditional.set(`${edge.from} -> ${edge.to}`, { on, when: edge.when ?? null });
+  }
+
+  const held = mustHold(graph, new Set(conditional.keys()), (pred, node) => {
+    const key = `${pred} -> ${node}`;
+    return conditional.has(key) ? [key] : [];
+  });
+
+  const order = new Map(walk(graph).map((node, at) => [node.id, at]));
+  return [...(held.get(nodeId) ?? [])]
+    .sort((a, b) => (order.get(a.split(" -> ")[0] ?? "") ?? 0) - (order.get(b.split(" -> ")[0] ?? "") ?? 0))
+    .map((key) => conditional.get(key))
+    .filter((branch): branch is BranchTaken => branch !== undefined);
+};
+
+/**
+ * Whether two steps can both run on one call.
+ *
+ * On a graph without loops that is "one reaches the other". Two collect nodes sharing a field
+ * key on opposite arms of a branch never both run, so one answer slot is exactly right for
+ * them; the same two on one path would have the second silently overwrite the first, which is
+ * what `duplicate-field-key` refuses.
+ */
+export const canBothRun = (flow: Flow, aId: string, bId: string): boolean => {
+  const graph = readGraph(flow);
+  const reaches = (from: string, to: string): boolean => {
+    const seen = new Set<string>();
+    const pending = [...(graph.successors.get(from) ?? [])];
+    while (pending.length > 0) {
+      const id = pending.pop();
+      if (id === undefined || seen.has(id)) continue;
+      if (id === to) return true;
+      seen.add(id);
+      for (const next of graph.successors.get(id) ?? []) pending.push(next);
+    }
+    return false;
+  };
+  return reaches(aId, bId) || reaches(bId, aId);
+};
+
+/** The reachable steps, for rules that must count what a call can meet and nothing else. */
+export const reachableNodes = (flow: Flow): readonly FlowNode[] => {
+  const graph = readGraph(flow);
+  return [...graph.reachable]
+    .map((id) => graph.byId.get(id))
+    .filter((node): node is FlowNode => node !== undefined);
 };

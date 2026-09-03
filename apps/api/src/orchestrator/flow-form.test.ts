@@ -42,6 +42,7 @@ const asCollected = (field: FlowField): CollectedField => ({
   required: field.required,
   pattern: field.pattern,
   attempts: field.attempts,
+  options: field.options,
 });
 
 const at = (id: string, kind: FlowNode["kind"], over: Partial<FlowNode> = {}): FlowNode => ({
@@ -114,10 +115,12 @@ describe("a graph that does not branch", () => {
    * branch.
    */
   it("walks a straight line exactly as the list director does", () => {
+    /* Engine-heard questions only. A choice or free text is where the two directors part on
+       purpose: the list leaves them to the transcript, the graph waits for the model to record
+       them, because a branch may depend on the answer. That difference is tested below, not
+       hidden inside a parity claim. */
     const fields = [
       question({ key: "callerName", type: "name" }),
-      // Neither director can capture free text, and neither may block on it.
-      question({ key: "reasonForCall", type: "text" }),
       question({ key: "policyNumber", type: "reference" }),
       question({ key: "claimNumber", type: "reference" }),
       question({ key: "callbackNumber", type: "phone", required: false }),
@@ -502,21 +505,95 @@ describe("nodes that are not questions", () => {
     expect(director.outstanding()?.key).toBe("policyNumber");
   });
 
-  it("passes through a question the engine cannot capture instead of blocking on it", () => {
+  it("holds at a choice for the model to record, arming the engine for nothing", () => {
     const director = createFlowForm(
       chain([
         at("start", "start"),
-        collect(question({ key: "reasonForCall", type: "text" })),
-        collect(question({ key: "branch", type: "choice", options: ["Lagos", "Abuja"] })),
+        collect(question({ key: "branch", type: "choice", prompt: "Which branch?", options: ["Lagos", "Abuja"] })),
         collect(question()),
         at("end", "hangup"),
       ]),
     );
-    // Required, and still not asked for: nothing can capture them, so waiting is waiting
-    // forever. The model asks, and the answer stays in the transcript.
+    /* The engine cannot hear "Lagos, I think" as a value with a shape, so nothing is armed —
+       but the walk does not move past the question either. Moving past it is what made every
+       caller take the `otherwise` arm of a branch that read this answer. */
+    expect(director.outstanding()).toBeNull();
+    expect(director.complete()).toBe(false);
+    expect(director.guidance()?.next).toEqual({
+      kind: "ask-choice",
+      key: "branch",
+      prompt: "Which branch?",
+      options: ["Lagos", "Abuja"],
+    });
+    expect(director.answerable("branch")).toEqual({ type: "choice", options: ["Lagos", "Abuja"] });
+    expect(director.answerable("policyNumber")).toBeNull();
+
+    // The model records it, as `record_answer` does, and the walk moves on.
+    director.satisfy("branch", "Lagos", false);
     expect(director.outstanding()?.key).toBe("policyNumber");
+    expect(director.guidance()?.next).toMatchObject({ kind: "ask", field: { key: "policyNumber" } });
     director.satisfy("policyNumber", "PM8592625", true);
     expect(director.complete()).toBe(true);
+    expect(director.guidance()?.next).toEqual({ kind: "end" });
+  });
+
+  it("branches on a recorded choice, which is the case every menu is", () => {
+    const director = createFlowForm(
+      flow(
+        [
+          at("start", "start"),
+          collect(question({ key: "intent", type: "choice", options: ["rent", "buy"] })),
+          at("d", "decide", { on: "intent" }),
+          collect(question({ key: "budget", type: "amount" })),
+          collect(question({ key: "deposit", type: "amount" })),
+          at("end", "hangup"),
+        ],
+        [
+          { from: "start", to: "intent" },
+          { from: "intent", to: "d" },
+          { from: "d", to: "budget", when: { equals: "rent" } },
+          { from: "d", to: "deposit", otherwise: true },
+          { from: "budget", to: "end" },
+          { from: "deposit", to: "end" },
+        ],
+      ),
+    );
+    expect(director.outstanding()).toBeNull();
+    director.satisfy("intent", "Rent", false);
+    expect(director.outstanding()?.key).toBe("budget");
+  });
+
+  it("tells the model what to cover and which tools to use on the way to the next question", () => {
+    const director = createFlowForm(
+      chain([
+        at("start", "start"),
+        at("greet", "say", { text: "Mention the weekend promotion" }),
+        at("look", "tool", { tool: "lookup_policy" }),
+        collect(question()),
+        at("thanks", "say", { text: "Thank them for waiting" }),
+        at("end", "hangup"),
+      ]),
+    );
+    expect(director.guidance()).toEqual({
+      cover: ["Mention the weekend promotion"],
+      tools: ["lookup_policy"],
+      next: { kind: "ask", field: expect.objectContaining({ key: "policyNumber" }) },
+    });
+    /* Once the question is answered, what came before it has been covered. Only what lies
+       between that answer and the end is still owed. */
+    director.satisfy("policyNumber", "PM8592625", true);
+    expect(director.guidance()).toEqual({ cover: ["Thank them for waiting"], tools: [], next: { kind: "end" } });
+  });
+
+  it("steers towards a person when the graph ends in a transfer", () => {
+    const director = createFlowForm(chain([at("start", "start"), at("hand", "transfer")]));
+    expect(director.guidance()?.next).toEqual({ kind: "transfer" });
+    expect(director.complete()).toBe(true);
+  });
+
+  it("says nothing about a graph it cannot walk, leaving the standing prompt in charge", () => {
+    const director = createFlowForm({ version: 1, nodes: [], edges: [] });
+    expect(director.guidance()).toBeNull();
   });
 
   it("branches a confirm node on whether the caller agreed to the value", () => {

@@ -12,6 +12,8 @@ import {
   httpToolBodySchema,
 } from "./http-tool.schema";
 import { knowledgeFormSchema } from "./knowledge.schema";
+import { projectToCapturedFields } from "@ansa/shared/flow-project";
+
 import { flowFromFields, readFlow } from "./flow.schema";
 import {
   capturedFieldsSchema,
@@ -29,6 +31,8 @@ import {
   diffVersions,
   discardDraft,
   saveDraft,
+  readAgentFlow,
+  findAgent,
   setAgentFlow,
   listVoices,
   readTools,
@@ -551,6 +555,56 @@ export const saveAgentTools = async (
   }
 };
 
+
+/**
+ * Rebuild an existing agent as a flow.
+ *
+ * The create screen promises "a form can become a flow at any time", and for a while nothing
+ * in the console could make it so. This is that: the published questions are drawn as the
+ * straight line they already are, and the agent is staged onto the graph director. Staged,
+ * not applied — nothing a caller hears moves until somebody publishes, and a publish that
+ * looked at the canvas first is the point.
+ */
+export const rebuildAsFlow = async (
+  agentId: string,
+): Promise<{ readonly ok: true } | { readonly ok: false; readonly message: string }> => {
+  try {
+    const agent = await findAgent(agentId);
+    const fields = capturedFieldsSchema.parse(agent.capturedFields);
+    await setAgentFlow(agentId, { authoringMode: "flow", flow: flowFromFields(fields) });
+    revalidatePath("/agents", "layout");
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, message: failureMessage(error) };
+  }
+};
+
+/**
+ * Take an agent back to a form.
+ *
+ * The destructive direction, and the one that asks first — the screen counts the branches
+ * before it lets anybody press this. What survives is the projection: every question the
+ * graph asked, in the order a caller meeting every branch would hear them, staged onto the
+ * form. The canvas itself is kept on the agent so a change of mind costs nothing; it just
+ * stops conducting calls.
+ */
+export const rebuildAsForm = async (
+  agentId: string,
+): Promise<{ readonly ok: true } | { readonly ok: false; readonly message: string }> => {
+  try {
+    const graph = await readAgentFlow(agentId);
+    const drawn = readFlow(graph.draft?.flow ?? graph.flow);
+    if (drawn === null) {
+      return { ok: false, message: "The flow could not be read, so its questions could not be kept." };
+    }
+    await setAgentFields(agentId, projectToCapturedFields(drawn));
+    await setAgentFlow(agentId, { authoringMode: "form" });
+    revalidatePath("/agents", "layout");
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, message: failureMessage(error) };
+  }
+};
 
 /**
  * Save one HTTP tool into the organisation's document.

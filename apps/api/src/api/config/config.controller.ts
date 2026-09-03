@@ -6,7 +6,10 @@ import {
   listAgentConfigVersions,
   loadAgentDraft,
   loadDraftFlow,
+  loadFlowAtVersion,
   loadPublishedFlow,
+  findAgent,
+  stageDraftFlow,
   loadConfigVersionForCall,
   loadCurrentAgentConfig,
   loadAgentConfigVersion,
@@ -18,6 +21,7 @@ import {
   type ConfigVersion,
   type AgentConfigFields,
 } from "@ansa/db";
+import { projectToCapturedFields, type Flow } from "@ansa/shared";
 import { Controller, Delete, Get, Inject, NotFoundException, Post, Put } from "@nestjs/common";
 
 import { LIMITS } from "../../prompts/organization-layer";
@@ -434,6 +438,15 @@ const toVocabulary = (configured: readonly string[]): Infer<typeof vocabulary> =
   cap: MAX_KEYTERMS,
 });
 
+/**
+ * The stored graph as the contract, after the publish gate has run `validateFlow` on it.
+ *
+ * The database hands back `unknown` on purpose — the shape belongs to the layer that
+ * validates it — and this is that layer, one line after the validation. A cast and not a
+ * parse, because parsing it a second time here would be a second opinion.
+ */
+const asFlowDocument = (flow: unknown): Flow => flow as Flow;
+
 @Controller(apiRoute("agents/:agentId/config"))
 export class ConfigController {
   constructor(@Inject(OrganizationContext) private readonly db: OrganizationContext) {}
@@ -598,11 +611,19 @@ export class ConfigController {
       /* Null is an agent this organisation cannot see. Say nothing about its graph and let
          the publish below produce the 404 — a 422 about a flow would confirm the agent
          exists to somebody who is not entitled to know it does. */
-      if (live !== null) {
-        const flowProblems = flowPublicationProblems({
-          authoringMode: stagedFlow?.authoringMode ?? live.authoringMode,
-          flow: stagedFlow?.flow ?? live.flow,
-        });
+      const goingLive =
+        live === null
+          ? null
+          : {
+              authoringMode: stagedFlow?.authoringMode ?? live.authoringMode,
+              flow: stagedFlow?.flow ?? live.flow,
+            };
+      if (goingLive !== null && agentId !== null) {
+        /* Tool steps name tools, and a tool the agent has not been given is a step that tells
+           the model to use something the registry does not hold. Checked against what will
+           be enabled after this publish — the staged selection where there is one. */
+        const enabledTools = staged?.tools ?? (await findAgent(scope, agentId))?.enabledTools ?? [];
+        const flowProblems = flowPublicationProblems({ ...goingLive, enabledTools });
         if (flowProblems.length > 0) throw new ValidationFailed(flowProblems);
       }
 
@@ -611,6 +632,20 @@ export class ConfigController {
           ...(stagedFlow.flow === null ? {} : { flow: stagedFlow.flow }),
           ...(stagedFlow.authoringMode === null ? {} : { authoringMode: stagedFlow.authoringMode }),
         });
+      }
+
+      /* The graph, projected onto the form the rest of the product reads.
+       *
+       * Seventeen files read `captured_fields`: the prompt's list of what may be asked, the
+       * Collected data columns, the export, the field-health table. For a flow agent every one
+       * of them must see the graph's questions, and for a while none did — the projection
+       * existed and nothing called it, so a canvas edit changed what the director asked and
+       * left what the model was told to ask untouched. The two disagreed on every call.
+       *
+       * Before the snapshot, for the same reason the form and the graph are: the version has
+       * to record the questions this agent actually went live with. */
+      if (goingLive?.authoringMode === "flow" && goingLive.flow !== null && agentId !== null) {
+        await applyCapturedFields(scope, agentId, [...projectToCapturedFields(asFlowDocument(goingLive.flow))]);
       }
 
       const version = await publishAgentConfig(scope, path.agentId, fields, note);
@@ -707,6 +742,21 @@ export class ConfigController {
       }
 
       await saveAgentDraft(scope, agentId, source.config, null, path.version);
+
+      /* The graph that version answered with, staged beside its wording.
+       *
+       * A version is a whole configuration, and for a flow agent the conversation's shape is
+       * most of it. Restoring the greeting from version 3 under today's canvas would be
+       * labelled "Restored version 3" and be nothing of the kind. Null means that version was
+       * a form: the agent is staged back onto the list, and its canvas is left where it is so
+       * a change of mind costs nothing. */
+      const restoredFlow = await loadFlowAtVersion(scope, agentId, path.version);
+      await stageDraftFlow(
+        scope,
+        agentId,
+        restoredFlow === null ? { authoringMode: "form" } : { flow: restoredFlow, authoringMode: "flow" },
+        null,
+      );
       // Read back inside the same transaction, as the publish endpoint does: the response is
       // the row the database wrote rather than an echo of the row it was copied from.
       return loadAgentDraft(scope, agentId);

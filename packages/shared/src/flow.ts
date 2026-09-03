@@ -122,7 +122,15 @@ export interface FlowProblem {
     | "no-start" | "many-starts" | "dead-end" | "cycle" | "unreachable"
     | "decide-on-missing-field" | "decide-without-otherwise"
     | "duplicate-field-key" | "too-many-fields" | "collect-without-field"
-    | "edge-to-nowhere";
+    | "edge-to-nowhere"
+    /** A `decide` reads a free-text answer, which no condition can be written against. */
+    | "decide-on-free-text"
+    /** A branch names a value the question it reads never offers. Warns. */
+    | "branch-value-not-an-option"
+    /** An earlier branch out of the same `decide` catches everything this one would. Warns. */
+    | "shadowed-branch"
+    /** A `confirm` reads a field configured never to be read back, so it can only say no. Warns. */
+    | "confirm-on-unconfirmed-field";
   readonly message: string;
   /** Blocking problems refuse a publish. Non-blocking ones are shown and allowed. */
   readonly blocking: boolean;

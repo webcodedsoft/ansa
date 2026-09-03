@@ -325,6 +325,7 @@ const toCallAgent = async (
         ...connectors.tools,
       ],
       fields,
+      steered: flow !== null,
       policyBlocks: config.policyBlocks,
     }),
     hasKnowledgeSources,

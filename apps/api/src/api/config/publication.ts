@@ -1,4 +1,5 @@
 import { validateFlow, type AuthoringMode, type Flow } from "@ansa/shared";
+import { CALL_CONTROL_DEFINITIONS } from "@ansa/tools";
 
 import { ENFORCED_IN_CODE } from "../../prompts/guarantees";
 import { compileOrganizationLayer } from "../../prompts/organization-layer";
@@ -263,6 +264,15 @@ export const publishedGuarantees = (): readonly PublishedGuarantee[] =>
 export const flowPublicationProblems = (input: {
   readonly authoringMode: AuthoringMode;
   readonly flow: Flow | null;
+  /**
+   * What the agent may call once this publish lands.
+   *
+   * A tool step names a tool, and the graph cannot know which tools the agent has been
+   * given — that is the Tools tab's selection, a join table the graph never sees. Checked
+   * here, at the one moment both are known, so a step that tells the model to use a tool
+   * the registry will not hold is refused rather than discovered on a call.
+   */
+  readonly enabledTools: readonly string[];
 }): readonly FieldError[] => {
   if (input.authoringMode !== "flow") return [];
   if (input.flow === null) {
@@ -274,9 +284,27 @@ export const flowPublicationProblems = (input: {
       ),
     ];
   }
-  return validateFlow(input.flow)
+  const structural = validateFlow(input.flow)
     .filter((problem) => problem.blocking)
     .map((problem) =>
       at(problem.nodeId === null ? "flow" : `flow.nodes.${problem.nodeId}`, problem.message),
     );
+
+  /* Platform tools are on every call and are not in the agent's selection, so a step naming
+     one is fine. Everything else must be enabled. */
+  const available = new Set([
+    ...input.enabledTools,
+    ...CALL_CONTROL_DEFINITIONS.map((definition) => definition.name),
+  ]);
+  const unavailable = input.flow.nodes
+    .filter((node) => node.kind === "tool" && node.tool !== undefined && node.tool !== "")
+    .filter((node) => !available.has(node.tool ?? ""))
+    .map((node) =>
+      at(
+        `flow.nodes.${node.id}`,
+        `This step uses the tool "${node.tool}", which this agent has not been given. Enable it on the Tools tab, or change the step.`,
+      ),
+    );
+
+  return [...structural, ...unavailable];
 };

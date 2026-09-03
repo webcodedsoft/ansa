@@ -139,8 +139,97 @@ export interface FormDirector {
   attemptsFor(key: string): number;
   /** Nothing required is still outstanding. Optional fields do not hold a call open. */
   complete(): boolean;
+  /**
+   * A question the model answers on the caller's behalf, or null when `key` is not one.
+   *
+   * The engine hears names, numbers and identifiers — values with a shape. A choice has no
+   * shape: "I'd like to rent, I think" is `rent`, and only the model can say so. So the model
+   * records those through `record_answer`, and this is how the tool learns whether a key is
+   * that kind of question and what it may be answered with. Free text is answerable with
+   * anything; a choice with one of its options; everything else with nothing, because the
+   * engine will hear it and read it back, and a model-supplied value would skip that.
+   */
+  answerable(key: string): { readonly type: string; readonly options: readonly string[] } | null;
+  /**
+   * What the model should do next, or null when the standing prompt already says.
+   *
+   * The list director returns null: its questions are stated once, in order, in the system
+   * prompt, and that has always been enough for a list. A graph cannot be stated once — which
+   * question comes next depends on the answers so far — so the graph director writes this
+   * fresh each turn and the orchestrator puts it in front of the model beside the situation.
+   */
+  guidance(): Guidance | null;
   readonly values: ReadonlyMap<string, CapturedValue>;
 }
+
+/**
+ * One turn's steering, from the director to the model.
+ *
+ * `cover` is what to say before or while doing `next` — the `say` steps passed on the way
+ * here, in order. `tools` are the tools the graph asks for at this point. `next` is the one
+ * thing the call is waiting on. Rendered by `renderGuidance`; kept structured here so tests
+ * can assert on what was decided rather than on wording.
+ */
+export interface Guidance {
+  readonly cover: readonly string[];
+  readonly tools: readonly string[];
+  readonly next:
+    /** Ask this; the engine is armed for it. */
+    | { readonly kind: "ask"; readonly field: FormField }
+    /** Ask this and record the answer with `record_answer`; the engine hears nothing. */
+    | { readonly kind: "ask-choice"; readonly key: string; readonly prompt: string; readonly options: readonly string[] }
+    /** The graph has reached its end. */
+    | { readonly kind: "end" }
+    /** The graph hands the call to a person here. */
+    | { readonly kind: "transfer" }
+    /** Nothing more the graph wants; carry on as a conversation. */
+    | { readonly kind: "free" };
+}
+
+/**
+ * The steering, in the model's own instructions.
+ *
+ * Short and imperative, because it sits nearest the generation and is the one block that
+ * changes every turn. The choice case lists the options verbatim and names the tool, since
+ * the option the model records has to match a branch exactly.
+ */
+export const renderGuidance = (guidance: Guidance): string => {
+  const lines: string[] = ["Where this call is:"];
+  for (const text of guidance.cover) lines.push(`- Cover this now, in your own words: ${text}`);
+  for (const tool of guidance.tools) lines.push(`- Use the ${tool} tool now, before asking anything else.`);
+  const next = guidance.next;
+  switch (next.kind) {
+    case "ask":
+      lines.push(
+        next.field.prompt === ""
+          ? `- Next, ask for their ${next.field.key}.`
+          : `- Next, ask: "${next.field.prompt}"`,
+      );
+      break;
+    case "ask-choice": {
+      const options = next.options.map((option) => `"${option}"`).join(", ");
+      lines.push(
+        next.prompt === ""
+          ? `- Next, find out their ${next.key} — one of ${options}.`
+          : `- Next, ask: "${next.prompt}" The answer is one of ${options}.`,
+      );
+      lines.push(
+        `- When they have answered, record it with record_answer (field "${next.key}") using exactly one of those options. Do not move on until it is recorded.`,
+      );
+      break;
+    }
+    case "end":
+      lines.push("- You have everything this call needed. Wrap up, say goodbye, and use end_call.");
+      break;
+    case "transfer":
+      lines.push("- This call now goes to a person. Say so, and use transfer_to_human.");
+      break;
+    case "free":
+      lines.push("- Nothing more is needed from them. Help with whatever they ask.");
+      break;
+  }
+  return lines.join("\n");
+};
 
 /**
  * Build a director from the agent's configuration.
@@ -153,10 +242,15 @@ export interface FormDirector {
 export const createForm = (fields: readonly CollectedField[]): FormDirector => {
   const ordered: FormField[] = [];
   const seen = new Set<string>();
+  /** The questions the model answers for the caller: choices and free text, by key. */
+  const answerable = new Map<string, { readonly type: string; readonly options: readonly string[] }>();
 
   for (const field of fields) {
     const entity = asEntity(field.type);
-    if (entity === null) continue;
+    if (entity === null) {
+      if (!answerable.has(field.key)) answerable.set(field.key, { type: field.type, options: field.options });
+      continue;
+    }
     // A duplicate key would give two questions one answer slot and the second would
     // silently overwrite the first. First wins: the form is ordered, so the earlier
     // question is the one the caller was actually asked.
@@ -218,6 +312,12 @@ export const createForm = (fields: readonly CollectedField[]): FormDirector => {
     },
 
     complete: () => ordered.every((field) => !field.required || settled(field)),
+
+    answerable: (key) => answerable.get(key) ?? null,
+
+    // The list is in the standing prompt already. Saying it again every turn would be the
+    // same instruction twice, and the second copy would be the one that drifts.
+    guidance: () => null,
 
     values,
   };

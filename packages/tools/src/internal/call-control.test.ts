@@ -42,11 +42,20 @@ const SUNDAY = "2026-08-09";
 
 const setup = (options: Partial<CallControlOptions> = {}) => {
   const ended: string[] = [];
+  const recorded: { field: string; answer: string }[] = [];
   const registry = createToolRegistry();
   registerInternalTools(
     registry,
     callControlTools({
       endCall: (reason) => ended.push(reason),
+      /* A stand-in for the orchestrator's check: one choice question, two listed answers. */
+      recordAnswer: (field, answer) => {
+        if (field !== "intent") return { accepted: false, reason: `no question is recorded as "${field}"` };
+        const option = ["rent", "buy"].find((each) => each === answer.toLowerCase());
+        if (option === undefined) return { accepted: false, reason: 'the answer must be one of "rent", "buy"' };
+        recorded.push({ field, answer: option });
+        return { accepted: true, field, answer: option };
+      },
       businessHours: null,
       ...options,
     }),
@@ -55,7 +64,7 @@ const setup = (options: Partial<CallControlOptions> = {}) => {
   const call = (name: string, args: Record<string, unknown> = {}) =>
     dispatcher.dispatch({ organizationId: ORGANIZATION, callId: CALL, direction: "inbound", name, args });
 
-  return { ended, registry, call };
+  return { ended, recorded, registry, call };
 };
 
 describe("the platform tool set", () => {
@@ -75,6 +84,9 @@ describe("the platform tool set", () => {
     expect(registry.listFor(ORGANIZATION).map((d) => d.name).sort()).toEqual([
       "business_hours",
       "end_call",
+      // Also non-data: it writes the caller's own stated answer onto the call's record, and
+      // the orchestrator decides whether the field and the answer are ones this agent asks.
+      "record_answer",
       "transfer_to_human",
       // Also a non-data tool: it hands the call to a person, at a number the operator
       // configured, and answers nothing from a fixture.
@@ -84,7 +96,67 @@ describe("the platform tool set", () => {
 
   it("registers every definition with a handler behind it", () => {
     // Construction throws rather than failing the first time a caller needs the tool.
-    expect(() => callControlTools({ endCall: () => undefined, businessHours: null })).not.toThrow();
+    expect(() =>
+      callControlTools({
+        endCall: () => undefined,
+        recordAnswer: () => ({ accepted: false, reason: "none here" }),
+        businessHours: null,
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe("record_answer", () => {
+  it("records a listed answer to a choice question and tells the model to carry on", async () => {
+    const { call, recorded } = setup();
+
+    const outcome = await call("record_answer", { field: "intent", answer: "Rent" });
+
+    expect(outcome.kind).toBe("ok");
+    expect(recorded).toEqual([{ field: "intent", answer: "rent" }]);
+    expect(outcome.speech).toContain("Recorded intent: rent");
+  });
+
+  it("refuses an answer that is not one of the listed options, naming them", async () => {
+    const { call, recorded } = setup();
+
+    const outcome = await call("record_answer", { field: "intent", answer: "lease" });
+
+    expect(recorded).toEqual([]);
+    expect(outcome.speech).toContain("Not recorded");
+    expect(outcome.speech).toContain('"rent", "buy"');
+  });
+
+  it("refuses a field that is not a question on this agent", async () => {
+    const { call } = setup();
+
+    const outcome = await call("record_answer", { field: "policyNumber", answer: "PM1" });
+
+    expect(outcome.speech).toContain("Not recorded");
+  });
+
+  it("refuses a call with the field or the answer missing, without reaching the orchestrator", async () => {
+    let reached = 0;
+    const { call } = setup({
+      recordAnswer: () => {
+        reached += 1;
+        return { accepted: true, field: "x", answer: "y" };
+      },
+    });
+
+    await call("record_answer", { field: "intent" });
+    await call("record_answer", { answer: "rent" });
+
+    expect(reached).toBe(0);
+  });
+
+  it("runs freely: the value is the caller's own preference, marked unconfirmed downstream", async () => {
+    const { call } = setup();
+
+    const outcome = await call("record_answer", { field: "intent", answer: "buy" });
+
+    expect(outcome.kind).not.toBe("confirm");
+    expect(outcome.tier).toBe("read");
   });
 });
 

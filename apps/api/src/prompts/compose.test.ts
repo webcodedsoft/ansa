@@ -177,6 +177,7 @@ describe("the collection section", () => {
     required: true,
     pattern: "",
     attempts: 3,
+    options: [],
     ...over,
   });
 

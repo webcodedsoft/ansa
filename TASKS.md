@@ -3750,6 +3750,32 @@ directors. `flow-form.test.ts` covers the graph director thoroughly on its own t
 parity test exists inside it, but the two suites are not yet one. The window for that closes
 when graphs stop being linear.
 
+**The review that followed (2026-09-03), and what it changed.** A read of the whole path
+found the graph did substantially less on a live call than the canvas implied, and two of
+the gaps were silent:
+
+- *The graph never reached the model.* `projectToCapturedFields` had no production caller,
+  so `captured_fields` — which builds the prompt's list of questions — kept whatever the
+  form had. Now projected at publish, inside the transaction, before the snapshot.
+- *`choice` questions were never asked, so a `decide` on one always took `otherwise`.* The
+  engine hears values with a shape; a choice has none. The model is now the parser for
+  those: a `record_answer` platform tool carries its answer into the director, which holds
+  at the choice until it arrives. The validator refuses a `decide` on free text outright.
+- *Five node kinds were decorative.* The director now writes per-turn steering — a "Where
+  this call is" block beside the situation — naming what to cover (`say`), which tool to use
+  (`tool`), what to ask next, and when the graph has ended or hands over. A steered agent's
+  standing prompt lists what may be asked rather than ordering it. This is prompt-level, as
+  the form's own list always was; the risk tiers on `end_call` and `transfer_to_human` are
+  the code-level half and are unchanged.
+- No way to switch an existing agent between editors: both directions now live on the Data
+  captured tab, the destructive one counting its branches before it asks. Rollback restores
+  the version's graph. Tool steps are checked against enabled tools at publish. Duplicate
+  keys are allowed across arms that never both run. `too-many-fields` counts what the
+  projection counts. New warnings: a branch waiting on an answer the choice never offers, a
+  branch shadowed by an earlier one, a `confirm` reading a field never read back.
+
+Still true after all of it: **nothing has been dialled.**
+
 **What the graph owns — one tab of ten.** An agent is far more than its conversation shape,
 and this is the rule that keeps the two editors from fighting:
 

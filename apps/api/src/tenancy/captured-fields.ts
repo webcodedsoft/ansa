@@ -38,7 +38,35 @@ export interface CollectedField {
    * the same wrong number out three times needs a human, not a fourth go.
    */
   readonly attempts: number;
+  /**
+   * The answers a `choice` offers, in the operator's words. Empty for every other kind.
+   *
+   * These reach the model, which is the only thing on the call that can hear "I'd like to
+   * rent, I think" and record `rent`. Dropping them at this boundary — which is what
+   * happened for a while — left the prompt saying "ask which they want" with no way to say
+   * what the choices were, and no way for a branch that waited on "rent" to ever be taken.
+   */
+  readonly options: readonly string[];
 }
+
+/** The API's caps on a choice, repeated here because a hand-edited row does not pass the API. */
+const MAX_OPTIONS = 24;
+const MAX_OPTION_LENGTH = 120;
+
+const optionsOf = (raw: unknown): readonly string[] => {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "string") continue;
+    const option = entry.trim().slice(0, MAX_OPTION_LENGTH);
+    if (option === "" || seen.has(option.toLowerCase())) continue;
+    seen.add(option.toLowerCase());
+    out.push(option);
+    if (out.length === MAX_OPTIONS) break;
+  }
+  return out;
+};
 
 const ROUTES: ReadonlySet<string> = new Set<CaptureRoute>(["speech", "keypad", "either"]);
 const CONFIRMATIONS: ReadonlySet<string> = new Set<Confirmation>([
@@ -117,6 +145,7 @@ const toField = (raw: unknown): CollectedField | null => {
     // Clamped rather than trusted: the API bounds it, and a document written by hand in
     // psql does not go through the API. Zero attempts would escalate before asking.
     attempts: clampAttempts(raw["attempts"]),
+    options: toKind(type) === "choice" ? optionsOf(raw["options"]) : [],
   };
 };
 

@@ -10,6 +10,7 @@ import {
   type ToolArgs,
   type ToolDispatcher,
   type ToolRegistry,
+  type RecordedAnswer,
 } from "@ansa/tools";
 
 import { ACKNOWLEDGEMENTS, createFillerPicker } from "../telephony/filler";
@@ -30,7 +31,7 @@ import type { Flow } from "@ansa/shared";
 import type { CallFactsStore, IdentifierField } from "../conversation/call-facts";
 import type { CollectedField } from "../tenancy/captured-fields";
 import { createFlowForm } from "./flow-form";
-import { createForm } from "./form";
+import { createForm, renderGuidance } from "./form";
 import { renderFacts } from "../conversation/facts-prompt";
 import { OUTBOUND_LAYER } from "../prompts/outbound";
 import {
@@ -94,6 +95,16 @@ export interface ToolHooks {
    * calls, and hanging up on top of it deletes the goodbye.
    */
   readonly endCall: (reason: string) => void;
+  /**
+   * The model answering a choice or free-text question on the caller's behalf.
+   *
+   * The engine hears values with a shape and reads them back. A choice has none — "I'd like
+   * to rent, I think" is `rent` only to something that understood the sentence — so for those
+   * the model is the parser, and this is how its answer reaches the director. The director
+   * decides whether the key is such a question and whether the answer is one of its options;
+   * the tool only carries it.
+   */
+  readonly recordAnswer: (field: string, answer: string) => RecordedAnswer;
 }
 
 /** This call's registry and dispatcher. Both per call — see the note in `makeTools`. */
@@ -662,6 +673,15 @@ const NIGERIAN_PARTICLES = new Set([
   "o", "sha", "abi", "sef", "ba", "na so", "no be so", "shey", "abeg",
 ]);
 
+/**
+ * How much of a free-text answer is kept.
+ *
+ * The model is summarising what the caller said, and a summary that runs to a paragraph is
+ * not one. Bounded here because the value goes into the call's record, and a tool argument
+ * is model output — nothing upstream capped it.
+ */
+const MAX_RECORDED_ANSWER = 300;
+
 export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps): void => {
   const log = deps.log.child({ callId: stream.callId });
   const conversation = createConversation();
@@ -992,11 +1012,50 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
    * Null disables tool calling for the whole call rather than per dispatch: nothing is
    * built, so there is no dispatcher to reach and no list to offer the model.
    */
+  /**
+   * The model's answer to a question the engine cannot hear, checked and stored.
+   *
+   * Three refusals, each telling the model what would be accepted rather than just no: a key
+   * that is not a choice or free-text question on this agent (the engine owns everything
+   * else, and a model-supplied policy number would skip the readback); a choice answer that
+   * is not one of the listed options; nothing else. Matching is by option, case and
+   * surrounding space ignored, and the stored value is the option as the operator wrote it —
+   * so a branch waiting on "rent" is taken when the model records "Rent".
+   *
+   * Stored unconfirmed. A write-tier tool naming this field refuses to fire on it, which is
+   * the gate that makes it safe for the model to be the parser here.
+   */
+  const recordAnswer = (field: string, answer: string): RecordedAnswer => {
+    const question = form.answerable(field);
+    if (question === null) {
+      return {
+        accepted: false,
+        reason: `"${field}" is not a choice or free-text question on this call; names, numbers and identifiers are heard for you`,
+      };
+    }
+    const spoken = answer.trim();
+    let stored = spoken.slice(0, MAX_RECORDED_ANSWER);
+    if (question.options.length > 0) {
+      const option = question.options.find((each) => each.trim().toLowerCase() === spoken.toLowerCase());
+      if (option === undefined) {
+        return {
+          accepted: false,
+          reason: `the answer must be one of ${question.options.map((each) => `"${each}"`).join(", ")}`,
+        };
+      }
+      stored = option;
+    }
+    form.satisfy(field, stored, false);
+    record.capture({ fieldKey: field, fieldType: question.type, value: stored, attempts: 1 });
+    log.info("the model recorded an answer", { field, type: question.type });
+    return { accepted: true, field, answer: stored };
+  };
+
   const toolOrganizationId = deps.organizationId;
   const toolset: CallTools | null =
     toolOrganizationId === null
       ? null
-      : (deps.makeTools?.({ holding: toolHolding, endCall: endCallWhenHeard }) ?? null);
+      : (deps.makeTools?.({ holding: toolHolding, endCall: endCallWhenHeard, recordAnswer }) ?? null);
 
   const stageStart = new Map<string, number>();
   const mark = (stage: string): void => {
@@ -2037,7 +2096,13 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
        cache nothing — and it belongs near the top for the same reason the base does, since
        what it carries are prohibitions rather than details. */
     const outbound = deps.direction === "outbound" ? OUTBOUND_LAYER : "";
-    const system = [deps.systemPrompt, outbound, known, situation, feeling, budget.instruction]
+    /* Where the conversation is, from the director — which question comes next, what to
+       cover on the way, whether the graph has ended. Null for a form, whose questions are
+       stated once in the standing prompt. Beside the situation, and after it, because it is
+       the one thing here that changes with every answer the caller gives. */
+    const guidance = form.guidance();
+    const steering = guidance === null ? "" : renderGuidance(guidance);
+    const system = [deps.systemPrompt, outbound, known, situation, steering, feeling, budget.instruction]
       .filter((s) => s !== "")
       .join("\n\n");
     /**

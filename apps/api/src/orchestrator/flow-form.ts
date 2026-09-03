@@ -3,7 +3,7 @@ import { FLOW_LIMITS, TERMINAL_KINDS } from "@ansa/shared";
 
 import type { CollectedField } from "../tenancy/captured-fields";
 
-import type { CapturedValue, FormDirector, FormField } from "./form";
+import type { CapturedValue, FormDirector, FormField, Guidance } from "./form";
 import { createForm } from "./form";
 
 /**
@@ -64,8 +64,7 @@ const MAX_STEPS = FLOW_LIMITS.nodes + FLOW_LIMITS.edges;
 /**
  * The flow's own field shape, projected onto the one the list director already parses.
  *
- * Identical member for member except `options`, which only a `choice` uses and which nothing
- * below the capture engine reads. `flow.ts` says the mirroring is deliberate; this is the
+ * Identical member for member. `flow.ts` says the mirroring is deliberate; this is the
  * function that collects on it.
  */
 const toCollected = (field: NonNullable<FlowNode["field"]>): CollectedField => ({
@@ -77,6 +76,7 @@ const toCollected = (field: NonNullable<FlowNode["field"]>): CollectedField => (
   required: field.required,
   pattern: field.pattern,
   attempts: field.attempts,
+  options: field.options,
 });
 
 /**
@@ -129,13 +129,34 @@ const holds = (condition: FlowCondition, value: string | undefined): boolean => 
  */
 const listOf = <T>(raw: unknown): readonly T[] => (Array.isArray(raw) ? (raw as T[]) : []);
 
+/**
+ * What the walk passed on its way to where it stopped, since the last answered question.
+ *
+ * `say` and `tool` steps are instructions to the model at a point in the call. Replaying from
+ * `start` would name every one of them every turn, including those the agent covered ten
+ * minutes ago — so the trace resets each time the walk passes a question that has been
+ * answered. Once the caller has answered, whatever came before that answer has had its moment.
+ */
+interface Trace {
+  readonly cover: string[];
+  readonly tools: string[];
+}
+
 /** Where a walk stopped, which is the whole of what the interface needs to answer. */
 type Stop =
-  | { readonly kind: "collect"; readonly node: FlowNode; readonly field: FormField }
+  | { readonly kind: "collect"; readonly node: FlowNode; readonly field: FormField; readonly trace: Trace }
+  /**
+   * A choice or free text the graph is waiting on. The engine hears neither; the model asks,
+   * and records the answer through `record_answer`, and the walk holds here until it does.
+   */
+  | { readonly kind: "answer"; readonly node: FlowNode; readonly key: string; readonly trace: Trace }
   /** `transfer` or `hangup` — the call has somewhere to be and nothing left to collect. */
-  | { readonly kind: "terminal" }
+  | { readonly kind: "terminal"; readonly which: "transfer" | "hangup"; readonly trace: Trace }
   /** No start, a dead end, an edge to nowhere, an unresolvable decide, or a cycle. */
   | { readonly kind: "stuck" };
+
+/** Whether a question is one the model answers rather than the engine. */
+const MODEL_ANSWERED: ReadonlySet<string> = new Set(["choice", "text"]);
 
 /**
  * Build a director that walks `flow`.
@@ -149,6 +170,8 @@ export const createFlowForm = (flow: Flow): FormDirector => {
   const outgoing = new Map<string, FlowEdge[]>();
   /** One question per `collect` node id. Absent for `choice`, free `text` and bad nodes. */
   const questions = new Map<string, FormField>();
+  /** The choices and free text, per `collect` node id — what the model answers for the caller. */
+  const answers = new Map<string, { readonly key: string; readonly prompt: string; readonly type: string; readonly options: readonly string[] }>();
   /** Node order, for the deterministic tie-breaks two nodes sharing a field key need. */
   const order: FlowNode[] = [];
 
@@ -166,9 +189,18 @@ export const createFlowForm = (flow: Flow): FormDirector => {
       if (start !== null) ambiguousStart = true;
       start = node;
     }
-    if (node.kind === "collect" && node.field !== undefined) {
-      const question = questionFor(node.field);
-      if (question !== null) questions.set(node.id, question);
+    if (node.kind === "collect" && node.field !== undefined && node.field.key !== "") {
+      if (MODEL_ANSWERED.has(node.field.type)) {
+        answers.set(node.id, {
+          key: node.field.key,
+          prompt: node.field.prompt,
+          type: node.field.type,
+          options: node.field.options,
+        });
+      } else {
+        const question = questionFor(node.field);
+        if (question !== null) questions.set(node.id, question);
+      }
     }
   }
 
@@ -207,7 +239,7 @@ export const createFlowForm = (flow: Flow): FormDirector => {
    */
   const preferredPort = (node: FlowNode): string | null => {
     if (node.kind === "collect") {
-      const key = questions.get(node.id)?.key;
+      const key = questions.get(node.id)?.key ?? answers.get(node.id)?.key;
       if (key !== undefined && skipped.has(key)) return "gave-up";
       return "got";
     }
@@ -257,18 +289,39 @@ export const createFlowForm = (flow: Flow): FormDirector => {
    */
   const walk = (): Stop => {
     let node = entry;
+    let trace: Trace = { cover: [], tools: [] };
     for (let steps = 0; steps < MAX_STEPS; steps += 1) {
       if (node === null) return { kind: "stuck" };
-      if (TERMINAL_KINDS.includes(node.kind)) return { kind: "terminal" };
+      if (node.kind === "transfer" || node.kind === "hangup") {
+        return { kind: "terminal", which: node.kind, trace };
+      }
+      if (node.kind === "say" && node.text !== undefined && node.text.trim() !== "") {
+        trace.cover.push(node.text.trim());
+      }
+      if (node.kind === "tool" && node.tool !== undefined && node.tool !== "") {
+        trace.tools.push(node.tool);
+      }
       if (node.kind === "collect") {
         const question = questions.get(node.id);
         if (question !== undefined && !settled(question.key)) {
-          return { kind: "collect", node, field: question };
+          return { kind: "collect", node, field: question, trace };
         }
+        const answer = answers.get(node.id);
+        if (answer !== undefined && !settled(answer.key)) {
+          return { kind: "answer", node, key: answer.key, trace };
+        }
+        // Answered, so everything said on the way to it has been said.
+        if (question !== undefined || answer !== undefined) trace = { cover: [], tools: [] };
       }
       node = leave(node);
     }
     return { kind: "stuck" };
+  };
+
+  /** The node the walk is standing on, when it is standing on a question. */
+  const standingOn = (): FlowNode | null => {
+    const stop = walk();
+    return stop.kind === "collect" || stop.kind === "answer" ? stop.node : null;
   };
 
   /**
@@ -284,13 +337,19 @@ export const createFlowForm = (flow: Flow): FormDirector => {
    */
   const ahead = (from: FlowNode): readonly FormField[] => {
     const found: FormField[] = [];
+    const seen = new Set<string>();
     let node: FlowNode | null = from;
     for (let steps = 0; steps < MAX_STEPS; steps += 1) {
       if (node === null) break;
       if (TERMINAL_KINDS.includes(node.kind)) break;
       if (node.kind === "collect") {
         const question = questions.get(node.id);
-        if (question !== undefined && !settled(question.key)) found.push(question);
+        // Once per key: inside a loop the same question would otherwise be listed on every
+        // lap, and "required" is about the answer, not about how many steps ask for it.
+        if (question !== undefined && !settled(question.key) && !seen.has(question.key)) {
+          seen.add(question.key);
+          found.push(question);
+        }
       }
       node = leave(node);
     }
@@ -337,8 +396,17 @@ export const createFlowForm = (flow: Flow): FormDirector => {
         return stop.kind === "collect" ? stop.field : null;
       }),
 
+    /* The question the walk is standing on, when its key is the one being asked — two steps
+       may share a key on different arms, and the prompt, pattern and attempts belong to the
+       one this call actually reached. Falls back to the first step with that key only when
+       the walk has moved on, which is the same first-wins the list director uses. */
     asking: () =>
-      safely(null, () => (askingKey === null ? null : questionKeyed(askingKey))),
+      safely(null, () => {
+        if (askingKey === null) return null;
+        const here = standingOn();
+        const standing = here === null ? undefined : questions.get(here.id);
+        return standing?.key === askingKey ? standing : questionKeyed(askingKey);
+      }),
 
     beginAsking: (field) => {
       askingKey = field.key;
@@ -347,7 +415,7 @@ export const createFlowForm = (flow: Flow): FormDirector => {
     forVolunteered: (kind) =>
       safely(null, () => {
         const stop = walk();
-        if (stop.kind === "collect") {
+        if (stop.kind === "collect" || stop.kind === "answer") {
           const onPath = ahead(stop.node).find((question) => question.entity === kind);
           if (onPath !== undefined) return onPath;
         }
@@ -376,7 +444,9 @@ export const createFlowForm = (flow: Flow): FormDirector => {
 
     reject: (key) =>
       safely({ again: false }, () => {
-        const question = questionKeyed(key);
+        const here = standingOn();
+        const standing = here === null ? undefined : questions.get(here.id);
+        const question = standing?.key === key ? standing : questionKeyed(key);
         const count = (rejections.get(key) ?? 0) + 1;
         rejections.set(key, count);
         return { again: count < (question?.attempts ?? 0) };
@@ -398,8 +468,55 @@ export const createFlowForm = (flow: Flow): FormDirector => {
     complete: () =>
       safely(true, () => {
         const stop = walk();
-        if (stop.kind !== "collect") return true;
+        if (stop.kind === "terminal" || stop.kind === "stuck") return true;
+        // A choice the graph is waiting on is a question, and a required one holds the call
+        // open exactly as an engine-heard one does.
+        if (stop.kind === "answer") {
+          const waiting = answers.get(stop.node.id);
+          const required = stop.node.field?.required === true && waiting !== undefined;
+          return !required && !ahead(stop.node).some((question) => question.required);
+        }
         return !ahead(stop.node).some((question) => question.required);
+      }),
+
+    answerable: (key) =>
+      safely(null, () => {
+        for (const node of order) {
+          const answer = answers.get(node.id);
+          if (answer !== undefined && answer.key === key) {
+            return { type: answer.type, options: answer.options };
+          }
+        }
+        return null;
+      }),
+
+    /**
+     * The steering for this turn, from where the walk stands.
+     *
+     * Null only when the graph cannot be walked: then the standing prompt is all there is,
+     * which is the same degradation every other method makes. A terminal is not null — a
+     * graph that has reached its end has something to say about that, and saying nothing
+     * would leave the model chatting on a call the operator drew as finished.
+     */
+    guidance: (): Guidance | null =>
+      safely(null, () => {
+        const stop = walk();
+        if (stop.kind === "stuck") return null;
+        const base = { cover: stop.trace.cover, tools: stop.trace.tools };
+        if (stop.kind === "collect") return { ...base, next: { kind: "ask", field: stop.field } };
+        if (stop.kind === "answer") {
+          const waiting = answers.get(stop.node.id);
+          return {
+            ...base,
+            next: {
+              kind: "ask-choice",
+              key: stop.key,
+              prompt: waiting?.prompt ?? "",
+              options: waiting?.options ?? [],
+            },
+          };
+        }
+        return { ...base, next: { kind: stop.which === "hangup" ? "end" : "transfer" } };
       }),
 
     values,

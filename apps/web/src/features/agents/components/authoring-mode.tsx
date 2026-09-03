@@ -137,23 +137,6 @@ export interface FlowQuestion {
 }
 
 /**
- * The published fields read as questions nobody branched.
- *
- * What the Data captured tab falls back to until the canvas is persisted and can say which
- * questions hang off a decision. Null rather than the string "always" so the screen decides
- * how to say it, and so an unbranched question is distinguishable from one whose condition
- * happens to be worded that way.
- */
-export const questionsFromFields = (fields: readonly CapturedField[]): readonly FlowQuestion[] =>
-  fields.map((field) => ({
-    key: field.key,
-    prompt: field.prompt,
-    type: field.type,
-    confirm: field.confirm,
-    asked: null,
-  }));
-
-/**
  * The Flow tab's id on the agent workspace.
  *
  * The id and not the label: `agent-workspace.tsx` keys the tab as "flow" and calls it "Flow"

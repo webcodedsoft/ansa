@@ -24,6 +24,7 @@ const field = (over: Partial<CollectedField> = {}): CollectedField => ({
   required: true,
   pattern: "",
   attempts: 3,
+  options: [],
   ...over,
 });
 

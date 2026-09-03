@@ -26,11 +26,28 @@ export interface CallControlOptions {
    * the goodbye off mid-word. The implementation waits for the mark.
    */
   readonly endCall: (reason: string) => void;
+  /**
+   * The model answering a question on the caller's behalf.
+   *
+   * For the questions the capture engine cannot hear — a choice between listed answers, or
+   * free text. The engine hears values with a shape; "I'd like to rent, I think" has none,
+   * and only the model can say it was `rent`. The orchestrator owns the check: whether the
+   * key is such a question on this agent, and whether the answer is one of its options. Not
+   * a callback with a default, because a default that refused everything would ship a tool
+   * that the model is told to use and that never works.
+   */
+  readonly recordAnswer: (field: string, answer: string) => RecordedAnswer;
   /** Null when this organization has never configured any. The tool then says so. */
   readonly businessHours: BusinessHours | null;
   /** Overridden in tests. */
   readonly now?: () => Date;
 }
+
+/** What the orchestrator says back when the model records an answer. */
+export type RecordedAnswer =
+  | { readonly accepted: true; readonly field: string; readonly answer: string }
+  /** `reason` is what the model is told, so it can ask again or pick a listed option. */
+  | { readonly accepted: false; readonly reason: string };
 
 /* ------------------------------------------------------------------ hours */
 
@@ -254,6 +271,47 @@ const TRANSFER_URGENTLY: ToolDefinition = {
   transferReason: "the caller may be at risk",
 };
 
+const ANSWER_PARAMETERS = {
+  type: "object",
+  properties: {
+    field: {
+      type: "string",
+      description: "The field name of the question, exactly as it appears in your instructions.",
+    },
+    answer: {
+      type: "string",
+      description:
+        "What they chose. For a question with listed answers, exactly one of the listed answers.",
+    },
+  },
+  required: ["field", "answer"],
+} as const;
+
+/**
+ * `record_answer` is read tier, and the value it stores is marked unconfirmed.
+ *
+ * It writes to the call's own record, not to the organisation's systems, and the value is
+ * the caller's stated preference rather than an identifier — nothing downstream fires on it
+ * without a person's say-so, because a write-tier tool refuses an unconfirmed value and that
+ * gate is not configurable. A spoken readback of "you said rent" before recording it would
+ * be the readback rule applied to the one kind of answer that does not need it.
+ */
+const RECORD_ANSWER: ToolDefinition = {
+  name: "record_answer",
+  description:
+    "Record the caller's answer to one of the choice or free-text questions in your instructions. " +
+    "Only for those: names, numbers and identifiers are heard and confirmed for you. " +
+    "For a question with listed answers, record exactly one of the listed answers.",
+  parameters: ANSWER_PARAMETERS,
+  riskTier: "read",
+  summarise: (result) => {
+    const recorded = result as RecordedAnswer;
+    return recorded.accepted
+      ? `Recorded ${recorded.field}: ${recorded.answer}. Carry on.`
+      : `Not recorded: ${recorded.reason}`;
+  },
+};
+
 const BUSINESS_HOURS: ToolDefinition = {
   name: "business_hours",
   description: "Check whether the office is open right now, and when it next opens.",
@@ -276,6 +334,7 @@ export const CALL_CONTROL_DEFINITIONS: readonly ToolDefinition[] = [
   TRANSFER_TO_HUMAN,
   TRANSFER_URGENTLY,
   BUSINESS_HOURS,
+  RECORD_ANSWER,
 ];
 
 const handlersFor = (options: CallControlOptions): Readonly<Record<string, InternalHandler>> => {
@@ -305,6 +364,15 @@ const handlersFor = (options: CallControlOptions): Readonly<Record<string, Inter
     // No lookup, so no organization scoping to get wrong: the hours were resolved for this call
     // from this call's organization configuration before the registry was built.
     [BUSINESS_HOURS.name]: async () => answerHours(options.businessHours, now()),
+
+    [RECORD_ANSWER.name]: async ({ args }) => {
+      const field = typeof args["field"] === "string" ? args["field"].trim() : "";
+      const answer = typeof args["answer"] === "string" ? args["answer"].trim() : "";
+      if (field === "" || answer === "") {
+        return { accepted: false, reason: "both the field and the answer are needed" } satisfies RecordedAnswer;
+      }
+      return options.recordAnswer(field, answer);
+    },
   };
 };
 

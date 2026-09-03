@@ -91,18 +91,51 @@ const spoken = (key: string): string =>
     .replace(/[_-]+/g, " ")
     .toLowerCase();
 
-const collectionSection = (fields: readonly CollectedField[]): readonly string[] => {
+/**
+ * How one question is stated to the model, which depends on who hears the answer.
+ *
+ * Names, numbers and identifiers are heard by the capture engine and read back; the model's
+ * job is to ask and to wait. A choice or free text is heard by nobody but the model, so the
+ * line names the listed answers and the tool that records one — without that, the model
+ * asks "would you like to rent or buy?", hears the answer, and it goes nowhere.
+ */
+const questionLine = (field: CollectedField): string => {
+  const asked = field.prompt === "" ? `ask for their ${spoken(field.key)}` : `"${field.prompt}"`;
+  const need = field.required ? "needed" : "optional — move on if they won't say";
+  if (field.type === "choice") {
+    const options = field.options.map((option) => `"${option}"`).join(", ");
+    return `- ${field.key}: ${asked} — one of ${options}; record their answer with record_answer, using exactly one of those (${need})`;
+  }
+  if (field.type === "text") {
+    return `- ${field.key}: ${asked} — in their own words; record a short summary of their answer with record_answer (${need})`;
+  }
+  return `- ${field.key}: ${asked} — ${ROUTE_NOTE[field.capture]}, ${CONFIRM_NOTE[field.confirm]} (${need})`;
+};
+
+const collectionSection = (fields: readonly CollectedField[], steered: boolean): readonly string[] => {
+  /* A flow is not a list. Which question comes next depends on the answers so far, so the
+     questions cannot be stated once here — the director states the next one every turn, in
+     the "Where this call is" block, and this only tells the model to expect that. The list
+     of what may be asked is still given so the model knows what each field is when it is
+     told to ask for it, and knows which are recorded through the tool. */
+  if (steered) {
+    return [
+      "",
+      "This call follows a set path. Each turn, a block headed \"Where this call is\" tells you",
+      "what to cover and what to ask next — follow it, one step at a time, and do not ask ahead",
+      "of it. The questions it can ask for are:",
+      ...fields.map(questionLine),
+      "If they ask a question mid-way, answer it and come back to the step you were on.",
+    ];
+  }
+
   if (fields.length === 0) return [];
 
   return [
     "",
     "There are things you need from them on this call. Ask for them in this order, one at a",
     "time, and don't read the list out:",
-    ...fields.map((field) => {
-      const asked = field.prompt === "" ? `ask for their ${spoken(field.key)}` : `"${field.prompt}"`;
-      const need = field.required ? "needed" : "optional — move on if they won't say";
-      return `- ${field.key}: ${asked} — ${ROUTE_NOTE[field.capture]}, ${CONFIRM_NOTE[field.confirm]} (${need})`;
-    }),
+    ...fields.map(questionLine),
     "Fit them into the conversation rather than marching through them. If they have already",
     "told you one, don't ask again. If they ask a question mid-way, answer it and come back.",
   ];
@@ -140,8 +173,10 @@ const groundingSection = (tools: readonly AvailableTool[]): readonly string[] =>
 export const taskLayer = (
   tools: readonly AvailableTool[],
   fields: readonly CollectedField[] = [],
+  /** The agent is conducted by a graph, and its questions are announced turn by turn. */
+  steered = false,
 ): string => {
-  const collection = collectionSection(fields);
+  const collection = collectionSection(fields, steered);
   const grounding = groundingSection(tools);
 
   if (tools.length === 0) {

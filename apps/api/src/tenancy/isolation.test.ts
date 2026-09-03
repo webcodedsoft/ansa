@@ -260,7 +260,11 @@ const perCallRegistry = (settings: CallSettings): ToolRegistry => {
   const registry = createToolRegistry();
   registerInternalTools(
     registry,
-    callControlTools({ endCall: () => undefined, businessHours: settings.businessHours }),
+    callControlTools({
+      endCall: () => undefined,
+      recordAnswer: () => ({ accepted: false, reason: "no questions on this call" }),
+      businessHours: settings.businessHours,
+    }),
   );
   settings.connectors.register(registry);
   return registry;

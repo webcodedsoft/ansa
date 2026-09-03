@@ -587,6 +587,7 @@ describe("20 · conducts the configured form", () => {
     required: true,
     pattern: "",
     attempts: 3,
+    options: [],
     ...over,
   });
 

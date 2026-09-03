@@ -12,16 +12,19 @@ import {
 } from "./flow";
 import { validateFlow } from "./flow-validate";
 
+/* A choice, not free text: these graphs branch on their answers, and branching on free text
+   is itself a problem the validator reports. The listed options are the values the branches
+   below wait for. */
 const field = (key: string): FlowField => ({
   key,
-  type: "text",
+  type: "choice",
   prompt: `What is your ${key}?`,
   capture: "either",
   confirm: "none",
   pattern: "",
   attempts: 3,
   required: true,
-  options: [],
+  options: ["large", "small", "cheese", "plain"],
 });
 
 const node = (
@@ -501,5 +504,194 @@ describe("edge-to-nowhere", () => {
 
     expect(landsOn(flow, "dead-end")).toEqual(["s"]);
     expect(landsOn(flow, "edge-to-nowhere")).toEqual(["s"]);
+  });
+});
+
+const blockingCodes = (flow: Flow): readonly string[] =>
+  validateFlow(flow).filter((problem) => problem.blocking).map((problem) => problem.code);
+
+const edge = (from: string, to: string): FlowEdge => ({ from, to });
+
+/** Start → asks `key` → decides on it → two arms → end. The shape every rule below varies. */
+const forked = (
+  on: FlowField,
+  arms: readonly FlowEdge[],
+  extraNodes: readonly FlowNode[] = [],
+): Flow => ({
+  version: FLOW_VERSION,
+  nodes: [
+    node("start", "start"),
+    node("ask", "collect", { field: on }),
+    node("d", "decide", { on: on.key }),
+    node("a", "say", { text: "arm a" }),
+    node("b", "say", { text: "arm b" }),
+    node("end", "hangup"),
+    ...extraNodes,
+  ],
+  edges: [
+    edge("start", "ask"),
+    edge("ask", "d"),
+    ...arms,
+    edge("a", "end"),
+    edge("b", "end"),
+  ],
+});
+
+describe("what a branch can read", () => {
+  it("refuses a decide on a free-text answer, because no branch could ever match it", () => {
+    const flow = forked({ ...field("reason"), type: "text", options: [] }, [
+      { from: "d", to: "a", when: { equals: "refund" } },
+      { from: "d", to: "b", otherwise: true },
+    ]);
+
+    expect(blockingCodes(flow)).toContain("decide-on-free-text");
+  });
+
+  it("allows a decide on an amount, which is a number and can be compared", () => {
+    const flow = forked({ ...field("total"), type: "amount", options: [] }, [
+      { from: "d", to: "a", when: { greaterThan: 50000 } },
+      { from: "d", to: "b", otherwise: true },
+    ]);
+
+    expect(codes(flow)).not.toContain("decide-on-free-text");
+  });
+
+  it("warns when a branch waits for an answer the choice never offers", () => {
+    const flow = forked(field("size"), [
+      { from: "d", to: "a", when: { equals: "medium" } },
+      { from: "d", to: "b", otherwise: true },
+    ]);
+
+    const found = validateFlow(flow).find((p) => p.code === "branch-value-not-an-option");
+    expect(found?.blocking).toBe(false);
+    expect(found?.message).toContain('"medium"');
+  });
+
+  it("does not warn when every branch value is one of the options, whatever the case", () => {
+    const flow = forked(field("size"), [
+      { from: "d", to: "a", when: { oneOf: ["Large", "SMALL"] } },
+      { from: "d", to: "b", otherwise: true },
+    ]);
+
+    expect(codes(flow)).not.toContain("branch-value-not-an-option");
+  });
+});
+
+describe("branches that can never be taken", () => {
+  it("warns when an earlier branch already catches a later one", () => {
+    const flow = forked(field("size"), [
+      { from: "d", to: "a", when: { oneOf: ["large", "small"] } },
+      { from: "d", to: "b", when: { equals: "large" } },
+      { from: "d", to: "b", otherwise: true },
+    ]);
+
+    const found = validateFlow(flow).find((p) => p.code === "shadowed-branch");
+    expect(found?.blocking).toBe(false);
+    expect(found?.message).toContain("Branch 2");
+  });
+
+  it("warns when a lower threshold sits ahead of a higher one", () => {
+    const flow = forked({ ...field("total"), type: "amount", options: [] }, [
+      { from: "d", to: "a", when: { greaterThan: 100 } },
+      { from: "d", to: "b", when: { greaterThan: 500 } },
+      { from: "d", to: "b", otherwise: true },
+    ]);
+
+    expect(codes(flow)).toContain("shadowed-branch");
+  });
+
+  it("says nothing when the higher threshold comes first, which is the order that works", () => {
+    const flow = forked({ ...field("total"), type: "amount", options: [] }, [
+      { from: "d", to: "a", when: { greaterThan: 500 } },
+      { from: "d", to: "b", when: { greaterThan: 100 } },
+      { from: "d", to: "b", otherwise: true },
+    ]);
+
+    expect(codes(flow)).not.toContain("shadowed-branch");
+  });
+});
+
+describe("a confirm step", () => {
+  const confirming = (confirm: FlowField["confirm"]): Flow => ({
+    version: FLOW_VERSION,
+    nodes: [
+      node("start", "start"),
+      node("ask", "collect", { field: { ...field("ref"), type: "reference", confirm } }),
+      node("c", "confirm", { on: "ref" }),
+      node("yes", "say", { text: "thanks" }),
+      node("no", "say", { text: "let me take that again" }),
+      node("end", "hangup"),
+    ],
+    edges: [
+      edge("start", "ask"),
+      edge("ask", "c"),
+      { from: "c", to: "yes", port: "yes" },
+      { from: "c", to: "no", port: "no" },
+      edge("yes", "end"),
+      edge("no", "end"),
+    ],
+  });
+
+  it("warns when it reads an answer that is never read back, so it could only say no", () => {
+    const found = validateFlow(confirming("none")).find((p) => p.code === "confirm-on-unconfirmed-field");
+
+    expect(found?.blocking).toBe(false);
+    expect(found?.nodeId).toBe("c");
+  });
+
+  it("is quiet when the answer it reads is read back", () => {
+    expect(codes(confirming("readback"))).not.toContain("confirm-on-unconfirmed-field");
+  });
+});
+
+describe("the same field key on two steps", () => {
+  const twoArms = (bothOnOnePath: boolean): Flow => ({
+    version: FLOW_VERSION,
+    nodes: [
+      node("start", "start"),
+      node("ask", "collect", { field: field("size") }),
+      node("d", "decide", { on: "size" }),
+      node("a", "collect", { field: { ...field("budget"), type: "amount", options: [] } }),
+      node("b", "collect", { field: { ...field("budget"), type: "amount", options: [] } }),
+      node("end", "hangup"),
+    ],
+    edges: [
+      edge("start", "ask"),
+      edge("ask", "d"),
+      { from: "d", to: "a", when: { equals: "large" } },
+      { from: "d", to: "b", otherwise: true },
+      /* One path: a leads on to b, so a call can meet both and the second overwrites. Two
+         arms: each leads to the end, and no call meets both. */
+      bothOnOnePath ? edge("a", "b") : edge("a", "end"),
+      edge("b", "end"),
+    ],
+  });
+
+  it("is allowed on two arms of a branch that never both run", () => {
+    expect(codes(twoArms(false))).not.toContain("duplicate-field-key");
+  });
+
+  it("is refused when both steps can run on one call", () => {
+    expect(blockingCodes(twoArms(true))).toContain("duplicate-field-key");
+  });
+});
+
+describe("counting questions", () => {
+  it("counts only what a call can reach, matching the projection", () => {
+    const reachable = Array.from({ length: MAX_FLOW_FIELDS }, (_, i) =>
+      node(`q${i}`, "collect", { field: field(`k${i}`) }),
+    );
+    const stranded = Array.from({ length: 5 }, (_, i) =>
+      node(`s${i}`, "collect", { field: field(`extra${i}`) }),
+    );
+    const chain = [node("start", "start"), ...reachable, node("end", "hangup")];
+    const flow: Flow = {
+      version: FLOW_VERSION,
+      nodes: [...chain, ...stranded],
+      edges: chain.slice(0, -1).map((from, i) => edge(from.id, chain[i + 1]?.id ?? "end")),
+    };
+
+    expect(codes(flow)).not.toContain("too-many-fields");
+    expect(codes(flow).filter((code) => code === "unreachable")).toHaveLength(5);
   });
 });

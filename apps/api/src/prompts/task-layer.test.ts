@@ -21,6 +21,7 @@ const field = (): CollectedField => ({
   required: true,
   pattern: "",
   attempts: 3,
+  options: [],
 });
 
 /**

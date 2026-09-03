@@ -48,6 +48,8 @@ export interface CallPrompt {
    * typed at the model.
    */
   readonly fields?: readonly CollectedField[];
+  /** True for an agent drawn as a flow, whose next question is announced each turn. */
+  readonly steered?: boolean;
   /**
    * The organisation's rules as named blocks, straight off the config row.
    *
@@ -81,7 +83,7 @@ export const composeSystemPrompt = (input: CallPrompt): string =>
       const rendered = renderPolicyBlocks(toPolicyBlocks(input.policyBlocks));
       return rendered === "" ? [] : [rendered];
     })(),
-    taskLayer(input.tools, input.fields ?? []),
+    taskLayer(input.tools, input.fields ?? [], input.steered ?? false),
     /* Before the guarantees, which must land last, and after the task layer, because how
        to sound is a smaller instruction than what may be done. */
     EMOTIONAL_LAYER,

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Flow, FlowEdge, FlowField, FlowNode } from "./flow";
 import { FLOW_VERSION } from "./flow";
-import { fieldsCollectedBefore, projectToCapturedFields } from "./flow-project";
+import { branchesTakenBefore, canBothRun, fieldsCollectedBefore, projectToCapturedFields } from "./flow-project";
 
 const field = (key: string): FlowField => ({
   key,
@@ -268,5 +268,74 @@ describe("fieldsCollectedBefore", () => {
       ],
     );
     expect([...fieldsCollectedBefore(looped, "two")]).toEqual(["name"]);
+  });
+});
+
+describe("which branches a call is certain to have taken", () => {
+  /* start → ask size → decide → (large) → ask budget → merge ← (otherwise) ← ask reason
+     merge → ask phone → end. Budget is only ever asked down the large arm; phone is asked
+     on every call because both arms reach it. */
+  const forked: Flow = {
+    version: FLOW_VERSION,
+    nodes: [
+      { id: "start", kind: "start", x: 0, y: 0 },
+      { id: "size", kind: "collect", x: 1, y: 0, field: { ...field("size"), type: "choice", options: ["large", "small"] } },
+      { id: "d", kind: "decide", x: 2, y: 0, on: "size" },
+      { id: "budget", kind: "collect", x: 3, y: 0, field: field("budget") },
+      { id: "reason", kind: "collect", x: 3, y: 9, field: field("reason") },
+      { id: "phone", kind: "collect", x: 4, y: 0, field: field("phone") },
+      { id: "end", kind: "hangup", x: 5, y: 0 },
+    ],
+    edges: [
+      { from: "start", to: "size" },
+      { from: "size", to: "d" },
+      { from: "d", to: "budget", when: { equals: "large" } },
+      { from: "d", to: "reason", otherwise: true },
+      { from: "budget", to: "phone" },
+      { from: "reason", to: "phone" },
+      { from: "phone", to: "end" },
+    ],
+  };
+
+  it("names the branch a question sits behind", () => {
+    expect(branchesTakenBefore(forked, "budget")).toEqual([{ on: "size", when: { equals: "large" } }]);
+    expect(branchesTakenBefore(forked, "reason")).toEqual([{ on: "size", when: null }]);
+  });
+
+  it("names nothing for a question every call reaches, even one after a merge", () => {
+    expect(branchesTakenBefore(forked, "phone")).toEqual([]);
+    expect(branchesTakenBefore(forked, "size")).toEqual([]);
+  });
+
+  it("names nothing for a step no call reaches", () => {
+    expect(branchesTakenBefore(forked, "nowhere")).toEqual([]);
+  });
+});
+
+describe("whether two steps can both run", () => {
+  it("is true along one path and false across two arms", () => {
+    const flow: Flow = {
+      version: FLOW_VERSION,
+      nodes: [
+        { id: "start", kind: "start", x: 0, y: 0 },
+        { id: "d", kind: "decide", x: 1, y: 0, on: "x" },
+        { id: "a", kind: "say", x: 2, y: 0, text: "a" },
+        { id: "b", kind: "say", x: 2, y: 9, text: "b" },
+        { id: "c", kind: "say", x: 3, y: 0, text: "c" },
+        { id: "end", kind: "hangup", x: 4, y: 0 },
+      ],
+      edges: [
+        { from: "start", to: "d" },
+        { from: "d", to: "a", when: { equals: "1" } },
+        { from: "d", to: "b", otherwise: true },
+        { from: "a", to: "c" },
+        { from: "b", to: "end" },
+        { from: "c", to: "end" },
+      ],
+    };
+
+    expect(canBothRun(flow, "a", "c")).toBe(true);
+    expect(canBothRun(flow, "c", "a")).toBe(true);
+    expect(canBothRun(flow, "a", "b")).toBe(false);
   });
 });

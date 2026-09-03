@@ -876,6 +876,7 @@ describe("a caller who says hello while the form is listening", () => {
     required: true,
     pattern: "",
     attempts: 3,
+    options: [],
   } as const;
 
   const NAME_FIELD: OrchestratorDeps["fields"] = [ASKS_A_NAME];
@@ -906,10 +907,7 @@ describe("a caller who says hello while the form is listening", () => {
             kind: "collect",
             x: 220,
             y: 0,
-            /* `options` is the one member a graph's field carries and a list's does not —
-               it belongs to a `choice` question. Empty here, and the rest is the same
-               question the list asks. */
-            field: { ...ASKS_A_NAME, options: [] },
+            field: ASKS_A_NAME,
           },
           { id: "end", kind: "hangup", x: 440, y: 0 },
         ],
@@ -3100,7 +3098,10 @@ describe("the platform tools on a call", () => {
   const platform = (businessHours: BusinessHours | null = null): NonNullable<OrchestratorDeps["makeTools"]> =>
     (hooks) => {
       const registry = createToolRegistry();
-      registerInternalTools(registry, callControlTools({ endCall: hooks.endCall, businessHours }));
+      registerInternalTools(
+        registry,
+        callControlTools({ endCall: hooks.endCall, recordAnswer: hooks.recordAnswer, businessHours }),
+      );
       return {
         registry,
         dispatcher: createToolDispatcher({ registry, log: silentLog, holding: hooks.holding }),
@@ -3112,7 +3113,7 @@ describe("the platform tools on a call", () => {
     h.stream.ackAll();
   };
 
-  it("offers exactly the four non-data tools", () => {
+  it("offers exactly the five non-data tools", () => {
     const h = setup({ makeTools: platform() });
     started(h);
     h.listen.final("Hello.");
@@ -3120,11 +3121,133 @@ describe("the platform tools on a call", () => {
     expect(h.llm.last().request.tools?.map((t) => t.name).sort()).toEqual([
       "business_hours",
       "end_call",
+      // The model's answer to a choice question, into the director. No data behind it.
+      "record_answer",
       "transfer_to_human",
       // Distinct from transfer_to_human on purpose: it goes to a line that answers outside
       // business hours, and only the model can recognise the call that needs it.
       "transfer_urgently",
     ]);
+  });
+
+  /**
+   * The rent-or-buy call, end to end: the graph waits at a choice, the model is told the
+   * options and the tool, records the answer, and the walk takes the branch. Every earlier
+   * version of this feature had the model asking the question and the answer going nowhere,
+   * so every caller was routed down "anything else".
+   */
+  describe("a graph that branches on a choice", () => {
+    const rentOrBuy: OrchestratorDeps["flow"] = {
+      version: 1,
+      nodes: [
+        { id: "start", kind: "start", x: 0, y: 0 },
+        {
+          id: "ask-intent",
+          kind: "collect",
+          x: 1,
+          y: 0,
+          field: { key: "intent", type: "choice", prompt: "Are you looking to rent or to buy?", capture: "speech", confirm: "none", pattern: "", attempts: 3, required: true, options: ["rent", "buy"] },
+        },
+        { id: "d", kind: "decide", x: 2, y: 0, on: "intent" },
+        { id: "ask-budget", kind: "collect", x: 3, y: 0, field: { key: "budget", type: "amount", prompt: "What is your monthly budget?", capture: "speech", confirm: "none", pattern: "", attempts: 3, required: true, options: [] } },
+        { id: "ask-deposit", kind: "collect", x: 3, y: 9, field: { key: "deposit", type: "amount", prompt: "How much have you set aside for a deposit?", capture: "speech", confirm: "none", pattern: "", attempts: 3, required: true, options: [] } },
+        { id: "end", kind: "hangup", x: 4, y: 0 },
+      ],
+      edges: [
+        { from: "start", to: "ask-intent" },
+        { from: "ask-intent", to: "d" },
+        { from: "d", to: "ask-budget", when: { equals: "rent" } },
+        { from: "d", to: "ask-deposit", otherwise: true },
+        { from: "ask-budget", to: "end" },
+        { from: "ask-deposit", to: "end" },
+      ],
+    };
+
+    it("tells the model the options and the tool, then takes the branch the model recorded", async () => {
+      const captured: { fieldKey: string; value: string }[] = [];
+      const h = setup({
+        flow: rentOrBuy,
+        makeTools: platform(),
+        recorder: {
+          started: () => undefined, event: () => undefined, transcript: () => undefined,
+          turn: () => undefined, latency: () => undefined,
+          capture: (c: { fieldKey: string; value: string }) => captured.push({ fieldKey: c.fieldKey, value: c.value }),
+          ended: () => undefined,
+        } as unknown as CallRecorder,
+      });
+      started(h);
+      h.listen.final("Hello, I saw your listing.");
+
+      // Turn one: the graph is waiting at the choice, and the model is told so.
+      const steering = h.llm.last().request.system;
+      expect(steering).toContain("Where this call is");
+      expect(steering).toContain('"Are you looking to rent or to buy?"');
+      expect(steering).toContain('"rent", "buy"');
+      expect(steering).toContain("record_answer");
+      expect(h.llm.last().request.tools?.map((t) => t.name)).toContain("record_answer");
+
+      h.llm.last().emit("Are you looking to rent or to buy? ");
+      h.llm.last().finish();
+      h.tts.last().done();
+      h.stream.ackAll();
+
+      h.listen.final("To rent, I think.");
+      h.llm.last().callTools([{ name: "record_answer", args: { field: "intent", answer: "Rent" } }]);
+      await settle();
+
+      // Recorded as the operator wrote the option, not as the model spelt it.
+      expect(captured).toEqual([{ fieldKey: "intent", value: "rent" }]);
+      h.llm.last().emit("Great. ");
+      h.llm.last().finish();
+      h.tts.last().done();
+      h.stream.ackAll();
+
+      // The next turn is steered down the rent arm and nowhere near the deposit question.
+      h.listen.final("Okay.");
+      const next = h.llm.last().request.system;
+      expect(next).toContain("What is your monthly budget?");
+      expect(next).not.toContain("deposit");
+    });
+
+    it("refuses an answer that is not one of the options and names them, so the model can ask again", async () => {
+      const captured: unknown[] = [];
+      const h = setup({
+        flow: rentOrBuy,
+        makeTools: platform(),
+        recorder: {
+          started: () => undefined, event: () => undefined, transcript: () => undefined,
+          turn: () => undefined, latency: () => undefined,
+          capture: (c: unknown) => captured.push(c), ended: () => undefined,
+        } as unknown as CallRecorder,
+      });
+      started(h);
+      h.listen.final("I'd like to lease.");
+      h.llm.last().callTools([{ name: "record_answer", args: { field: "intent", answer: "lease" } }]);
+      await settle();
+
+      expect(captured).toEqual([]);
+      const told = h.llm.last().request.messages.map((m) => m.content).join("\n");
+      expect(told).toContain('"rent", "buy"');
+    });
+
+    it("refuses to record a value the engine owns, so a model-supplied number cannot skip its readback", async () => {
+      const captured: unknown[] = [];
+      const h = setup({
+        flow: rentOrBuy,
+        makeTools: platform(),
+        recorder: {
+          started: () => undefined, event: () => undefined, transcript: () => undefined,
+          turn: () => undefined, latency: () => undefined,
+          capture: (c: unknown) => captured.push(c), ended: () => undefined,
+        } as unknown as CallRecorder,
+      });
+      started(h);
+      h.listen.final("My budget is two hundred thousand.");
+      h.llm.last().callTools([{ name: "record_answer", args: { field: "budget", answer: "200000" } }]);
+      await settle();
+
+      expect(captured).toEqual([]);
+    });
   });
 
   it("does not hang up until the caller has heard the goodbye", async () => {

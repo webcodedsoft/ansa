@@ -274,18 +274,18 @@ describe("publishing a graph", () => {
   it("refuses a graph with a blocking problem", () => {
     const broken: Flow = { ...sound(), edges: [{ from: "start", to: "ask-name" }] };
 
-    const problems = flowPublicationProblems({ authoringMode: "flow", flow: broken });
+    const problems = flowPublicationProblems({ authoringMode: "flow", flow: broken, enabledTools: [] });
 
     expect(problems).not.toEqual([]);
     expect(problems.every((problem) => problem.path.startsWith("body.flow"))).toBe(true);
   });
 
   it("passes a graph that could answer a phone", () => {
-    expect(flowPublicationProblems({ authoringMode: "flow", flow: sound() })).toEqual([]);
+    expect(flowPublicationProblems({ authoringMode: "flow", flow: sound(), enabledTools: [] })).toEqual([]);
   });
 
   it("refuses a flow-authored agent with no graph at all, rather than letting it answer in silence", () => {
-    expect(flowPublicationProblems({ authoringMode: "flow", flow: null })).not.toEqual([]);
+    expect(flowPublicationProblems({ authoringMode: "flow", flow: null, enabledTools: [] })).not.toEqual([]);
   });
 
   /* An abandoned sketch on a form-authored agent is not a reason to refuse a greeting. Same
@@ -294,8 +294,38 @@ describe("publishing a graph", () => {
   it("ignores a broken canvas on an agent that is authored as a form", () => {
     const broken: Flow = { ...sound(), edges: [] };
 
-    expect(flowPublicationProblems({ authoringMode: "form", flow: broken })).toEqual([]);
-    expect(flowPublicationProblems({ authoringMode: "form", flow: null })).toEqual([]);
+    expect(flowPublicationProblems({ authoringMode: "form", flow: broken, enabledTools: [] })).toEqual([]);
+    expect(flowPublicationProblems({ authoringMode: "form", flow: null, enabledTools: [] })).toEqual([]);
+  });
+
+  const usesTool = (tool: string): Flow => ({
+    ...sound(),
+    nodes: [...sound().nodes, { id: "look", kind: "tool", x: 0, y: 0, tool }],
+    edges: [
+      { from: "start", to: "look" },
+      { from: "look", to: "ask-name" },
+      { from: "ask-name", to: "end" },
+    ],
+  });
+
+  it("refuses a tool step naming a tool the agent has not been given", () => {
+    const problems = flowPublicationProblems({
+      authoringMode: "flow",
+      flow: usesTool("lookup_policy"),
+      enabledTools: ["something_else"],
+    });
+
+    expect(problems.map((p) => p.path)).toEqual(["body.flow.nodes.look"]);
+    expect(problems[0]?.message).toContain('"lookup_policy"');
+  });
+
+  it("passes a tool step naming an enabled tool, or a platform tool nobody has to enable", () => {
+    expect(
+      flowPublicationProblems({ authoringMode: "flow", flow: usesTool("lookup_policy"), enabledTools: ["lookup_policy"] }),
+    ).toEqual([]);
+    expect(
+      flowPublicationProblems({ authoringMode: "flow", flow: usesTool("business_hours"), enabledTools: [] }),
+    ).toEqual([]);
   });
 
   /* Every blocking problem the validator can produce must be refusable, or a new rule added
@@ -303,7 +333,7 @@ describe("publishing a graph", () => {
   it("reports exactly the blocking problems the validator found", () => {
     const broken: Flow = { ...sound(), edges: [{ from: "start", to: "ask-name" }] };
 
-    expect(flowPublicationProblems({ authoringMode: "flow", flow: broken })).toHaveLength(
+    expect(flowPublicationProblems({ authoringMode: "flow", flow: broken, enabledTools: [] })).toHaveLength(
       validateFlow(broken).filter((problem) => problem.blocking).length,
     );
   });

@@ -443,9 +443,19 @@ interface FlowCanvasProps {
    * is submitted by the header's Save and Publish, and this component owns neither.
    */
   readonly publishForm: string;
+  /**
+   * Which editor the agent is built in.
+   *
+   * Decides whether an untouched canvas is submitted. For a flow agent the graph is the
+   * conversation and always rides the save. For a form agent this panel is rendered hidden
+   * behind the tabs like every other, and submitting its empty starting graph on every save
+   * wrote a two-node canvas onto agents nobody had drawn — harmless until somebody switched
+   * one to a flow and found "their" canvas already there.
+   */
+  readonly authoringMode: "form" | "flow";
 }
 
-export const FlowCanvas = ({ flow, publishForm }: FlowCanvasProps) => {
+export const FlowCanvas = ({ flow, publishForm, authoringMode }: FlowCanvasProps) => {
   /* Read once, on mount. Later renders keep the operator's work in front of them; the
      workspace remounts this panel with a `key` when the document underneath it changes. */
   const [loaded] = useState(() => readFlow(flow));
@@ -688,6 +698,17 @@ export const FlowCanvas = ({ flow, publishForm }: FlowCanvasProps) => {
      most 120 nodes and the walk is linear, and a stale problem list is worse than a cheap
      one — it would tell somebody a step is fixed while the publish still refuses it. */
   const problems = validateFlow(history.present);
+  /* The worst thing wrong with each step, for the mark on its card. A step with a blocking
+     problem and a warning shows the blocking one; the panel below lists both. */
+  const marked = useMemo(() => {
+    const worst = new Map<string, "blocks" | "warns">();
+    for (const problem of problems) {
+      if (problem.nodeId === null) continue;
+      if (problem.blocking) worst.set(problem.nodeId, "blocks");
+      else if (!worst.has(problem.nodeId)) worst.set(problem.nodeId, "warns");
+    }
+    return worst;
+  }, [problems]);
 
   const selectedNode = selected === null ? null : (byId(selected) ?? null);
   const branches = selectedNode === null ? [] : edges.filter(conditional(selectedNode.id));
@@ -698,7 +719,9 @@ export const FlowCanvas = ({ flow, publishForm }: FlowCanvasProps) => {
       {/* The graph rides the workspace's own form, as the body of `PUT /agents/:id/flow`.
           Absent while it cannot be parsed, because an absent field means "leave the stored
           graph alone" — see `readiness`. */}
-      {ready.problem === null && (
+      {/* Rides the save for a flow agent always, and for a form agent only once somebody has
+          drawn on it — an untouched starting graph is not a decision anybody made. */}
+      {ready.problem === null && (authoringMode === "flow" || history.past.length > 0) && (
         <input type="hidden" form={publishForm} name="flow" value={JSON.stringify(history.present)} />
       )}
 
@@ -785,8 +808,10 @@ export const FlowCanvas = ({ flow, publishForm }: FlowCanvasProps) => {
                   data-flow-node={n.id}
                   className={cn(
                     "glass absolute w-[208px] rounded-[13px] border select-none",
-                    ready.nodes.has(n.id)
+                    ready.nodes.has(n.id) || marked.get(n.id) === "blocks"
                       ? "border-[var(--bad)]"
+                      : marked.get(n.id) === "warns"
+                        ? "border-[var(--warn)]"
                       : n.id === selected
                         ? "border-[var(--accent)] shadow-[0_0_0_2px_var(--accent-soft)]"
                         : "border-[var(--hairline)]",
@@ -801,6 +826,24 @@ export const FlowCanvas = ({ flow, publishForm }: FlowCanvasProps) => {
                   >
                     <span className="size-2 flex-none rounded-[3px]" style={{ background: kind.colour }} />
                     <b className="flex-1 truncate text-[12px] font-[620]">{kind.title}</b>
+                    {/* The problems panel below names it; this is the mark that says which card
+                        it is naming, so a step at the far end of a wide canvas is not found by
+                        reading forty messages. Two channels, not one: the colour of the border
+                        and this label, for anyone who cannot see the first. */}
+                    {marked.has(n.id) && (
+                      <span
+                        role="img"
+                        aria-label={marked.get(n.id) === "blocks" ? "has a problem that blocks publishing" : "has a warning"}
+                        className={cn(
+                          "flex-none rounded-full px-1.5 font-mono text-[9.5px] font-semibold tracking-[0.08em] uppercase",
+                          marked.get(n.id) === "blocks"
+                            ? "bg-[var(--bad-soft)] text-[var(--bad)]"
+                            : "bg-[var(--warn-soft)] text-[var(--warn)]",
+                        )}
+                      >
+                        {marked.get(n.id) === "blocks" ? "fix" : "check"}
+                      </span>
+                    )}
                     {n.kind !== "start" && (
                       <IconButton
                         aria-label="Delete node"
