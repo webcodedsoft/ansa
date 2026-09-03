@@ -3708,13 +3708,39 @@ rather than derived, and why flow → form is a destructive, confirmed conversio
       mid-call and moves to the other.
 
 - [ ] **S4 — Authoring surface.** Method choice on the existing `/agents/new` screen rather
-      than a second chooser page before it; mode locking so a flow agent's Conversation and
-      Data captured tabs are read-only; publish errors that land on the offending node the way
-      `FIELD_TAB` lands them on a tab; form → flow conversion; confirmed flow → form
-      flattening that says how many branches it destroys; keyboard paths for add/select/
-      connect/delete; an honest small-screen state instead of unusable wiring.
+      than a second chooser page before it; mode locking (see the ownership rule below);
+      publish errors that land on the offending node the way `FIELD_TAB` lands them on a tab;
+      form → flow conversion; confirmed flow → form flattening that says how many branches it
+      destroys; keyboard paths for add/select/connect/delete, with Tab moving in graph order
+      rather than DOM order; the Flow tab rendering a read-only chain for form-authored agents,
+      which doubles as the conversion preview; an honest small-screen state instead of unusable
+      wiring; a new canvas that starts with Answered → End the call already wired, so the first
+      gesture anybody learns is dropping a step onto a wire.
       **Done when** somebody who has not seen the canvas builds a working agent on it without
       being told how, and a deliberately broken graph explains itself.
+
+**What the graph owns — one tab of ten.** An agent is far more than its conversation shape,
+and this is the rule that keeps the two editors from fighting:
+
+| Owned by the graph | Stays in its own tab, editable |
+| --- | --- |
+| Questions, their order and conditions — the whole of **Data captured**, which becomes read-only for a flow agent | Agent name, persona, instructions, keyterms, greeting, barge-in, answering-machine detection (Conversation) · voice and speaking rate · policies · knowledge sources · which tools are enabled · dialled number, hours, open days, transfer target, ring time (Routing) · version history |
+
+A `tool` node *references* an enabled tool rather than enabling one; a `transfer` node *uses*
+the routing settings rather than setting them. The greeting is the one contested field, since
+a `say` node placed first is also a greeting — **the tab owns it**, and a `say` node is an
+instruction at a point in the call. One owner per setting.
+
+**Two corrections to the first draft of this slice**, both found by asking whether the spec
+covered what the form already does:
+
+- Only **Data captured** locks. An earlier draft locked Conversation too, which would have
+  stranded five settings — name, persona, instructions, keyterms and two behaviour switches —
+  with nowhere to edit them.
+- The canvas gets **no Save, Publish or Test call of its own**. The workspace header already
+  carries all three and the graph is part of the same draft and the same publish. Its toolbar
+  holds canvas actions only: fit, tidy, undo, redo. The header's unpublished-changes tag covers
+  graph edits too.
 
 **Publish must refuse, naming the node:** no path to a terminal; a cycle; a `decide` on a
 field not collected on every path that reaches it (the subtlest bug this can ship, and
