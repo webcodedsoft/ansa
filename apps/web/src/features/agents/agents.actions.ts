@@ -12,6 +12,7 @@ import {
   httpToolBodySchema,
 } from "./http-tool.schema";
 import { knowledgeFormSchema } from "./knowledge.schema";
+import { flowFromFields, readFlow } from "./flow.schema";
 import {
   capturedFieldsSchema,
   draftSchema,
@@ -28,6 +29,7 @@ import {
   diffVersions,
   discardDraft,
   saveDraft,
+  setAgentFlow,
   listVoices,
   readTools,
   createKnowledgeSource,
@@ -82,6 +84,22 @@ const agentFrom = (form: FormData): string | null => {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * The graph as the hidden field carries it: JSON text, or nothing readable.
+ *
+ * `undefined` for both "not valid JSON" and "not a flow", because the caller treats them the
+ * same — neither is a graph and neither may be written over a stored one. The distinction
+ * would only matter if we intended to repair it, and repairing somebody's conversation
+ * without telling them is worse than refusing the save.
+ */
+const readDrawnFlow = (raw: string): unknown | undefined => {
+  try {
+    return readFlow(JSON.parse(raw)) ?? undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 export type PublishState = FormState<Published>;
 
 export const publish = async (_previous: PublishState, form: FormData): Promise<PublishState> => {
@@ -90,7 +108,20 @@ export const publish = async (_previous: PublishState, form: FormData): Promise<
   const parsed = publishSchema.safeParse(publishFormInput(form));
   if (!parsed.success) return invalidForm(parsed.error);
 
+  /* Publish submits the same form the canvas writes into, so a graph drawn and published
+     without an intervening Save has to be staged here too. Without this the publish reads
+     whatever was staged last and the drawing on screen is quietly not the one that goes
+     live — the worst version of this failure, because the canvas still shows it. */
+  const drawn = form.get("flow");
+  const graph = typeof drawn === "string" ? readDrawnFlow(drawn) : undefined;
+  if (drawn !== null && graph === undefined) {
+    return failedForm("The flow on this page could not be read, so nothing was published.");
+  }
+
   try {
+    /* Staged before the publish, because the publish transaction reads the staged graph and
+       applies it. Reversed, this would publish the previous drawing and stage the new one. */
+    if (graph !== undefined) await setAgentFlow(agentId, { flow: graph });
     const result = await publishConfiguration(agentId, parsed.data);
     revalidatePath("/agents", "layout");
     return succeededForm({ version: result.version.version, publishedAt: result.version.publishedAt });
@@ -125,8 +156,26 @@ export const saveDraftAction = async (
   const parsed = draftSchema.safeParse(publishFormInput(form));
   if (!parsed.success) return invalidForm(parsed.error);
 
+  /* The canvas rides along in the same submit, as a hidden field, but it is staged through
+     its own endpoint — the configuration document has no graph in it and giving it one would
+     be a second way to write the same thing.
+
+     Absent means "leave the stored graph alone", and that is load-bearing rather than
+     defensive. The field is written only while the canvas could read what it was given, so
+     an agent whose graph failed to parse submits without it and keeps the conversation it
+     already had. Saving a greeting from the Voice tab must not blank somebody's flow. */
+  const drawn = form.get("flow");
+  const graph = typeof drawn === "string" ? readDrawnFlow(drawn) : undefined;
+  if (drawn !== null && graph === undefined) {
+    return failedForm("The flow on this page could not be read, so nothing was saved.");
+  }
+
   try {
     const result = await saveDraft(agentId, parsed.data);
+    /* After the configuration, not beside it: if the graph write fails, the failure is
+       reported rather than hidden behind a save that half happened. Both land on the same
+       draft row, so ordering costs nothing. */
+    if (graph !== undefined) await setAgentFlow(agentId, { flow: graph });
     revalidatePath("/agents", "layout");
     return succeededForm({ updatedAt: result.updatedAt });
   } catch (error) {
@@ -388,6 +437,8 @@ const agentNameSchema = z
 export const createAgentFromTemplate = async (input: {
   readonly name: string;
   readonly templateId: string;
+  /** Omitted is a form, which is what every agent made before this choice existed was. */
+  readonly authoringMode?: "form" | "flow";
 }): Promise<AgentCreated> => {
   const parsedName = agentNameSchema.safeParse(input.name);
   if (!parsedName.success) {
@@ -439,6 +490,29 @@ export const createAgentFromTemplate = async (input: {
       await stageAgentBehaviour(agentId, switches);
     } catch (error) {
       unfinished.push(`its switches (${failureMessage(error)})`);
+    }
+  }
+
+  /* A flow-authored agent is staged with the template's questions already drawn as a
+     straight line, not with an empty canvas.
+     
+     Two reasons, and the second is the hard one. Somebody who picked a template picked its
+     questions; handing them a blank canvas next to a list they now have to retype is the
+     worst of both editors. And an agent set to run as a graph and holding none cannot be
+     published at all — the publish gate refuses it, correctly, because it would answer the
+     phone with nothing to say. So something has to draw the first version, and the template
+     is the only honest thing to draw.
+
+     Both halves in one call: staging the mode without the graph would leave exactly the
+     unpublishable agent this avoids, if the second request failed. */
+  if (input.authoringMode === "flow") {
+    try {
+      await setAgentFlow(agentId, {
+        authoringMode: "flow",
+        flow: flowFromFields(template.fields),
+      });
+    } catch (error) {
+      unfinished.push(`its flow (${failureMessage(error)})`);
     }
   }
 

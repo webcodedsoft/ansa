@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import {
   currentConfiguration,
+  readAgentFlow,
   readDraft,
   findAgent,
   listVersions,
@@ -107,7 +108,7 @@ const AgentWorkspacePage = async ({
   const since = new Date(now - WINDOW_DAYS * DAY_MS).toISOString();
   const previousStart = new Date(now - 2 * WINDOW_DAYS * DAY_MS).toISOString();
 
-  const [liveConfiguration, unpublished, tools, knowledge, readiness, versionPage, numbers] =
+  const [liveConfiguration, unpublished, tools, knowledge, readiness, versionPage, numbers, graph] =
     await Promise.all([
     /* The id from the URL, at last. This page used to read whichever agent the database
        picked and render it under whatever id the reader had navigated to — the same document
@@ -123,6 +124,10 @@ const AgentWorkspacePage = async ({
     /* Every number the organisation holds, so the routing picker can show what is free and
        what another agent already answers. */
     listNumbers(),
+    /* The graph, read on its own because the canvas is saved on its own. It is awaited rather
+       than settled: an agent authored as a flow whose graph failed to load would render an
+       empty canvas, and the next Save would write that emptiness over a real conversation. */
+    readAgentFlow(agentId),
   ]);
 
   /* Counts and signals are decoration relative to the agent itself, and none of them may
@@ -216,6 +221,7 @@ const AgentWorkspacePage = async ({
       held={numbers.items}
       liveConfiguration={liveConfiguration}
       draft={unpublished.draft}
+      graph={graph}
       tools={tools}
       knowledge={knowledge}
       versions={versionPage.items}

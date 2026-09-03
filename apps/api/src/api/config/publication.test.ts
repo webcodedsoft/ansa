@@ -1,3 +1,4 @@
+import { FLOW_VERSION, validateFlow, type Flow } from "@ansa/shared";
 import { describe, expect, it } from "vitest";
 
 import { ENFORCED_IN_CODE } from "../../prompts/guarantees";
@@ -5,6 +6,7 @@ import { BASE_KEYTERMS, MAX_KEYTERMS } from "../../tenancy/defaults";
 
 import {
   effectiveKeyterms,
+  flowPublicationProblems,
   guaranteeProblems,
   keytermProblems,
   publicationProblems,
@@ -225,5 +227,84 @@ describe("the guarantees served to a organization", () => {
       expect(entry.enforcedIn).toBe(ENFORCED_IN_CODE[index]?.where);
       expect(entry.restatedToTheModel).toBe(ENFORCED_IN_CODE[index]?.spoken !== null);
     }
+  });
+});
+
+/**
+ * The one gate in this file that is not a courtesy.
+ *
+ * Every other check here explains that a sentence will be dropped; delete them and the
+ * platform is as safe. This one decides whether a live agent can stall on the line, so it is
+ * tested for the two ways it could fail quietly: passing a graph it should refuse, and
+ * refusing one it should pass.
+ */
+describe("publishing a graph", () => {
+  const asks = (key: string) => ({
+    id: `ask-${key}`,
+    kind: "collect" as const,
+    x: 0,
+    y: 0,
+    field: {
+      key,
+      prompt: `Your ${key}?`,
+      type: "text" as const,
+      capture: "speech" as const,
+      confirm: "none" as const,
+      pattern: "",
+      attempts: 3,
+      required: true,
+      options: [],
+    },
+  });
+
+  /** Start → asks a name → hangs up. The smallest graph that answers a phone. */
+  const sound = (): Flow => ({
+    version: FLOW_VERSION,
+    nodes: [
+      { id: "start", kind: "start", x: 0, y: 0 },
+      asks("name"),
+      { id: "end", kind: "hangup", x: 0, y: 0 },
+    ],
+    edges: [
+      { from: "start", to: "ask-name" },
+      { from: "ask-name", to: "end" },
+    ],
+  });
+
+  it("refuses a graph with a blocking problem", () => {
+    const broken: Flow = { ...sound(), edges: [{ from: "start", to: "ask-name" }] };
+
+    const problems = flowPublicationProblems({ authoringMode: "flow", flow: broken });
+
+    expect(problems).not.toEqual([]);
+    expect(problems.every((problem) => problem.path.startsWith("body.flow"))).toBe(true);
+  });
+
+  it("passes a graph that could answer a phone", () => {
+    expect(flowPublicationProblems({ authoringMode: "flow", flow: sound() })).toEqual([]);
+  });
+
+  it("refuses a flow-authored agent with no graph at all, rather than letting it answer in silence", () => {
+    expect(flowPublicationProblems({ authoringMode: "flow", flow: null })).not.toEqual([]);
+  });
+
+  /* An abandoned sketch on a form-authored agent is not a reason to refuse a greeting. Same
+     rule as leaving an untouched section alone: a publish must not fail on something nothing
+     reads. */
+  it("ignores a broken canvas on an agent that is authored as a form", () => {
+    const broken: Flow = { ...sound(), edges: [] };
+
+    expect(flowPublicationProblems({ authoringMode: "form", flow: broken })).toEqual([]);
+    expect(flowPublicationProblems({ authoringMode: "form", flow: null })).toEqual([]);
+  });
+
+  /* Every blocking problem the validator can produce must be refusable, or a new rule added
+     there silently stops gating publication. Non-blocking ones must not be. */
+  it("reports exactly the blocking problems the validator found", () => {
+    const broken: Flow = { ...sound(), edges: [{ from: "start", to: "ask-name" }] };
+
+    expect(flowPublicationProblems({ authoringMode: "flow", flow: broken })).toHaveLength(
+      validateFlow(broken).filter((problem) => problem.blocking).length,
+    );
   });
 });

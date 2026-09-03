@@ -107,6 +107,42 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly required: boolean;
         readonly options: readonly (string)[];
       })[];
+        readonly flow: {
+        readonly version: number;
+        readonly nodes: readonly ({
+        readonly id: string;
+        readonly kind: "start" | "say" | "collect" | "confirm" | "decide" | "tool" | "transfer" | "hangup";
+        readonly x: number;
+        readonly y: number;
+        readonly field?: {
+        readonly key: string;
+        readonly type: "name" | "reference" | "phone" | "email" | "address" | "date" | "time" | "amount" | "nin" | "bvn" | "otp" | "quantity" | "choice" | "text";
+        readonly prompt: string;
+        readonly capture: "speech" | "keypad" | "either";
+        readonly confirm: "none" | "readback" | "spellback";
+        readonly pattern: string;
+        readonly attempts: number;
+        readonly required: boolean;
+        readonly options: readonly (string)[];
+      };
+        readonly text?: string;
+        readonly tool?: string;
+        readonly on?: string;
+      })[];
+        readonly edges: readonly ({
+        readonly from: string;
+        readonly to: string;
+        readonly port?: string;
+        readonly when?: {
+        readonly equals?: string;
+        readonly oneOf?: readonly (string)[];
+        readonly isEmpty?: boolean;
+        readonly greaterThan?: number;
+      };
+        readonly otherwise?: boolean;
+      })[];
+      } | null;
+        readonly authoringMode: "form" | "flow";
         readonly deletedAt: string | null;
         readonly createdAt: string;
       })[];
@@ -151,6 +187,42 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly required: boolean;
         readonly options: readonly (string)[];
       })[];
+        readonly flow: {
+        readonly version: number;
+        readonly nodes: readonly ({
+        readonly id: string;
+        readonly kind: "start" | "say" | "collect" | "confirm" | "decide" | "tool" | "transfer" | "hangup";
+        readonly x: number;
+        readonly y: number;
+        readonly field?: {
+        readonly key: string;
+        readonly type: "name" | "reference" | "phone" | "email" | "address" | "date" | "time" | "amount" | "nin" | "bvn" | "otp" | "quantity" | "choice" | "text";
+        readonly prompt: string;
+        readonly capture: "speech" | "keypad" | "either";
+        readonly confirm: "none" | "readback" | "spellback";
+        readonly pattern: string;
+        readonly attempts: number;
+        readonly required: boolean;
+        readonly options: readonly (string)[];
+      };
+        readonly text?: string;
+        readonly tool?: string;
+        readonly on?: string;
+      })[];
+        readonly edges: readonly ({
+        readonly from: string;
+        readonly to: string;
+        readonly port?: string;
+        readonly when?: {
+        readonly equals?: string;
+        readonly oneOf?: readonly (string)[];
+        readonly isEmpty?: boolean;
+        readonly greaterThan?: number;
+      };
+        readonly otherwise?: boolean;
+      })[];
+      } | null;
+        readonly authoringMode: "form" | "flow";
         readonly deletedAt: string | null;
         readonly createdAt: string;
       }>(options, "POST", `/api/v1/agents`, input),
@@ -188,6 +260,42 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly required: boolean;
         readonly options: readonly (string)[];
       })[];
+        readonly flow: {
+        readonly version: number;
+        readonly nodes: readonly ({
+        readonly id: string;
+        readonly kind: "start" | "say" | "collect" | "confirm" | "decide" | "tool" | "transfer" | "hangup";
+        readonly x: number;
+        readonly y: number;
+        readonly field?: {
+        readonly key: string;
+        readonly type: "name" | "reference" | "phone" | "email" | "address" | "date" | "time" | "amount" | "nin" | "bvn" | "otp" | "quantity" | "choice" | "text";
+        readonly prompt: string;
+        readonly capture: "speech" | "keypad" | "either";
+        readonly confirm: "none" | "readback" | "spellback";
+        readonly pattern: string;
+        readonly attempts: number;
+        readonly required: boolean;
+        readonly options: readonly (string)[];
+      };
+        readonly text?: string;
+        readonly tool?: string;
+        readonly on?: string;
+      })[];
+        readonly edges: readonly ({
+        readonly from: string;
+        readonly to: string;
+        readonly port?: string;
+        readonly when?: {
+        readonly equals?: string;
+        readonly oneOf?: readonly (string)[];
+        readonly isEmpty?: boolean;
+        readonly greaterThan?: number;
+      };
+        readonly otherwise?: boolean;
+      })[];
+      } | null;
+        readonly authoringMode: "form" | "flow";
         readonly deletedAt: string | null;
         readonly createdAt: string;
       }>(options, "GET", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}`, input),
@@ -229,6 +337,42 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly required: boolean;
         readonly options: readonly (string)[];
       })[];
+        readonly flow: {
+        readonly version: number;
+        readonly nodes: readonly ({
+        readonly id: string;
+        readonly kind: "start" | "say" | "collect" | "confirm" | "decide" | "tool" | "transfer" | "hangup";
+        readonly x: number;
+        readonly y: number;
+        readonly field?: {
+        readonly key: string;
+        readonly type: "name" | "reference" | "phone" | "email" | "address" | "date" | "time" | "amount" | "nin" | "bvn" | "otp" | "quantity" | "choice" | "text";
+        readonly prompt: string;
+        readonly capture: "speech" | "keypad" | "either";
+        readonly confirm: "none" | "readback" | "spellback";
+        readonly pattern: string;
+        readonly attempts: number;
+        readonly required: boolean;
+        readonly options: readonly (string)[];
+      };
+        readonly text?: string;
+        readonly tool?: string;
+        readonly on?: string;
+      })[];
+        readonly edges: readonly ({
+        readonly from: string;
+        readonly to: string;
+        readonly port?: string;
+        readonly when?: {
+        readonly equals?: string;
+        readonly oneOf?: readonly (string)[];
+        readonly isEmpty?: boolean;
+        readonly greaterThan?: number;
+      };
+        readonly otherwise?: boolean;
+      })[];
+      } | null;
+        readonly authoringMode: "form" | "flow";
         readonly deletedAt: string | null;
         readonly createdAt: string;
       }>(options, "PATCH", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}`, input),
@@ -286,6 +430,145 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       send<{
         readonly updatedAt: string;
       }>(options, "PUT", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}/fields`, input),
+
+    /**
+     * The conversation graph this agent runs, and any unpublished edits to it
+     * `flow` and `authoringMode` are the published pair — what a call answered now would walk. `draft` is what somebody has saved and not published, null when there is nothing unpublished. Each half of the draft is independently null, because staging a redrawn canvas and switching which editor the agent runs on are two separate acts.
+     */
+    readFlow: (input: {
+        readonly path: {
+          readonly agentId: string;
+        };
+      }) =>
+      send<{
+        readonly flow: {
+        readonly version: number;
+        readonly nodes: readonly ({
+        readonly id: string;
+        readonly kind: "start" | "say" | "collect" | "confirm" | "decide" | "tool" | "transfer" | "hangup";
+        readonly x: number;
+        readonly y: number;
+        readonly field?: {
+        readonly key: string;
+        readonly type: "name" | "reference" | "phone" | "email" | "address" | "date" | "time" | "amount" | "nin" | "bvn" | "otp" | "quantity" | "choice" | "text";
+        readonly prompt: string;
+        readonly capture: "speech" | "keypad" | "either";
+        readonly confirm: "none" | "readback" | "spellback";
+        readonly pattern: string;
+        readonly attempts: number;
+        readonly required: boolean;
+        readonly options: readonly (string)[];
+      };
+        readonly text?: string;
+        readonly tool?: string;
+        readonly on?: string;
+      })[];
+        readonly edges: readonly ({
+        readonly from: string;
+        readonly to: string;
+        readonly port?: string;
+        readonly when?: {
+        readonly equals?: string;
+        readonly oneOf?: readonly (string)[];
+        readonly isEmpty?: boolean;
+        readonly greaterThan?: number;
+      };
+        readonly otherwise?: boolean;
+      })[];
+      } | null;
+        readonly authoringMode: "form" | "flow";
+        readonly configVersion: number;
+        readonly draft: {
+        readonly flow: {
+        readonly version: number;
+        readonly nodes: readonly ({
+        readonly id: string;
+        readonly kind: "start" | "say" | "collect" | "confirm" | "decide" | "tool" | "transfer" | "hangup";
+        readonly x: number;
+        readonly y: number;
+        readonly field?: {
+        readonly key: string;
+        readonly type: "name" | "reference" | "phone" | "email" | "address" | "date" | "time" | "amount" | "nin" | "bvn" | "otp" | "quantity" | "choice" | "text";
+        readonly prompt: string;
+        readonly capture: "speech" | "keypad" | "either";
+        readonly confirm: "none" | "readback" | "spellback";
+        readonly pattern: string;
+        readonly attempts: number;
+        readonly required: boolean;
+        readonly options: readonly (string)[];
+      };
+        readonly text?: string;
+        readonly tool?: string;
+        readonly on?: string;
+      })[];
+        readonly edges: readonly ({
+        readonly from: string;
+        readonly to: string;
+        readonly port?: string;
+        readonly when?: {
+        readonly equals?: string;
+        readonly oneOf?: readonly (string)[];
+        readonly isEmpty?: boolean;
+        readonly greaterThan?: number;
+      };
+        readonly otherwise?: boolean;
+      })[];
+      } | null;
+        readonly authoringMode: "form" | "flow" | null;
+        readonly updatedAt: string;
+      } | null;
+      }>(options, "GET", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}/flow`, input),
+
+    /**
+     * Stage this agent's conversation graph, or which editor it runs on
+     * Saved, not applied: the graph goes into the agent's unpublished draft and a call answered a second later walks whatever the agent walks today, until somebody publishes. Send `flow` to save the canvas, `authoringMode` to switch which editor and director the agent runs on, or both. An omitted one is left as it was — redrawing a graph does not switch the agent onto it, and switching back to `form` does not throw the canvas away. Refuses with 422 a graph whose JSON is not a graph; whether the graph is a conversation a call can finish is asked at publish.
+     */
+    setFlow: (input: {
+        readonly path: {
+          readonly agentId: string;
+        };
+        readonly body: {
+          readonly flow?: {
+          readonly version: number;
+          readonly nodes: readonly ({
+          readonly id: string;
+          readonly kind: "start" | "say" | "collect" | "confirm" | "decide" | "tool" | "transfer" | "hangup";
+          readonly x: number;
+          readonly y: number;
+          readonly field?: {
+          readonly key: string;
+          readonly type: "name" | "reference" | "phone" | "email" | "address" | "date" | "time" | "amount" | "nin" | "bvn" | "otp" | "quantity" | "choice" | "text";
+          readonly prompt: string;
+          readonly capture: "speech" | "keypad" | "either";
+          readonly confirm: "none" | "readback" | "spellback";
+          readonly pattern: string;
+          readonly attempts: number;
+          readonly required: boolean;
+          readonly options: readonly (string)[];
+        };
+          readonly text?: string;
+          readonly tool?: string;
+          readonly on?: string;
+        })[];
+          readonly edges: readonly ({
+          readonly from: string;
+          readonly to: string;
+          readonly port?: string;
+          readonly when?: {
+          readonly equals?: string;
+          readonly oneOf?: readonly (string)[];
+          readonly isEmpty?: boolean;
+          readonly greaterThan?: number;
+        };
+          readonly otherwise?: boolean;
+        })[];
+        };
+          readonly authoringMode?: "form" | "flow";
+        };
+      }) =>
+      send<{
+        readonly updatedAt: string;
+      }>(options, "PUT", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}/flow`, input),
 
     /**
      * Stage which of the organisation's sources this agent may answer from

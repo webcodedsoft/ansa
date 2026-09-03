@@ -33,6 +33,7 @@ import {
 } from "../agents.actions";
 import type {
   AgentDraft,
+  AgentFlowDocument,
   AgentSummary,
   KnowledgeDocument,
   LiveConfiguration,
@@ -141,6 +142,13 @@ interface AgentWorkspaceProps {
    * "what is actually answering the phone" belongs.
    */
   readonly draft: AgentDraft | null;
+  /**
+   * The graph, published and staged, from its own endpoint.
+   *
+   * Not folded into `draft`: the canvas is saved from its own screen, so the configuration
+   * draft carries no graph and there is nothing to fold.
+   */
+  readonly graph: AgentFlowDocument;
   /** Every number the organisation holds, for the routing picker. */
   readonly held: readonly HeldNumber[];
   readonly tools: Awaited<ReturnType<typeof readTools>>;
@@ -169,6 +177,7 @@ export const AgentWorkspace = ({
   agent,
   liveConfiguration,
   draft,
+  graph,
   tools,
   knowledge,
   versions,
@@ -217,6 +226,12 @@ export const AgentWorkspace = ({
           answeringMachineDetection:
             draft.answeringMachineDetection ?? agent.answeringMachineDetection,
         };
+
+  /* The same overlay the selections get, for the pair the canvas stages. Each half falls
+     back independently, because staging a redrawn canvas and switching which editor the
+     agent runs on are two separate saves and either can be the only one made. */
+  const stagedFlow = graph.draft?.flow ?? graph.flow;
+  const stagedMode = graph.draft?.authoringMode ?? graph.authoringMode;
 
   useFormToast(state, (data) => `Published version ${data.version}.`);
   useFormToast(saveState, () => "Saved. Nothing is live until you publish.");
@@ -398,9 +413,9 @@ export const AgentWorkspace = ({
                 <OverviewTab stats={stats} attention={attention} recentCalls={recentCalls} />
               ),
             },
-            { id: "flow", label: "Flow", panel: <FlowCanvas /> },
+            { id: "flow", label: "Flow", panel: <FlowCanvas flow={stagedFlow} publishForm={PUBLISH_FORM} /> },
             { id: "conversation", label: "Conversation", problem: problemTabs.has("conversation"), panel: <ConversationTab key={shownAs(config)} agent={staged} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
-            { id: "data", label: "Data captured", panel: <DataCapturedTab key={shownAs(staged.capturedFields)} agent={staged} /> },
+            { id: "data", label: "Data captured", panel: <DataCapturedTab key={shownAs(staged.capturedFields)} agent={staged} authoringMode={stagedMode} /> },
             { id: "tools", label: "Tools", panel: <ToolsTab key={shownAs(staged.enabledTools)} agent={staged} tools={tools} /> },
             {
               id: "knowledge",

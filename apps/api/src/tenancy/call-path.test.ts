@@ -45,6 +45,15 @@ const DRAFT_READERS = [
   "discardAgentDraft",
   "liveAgentId",
   "agent_config_drafts",
+  /* The graph a conversation is drawn as has a draft of its own, and it is exactly as
+     dangerous to read on a call as any other draft — more so, because it decides the shape
+     of the call and not just its wording. A half-wired canvas with an edge going nowhere
+     is a call that stalls in silence.
+
+     `loadPublishedFlow` and `loadFlowAtVersion` are deliberately absent. Those are published
+     reads and the call path is meant to use one of them. */
+  "loadDraftFlow",
+  "stageDraftFlow",
 ];
 
 /* From the working directory rather than `import.meta`, matching the db package's scan.

@@ -1,4 +1,4 @@
-import { CircleAlert, CircleCheck, TriangleAlert } from "lucide-react";
+import { CircleAlert, CircleCheck, Info, TriangleAlert } from "lucide-react";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
@@ -13,12 +13,21 @@ const TONES: Record<Tone, string> = {
   accent: "bg-[var(--accent-soft)] text-[var(--accent)] border-[color-mix(in_srgb,var(--accent)_34%,transparent)]",
 };
 
-export type NoticeTone = "error" | "ok" | "warn";
+/**
+ * `info` is not a quieter `warn`.
+ *
+ * There were three tones, all of which said something had gone right or wrong, so a plain
+ * statement of fact — this agent is built as a flow, its questions live on the canvas — had
+ * to borrow the warning triangle. Nothing is wrong in that sentence, and an icon that says
+ * otherwise teaches people to ignore the ones that mean it.
+ */
+export type NoticeTone = "error" | "ok" | "warn" | "info";
 
 const NOTICES = {
   error: { tone: TONES.bad, Icon: CircleAlert },
   ok: { tone: TONES.ok, Icon: CircleCheck },
   warn: { tone: TONES.warn, Icon: TriangleAlert },
+  info: { tone: TONES.neutral, Icon: Info },
 } as const;
 
 /**

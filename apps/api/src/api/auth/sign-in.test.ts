@@ -52,7 +52,12 @@ const appUrl = process.env["DATABASE_URL"];
 /** Eight characters. The whole point — see the header. */
 const SHORT_PASSWORD = "short-pw";
 
-const ORGANIZATION = "c8c8c8c8-c8c8-4c8c-8c8c-c8c8c8c8c8c8";
+/* Its own, and not shared with anything. This file inserts the organisation with a bare
+   `insert`, so a second claimant is not a tidiness problem — it is a duplicate key. `c8c8…`
+   was also held by `packages/db/src/call-content-retention.test.ts`, and since Turborepo runs
+   the two suites against one database at the same time, both files passed alone and the full
+   run failed. See `packages/db/src/test-organization-ids.test.ts`. */
+const ORGANIZATION = "cacacaca-caca-4aca-8aca-cacacacacaca";
 const USER = randomUUID();
 const EMAIL = `short-${USER}@invalid.test`;
 

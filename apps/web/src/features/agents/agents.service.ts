@@ -82,6 +82,30 @@ export const setAgentFields = async (agentId: string, fields: readonly unknown[]
 export const setAgentTools = async (agentId: string, tools: readonly string[]) =>
   (await api()).agents.setTools({ path: { agentId }, body: { tools: [...tools] } });
 
+/**
+ * The graph, published and staged, as one read.
+ *
+ * Separate from the configuration draft on purpose: the canvas is saved from its own screen,
+ * so `GET /config/:agentId/draft` does not carry a graph and asking it for one would report
+ * every flow-authored agent as having nothing staged.
+ */
+export const readAgentFlow = async (agentId: string) =>
+  (await api()).agents.readFlow({ path: { agentId } });
+
+export type AgentFlowDocument = Awaited<ReturnType<typeof readAgentFlow>>;
+
+/**
+ * The whole graph, and which editor the agent runs on, staged onto the draft.
+ *
+ * Both halves are optional and independently staged, which matters: redrawing a canvas is
+ * not a request to switch onto it, and switching back to a form is not a request to delete
+ * it. Omitting one leaves the stored value alone.
+ */
+export const setAgentFlow = async (
+  agentId: string,
+  body: { readonly flow?: unknown; readonly authoringMode?: "form" | "flow" },
+) => (await api()).agents.setFlow({ path: { agentId }, body: body as never });
+
 export type AgentSummary = Awaited<ReturnType<typeof listAgents>>["items"][number];
 
 /**

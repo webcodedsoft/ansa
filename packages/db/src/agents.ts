@@ -118,6 +118,24 @@ export interface AgentSummary {
    * wrong way — the same argument `toolConfig` makes in `organizations.ts`.
    */
   readonly capturedFields: readonly unknown[];
+  /**
+   * The published graph, when this agent is drawn as one, and null when it is a form.
+   *
+   * `unknown` for the same reason `capturedFields` is: the shape belongs to the layer that
+   * validates it. Non-null does not mean the agent runs as a graph — an operator may switch
+   * back to a form and keep the canvas — so `authoringMode` and not this decides which
+   * director conducts the call.
+   */
+  readonly flow: unknown | null;
+  /**
+   * Which of the two directors conducts this agent's call.
+   *
+   * A column rather than an inference from whether `flow` is null, because those two facts
+   * come apart in both directions: a form-authored agent can carry an abandoned canvas, and
+   * an agent switched to "flow" before anything was drawn has a mode and no graph. Inferring
+   * would silently pick a director in both cases and be wrong in one.
+   */
+  readonly authoringMode: "form" | "flow";
   readonly deletedAt: string | null;
   readonly createdAt: string;
 }
@@ -138,6 +156,8 @@ interface AgentRow {
   barge_in: boolean;
   answering_machine_detection: boolean;
   captured_fields: unknown[] | null;
+  flow: unknown | null;
+  authoring_mode: "form" | "flow";
   deleted_at: Date | string | null;
   created_at: Date | string;
 }
@@ -162,6 +182,8 @@ const toSummary = (row: AgentRow): AgentSummary => ({
   bargeIn: row.barge_in,
   answeringMachineDetection: row.answering_machine_detection,
   capturedFields: row.captured_fields ?? [],
+  flow: row.flow,
+  authoringMode: row.authoring_mode,
   deletedAt: row.deleted_at === null ? null : iso(row.deleted_at),
   createdAt: iso(row.created_at),
 });
@@ -171,6 +193,7 @@ const COLUMNS = `
   a.speaking_rate,
   a.dialled_number,
   a.config_version, a.barge_in, a.answering_machine_detection, a.captured_fields,
+  a.flow, a.authoring_mode,
   a.deleted_at, a.created_at,
   (select coalesce(array_agg(t.tool_name order by t.tool_name), '{}')
      from agent_tools t where t.agent_id = a.id) as enabled_tools,

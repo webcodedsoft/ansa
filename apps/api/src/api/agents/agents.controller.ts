@@ -3,8 +3,11 @@ import {
   createAgent,
   findAgent,
   listAgents,
+  loadDraftFlow,
+  loadPublishedFlow,
   NumberNotRoutable,
   stageAgentSelection,
+  stageDraftFlow,
   updateAgent,
 } from "@ansa/db";
 import {
@@ -21,6 +24,7 @@ import {
 } from "@nestjs/common";
 
 import { Endpoint } from "../http/endpoint";
+import { ValidationFailed } from "../http/problem";
 import { apiRoute, FromBody, FromPath } from "../http/request";
 import {
   flag,
@@ -41,6 +45,8 @@ import {
   uuid,
 } from "../schemas";
 import { OrganizationContext } from "../tenancy/organization-context";
+
+import { asFlow, authoringMode, flow, flowProblems } from "./flow.schema";
 
 /**
  * The agents an organisation runs (migration 0018).
@@ -110,6 +116,16 @@ const agent = object({
   answeringMachineDetection: flag(),
   /** The voice form this agent conducts, in the order it asks. */
   capturedFields: list(capturedField),
+  /**
+   * The conversation graph, or null when nobody has drawn one (migration 0060).
+   *
+   * Present while `authoringMode` is `form` means a canvas was drawn and set aside, not a
+   * graph that is live. Read `authoringMode` for that — inferring it from `flow !== null`
+   * would mean that switching back to the form deletes somebody's canvas.
+   */
+  flow: nullable(flow),
+  /** Which editor authored this agent, and therefore which director runs its calls. */
+  authoringMode: authoringMode(),
   /** Set when the agent was retired. Retired agents are listed so call logs can name them. */
   deletedAt: nullable(timestamp()),
   createdAt: timestamp(),
@@ -172,6 +188,50 @@ const behaviour = object({
   answeringMachineDetection: optional(flag()),
 });
 
+/**
+ * The canvas, and which editor the agent runs on.
+ *
+ * Both optional and independently staged, exactly as the two behaviour switches above are,
+ * and for a sharper version of the same reason. Redrawing a graph is not a request to switch
+ * onto it, and switching back to the form is not a request to delete the canvas — migration
+ * 0060 keeps them in two columns so those two statements cannot be conflated, and a body that
+ * required both would conflate them here instead. Absent means "not staged" all the way down
+ * to the `coalesce` in `app.stage_agent_draft_selection`.
+ */
+const flowSelection = object({
+  flow: optional(flow),
+  authoringMode: optional(authoringMode()),
+});
+
+/**
+ * The graph a call runs today, and the one somebody is still drawing.
+ *
+ * Both in one response because the console needs both to draw the canvas: it renders the
+ * staged graph when there is one and the published graph when there is not, and asking for
+ * them separately is how it ends up showing one agent's live layout over another's edits.
+ *
+ * Rule 4 is not bent by serving a draft here. A draft reaching a *call* is the prohibition;
+ * this is the console reading its own unpublished work back, which is the entire reason the
+ * draft exists. Nothing under `telephony`, `orchestrator`, `tenancy`, `outbound` or
+ * `conversation` can reach this handler.
+ */
+const flowState = object({
+  /** What a call would walk right now. Null when nobody has published a graph. */
+  flow: nullable(flow),
+  authoringMode: authoringMode(),
+  /** The version the published graph belongs to, so two reads can be told apart. */
+  configVersion: integer({ minimum: 0 }),
+  /** Saved but not published, or null when there is nothing unpublished. */
+  draft: nullable(
+    object({
+      /** Null is "not staged", which is not an empty graph — an empty graph is two nodes. */
+      flow: nullable(flow),
+      authoringMode: nullable(authoringMode()),
+      updatedAt: timestamp(),
+    }),
+  ),
+});
+
 const knowledgeSelection = object({
   /** Source ids from the organisation's own list. One this organisation does not hold is ignored. */
   sources: list(uuid(), { maxItems: 200 }),
@@ -200,8 +260,23 @@ const toolSelection = object({
  */
 const toResponse = (row: {
   readonly capturedFields: readonly unknown[];
+  /**
+   * Required, not optional with a default.
+   *
+   * They were optional while `AgentSummary` did not select them, defaulting to `null` and
+   * `"form"` — which meant every agent on this surface reported as an unauthored form and
+   * nothing failed. `listAgents` now selects both, so a missing column becomes a compile
+   * error here instead of a plausible answer.
+   */
+  readonly flow: unknown;
+  readonly authoringMode: "form" | "flow";
 }): Infer<typeof agent> =>
-  ({ ...row, capturedFields: [...row.capturedFields] }) as unknown as Infer<typeof agent>;
+  ({
+    ...row,
+    capturedFields: [...row.capturedFields],
+    flow: row.flow,
+    authoringMode: row.authoringMode,
+  }) as unknown as Infer<typeof agent>;
 
 const asConflict = (error: unknown): never => {
   if (error instanceof NumberNotRoutable) {
@@ -360,6 +435,84 @@ export class AgentsController {
   ): Promise<Infer<typeof staged>> {
     const at = await this.db.tx((scope) =>
       stageAgentSelection(scope, path.agentId, { knowledge: body.sources }, null),
+    );
+    if (at === null) throw new NotFoundException();
+    return { updatedAt: at };
+  }
+
+  @Get(":agentId/flow")
+  @Endpoint({
+    summary: "The conversation graph this agent runs, and any unpublished edits to it",
+    description:
+      "`flow` and `authoringMode` are the published pair — what a call answered now would " +
+      "walk. `draft` is what somebody has saved and not published, null when there is " +
+      "nothing unpublished. Each half of the draft is independently null, because staging a " +
+      "redrawn canvas and switching which editor the agent runs on are two separate acts.",
+    capability: "config:read",
+    params: agentPath,
+    response: flowState,
+  })
+  async readFlow(@FromPath() path: Infer<typeof agentPath>): Promise<Infer<typeof flowState>> {
+    const found = await this.db.tx(async (scope) => {
+      const live = await loadPublishedFlow(scope, path.agentId);
+      // Not ours reads as no such agent, so there is nothing to ask about a draft for.
+      if (live === null) return null;
+      return { live, draft: await loadDraftFlow(scope, path.agentId) };
+    });
+    if (found === null) throw new NotFoundException();
+
+    return {
+      flow: found.live.flow,
+      authoringMode: found.live.authoringMode,
+      configVersion: found.live.configVersion,
+      draft:
+        found.draft === null
+          ? null
+          : {
+              flow: found.draft.flow,
+              authoringMode: found.draft.authoringMode,
+              updatedAt: found.draft.updatedAt,
+            },
+    };
+  }
+
+  @Put(":agentId/flow")
+  @Endpoint({
+    summary: "Stage this agent's conversation graph, or which editor it runs on",
+    description:
+      "Saved, not applied: the graph goes into the agent's unpublished draft and a call " +
+      "answered a second later walks whatever the agent walks today, until somebody " +
+      "publishes. Send `flow` to save the canvas, `authoringMode` to switch which editor and " +
+      "director the agent runs on, or both. An omitted one is left as it was — redrawing a " +
+      "graph does not switch the agent onto it, and switching back to `form` does not throw " +
+      "the canvas away. Refuses with 422 a graph whose JSON is not a graph; whether the " +
+      "graph is a conversation a call can finish is asked at publish.",
+    capability: "config:write",
+    params: agentPath,
+    body: flowSelection,
+    response: staged,
+  })
+  async setFlow(
+    @FromPath() path: Infer<typeof agentPath>,
+    @FromBody() body: Infer<typeof flowSelection>,
+  ): Promise<Infer<typeof staged>> {
+    /* The narrowings the schema DSL cannot carry — exactly one condition operator per edge,
+       and `true` rather than `false` on `isEmpty` and `otherwise`. Checked at save and not
+       only at publish, for the reason every draft rule here is: being told it saved and
+       finding out at publish that it never could have is worse than being told now. */
+    const problems = body.flow === undefined ? [] : flowProblems(body.flow);
+    if (problems.length > 0) throw new ValidationFailed(problems);
+
+    const at = await this.db.tx((scope) =>
+      stageDraftFlow(
+        scope,
+        path.agentId,
+        {
+          ...(body.flow === undefined ? {} : { flow: asFlow(body.flow) }),
+          ...(body.authoringMode === undefined ? {} : { authoringMode: body.authoringMode }),
+        },
+        null,
+      ),
     );
     if (at === null) throw new NotFoundException();
     return { updatedAt: at };

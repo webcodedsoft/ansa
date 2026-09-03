@@ -1,3 +1,5 @@
+import { validateFlow, type AuthoringMode, type Flow } from "@ansa/shared";
+
 import { ENFORCED_IN_CODE } from "../../prompts/guarantees";
 import { compileOrganizationLayer } from "../../prompts/organization-layer";
 import { BASE_KEYTERMS, MAX_KEYTERMS } from "../../tenancy/defaults";
@@ -232,3 +234,49 @@ export const publishedGuarantees = (): readonly PublishedGuarantee[] =>
     enforcedIn: guarantee.where,
     restatedToTheModel: guarantee.spoken !== null,
   }));
+
+/**
+ * Whether a graph is a conversation a call could actually finish.
+ *
+ * The other checks in this file are a courtesy: delete them and the platform is exactly as
+ * safe, because the guarantees are held in dispatch paths and in Postgres. This one is not.
+ * A graph is the *shape* of the call — a `decide` branching on an answer the caller was
+ * never asked for, an edge pointing at a node somebody deleted, a step with nothing leaving
+ * it — and none of those fail loudly at three in the morning. They fail as a pause on the
+ * line while a person says hello twice and hangs up, which is the failure mode this whole
+ * codebase is arranged to prevent (R6.2: a configuration problem must never become silence).
+ *
+ * So the blocking problems are refused here rather than logged and worked around at call
+ * time. `validateFlow` is the single authority — the console draws the same list from the
+ * same function beside the canvas, so nobody arrives at this 422 having been told the graph
+ * was fine.
+ *
+ * Non-blocking problems pass. They are worth saying on the screen and are not worth
+ * refusing a publication over, and a gate that also blocked those would teach operators to
+ * read a refusal as noise.
+ *
+ * Only when the agent is actually authored as a flow. A form-authored agent may carry a
+ * half-drawn canvas from an afternoon of experimenting, and nothing reads it; refusing to
+ * publish a greeting because of an abandoned sketch would be the same defect as clearing an
+ * agent's tools because the operator only edited its name.
+ */
+export const flowPublicationProblems = (input: {
+  readonly authoringMode: AuthoringMode;
+  readonly flow: Flow | null;
+}): readonly FieldError[] => {
+  if (input.authoringMode !== "flow") return [];
+  if (input.flow === null) {
+    return [
+      at(
+        "flow",
+        "This agent is set to be built as a flow and has no graph, so a call would reach it " +
+          "with nothing to say. Draw the conversation on the Flow tab, or set it back to a form.",
+      ),
+    ];
+  }
+  return validateFlow(input.flow)
+    .filter((problem) => problem.blocking)
+    .map((problem) =>
+      at(problem.nodeId === null ? "flow" : `flow.nodes.${problem.nodeId}`, problem.message),
+    );
+};

@@ -11,6 +11,12 @@ import { cn } from "@/lib/cn";
 
 import { createAgentFromTemplate } from "../agents.actions";
 import { AGENT_TEMPLATES, type AgentTemplate } from "../templates";
+import {
+  AUTHORING_ASYMMETRY,
+  AuthoringModeChoice,
+  DEFAULT_AUTHORING_MODE,
+  type AuthoringMode,
+} from "./authoring-mode";
 import { ConversationPreview } from "./conversation-preview";
 
 /**
@@ -25,6 +31,11 @@ import { ConversationPreview } from "./conversation-preview";
  * Template first, name second. The name is the easy decision and the template is the one
  * worth thinking about, so the preview gets the space: pick a card on the left, read the
  * call it produces on the right, and only then name it.
+ *
+ * How it is authored — a form or a flow — is asked here rather than on a screen in front of
+ * this one. A chooser before the templates would ask somebody to pick an authoring model
+ * before they have seen either one, which is a question with no honest answer; asked
+ * alongside the templates it is a choice about work they can already see.
  */
 
 /** The starting point somebody lands on. Anything else is a deliberate choice. */
@@ -71,6 +82,7 @@ const Card = ({
 export const CreateAgent = () => {
   const router = useRouter();
   const [templateId, setTemplateId] = useState(DEFAULT_TEMPLATE);
+  const [authoringMode, setAuthoringMode] = useState<AuthoringMode>(DEFAULT_AUTHORING_MODE);
   const [name, setName] = useState("");
   const [failure, setFailure] = useState<string | null>(null);
   const [creating, startCreating] = useTransition();
@@ -83,7 +95,14 @@ export const CreateAgent = () => {
   const create = (): void => {
     setFailure(null);
     startCreating(async () => {
-      const result = await createAgentFromTemplate({ name, templateId });
+      /* Built as an object first rather than written inline, because `createAgentFromTemplate`
+         does not read `authoringMode` yet — the column, the API and the action are being
+         widened in parallel with this screen. Sending it now costs nothing and means the
+         choice reaches creation the moment the action reads it, rather than being collected
+         here and dropped. If it is still ignored when both halves have landed, that is the
+         bug to look for. */
+      const input = { name, templateId, authoringMode };
+      const result = await createAgentFromTemplate(input);
       if (!result.ok) {
         setFailure(result.message);
         return;
@@ -117,11 +136,23 @@ export const CreateAgent = () => {
         </Panel>
 
         <div>
+          <h2 className="text-[13px] font-medium">How it is built</h2>
+          <p className="mt-1 mb-2.5 max-w-[62ch] text-[12.5px] text-[var(--ink-3)]">
+            {/* Said before the choice, not after it. Somebody who reads this only once they
+                have picked has been told about a door they have already walked through. */}
+            {AUTHORING_ASYMMETRY}
+          </p>
+          <AuthoringModeChoice value={authoringMode} onChange={setAuthoringMode} />
+        </div>
+
+        <div>
           <h2 className="text-[13px] font-medium">Start from</h2>
           <p className="mt-1 mb-2.5 max-w-[62ch] text-[12.5px] text-[var(--ink-3)]">
             Every word of this is editable afterwards. The template decides what the agent
             asks for and how it confirms each answer, which is the part worth getting close
             before the first call.
+            {authoringMode === "flow" &&
+              " Its questions become the flow's first steps, wired in the order below, and you take it from there on the canvas."}
           </p>
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
             {AGENT_TEMPLATES.map((one) => (

@@ -1,9 +1,12 @@
 import {
   applyAgentBehaviour,
+  applyAgentFlow,
   applyCapturedFields,
   discardAgentDraft,
   listAgentConfigVersions,
   loadAgentDraft,
+  loadDraftFlow,
+  loadPublishedFlow,
   loadConfigVersionForCall,
   loadCurrentAgentConfig,
   loadAgentConfigVersion,
@@ -44,7 +47,12 @@ import {
 import { OrganizationContext } from "../tenancy/organization-context";
 
 import { diffConfigurations } from "./diff";
-import { effectiveKeyterms, publicationProblems, publishedGuarantees } from "./publication";
+import {
+  effectiveKeyterms,
+  flowPublicationProblems,
+  publicationProblems,
+  publishedGuarantees,
+} from "./publication";
 
 /**
  * The agent's configuration: what it says, how it sounds, what it listens for, and every
@@ -558,6 +566,51 @@ export class ConfigController {
 
       if (agentId !== null && staged?.capturedFields != null) {
         await applyCapturedFields(scope, agentId, staged.capturedFields);
+      }
+
+      /* The graph, onto the agent row and before the snapshot, for the same reason the form
+         is: `publish_agent_config` selects `flow` and `authoring_mode` off that row, so
+         applying them afterwards would publish the graph but record the old one — and the
+         version a call points at would describe an agent that never existed.
+
+         Read through `loadDraftFlow` rather than off `staged`: `AgentDraft` deliberately does
+         not carry a graph, because the canvas is saved and read on its own screen. Undefined
+         leaves a column alone, which is what makes publishing a greeting safe for a canvas
+         somebody else staged. */
+      const stagedFlow = agentId === null ? null : await loadDraftFlow(scope, agentId);
+
+      /* Whether the graph about to go live could answer a phone.
+       *
+       * Checked against what the agent will be *after* this publish, not against what was
+       * staged: switching the mode to "flow" without touching the canvas and redrawing the
+       * canvas without touching the mode are two separate saves, and either one alone can
+       * produce a live agent that stalls. Falling back to the published values is what makes
+       * the pair of them add up.
+       *
+       * Inside the transaction and before `applyAgentFlow`, so a refusal rolls back rather
+       * than leaving the graph applied and the version unwritten — which would be an agent
+       * whose live shape no version describes.
+       *
+       * `loadPublishedFlow` and not `loadDraftFlow` for the fallback: this is a publish
+       * deciding what will be true, and reading the other draft to answer that would be
+       * exactly the confusion rule 4 exists to prevent. */
+      const live = agentId === null ? null : await loadPublishedFlow(scope, agentId);
+      /* Null is an agent this organisation cannot see. Say nothing about its graph and let
+         the publish below produce the 404 — a 422 about a flow would confirm the agent
+         exists to somebody who is not entitled to know it does. */
+      if (live !== null) {
+        const flowProblems = flowPublicationProblems({
+          authoringMode: stagedFlow?.authoringMode ?? live.authoringMode,
+          flow: stagedFlow?.flow ?? live.flow,
+        });
+        if (flowProblems.length > 0) throw new ValidationFailed(flowProblems);
+      }
+
+      if (agentId !== null && (stagedFlow?.flow != null || stagedFlow?.authoringMode != null)) {
+        await applyAgentFlow(scope, agentId, {
+          ...(stagedFlow.flow === null ? {} : { flow: stagedFlow.flow }),
+          ...(stagedFlow.authoringMode === null ? {} : { authoringMode: stagedFlow.authoringMode }),
+        });
       }
 
       const version = await publishAgentConfig(scope, path.agentId, fields, note);

@@ -268,4 +268,7 @@ export const capturedFieldSchema = z.object({
 
 export type CapturedField = z.infer<typeof capturedFieldSchema>;
 
-export const capturedFieldsSchema = z.array(capturedFieldSchema).max(40);
+/** The API's cap on a form, and therefore on what a graph may project back to. */
+export const MAX_CAPTURED_FIELDS = 40;
+
+export const capturedFieldsSchema = z.array(capturedFieldSchema).max(MAX_CAPTURED_FIELDS);

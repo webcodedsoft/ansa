@@ -4,6 +4,24 @@
   "private": true,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./flow": {
+      "types": "./dist/flow.d.ts",
+      "default": "./dist/flow.js"
+    },
+    "./flow-validate": {
+      "types": "./dist/flow-validate.d.ts",
+      "default": "./dist/flow-validate.js"
+    },
+    "./flow-project": {
+      "types": "./dist/flow-project.d.ts",
+      "default": "./dist/flow-project.js"
+    }
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",

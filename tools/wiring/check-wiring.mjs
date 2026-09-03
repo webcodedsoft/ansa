@@ -14,7 +14,17 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
+// Where exports are policed. The console is deliberately not here: a Next.js app exports a
+// default from every page and a server action from every form, and none of those has a
+// caller this tool can see.
 const ROOTS = ["apps/api/src", "packages"];
+
+// Where a *use* counts, which is a wider place than where exports are policed. The console
+// consumes `@ansa/shared` — the flow contract, by subpath — so an export read only from
+// `apps/web` is wired, not dead, and calling it dead would send somebody to delete a constant
+// the canvas depends on. `.tsx` matters as much as `.ts` here; almost all of that app is
+// components.
+const USERS = [...ROOTS, "apps/web/src", "tools"];
 const EXPORT = /^export (?:const|function|class|async function) ([A-Za-z_][A-Za-z0-9_]*)/gm;
 
 const sh = (args) => {
@@ -37,7 +47,9 @@ for (const file of sources) {
 
 const problems = [];
 for (const [name, file] of [...home].sort()) {
-  const hits = sh(["grep", "-rlw", "--include=*.ts", "--include=*.mjs", name, ...ROOTS, "tools"])
+  const hits = sh([
+    "grep", "-rlw", "--include=*.ts", "--include=*.tsx", "--include=*.mjs", name, ...USERS,
+  ])
     .filter((h) => !h.includes("/dist/"));
   const elsewhere = hits.filter((h) => h !== file);
   if (elsewhere.length > 0) continue;

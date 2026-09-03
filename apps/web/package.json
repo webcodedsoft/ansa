@@ -12,6 +12,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@ansa/shared": "workspace:*",
     "@tailwindcss/postcss": "4.3.3",
     "clsx": "2.1.1",
     "lucide-react": "1.31.0",

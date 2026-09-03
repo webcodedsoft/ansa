@@ -37,5 +37,5 @@ export {
 export { DataTable, type Column, type DataTableProps } from "./data-table";
 export { Modal } from "./modal";
 export { Pagination } from "./pagination";
-export { Segmented, Tabs, Toggle, type TabDef } from "./tabs";
+export { Segmented, Tabs, Toggle, useOpenTab, type TabDef } from "./tabs";
 export { Stepper, type StepDef } from "./stepper";
