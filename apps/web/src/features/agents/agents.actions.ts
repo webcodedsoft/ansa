@@ -27,6 +27,7 @@ import {
 import {
   archiveAgent,
   createAgent,
+  currentConfiguration,
   routeAgent,
   diffVersions,
   discardDraft,
@@ -54,7 +55,7 @@ import {
   testTool,
   type VoiceChoice,
 } from "./agents.service";
-import { allFields, findTemplate } from "./templates";
+import { allFields, findTemplate, formPolicies } from "./templates";
 
 /**
  * Server Actions for the agent workspace.
@@ -498,6 +499,40 @@ export const createAgentFromTemplate = async (input: {
       await stageAgentBehaviour(agentId, switches);
     } catch (error) {
       unfinished.push(`its switches (${failureMessage(error)})`);
+    }
+  }
+
+  /* The words the transcriber should expect and the rules the model reads every turn ride
+     on the configuration draft, which `POST /agents` does not take — so they are staged
+     after the create, onto the document the create produced. Read first, then written
+     whole: a draft is replaced, not patched, and writing one from this screen's idea of the
+     defaults would blank whatever the create set. A form agent gets one policy more than a
+     flow — the one that says which questions belong to which service — because a list
+     cannot skip and has to be told what to skip. */
+  const policies = input.authoringMode === "flow" ? template.policies : formPolicies(template);
+  if (template.keyterms.length > 0 || policies.length > 0) {
+    try {
+      const { config } = await currentConfiguration(agentId);
+      await saveDraft(agentId, {
+        name: config.name,
+        voiceId: config.voiceId,
+        speakingRate: config.speakingRate,
+        greeting: config.greeting,
+        persona: config.persona,
+        instructions: config.instructions,
+        keyterms: [...new Set([...config.keyterms, ...template.keyterms])],
+        escalation: config.escalation,
+        // Copied rather than cast: the template's lists are readonly and the body's are not.
+        policyBlocks: policies.map((policy) => ({
+          name: policy.name,
+          applies: policy.applies,
+          canDo: [...policy.canDo],
+          cannotDo: [...policy.cannotDo],
+          escalateWhen: [...policy.escalateWhen],
+        })),
+      });
+    } catch (error) {
+      unfinished.push(`its vocabulary and policies (${failureMessage(error)})`);
     }
   }
 

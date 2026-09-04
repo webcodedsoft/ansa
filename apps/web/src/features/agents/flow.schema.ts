@@ -236,79 +236,158 @@ export const flowFromFields = (fields: readonly FlowField[]): Flow => {
  * This is what makes a template a complete flow: somebody who picks "Property enquiry" gets
  * a canvas that already asks renters and buyers different things, and edits from there.
  */
+type DrawnField = FlowField;
+interface DrawnArm {
+  readonly fields: readonly DrawnField[];
+  readonly branch?: DrawnBranch;
+  readonly closing?: string;
+  readonly handover?: string;
+}
+interface DrawnBranch {
+  readonly on: string;
+  readonly arms: Readonly<Record<string, DrawnArm>>;
+}
+
+/** One column per arm, one row per step — the grid the canvas's own tidy-up uses. */
+const COLUMN = 260;
+const ROW = 170;
+
+/**
+ * Draw a template as the flow it describes: the shared opening in a column, a fork into
+ * one arm per service, forks inside arms where a service forks, and every path ending
+ * either at the close or at a hand-over.
+ *
+ * Laid out recursively so a nested fork widens its arm rather than overprinting the next
+ * one: each arm reports how many columns it took and the arms to its right start after
+ * them. The last option of every fork is the catch-all, since a caller whose answer matched
+ * nothing is still on the call and has to go somewhere.
+ */
 export const flowFromTemplate = (template: {
-  readonly fields: readonly FlowField[];
-  readonly branch?: { readonly on: string; readonly arms: Readonly<Record<string, readonly FlowField[]>> };
+  readonly fields: readonly DrawnField[];
+  readonly branch?: DrawnBranch;
   readonly closing?: string;
 }): Flow => {
   if (template.branch === undefined) return withClosing(flowFromFields(template.fields), template.closing);
 
-  const { on, arms } = template.branch;
-  const options = Object.keys(arms);
   const nodes: Flow["nodes"][number][] = [{ id: "start", kind: "start", x: 40, y: 90 }];
   const edges: Flow["edges"][number][] = [];
+  /** Where finished arms rejoin: the shared close when they have no closing of their own. */
+  const toClose: string[] = [];
+  const toEnd: string[] = [];
+
+  /**
+   * Draw one arm downwards from `y` in the column at `x`. Returns the number of columns it
+   * used and the lowest row it reached. The edge from the fork is written by the caller,
+   * which knows the option and whether this arm is the catch-all, so the arm only reports
+   * its first node.
+   */
+  const drawArm = (arm: DrawnArm, prefix: string, x: number, y: number): { first: string; columns: number; deepest: number } => {
+    let previous: string | null = null;
+    let first: string | null = null;
+    let rowY = y;
+    const step = (id: string, node: Omit<Flow["nodes"][number], "id" | "x" | "y">): void => {
+      rowY += ROW;
+      nodes.push({ id, x, y: rowY, ...node });
+      if (previous !== null) edges.push({ from: previous, to: id });
+      first ??= id;
+      previous = id;
+    };
+
+    arm.fields.forEach((field, index) => step(`${prefix}-q${index + 1}`, { kind: "collect", field }));
+
+    let columns = 1;
+    let deepest = rowY;
+    if (arm.branch !== undefined) {
+      step(`${prefix}-fork`, { kind: "decide", on: arm.branch.on });
+      const forkId = `${prefix}-fork`;
+      const forkY = rowY;
+      const options = Object.keys(arm.branch.arms);
+      let used = 0;
+      options.forEach((option, index) => {
+        const inner = arm.branch?.arms[option];
+        if (inner === undefined) return;
+        const drawn = drawArm(inner, `${prefix}-${index + 1}`, x + used * COLUMN, forkY);
+        edges.push(
+          index === options.length - 1
+            ? { from: forkId, to: drawn.first, otherwise: true }
+            : { from: forkId, to: drawn.first, when: { equals: option } },
+        );
+        used += drawn.columns;
+        deepest = Math.max(deepest, drawn.deepest);
+      });
+      columns = Math.max(1, used);
+      // The fork's own arms have rejoined or ended; nothing below the fork in this column.
+      return { first: first ?? forkId, columns, deepest };
+    }
+
+    if (arm.handover !== undefined) {
+      step(`${prefix}-why`, { kind: "say", text: arm.handover });
+      step(`${prefix}-person`, { kind: "transfer" });
+      return { first: first ?? `${prefix}-why`, columns, deepest: rowY };
+    }
+
+    if (arm.closing !== undefined) {
+      step(`${prefix}-close`, { kind: "say", text: arm.closing });
+      toEnd.push(`${prefix}-close`);
+      return { first: first ?? `${prefix}-close`, columns, deepest: rowY };
+    }
+
+    if (previous === null) {
+      // A step to land on, so the arm exists on the canvas and the edge has a target.
+      step(`${prefix}-ack`, { kind: "say", text: "Acknowledge what they said and carry on." });
+    }
+    toClose.push(previous as unknown as string);
+    return { first: first as unknown as string, columns, deepest: rowY };
+  };
+
+  // The shared opening, in a column. The choice the fork reads is among these.
   let y = 90;
   let previous = "start";
-
-  // The shared questions, in a column. The choice the branch reads is among them.
   template.fields.forEach((field, index) => {
     const id = `ask-${index + 1}`;
-    y += 170;
+    y += ROW;
     nodes.push({ id, kind: "collect", x: 40, y, field });
     edges.push({ from: previous, to: id });
     previous = id;
   });
 
-  y += 170;
-  nodes.push({ id: "branch", kind: "decide", x: 40, y, on });
+  y += ROW;
+  nodes.push({ id: "branch", kind: "decide", x: 40, y, on: template.branch.on });
   edges.push({ from: previous, to: "branch" });
 
-  // One arm per option, side by side. The last option is the catch-all, since a caller
-  // whose answer matched nothing is still on the call and has to go somewhere.
-  const armBottoms: string[] = [];
+  const options = Object.keys(template.branch.arms);
+  let used = 0;
   let deepest = y;
-  options.forEach((option, column) => {
-    const x = 40 + column * 260;
-    let armY = y;
-    let armPrevious = "branch";
-    const isLast = column === options.length - 1;
-    const questions = arms[option] ?? [];
-    if (questions.length === 0) {
-      // A step to land on, so the arm exists on the canvas and the edge has a target.
-      armY += 170;
-      const id = `arm-${column + 1}`;
-      nodes.push({ id, kind: "say", x, y: armY, text: `They said ${option}. Acknowledge it and carry on.` });
-      edges.push(isLast ? { from: "branch", to: id, otherwise: true } : { from: "branch", to: id, when: { equals: option } });
-      armPrevious = id;
-    }
-    questions.forEach((field, index) => {
-      armY += 170;
-      const id = `arm-${column + 1}-${index + 1}`;
-      nodes.push({ id, kind: "collect", x, y: armY, field });
-      edges.push(
-        armPrevious === "branch"
-          ? isLast
-            ? { from: "branch", to: id, otherwise: true }
-            : { from: "branch", to: id, when: { equals: option } }
-          : { from: armPrevious, to: id },
-      );
-      armPrevious = id;
-    });
-    armBottoms.push(armPrevious);
-    deepest = Math.max(deepest, armY);
+  options.forEach((option, index) => {
+    const arm = template.branch?.arms[option];
+    if (arm === undefined) return;
+    const drawn = drawArm(arm, `arm-${index + 1}`, 40 + used * COLUMN, y);
+    edges.push(
+      index === options.length - 1
+        ? { from: "branch", to: drawn.first, otherwise: true }
+        : { from: "branch", to: drawn.first, when: { equals: option } },
+    );
+    used += drawn.columns;
+    deepest = Math.max(deepest, drawn.deepest);
   });
 
-  // Rejoin: every arm leads to the close, then the end.
-  const closeY = deepest + 170;
-  nodes.push({ id: "close", kind: "say", x: 40, y: closeY, text: template.closing ?? "Say what happens next, in one sentence." });
-  for (const bottom of armBottoms) edges.push({ from: bottom, to: "close" });
-  nodes.push({ id: "end", kind: "hangup", x: 40, y: closeY + 170 });
-  edges.push({ from: "close", to: "end" });
+  // Rejoin. Arms without a closing of their own meet at the shared close; the rest, and the
+  // close, go to the one end. Hand-overs already ended.
+  let endY = deepest + ROW;
+  if (toClose.length > 0) {
+    nodes.push({ id: "close", kind: "say", x: 40, y: endY, text: template.closing ?? "Say what happens next, in one sentence." });
+    for (const from of toClose) edges.push({ from, to: "close" });
+    toEnd.push("close");
+    endY += ROW;
+  }
+  if (toEnd.length > 0) {
+    nodes.push({ id: "end", kind: "hangup", x: 40, y: endY });
+    for (const from of toEnd) edges.push({ from, to: "end" });
+  }
 
   return { version: FLOW_VERSION, nodes, edges };
 };
 
-/** A straight flow with a closing Say before the hang-up, when the template has one. */
 const withClosing = (flow: Flow, closing: string | undefined): Flow => {
   if (closing === undefined) return flow;
   const end = flow.nodes.find((node) => node.kind === "hangup");

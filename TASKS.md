@@ -2963,7 +2963,7 @@ What to listen for, in order of what is actually in doubt:
 - [ ] `config.*` is still organisation-scoped and resolves the oldest live agent.
 
 - [x] Agent templates to pick from when creating the first one, and the create form itself.
-      Seventy, in a gallery, every one publishable as-is (2026-09-04; see Slice 15).
+      Sixty-nine whole front desks in a gallery, every one publishable as-is (2026-09-04; Slice 15).
 - [ ] Organisation-level general config that an agent's own settings override. Today an
       agent carries every value outright and there is no organisation default beneath it.
 - [~] `config.*` is still organisation-scoped and resolves the oldest live agent — **but it
@@ -3855,21 +3855,26 @@ covered what the form already does:
   builder — how the call sounds for a form, the steps it draws for a flow. Create lands on
   the workspace the builder owns.
 
-  **Templates are complete conversations, in a gallery (2026-09-04).** Seventy of them, in
-  `templates.catalogue.ts`, across fifteen kinds of Nigerian business — property, clinics,
-  banks and fintech, telecoms, utilities, logistics, retail, travel, schools, churches and
-  mosques, professional and home services, automotive, and outbound reminders. Each is
-  the greeting, the questions in the order a person would ask them, house rules, closing
-  line and keyterms; a template may `branch` on one choice question with an arm of
-  questions per option. The create screen shows the one chosen and a "Browse 70 templates"
-  button; the gallery is a wide modal with search and sector chips, and a pick closes it.
-  A form agent gets every arm's questions flattened (`allFields`); a flow agent gets the
-  fork drawn (`flowFromTemplate`: shared column → `decide` → arms side by side → a `say`
-  close → `end`). `templates.test.ts` puts every one of the seventy through `validateFlow`
-  and the form schema and fails the build if any needs fixing before publish — a template
-  that needs homework is not a template. Verified in the browser: chooser → Flow Builder →
-  gallery → Property enquiry → name → Create → canvas shows the rent/buy fork → Publish,
-  version 2 live, nothing else touched.
+  **Templates are whole front desks, in a gallery (2026-09-04).** Sixty-three organisations
+  and six outbound campaigns, one file per sector under `features/agents/catalogue/`. A
+  template is one organisation's entire phone line, not one task: a shared opening (reason,
+  name, number), a fork into every service that organisation is rung about day to day, each
+  service a complete sub-conversation that may fork again (`forked`) and ends either with
+  what happens next (`service`) or with a hand-over — a word about why, then a transfer node
+  (`handover`). Every template ships `keyterms` (what its callers actually say — "self-con",
+  "Coartem", "Jumu'ah") and `policies` (the API's per-turn policy blocks: what it may do, must
+  not do, and when it escalates), staged onto the draft after the create; a form agent gets
+  one policy more, "Which questions to ask", because a list cannot skip and has to be told
+  what to skip. Nothing asks for a BVN, NIN, PIN or OTP, anywhere, and the finance templates
+  say so out loud. `flowFromTemplate` lays the fork out recursively — an arm reports the
+  columns it took and the next arm starts after them — and `templates.test.ts` holds every
+  one of the sixty-nine to the same bar: publishes clean through `validateFlow`, fits the form
+  schema and the config limits, forks only on a choice already asked with an arm per option,
+  no two nodes on one spot, at least three services if inbound. The gallery is a wide modal
+  with search and sector chips; the create screen shows the chosen one, and the flow preview
+  shows every service, nested fork and hand-over indented. `create-from-template.test.ts`
+  mocks the service boundary and fails when the draft wiring is deleted — checked by deleting
+  it. Not yet verified in the browser this round: the apps were stopped on request.
 
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has

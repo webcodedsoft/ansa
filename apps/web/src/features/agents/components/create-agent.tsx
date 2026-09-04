@@ -1,6 +1,6 @@
 "use client";
 
-import { GitBranch, MessageSquareText, PhoneIncoming, PhoneOff, TextCursorInput, type LucideIcon } from "lucide-react";
+import { GitBranch, MessageSquareText, PhoneForwarded, PhoneIncoming, PhoneOff, TextCursorInput, type LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
@@ -10,7 +10,7 @@ import { Button, CONTROL, Notice, Panel, PanelBody } from "@/components/ui";
 
 import { createAgentFromTemplate } from "../agents.actions";
 import type { CapturedField } from "../agents.schema";
-import { allFields, findTemplate, type AgentTemplate } from "../templates";
+import { allFields, findTemplate, type AgentTemplate, type TemplateArm } from "../templates";
 import {
   type AuthoringMode,
 } from "./authoring-mode";
@@ -39,7 +39,7 @@ import { BrowseTemplatesButton, TemplateCard, TemplateGallery } from "./template
  */
 
 /** The starting point somebody lands on. Anything else is a deliberate choice. */
-const DEFAULT_TEMPLATE = "customer-service";
+const DEFAULT_TEMPLATE = "general-reception";
 
 /**
  * The front door of one builder.
@@ -51,43 +51,60 @@ const DEFAULT_TEMPLATE = "customer-service";
  */
 /**
  * The steps a template becomes on the canvas — the same shape `flowFromTemplate` draws,
- * fork included, shown as a list so the preview is the drawing and not a description of it.
+ * every service, fork and hand-over included, shown as an indented list so the preview is
+ * the drawing and not a description of it.
  */
-type Step = { readonly icon: LucideIcon; readonly title: string; readonly detail: string; readonly indent?: boolean };
+type Step = { readonly icon: LucideIcon; readonly title: string; readonly detail: string; readonly depth: number };
 
-const collectStep = (field: CapturedField, indent = false): Step => ({
+const collectStep = (field: CapturedField, depth: number): Step => ({
   icon: TextCursorInput,
   title: "Collect a value",
   detail: field.prompt === "" ? field.key : field.prompt,
-  indent,
+  depth,
 });
 
+/** One arm's steps, then its fork's arms, then how it ends — the order the canvas draws. */
+const armSteps = (arm: TemplateArm, depth: number, inScope: readonly CapturedField[]): Step[] => {
+  const steps = arm.fields.map((field) => collectStep(field, depth));
+  const scope = [...inScope, ...arm.fields];
+  if (arm.branch !== undefined) {
+    const on = scope.find((field) => field.key === arm.branch?.on);
+    steps.push({ icon: GitBranch, title: "Branch", detail: `On “${on?.prompt ?? arm.branch.on}”`, depth });
+    for (const [option, inner] of Object.entries(arm.branch.arms)) {
+      steps.push({ icon: GitBranch, title: `If “${option}”`, detail: "", depth: depth + 1 });
+      steps.push(...armSteps(inner, depth + 2, scope));
+    }
+    return steps;
+  }
+  if (arm.handover !== undefined) {
+    steps.push({ icon: PhoneForwarded, title: "Transfer to a person", detail: arm.handover, depth });
+  } else if (arm.closing !== undefined) {
+    steps.push({ icon: MessageSquareText, title: "Say, then end", detail: arm.closing, depth });
+  }
+  return steps;
+};
+
 const FlowPreview = ({ template }: { readonly template: AgentTemplate }) => {
-  const branch = template.branch;
   const steps: Step[] = [
-    { icon: PhoneIncoming, title: "Call answered", detail: "The caller has picked up, or dialled in." },
-    ...template.fields.map((field) => collectStep(field)),
+    { icon: PhoneIncoming, title: "Call answered", detail: "The caller has picked up, or dialled in.", depth: 0 },
+    ...template.fields.map((field) => collectStep(field, 0)),
   ];
-  if (branch !== undefined) {
-    const on = template.fields.find((field) => field.key === branch.on);
-    steps.push({
-      icon: GitBranch,
-      title: "Branch",
-      detail: `On what they said to “${on?.prompt ?? branch.on}”`,
-    });
-    for (const [arm, fields] of Object.entries(branch.arms)) {
-      steps.push({ icon: GitBranch, title: `If “${arm}”`, detail: fields.length === 0 ? "Straight to the close." : `${fields.length} more ${fields.length === 1 ? "question" : "questions"}`, indent: true });
-      for (const field of fields) steps.push(collectStep(field, true));
+  if (template.branch !== undefined) {
+    const on = template.fields.find((field) => field.key === template.branch?.on);
+    steps.push({ icon: GitBranch, title: "Branch", detail: `On “${on?.prompt ?? template.branch.on}”`, depth: 0 });
+    for (const [service, arm] of Object.entries(template.branch.arms)) {
+      steps.push({ icon: GitBranch, title: `If “${service}”`, detail: "", depth: 1 });
+      steps.push(...armSteps(arm, 2, template.fields));
     }
   }
   if (template.closing !== undefined) {
-    steps.push({ icon: MessageSquareText, title: "Say", detail: template.closing });
+    steps.push({ icon: MessageSquareText, title: "Say", detail: template.closing, depth: 0 });
   }
-  steps.push({ icon: PhoneOff, title: "End the call", detail: "Says goodbye and hangs up." });
+  steps.push({ icon: PhoneOff, title: "End the call", detail: "Says goodbye and hangs up.", depth: 0 });
   return (
     <ol className="flex flex-col">
       {steps.map((step, at) => (
-        <li key={at} className={step.indent === true ? "ml-5 flex gap-2.5" : "flex gap-2.5"}>
+        <li key={at} className="flex gap-2.5" style={{ marginLeft: step.depth * 14 }}>
           <span className="flex flex-col items-center">
             <span className="grid size-7 flex-none place-items-center rounded-lg border border-[var(--hairline)] bg-[var(--surface-2)]">
               <step.icon aria-hidden className="size-3.5 text-[var(--accent)]" />
@@ -96,7 +113,7 @@ const FlowPreview = ({ template }: { readonly template: AgentTemplate }) => {
           </span>
           <span className="pb-3">
             <span className="block text-[12.5px] font-medium">{step.title}</span>
-            <span className="block text-[12px] text-[var(--ink-3)]">{step.detail}</span>
+            {step.detail !== "" && <span className="block text-[12px] text-[var(--ink-3)]">{step.detail}</span>}
           </span>
         </li>
       ))}
@@ -164,9 +181,9 @@ export const CreateAgent = ({ mode }: { readonly mode: AuthoringMode }) => {
         <div>
           <h2 className="text-[13px] font-medium">Start from</h2>
           <p className="mt-1 mb-2.5 max-w-[62ch] text-[12.5px] text-[var(--ink-3)]">
-            Every template is a complete conversation for a kind of business, and every word
-            of it is editable afterwards. Pick the one closest to yours; most need nothing
-            more than a name.
+            Every template is a whole front desk for one kind of organisation — every
+            service it is rung about, day to day, with its house rules and the words callers
+            use. Pick the one closest to yours; most need nothing more than a name.
             {authoringMode === "flow" &&
               " It is drawn on the canvas as it is, branches and all, and you take it from there."}
           </p>
@@ -231,7 +248,7 @@ export const CreateAgent = ({ mode }: { readonly mode: AuthoringMode }) => {
           <>
             <h3 className="text-[13.5px] font-semibold">The flow this draws</h3>
             <p className="mt-1 mb-3.5 text-[12.5px] text-[var(--ink-3)]">
-              The steps the canvas opens with, top to bottom. Change it from there.
+              What the canvas opens with: the opening, a fork into each service, and how each ends.
             </p>
             {template === null ? (
               <p className="text-[12.5px] text-[var(--ink-3)]">Pick a starting point.</p>

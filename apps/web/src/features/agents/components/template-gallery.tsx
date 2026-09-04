@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 import { Button, CONTROL, Modal, Tag } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
-import { AGENT_TEMPLATES, allFields, TEMPLATE_SECTORS, type AgentTemplate } from "../templates";
+import { AGENT_TEMPLATES, allFields, servicesOf, TEMPLATE_SECTORS, type AgentTemplate } from "../templates";
 
 /**
  * The template gallery: every complete agent, by the kind of business it is for.
@@ -49,8 +49,8 @@ export const TemplateGallery = ({
       title="Choose a starting point"
       description={
         mode === "flow"
-          ? "Every template is a complete conversation. Pick one and it is drawn on the canvas, branches and all; give the agent a name and it can go live."
-          : "Every template is a complete conversation. Pick one and its questions, greeting and house rules are set; give the agent a name and it can go live."
+          ? "Every template is one organisation's whole front desk — each service it is rung about, its house rules, and the words callers use. Pick one and it is drawn on the canvas, every fork and hand-over included; give the agent a name and it can go live."
+          : "Every template is one organisation's whole front desk — each service it is rung about, its house rules, and the words callers use. Pick one and its questions, greeting, rules and vocabulary are set; give the agent a name and it can go live."
       }
     >
       <div className="flex flex-col gap-3">
@@ -60,7 +60,7 @@ export const TemplateGallery = ({
             autoFocus
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search — clinic, delivery, school, loan…"
+            placeholder="Search — hospital, estate, bank, school, courier…"
             aria-label="Search templates"
             className={cn(CONTROL, "pl-9")}
           />
@@ -135,6 +135,7 @@ export const TemplateCard = ({
   readonly onPick: () => void;
 }) => {
   const questions = allFields(template).length;
+  const services = servicesOf(template).length;
   return (
     <button
       type="button"
@@ -159,10 +160,10 @@ export const TemplateCard = ({
             {questions} {questions === 1 ? "question" : "questions"}
           </Tag>
         )}
-        {template.branch !== undefined && (
+        {services > 0 && (
           <Tag tone="accent">
             <GitBranch aria-hidden className="size-3" />
-            {mode === "flow" ? "branches" : "branches, as a flow"}
+            {services} services{mode === "form" ? ", as a form" : ""}
           </Tag>
         )}
         {template.answeringMachineDetection && (
