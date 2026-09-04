@@ -394,7 +394,7 @@ const nameFrom = (text: string): string | null => {
  * and are what somebody says while being interrupted.
  */
 const NOT_A_NAME =
-  /\b(yes|yeah|no|nope|sorry|hello|hi|what|pardon|okay|thanks|thank|you|me|him|her|them|us|we|they|he|she|it|this|that|there|here|uh|um|erm|please|wait|hold)\b/i;
+  /\b(yes|yeah|no|nope|sorry|hello|hi|what|pardon|okay|thanks|thank|you|me|him|her|them|us|we|they|he|she|it|this|that|there|here|uh|um|erm|please|wait|hold|madam|sir|ma|oga|aunty|auntie|uncle|mister|mr|mrs|miss)\b/i;
 
 /**
  * A bare name, for when the agent has just asked "and your name?" and the answer is one
@@ -1347,10 +1347,31 @@ const confirming = (
  * short question and a short statement both stay with the engine.
  */
 const TALK_WORDS = 5;
+
+/**
+ * A caller who did not catch the question. The re-ask is what they need.
+ *
+ * The whole utterance, or a can't-hear phrase: "sorry, what?", "pardon?", "I can't hear
+ * you". Not any sentence with "what" in it — "what promotion is that?" is a question, and
+ * the first version of this sent it to the re-ask instead of the model.
+ */
+const DID_NOT_HEAR =
+  /^(sorry[,.!]?\s*)?(what|pardon|come again|say (that|it) again|repeat that|again)[?.!]*$|\b(can'?t|cannot|don'?t|didn'?t) hear\b/i;
+
+/**
+ * A sentence about themselves. "I don't have it", "we moved", "my son has it" — four words
+ * or fewer, and still not somebody fumbling a policy number. The pronoun is the tell: an
+ * answer to "what's the number?" does not start with "I".
+ */
+const ABOUT_THEMSELVES = /^(i|i'm|i've|i'll|i'd|we|we're|my|our|he|she|they|it's|there's|that's)\b/i;
+
 const isTalk = (text: string): boolean => {
   const trimmed = text.trim();
+  if (DID_NOT_HEAR.test(trimmed)) return false;
   const words = trimmed.split(/\s+/).length;
-  return words >= TALK_WORDS || (trimmed.endsWith("?") && words >= TALK_WORDS - 1);
+  if (words >= TALK_WORDS) return true;
+  if (trimmed.endsWith("?") && words >= TALK_WORDS - 1) return true;
+  return words >= 3 && ABOUT_THEMSELVES.test(trimmed);
 };
 
 const awaiting = (

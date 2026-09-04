@@ -3396,14 +3396,16 @@ describe("the platform tools on a call", () => {
       const first = h.llm.last().request.system;
       expect(first).toContain("Mention the weekend promotion");
       expect(first).toContain("business_hours tool now");
-      h.llm.last().emit("Hi! ");
+      h.llm.last().emit("Hi there, and there's a promotion on this weekend by the way. ");
       h.llm.last().finish();
+      // Synthesised, sent and heard: the turn played out in full.
+      h.tts.last().audio(1600);
       h.tts.last().done();
       h.stream.ackAll();
 
       /* The caller has not answered the question yet, so the director still lists both. The
-         model has already been told to cover the promotion; a tool it never used is still
-         owed. */
+         promotion was covered on a turn the caller heard to the end; a tool it never used is
+         still owed. */
       h.listen.final("Sorry, what promotion is that exactly?");
       const second = h.llm.last().request.system;
       expect(second).not.toContain("Mention the weekend promotion");
@@ -3419,6 +3421,20 @@ describe("the platform tools on a call", () => {
       h.listen.final("That is useful to know, thank you.");
       expect(h.llm.last().request.system).not.toContain("business_hours tool now");
       expect(h.llm.last().request.system).toContain("Who am I speaking with?");
+    });
+
+    it("steers a say step again if the caller cut the turn off before it was heard", () => {
+      const h = setup({ flow: withASayAndATool, makeTools: platform() });
+      started(h);
+
+      h.listen.final("I saw your listing and wanted to ask about it.");
+      expect(h.llm.last().request.system).toContain("Mention the weekend promotion");
+      h.llm.last().emit("Sure. Before I forget, there is a ");
+      // Talked over before the sentence finished, let alone the promotion.
+      h.listen.speechStart(400);
+      h.listen.final("Actually, is the flat still available?");
+
+      expect(h.llm.last().request.system).toContain("Mention the weekend promotion");
     });
   });
 

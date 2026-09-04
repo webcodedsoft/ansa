@@ -316,7 +316,17 @@ const NIGERIAN_NAMES = [
 
 const KEYTERMS = ["Ansa", "policy", "policy number", "premium", "naira", "claim", "renewal"];
 
+/**
+ * What every call actually boosts today: `BASE_KEYTERMS` from the API, read from its build
+ * rather than copied, so this run measures the list as shipped and not a list that was
+ * true when this file was written. The question it answers is the one the names run
+ * answered for names: does the base list — now carrying places and Pidgin words as well —
+ * still rescue the name, and does it corrupt any ordinary word around it?
+ */
+const { BASE_KEYTERMS } = require(`${ROOT}apps/api/dist/tenancy/defaults.js`);
+
 const runs = [
+  ["deepgram base list  ", () => deepgram({ keyterms: [...BASE_KEYTERMS] })],
   ["openai mu-law 8k    ", () => openai({ asPcm: false })],
   ["openai pcm 24k      ", () => openai({ asPcm: true })],
   ["openai pcm register ", () => openai({ asPcm: true, prompt: PROMPTS.register })],

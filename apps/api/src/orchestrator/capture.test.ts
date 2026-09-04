@@ -975,3 +975,39 @@ describe("how a value is read back", () => {
     expect(corrected.say).toContain("eight");
   });
 });
+
+describe("what counts as the caller saying something, once a question is armed", () => {
+  const armed = () => {
+    // Primed and then past it: the question has been put.
+    const first = speak(expecting("reference", { primed: true }).state, "I saw your advert and wanted to ask.");
+    expect(first.handled).toBe(false);
+    return first.state;
+  };
+
+  it("sends a short sentence about themselves to the model rather than re-asking", () => {
+    // "What promotion is that?" has "what" in it and is a question, not a caller who
+    // missed the question — the first version of the rule got that wrong.
+    for (const said of ["I don't have it", "My son has it", "We moved last month", "What promotion is that exactly?"]) {
+      const r = speak(armed(), said);
+      expect(r.handled, said).toBe(false);
+      expect(r.state.kind, said).toBe("awaiting");
+    }
+  });
+
+  it("still re-asks a caller who did not catch the question, however they put it", () => {
+    for (const said of ["Sorry, what?", "I can't hear you", "Say that again", "Pardon?", "What?"]) {
+      const r = speak(armed(), said);
+      expect(r.handled, said).toBe(true);
+      expect(r.say, said).toContain("Sorry");
+    }
+  });
+});
+
+describe("an honorific where a name should be", () => {
+  it("is not taken as the caller's name", () => {
+    for (const said of ["Madam", "Sir", "Oga", "Aunty", "Mr"]) {
+      const r = speak(expecting("name").state, said);
+      expect(r.state.kind, said).not.toBe("confirming");
+    }
+  });
+});

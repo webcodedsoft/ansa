@@ -3995,6 +3995,14 @@ this slice: forty new lines across all layers, net of what is removed.
       model, so a doubted turn followed by an engine-handled exchange left the doubt
       standing on the model's next turn; it is set on every final now. Kano left the
       keyterms: four letters that sound like "cannot" on every call.
+- [x] **Edges closed (2026-09-04).** A `say` step is marked covered when its turn plays out,
+      not when it is rendered; a barged turn steers it again. "I don't have it" and "my son
+      has it" are talk, not a fumbled answer, while "I can't hear you" still gets the
+      question again. An honorific where a name should be is not a name. Two register
+      pairs left `VARIATION_LAYER` that the new rules made redundant, so the slice is 28
+      net lines. The keyterm bias was measured, not argued: on a real call the shipped list
+      is byte-identical to names alone (see `defaults.ts`). The sign-in intermittent now
+      reports the body it got, so the next failure says what happened.
 - [ ] **E4.** After real calls: `GET /calls/catchphrases` for repetition, and the call log
       for how often a clarifying question was asked. This is the only proof that matters
       and it needs a phone.

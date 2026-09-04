@@ -101,6 +101,14 @@ const NIGERIAN_GIVEN_NAMES: readonly string[] = [
  * Pidgin words English models hear as something else. An organisation's own places go in
  * its own keyterms, where it can spend its share of the cap on them.
  *
+ * Measured on 2026-09-04 with `tools/stt-compare/compare.mjs --only "deepgram base list"`,
+ * which reads this list from the build rather than a copy of it. On the control recording
+ * the full list returns "Sikiru" and the policy number clean. On a real twenty-second
+ * call (`CA40dd8f…`) the transcript with this list is byte-identical to the one with the
+ * fifty names alone — the name rescued, "Abuja" right, nothing else moved — and without
+ * any list the name is dropped: "My name is." Adding the places and words cost nothing on
+ * that call. Re-run it when this list changes; the claim is only as good as the last run.
+ *
  * Kano is not here, on purpose: a boost on four letters that sound like "cannot" would
  * bias a word said on every call towards a city named on few, and the evidence above is
  * that keyterm bias does exactly that. An organisation in Kano adds it to its own list.

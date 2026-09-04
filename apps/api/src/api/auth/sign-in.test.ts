@@ -127,8 +127,12 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("signing in", ()
       organisationId: ORGANIZATION,
     });
 
-    expect(short.status).toBe(401);
-    expect(long.status).toBe(401);
+    /* The body rides on the assertion. This test has failed three times in full runs and
+       passed every time alone and on rerun, and each time the only evidence was "expected
+       401" with nothing about what came back instead. The next time, the answer is in the
+       failure. */
+    expect(short.status, `short: ${short.body}`).toBe(401);
+    expect(long.status, `long: ${long.body}`).toBe(401);
     expect(short.body).not.toContain("12");
   });
 

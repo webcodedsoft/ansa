@@ -812,6 +812,17 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   let flowEndReached = false;
   /** The `say` texts already put in front of the model, and the tools that have run. */
   const coveredOnCall = new Set<string>();
+  /**
+   * The `say` texts put in front of the model on a turn that has not finished playing.
+   *
+   * Marked covered when the turn plays out, not when it is rendered. Rendered-and-marked
+   * lost the promotion whenever the caller talked over the turn before the model reached
+   * it. A barged turn drops its entry and the step is steered again next turn; a turn that
+   * played in full moves its entry into `coveredOnCall`. Keyed by turn, because the tool
+   * loop builds several requests inside one turn and the second must not re-list what the
+   * first already put in front of the model.
+   */
+  const coverShownOn = new Map<number, readonly string[]>();
   const toolsUsedOnCall = new Set<string>();
   /** True when the handoff module now owns the call, so the caller must not start a turn. */
   const followTheGraph = (): boolean => {
@@ -1593,6 +1604,9 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     // Played out in full, so there is no barge offset. The other exit is stopSpeaking,
     // which stamps one; between them every agent turn that made a sound is recorded once.
     recordAgentTurn(current, null);
+    // Heard in full, so whatever the model was asked to cover on this turn has been said.
+    for (const text of coverShownOn.get(current.seq) ?? []) coveredOnCall.add(text);
+    coverShownOn.delete(current.seq);
     log.info("agent turn played", {
       seq: current.seq,
       ms: Math.round(durationMs(current.bytesHeard, stream.format)),
@@ -1709,6 +1723,9 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     // place that number exists.
     recordAgentTurn(current, Math.round(durationMs(current.bytesHeard, stream.format)));
     commitHeard(current);
+    // Cut off, so the steps this turn was asked to cover are not taken as covered. They come
+    // back on the next turn's steering.
+    coverShownOn.delete(current.seq);
 
     /* Hold the evidence for a moment before believing it. A cough, a door, a carrier
        click and a "mm-hmm" all look identical at StartOfTurn; only the transcript tells
@@ -2220,15 +2237,18 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
        front of the model: a `say` after the turn it was shown on, a `tool` after it has run
        at all — a failed run included, since a tool that failed is re-tried by the model's own
        judgement on the result, not by a standing order to use it. */
+    const shownThisTurn = coverShownOn.get(seq) ?? [];
     const steered =
       guidance === null
         ? null
         : {
             ...guidance,
-            cover: guidance.cover.filter((text) => !coveredOnCall.has(text)),
+            cover: guidance.cover.filter((text) => !coveredOnCall.has(text) && !shownThisTurn.includes(text)),
             tools: guidance.tools.filter((tool) => !toolsUsedOnCall.has(tool)),
           };
-    for (const text of steered?.cover ?? []) coveredOnCall.add(text);
+    if (steered !== null && steered.cover.length > 0) {
+      coverShownOn.set(seq, [...shownThisTurn, ...steered.cover]);
+    }
     const steering = steered === null ? "" : renderGuidance(steered);
     /* The graph has ended and this turn is being told to say goodbye, so this is the turn
        the hangup waits for. Once: a caller who starts talking over the goodbye cancels the
