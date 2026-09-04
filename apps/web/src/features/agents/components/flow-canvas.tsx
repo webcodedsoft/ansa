@@ -806,6 +806,35 @@ export const FlowCanvas = ({
     }
   };
 
+  /**
+   * How far the drawing reaches, so the pan can be held to it.
+   *
+   * With the layout derived, the drawing starts near the origin and grows down and to the
+   * right — so the only pans worth allowing are the ones that bring a further part of it
+   * into view. Past the origin there is nothing; past the far edge, the same. The room for
+   * an "add a service" box beside the last lane is counted, since it is part of the drawing.
+   */
+  const extent = (): { readonly right: number; readonly bottom: number } => {
+    const shown = nodes.filter((n) => !hidden.has(n.id));
+    if (shown.length === 0) return { right: 0, bottom: 0 };
+    const right = Math.max(...shown.map((n) => n.x + NODE_W)) + (lanes.length > 1 ? NODE_W + 60 : 40);
+    const bottom = Math.max(...shown.map((n) => n.y + (cardRefs.current.get(n.id)?.offsetHeight ?? BODY_H))) + 40;
+    return { right, bottom };
+  };
+
+  /** A pan that keeps some of the drawing on screen, whichever way it was asked for. */
+  const clampPan = (next: Point): Point => {
+    const view = canvasRef.current;
+    if (view === null) return next;
+    const { right, bottom } = extent();
+    return {
+      x: Math.min(0, Math.max(Math.min(0, view.clientWidth - right), next.x)),
+      y: Math.min(0, Math.max(Math.min(0, view.clientHeight - bottom), next.y)),
+    };
+  };
+  const clampRef = useRef(clampPan);
+  clampRef.current = clampPan;
+
   const onCanvasPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement).closest("[data-flow-node], [data-canvas-bar]")) return;
     panRef.current = { startX: e.clientX, startY: e.clientY, panX: pan.x, panY: pan.y };
@@ -815,11 +844,28 @@ export const FlowCanvas = ({
   const onCanvasPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const p = panRef.current;
     if (!p) return;
-    setPan({ x: p.panX + (e.clientX - p.startX), y: p.panY + (e.clientY - p.startY) });
+    setPan(clampPan({ x: p.panX + (e.clientX - p.startX), y: p.panY + (e.clientY - p.startY) }));
   };
   const onCanvasPointerUp = () => {
     panRef.current = null;
   };
+
+  /* The wheel pans the drawing while the pointer is over it, and scrolls the page otherwise.
+     Attached by hand rather than as `onWheel`: React registers wheel listeners as passive,
+     and a passive listener cannot stop the page from scrolling underneath — which is the one
+     thing this has to do. The drawing takes the wheel whether or not it can move further,
+     the way any canvas does; the page is a mouse-width away. The clamp is read through a
+     ref so the one listener sees the current drawing without being re-attached per render. */
+  useEffect(() => {
+    const view = canvasRef.current;
+    if (view === null) return;
+    const onWheel = (e: WheelEvent): void => {
+      e.preventDefault();
+      setPan((current) => clampRef.current({ x: current.x - e.deltaX, y: current.y - e.deltaY }));
+    };
+    view.addEventListener("wheel", onWheel, { passive: false });
+    return () => view.removeEventListener("wheel", onWheel);
+  }, []);
 
   /**
    * The steps in the order a call meets them, for Tab.
@@ -963,7 +1009,7 @@ export const FlowCanvas = ({
   const fit = () => {
     const first = nodes[0];
     if (first === undefined) return setPan({ x: 0, y: 0 });
-    setPan({ x: 24 - Math.min(...nodes.map((n) => n.x)), y: TOP - Math.min(...nodes.map((n) => n.y)) });
+    setPan(clampPan({ x: 24 - Math.min(...nodes.map((n) => n.x)), y: TOP - Math.min(...nodes.map((n) => n.y)) }));
   };
 
   const updateSelected = (patch: Partial<FlowNode>, what: string) => {

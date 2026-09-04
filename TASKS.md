@@ -3985,6 +3985,17 @@ shorter lane's later cards drifted under the gaps between lanes — fixed by giv
 its own run of columns (`tidied`), with a test that fails against the old rule and only that.
 Native drag-and-drop was driven with real DragEvents in the browser; both drop paths verified.
 
+**The wheel, over the drawing (2026-09-04, late).** With the pointer over the canvas the wheel
+pans the drawing; anywhere else it scrolls the page. Attached by hand as a non-passive
+listener — React registers `onWheel` passive, and a passive listener cannot stop the page
+underneath. The pan is clamped to the drawing (`extent`/`clampPan`): past the origin there is
+nothing to see, past the far edge the same, and the drag-pan, Fit and "Show me" go through the
+same clamp so no path can strand the reader on empty dots. Verified in the browser with
+trusted wheel events (prevented, panned, clamped at both edges); the browser extension's own
+"scroll" turned out to move the container by script regardless of wheel handling — shown by
+cancelling every wheel on the page and watching it scroll anyway — so it proves nothing
+either way about a real mouse, which Chrome does honour.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and
