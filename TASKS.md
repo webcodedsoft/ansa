@@ -3886,6 +3886,28 @@ covered what the form already does:
   policies — so the catalogue cannot drift back. Totals: 68 nested forks, 110 hand-overs,
   207 policies, 1,037 questions across 69 templates.
 
+  **Insurance is its own sector (2026-09-04)**, in both catalogues: the insurer moved out of
+  Banking & fintech and a broker joined it (quotes across insurers with a five-way fork, claims
+  on behalf of clients, renewals with a comparison, documents). The create screen's preview
+  plays one call at a time — a row of service chips, then the opening and the chosen service
+  to its end — instead of every question of every service in a column taller than the page;
+  the panel is capped to the viewport and scrolls inside itself.
+
+**Tool templates (2026-09-04).** Ninety-three complete HTTP tools in `tool-catalogue.ts`,
+sector for sector with the agents: what a front desk looks up (`look_up_listing`,
+`check_transaction_status`, `find_appointment_slots`, `track_shipment`), what it does
+(`book_viewing`, `log_dispute`, `place_order`, `record_promise_to_pay`), and what it must
+never do itself (`block_card`, `cancel_policy`, `terminate_tenancy`, `issue_authorisation_code`
+— irreversible, so the dispatcher transfers and the caller hears why). Each carries the
+sentence the model picks it by, parameters described for the model, the tier, the sentence
+spoken from a small flat response, the no-record fallback, a readback of the caller's own
+values for a write, and a timeout. The host is `https://your-system.example` — reserved,
+unresolvable — and `expects` says what the endpoint must answer with. The gallery lives where
+a tool is made: step one of Add a tool, above the curl paste; a pick fills every step and a
+notice says what is left. `tool-templates.test.ts` puts every one through the form's own
+`problemsWith`, checks every URL hole has a parameter and every readback hole is an argument,
+and that the destructive ones are behind a person.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and

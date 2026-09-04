@@ -8,6 +8,7 @@ import { GENERAL } from "./general";
 import { HEALTHCARE } from "./healthcare";
 import { HOME_SERVICES } from "./home-services";
 import { HOSPITALITY } from "./hospitality";
+import { INSURANCE } from "./insurance";
 import { LOGISTICS } from "./logistics";
 import { OUTBOUND } from "./outbound";
 import { PROFESSIONAL } from "./professional";
@@ -36,4 +37,4 @@ import { UTILITIES } from "./utilities";
  *
  * One file per sector, in the order the gallery lists them.
  */
-export const CATALOGUE_TEMPLATES: readonly AgentTemplate[] = [...GENERAL, ...PROPERTY, ...HOSPITALITY, ...HEALTHCARE, ...FINANCE, ...TELECOMS, ...UTILITIES, ...LOGISTICS, ...RETAIL, ...TRAVEL, ...EDUCATION, ...COMMUNITY, ...PROFESSIONAL, ...HOME_SERVICES, ...AUTOMOTIVE, ...OUTBOUND];
+export const CATALOGUE_TEMPLATES: readonly AgentTemplate[] = [...GENERAL, ...PROPERTY, ...HOSPITALITY, ...HEALTHCARE, ...FINANCE, ...INSURANCE, ...TELECOMS, ...UTILITIES, ...LOGISTICS, ...RETAIL, ...TRAVEL, ...EDUCATION, ...COMMUNITY, ...PROFESSIONAL, ...HOME_SERVICES, ...AUTOMOTIVE, ...OUTBOUND];

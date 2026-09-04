@@ -113,11 +113,17 @@ export const servicesOf = (template: AgentTemplate): readonly string[] =>
 export const formPolicies = (template: AgentTemplate): readonly TemplatePolicy[] => {
   if (template.branch === undefined) return template.policies;
   const on = template.fields.find((field) => field.key === template.branch?.on);
+  /* One line per service, within the API's 200 characters. A service that forks again
+     names its own questions and points at the fork rather than listing every arm's keys,
+     which is both shorter and how the model should think about it. */
   const lines = Object.entries(template.branch.arms).map(([service, arm]) => {
-    const keys = armFields(arm).map((field) => field.key);
-    return keys.length === 0
-      ? `If they are calling about "${service}": nothing more to ask — go to the close.`
-      : `If they are calling about "${service}": ask only ${keys.join(", ")}.`;
+    const own = arm.fields.map((field) => field.key);
+    const then = arm.branch === undefined ? "" : `, then the questions for their answer to ${arm.branch.on}`;
+    const line =
+      own.length === 0 && then === ""
+        ? `If they are calling about "${service}": nothing more to ask — go to the close.`
+        : `If they are calling about "${service}": ask only ${own.length === 0 ? "the fork question" : own.join(", ")}${then}.`;
+    return line.length <= 200 ? line : `${line.slice(0, 197)}…`;
   });
   return [
     ...template.policies,

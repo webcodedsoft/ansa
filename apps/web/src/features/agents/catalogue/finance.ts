@@ -188,61 +188,6 @@ export const FINANCE = [
   }),
 
   inbound({
-    id: "insurance-company",
-    name: "Insurance company",
-    sector: "Banking & fintech",
-    summary: "Claims with a policy number read back, new cover for motor, health, life and property, renewals, premium payments, and cancellations to a person.",
-    persona: "Warm and unhurried. Never rushes somebody reading out a number — waits for them to finish.",
-    greeting: "Good afternoon, thank you for calling. How can I help you today?",
-    instructions: rules(
-      "Confirm the policy number by reading it back one character at a time before you act on it.",
-      "Do not say whether a claim will be paid or how much. Say the claims team assesses it.",
-      "Cancelling a policy or changing who is named on it goes to a person.",
-    ),
-    keyterms: [...MONEY, "policy number", "premium", "claim", "comprehensive", "third party", "excess", "sum assured", "beneficiary", "renewal", "underwriting", "Leadway", "AIICO", "AXA Mansard", "Cornerstone", "Custodian"],
-    policies: [
-      policy(
-        "Claims",
-        "They ask whether a claim will be paid, how much, or when.",
-        ["Say claims are assessed by the claims team and take the details."],
-        ["Say a claim will or will not be paid, or estimate an amount."],
-        ["A serious accident or injury today."],
-      ),
-      NEVER_ASK,
-      SOMEBODY_ELSE,
-    ],
-    ...desk({
-      "make a claim": forked(
-        [ref("claimPolicy", "Could you read me your policy number, one character at a time?", "^[A-Z]{2}[0-9]{7}$"), date("claimDate", "When did it happen?")],
-        "claimKind",
-        "Is it a motor claim, a health claim, or property?",
-        {
-          motor: service([text("motorDetail", "What happened, and is the vehicle drivable?"), choice("motorPolice", "Has a police report been made?", ["yes", "no"])], "Read it back, say the claims team will call within one working day, and to photograph the damage."),
-          health: service([text("healthDetail", "What was the treatment, and where?")], "Say the claims team will call within one working day and to keep the receipts."),
-          property: service([text("propertyDetail", "What happened, and what was damaged or lost?")], "Say an assessor will be in touch within two working days and to photograph everything."),
-        },
-      ),
-      "get new cover": service(
-        [choice("coverKind", "Is it for a vehicle, your health, life, or property?", ["a vehicle", "health", "life", "property"]), text("coverDetail", "Tell me a little about what you'd like covered.")],
-        "Say an adviser will call back with options and prices within one working day.",
-      ),
-      "renew my policy": service(
-        [ref("renewPolicy", "Could you read me your policy number, one character at a time?", "^[A-Z]{2}[0-9]{7}$")],
-        "Say the renewal notice will be resent by email or text with the premium and how to pay.",
-      ),
-      "pay a premium": service(
-        [ref("payPolicy", "What's your policy number?", "^[A-Z]{2}[0-9]{7}$")],
-        "Say payment details will be sent by text and never ask for card details on the call.",
-      ),
-      "cancel or change my policy": handover(
-        [ref("changePolicy", "What's your policy number?", "^[A-Z]{2}[0-9]{7}$"), text("changeDetail", "What would you like to change?")],
-        "Say you are putting them through to the policy team, who can make the change with them.",
-      ),
-      "a complaint": complaint(),
-    }),
-  }),
-
-  inbound({
     id: "cooperative-society",
     name: "Cooperative society",
     sector: "Banking & fintech",

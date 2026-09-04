@@ -20,6 +20,9 @@ import {
 } from "@/components/ui";
 
 import { parseCurl } from "../curl-import";
+import { HOST, type ToolTemplate } from "../tool-templates";
+
+import { BrowseToolTemplatesButton, ToolTemplateGallery } from "./tool-template-gallery";
 import { idleForm } from "@/lib/form-state";
 import { useFormToast } from "@/stores/toast.store";
 
@@ -106,6 +109,9 @@ export const HttpToolForm = ({
 }: Props) => {
   const [draft, setDraft] = useState<HttpToolDraft>(initial ?? emptyDraft());
   const [curl, setCurl] = useState("");
+  const [browsing, setBrowsing] = useState(false);
+  /** The template the draft was started from, so the endpoint step can say what is left to do. */
+  const [startedFrom, setStartedFrom] = useState<ToolTemplate | null>(null);
   /* What the paste could not carry, kept so the notice survives a re-render. Cleared on the
      next paste rather than on edit: somebody who fixes a header should still be able to read
      that their Authorization was dropped. */
@@ -206,6 +212,42 @@ export const HttpToolForm = ({
               once they are filled by hand. Only offered on a new tool: pasting a command over
               a tool somebody has already configured would silently discard their parameters,
               speech and risk tier, none of which a curl command can express. */}
+          {/* A template is the whole tool, not only the endpoint: parameters, tier, speech
+              and readback arrive filled in, and what is left is the host and a credential.
+              Only on a new tool, for the same reason as the curl paste below. */}
+          {initial === undefined && (
+            <Card
+              title="Start from a template"
+              description="A complete tool for something a business like yours looks up or does on a call. Replace the host, pick a credential, test."
+            >
+              <Stack>
+                {startedFrom !== null && (
+                  <Notice tone={draft.url.startsWith(HOST) ? "warn" : "ok"}>
+                    Started from <strong>{startedFrom.draft.name}</strong> ({startedFrom.sector}).{" "}
+                    {draft.url.startsWith(HOST)
+                      ? `The URL still points at ${HOST} — replace that with your system's address. `
+                      : ""}
+                    It expects the response to carry: {startedFrom.expects}
+                  </Notice>
+                )}
+                <div>
+                  <BrowseToolTemplatesButton onClick={() => setBrowsing(true)} />
+                </div>
+                <ToolTemplateGallery
+                  open={browsing}
+                  onClose={() => setBrowsing(false)}
+                  taken={takenNames}
+                  onPick={(template) => {
+                    setDraft(template.draft);
+                    setStartedFrom(template);
+                    setImported([]);
+                    setShowProblems(false);
+                  }}
+                />
+              </Stack>
+            </Card>
+          )}
+
           {initial === undefined && (
             <Card
               title="Start from a curl command"
