@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import {
+  useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode,
+} from "react";
 
 import {
   CheckCircle2,
@@ -33,7 +35,7 @@ import { cn } from "@/lib/cn";
 import { validateFlow } from "@ansa/shared/flow-validate";
 
 import {
-  addService, appendToLane, foldedAway, freshServiceName, insertAfter, LANE_HEAD, laneFrames, laneGroups, movable, moveAfter,
+  addService, appendToLane, foldedAway, freshServiceName, insertAfter, LANE_HEAD, laneFrames, laneGroups, LEFT, movable, moveAfter,
   moveToLane, moveToNewService, renameService, reorderService, sameShape, tidied, TOP, type Lane,
 } from "../flow-layout";
 
@@ -929,7 +931,12 @@ export const FlowCanvas = ({
   const extent = (): { readonly right: number; readonly bottom: number } => {
     const shown = nodes.filter((n) => !hidden.has(n.id));
     if (shown.length === 0) return { right: 0, bottom: 0 };
-    const right = Math.max(...shown.map((n) => n.x + NODE_W)) + (lanes.length > 1 ? NODE_W + 60 : 40);
+    /* The lanes are counted as well as the cards, since an empty service has a box and no
+       card; and past the last lane there is the add-a-service box, which is part of the
+       drawing and the reason the drawing's right edge is further out than its last card. */
+    const cardsRight = Math.max(...shown.map((n) => n.x + NODE_W));
+    const lanesRight = Math.max(cardsRight, ...frames.map((frame) => frame.left + frame.width / 2 + NODE_W / 2 + 8));
+    const right = (lanes.length > 1 ? lanesRight + 12 + NODE_W + 16 : cardsRight) + LEFT;
     const bottom = Math.max(...shown.map((n) => n.y + (cardRefs.current.get(n.id)?.offsetHeight ?? BODY_H))) + 40;
     return { right, bottom };
   };
@@ -959,6 +966,36 @@ export const FlowCanvas = ({
   clampRef.current = clampView;
 
   /**
+   * The drawing sits in the middle of the viewport.
+   *
+   * At first paint, whenever its width changes — a service added, folded, removed or
+   * reordered — and whenever the viewport itself changes size. Not on every edit: a step
+   * added inside a lane leaves the width alone, and the drawing is already where it was
+   * put. Across, not down: a call reads from the answer at the top, so the top stays where
+   * it is and the reader scrolls down through it. A layout effect rather than an effect so
+   * the first frame is already centred, not a frame off to the left and then a jump.
+   */
+  const drawingWidth = extent().right;
+  const centre = () => {
+    const port = canvasRef.current;
+    if (port === null) return;
+    const live = viewLive.current;
+    applyViewRef.current({ ...live, x: (port.clientWidth - drawingWidth * live.scale) / 2 });
+  };
+  const centreRef = useRef(centre);
+  centreRef.current = centre;
+  useLayoutEffect(() => {
+    centreRef.current();
+  }, [drawingWidth]);
+  useEffect(() => {
+    const port = canvasRef.current;
+    if (port === null) return;
+    const observer = new ResizeObserver(() => centreRef.current());
+    observer.observe(port);
+    return () => observer.disconnect();
+  }, []);
+
+  /**
    * Move or scale the drawing now, and tell React later.
    *
    * A pan that went through state re-rendered every card, every link and the validator on
@@ -980,6 +1017,8 @@ export const FlowCanvas = ({
     }
   };
   const applyPan = (next: Point) => applyView({ ...viewLive.current, ...next });
+  const applyViewRef = useRef(applyView);
+  applyViewRef.current = applyView;
   useEffect(() => () => {
     if (viewCommit.current !== null) cancelAnimationFrame(viewCommit.current);
   }, []);

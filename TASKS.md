@@ -4029,6 +4029,12 @@ and land on a dot at the top of the next card, so the joint is drawn; the defaul
 to the card's centre (`portAlong`) so a link down a column stays a straight line, the other
 ways out sit to its right, and a fork's branches spread evenly so the fan reads as a fan.
 
+**Centred (2026-09-04, late).** The drawing sits in the middle of the viewport: at first paint
+(a layout effect, so there is no frame off to the left), whenever its width changes — a
+service added, folded, removed or reordered — and whenever the viewport is resized. Across
+only: the call reads from the top, so the top stays put. `extent` now counts an empty lane's
+box and the add-a-service box, and pads the right by `LEFT` so the margins match.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and
