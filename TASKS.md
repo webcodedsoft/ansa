@@ -3971,6 +3971,20 @@ step's own words. The dock under the canvas is the drawing's: the verdict, the f
 sentence naming the step, and Show me; the full list appears only when there is more than one.
 Positions are laid out on load too, since a stored position is whatever the last layout left.
 
+**Adding to the drawing (2026-09-04, late).** A step dragged from the palette lands *wired*:
+dropped on a card it goes on the path right after that card (`insertAfter` — whatever the
+card led to, the new step leads to instead; a new branch takes the old link as its catch-all
+so it can publish; an ending ends the path and what followed is shown unreachable rather than
+silently kept); dropped on a lane it goes at the lane's end (`appendToLane` — before the fork
+on the opening lane, before the rejoin on a service). A palette click adds after the selected
+step; only a click with nothing selected leaves a step floating. "+ add a service" beside the
+last lane does the three things a service is at once (`addService`): an option on the choice
+the fork reads, a branch for it slotted ahead of the catch-all, and a first step wired to the
+rejoin. Adding a third service exposed a layout bug — rows were centred independently, so a
+shorter lane's later cards drifted under the gaps between lanes — fixed by giving each service
+its own run of columns (`tidied`), with a test that fails against the old rule and only that.
+Native drag-and-drop was driven with real DragEvents in the browser; both drop paths verified.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and

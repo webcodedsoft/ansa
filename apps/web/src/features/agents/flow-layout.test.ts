@@ -1,7 +1,12 @@
 import type { Flow, FlowNode } from "./flow.schema";
 import { describe, expect, it } from "vitest";
 
-import { branchHeads, foldedAway, foldedCount, laneGroups, onlyReachableThrough, ROW, sameShape, tidied, TOP } from "./flow-layout";
+import { validateFlow } from "@ansa/shared/flow-validate";
+
+import {
+  addService, appendToLane, branchHeads, foldedAway, foldedCount, freshServiceName, insertAfter, laneGroups,
+  onlyReachableThrough, rejoinPoint, ROW, sameShape, tidied, TOP,
+} from "./flow-layout";
 
 /**
  * The layout is no longer decoration.
@@ -190,5 +195,141 @@ describe("grouping the drawing into lanes", () => {
 
     expect(lanes.map((lane) => lane.label)).toEqual(["everyone gets this", "rent", "anything else"]);
     expect(lanes.find((lane) => lane.id === "rent1")?.ids).toEqual(expect.arrayContaining(["inner", "deep"]));
+  });
+});
+
+describe("growing the drawing", () => {
+  const fresh = (id: string, kind: FlowNode["kind"] = "collect"): FlowNode => node(id, kind);
+  const linksFrom = (flow: Flow, id: string) => flow.edges.filter((e) => e.from === id).map((e) => e.to);
+  const linksTo = (flow: Flow, id: string) => flow.edges.filter((e) => e.to === id).map((e) => e.from);
+  /* The fixture's steps are bare on purpose — no questions written on them — so the validator
+     always has that to say. What the surgery must never cause is a *shape* problem: a step
+     nothing reaches, a path with no way out, a fork with no catch-all. */
+  const SHAPE = new Set(["unreachable", "dead-end", "decide-without-otherwise", "edge-to-nowhere", "cycle", "no-start", "many-starts", "shadowed-branch", "branch-value-not-an-option"]);
+  const shapeProblems = (flow: Flow) => validateFlow(flow).filter((p) => SHAPE.has(p.code)).map((p) => `${p.code}@${p.nodeId ?? "flow"}`);
+
+  it("puts a step dropped on a card between that card and whatever it led to", () => {
+    const grown = insertAfter(forked(), "rent1", fresh("new"));
+
+    expect(linksFrom(grown, "rent1")).toEqual(["new"]);
+    expect(linksFrom(grown, "new")).toEqual(["rent2"]);
+    expect(shapeProblems(grown)).toEqual([]);
+  });
+
+  it("keeps the port a link left by when a step is inserted after it", () => {
+    const grown = insertAfter(forked(), "ask", fresh("new"));
+    const into = grown.edges.find((e) => e.to === "new");
+
+    // "ask" is a collect; its link to the fork had no port name, and still has none.
+    expect(into?.port).toBeUndefined();
+    expect(linksFrom(grown, "new")).toEqual(["fork"]);
+  });
+
+  it("gives a new branch the old link as its catch-all, so it can publish at once", () => {
+    const grown = insertAfter(forked(), "rent1", fresh("split", "decide"));
+    const onward = grown.edges.find((e) => e.from === "split");
+
+    expect(onward?.to).toBe("rent2");
+    expect(onward?.otherwise).toBe(true);
+  });
+
+  /* An ending dropped mid-path ends the path. What used to follow is cut loose and shown as
+     unreachable — honest, where silently keeping a second link out of the card would not be. */
+  it("lets an ending end the path, and leaves what followed visibly unreachable", () => {
+    const grown = insertAfter(forked(), "rent1", fresh("bye", "hangup"));
+
+    expect(linksFrom(grown, "rent1")).toEqual(["bye"]);
+    expect(linksFrom(grown, "bye")).toEqual([]);
+    expect(linksTo(grown, "rent2")).toEqual([]);
+    expect(validateFlow(grown).some((p) => p.code === "unreachable" && p.nodeId === "rent2")).toBe(true);
+  });
+
+  it("puts a step dropped on the opening lane before the fork, so everybody is asked", () => {
+    const lanes = laneGroups(forked());
+    const opening = lanes.find((lane) => lane.id === "opening");
+    if (opening === undefined) throw new Error("no opening lane");
+    const grown = appendToLane(forked(), opening, fresh("new"));
+
+    expect(linksFrom(grown, "ask")).toEqual(["new"]);
+    expect(linksFrom(grown, "new")).toEqual(["fork"]);
+    expect(laneGroups(grown).find((lane) => lane.id === "opening")?.ids).toContain("new");
+  });
+
+  it("puts a step dropped on a service after its last step, before the path rejoins", () => {
+    const lanes = laneGroups(forked());
+    const rent = lanes.find((lane) => lane.id === "rent1");
+    if (rent === undefined) throw new Error("no rent lane");
+    const grown = appendToLane(forked(), rent, fresh("new"));
+
+    expect(linksFrom(grown, "rent2")).toEqual(["new"]);
+    expect(linksFrom(grown, "new")).toEqual(["close"]);
+    expect(laneGroups(grown).find((lane) => lane.id === "rent1")?.ids).toContain("new");
+  });
+
+  it("finds where the services meet again", () => {
+    expect(rejoinPoint(forked(), laneGroups(forked()))).toBe("close");
+  });
+
+  it("adds a service as an option, a branch and a first step that rejoins — all three, or it would not publish", () => {
+    const base: Flow = {
+      ...forked(),
+      nodes: forked().nodes.map((n) =>
+        n.id === "ask"
+          ? { ...n, field: { key: "intent", type: "choice", prompt: "Rent or buy?", capture: "speech", confirm: "none", pattern: "", attempts: 3, required: true, options: ["rent"] } }
+          : n.id === "fork"
+            ? { ...n, on: "intent" }
+            : n,
+      ),
+    };
+    const lanes = laneGroups(base);
+    const grown = addService(base, lanes, fresh("viewHead"), "book a viewing");
+
+    const ask = grown.nodes.find((n) => n.id === "ask");
+    expect(ask?.field?.options).toEqual(["rent", "book a viewing"]);
+    const branch = grown.edges.find((e) => e.from === "fork" && e.to === "viewHead");
+    expect(branch?.when).toEqual({ equals: "book a viewing" });
+    expect(linksFrom(grown, "viewHead")).toEqual(["close"]);
+    // The catch-all stays last, so a named answer is always tried before "anything else".
+    const forkEdges = grown.edges.filter((e) => e.from === "fork");
+    expect(forkEdges[forkEdges.length - 1]?.otherwise).toBe(true);
+    expect(laneGroups(grown).map((lane) => lane.label)).toEqual(["everyone gets this", "rent", "book a viewing", "anything else"]);
+    expect(shapeProblems(grown)).toEqual([]);
+  });
+
+  it("names a new service so it never collides with one that exists", () => {
+    expect(freshServiceName(forked(), laneGroups(forked()))).toBe("new service");
+    const once = addService(forked(), laneGroups(forked()), fresh("h1"), "new service");
+    expect(freshServiceName(once, laneGroups(once))).toBe("new service 2");
+  });
+});
+
+describe("lanes with uneven depth", () => {
+  /* Three services of two, three and one steps. Centring row by row put the second row's two
+     cards under the gaps between three lanes; the lanes drawn round them then overlapped.
+     Every card in a lane must sit in that lane's own column, whatever the rows above it hold. */
+  it("keeps every card of a service inside that service's column", () => {
+    const three: Flow = {
+      ...forked(),
+      nodes: [...forked().nodes, node("view1"), node("view2"), node("view3")],
+      edges: [
+        ...forked().edges.filter((e) => !(e.from === "fork" && e.otherwise === true)),
+        { from: "fork", to: "view1", when: { equals: "viewing" } },
+        { from: "view1", to: "view2" },
+        { from: "view2", to: "view3" },
+        { from: "view3", to: "close" },
+        { from: "fork", to: "buy1", otherwise: true },
+      ],
+    };
+    const laid = tidied(three);
+    const x = (id: string) => laid.nodes.find((n) => n.id === id)?.x;
+
+    // Each service is one column; a service's later steps share their head's column.
+    expect(x("rent2")).toBe(x("rent1"));
+    expect(x("view2")).toBe(x("view1"));
+    expect(x("view3")).toBe(x("view1"));
+    // And the three services are three different columns, in the fork's order.
+    const cols = [x("rent1"), x("view1"), x("buy1")];
+    expect(new Set(cols).size).toBe(3);
+    expect(cols).toEqual([...cols].sort((a, b) => (a ?? 0) - (b ?? 0)));
   });
 });

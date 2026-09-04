@@ -30,7 +30,9 @@ import { cn } from "@/lib/cn";
    console would eventually tell somebody their graph was fine while the API refused it. */
 import { validateFlow } from "@ansa/shared/flow-validate";
 
-import { foldedAway, LANE_HEAD, laneGroups, sameShape, tidied, TOP } from "../flow-layout";
+import {
+  addService, appendToLane, foldedAway, freshServiceName, insertAfter, LANE_HEAD, laneGroups, sameShape, tidied, TOP, type Lane,
+} from "../flow-layout";
 
 import {
   FLOW_FIELD_TYPES,
@@ -594,6 +596,10 @@ export const FlowCanvas = ({
   const [tick, setTick] = useState(0);
   /** Branch heads the reader has folded away, so six services fit a laptop. */
   const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
+  /** The kind being dragged in from the palette, while it is; the drop targets light up for it. */
+  const [dragging, setDragging] = useState<FlowNodeKind | null>(null);
+  /** The card or lane the drag is over, so exactly one target says "here". */
+  const [over, setOver] = useState<string | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -876,10 +882,55 @@ export const FlowCanvas = ({
     e.preventDefault();
   };
 
-  const addNode = (kind: FlowNodeKind) => {
+  /**
+   * A new step, where it was put.
+   *
+   * Dropped on a card, it goes on the path right after that card. Dropped on a lane, it goes
+   * at the end of the lane — before the fork on the opening lane, before the rejoin on a
+   * service. Clicked in the palette with a step selected, it goes after that step. Only a
+   * click with nothing selected leaves a step floating, and the layout shows it below the
+   * end as unreachable, which is exactly what it is until it is wired.
+   */
+  const addNode = (kind: FlowNodeKind, where?: { readonly after?: string; readonly lane?: Lane }) => {
     const id = freshId(new Set(nodes.map((n) => n.id)));
-    edit((f) => ({ ...f, nodes: [...f.nodes, blankNode(id, kind, 120 - pan.x + ((f.nodes.length % 4) * 26), 460 - pan.y)] }));
+    const fresh = blankNode(id, kind, 0, 0);
+    edit((f) => {
+      if (where?.after !== undefined && f.nodes.some((n) => n.id === where.after)) return insertAfter(f, where.after, fresh);
+      if (where?.lane !== undefined) return appendToLane(f, where.lane, fresh);
+      return { ...f, nodes: [...f.nodes, fresh] };
+    });
     chooseStep(id);
+  };
+
+  /** Another answer to the question the call splits on, with a first step to fill in. */
+  const addNewService = () => {
+    const id = freshId(new Set(nodes.map((n) => n.id)));
+    const head = blankNode(id, "collect", 0, 0);
+    edit((f) => {
+      const current = laneGroups(f);
+      return addService(f, current, head, freshServiceName(f, current));
+    });
+    chooseStep(id);
+  };
+
+  /* Dropping from the palette. HTML drag and drop rather than the pointer capture the ports
+     use: a port drag draws a wire between two things on the canvas, while this brings a
+     thing in from outside it, and the browser's own drag already handles leaving the palette,
+     crossing the canvas and landing. */
+  const onDropOn = (target: { readonly after?: string; readonly lane?: Lane }) => (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const kind = (e.dataTransfer.getData("text/x-ansa-step") || dragging) as FlowNodeKind | "";
+    setDragging(null);
+    setOver(null);
+    if (kind === "") return;
+    addNode(kind, target);
+  };
+  const onDragOverTarget = (id: string) => (e: React.DragEvent) => {
+    if (dragging === null) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    if (over !== id) setOver(id);
   };
 
   const removeNode = (id: string) => {
@@ -1056,8 +1107,19 @@ export const FlowCanvas = ({
                 <button
                   key={kind}
                   type="button"
-                  onClick={() => addNode(kind)}
-                  className="flex w-full cursor-grab items-center gap-2 rounded-lg px-2.5 py-[7px] text-left text-[12.5px] text-[var(--ink-2)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--ink)]"
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData("text/x-ansa-step", kind);
+                    e.dataTransfer.effectAllowed = "copy";
+                    setDragging(kind);
+                  }}
+                  onDragEnd={() => {
+                    setDragging(null);
+                    setOver(null);
+                  }}
+                  onClick={() => addNode(kind, selected === null ? undefined : { after: selected })}
+                  title={selected === null ? "Drag onto the drawing, or click to add" : "Drag onto the drawing, or click to add after the selected step"}
+                  className="flex w-full cursor-grab items-center gap-2 rounded-lg px-2.5 py-[7px] text-left text-[12.5px] text-[var(--ink-2)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--ink)] active:cursor-grabbing"
                 >
                   <KindIcon kind={kind} />
                   {NODE_KINDS[kind].title}
@@ -1095,6 +1157,12 @@ export const FlowCanvas = ({
           onPointerDown={onCanvasPointerDown}
           onPointerMove={onCanvasPointerMove}
           onPointerUp={onCanvasPointerUp}
+          onDragOver={(e) => {
+            if (dragging === null) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "copy";
+          }}
+          onDrop={onDropOn({})}
         >
           {/* The toolbar, inside the drawing along its top edge. Canvas actions only — Save
               and Publish belong to the page header, where they act on the whole agent. On
@@ -1152,9 +1220,21 @@ export const FlowCanvas = ({
               <div
                 key={lane.id}
                 aria-hidden={lane.id === "opening"}
+                onDragOver={onDragOverTarget(`lane:${lane.id}`)}
+                onDragLeave={() => setOver((o) => (o === `lane:${lane.id}` ? null : o))}
+                onDrop={onDropOn({ lane: lanes.find((one) => one.id === lane.id) })}
                 className={cn(
-                  "pointer-events-none absolute rounded-[7px] border bg-[var(--surface)]",
-                  lane.broken > 0 ? "border-[var(--bad)]" : lane.folded ? "border-[var(--accent)]" : "border-[var(--hairline)]",
+                  "absolute rounded-[7px] border bg-[var(--surface)] transition-colors",
+                  /* Inert until a step is being dragged, so a click inside a lane reaches the
+                     card underneath; while one is, the lane is the thing being aimed at. */
+                  dragging === null ? "pointer-events-none" : "pointer-events-auto",
+                  over === `lane:${lane.id}`
+                    ? "border-[var(--accent)] bg-[var(--accent-soft)]"
+                    : lane.broken > 0
+                      ? "border-[var(--bad)]"
+                      : lane.folded
+                        ? "border-[var(--accent)]"
+                        : "border-[var(--hairline)]",
                 )}
                 style={{ left: lane.left, top: lane.top, width: lane.width, height: lane.height }}
               >
@@ -1187,6 +1267,26 @@ export const FlowCanvas = ({
                 </div>
               </div>
             ))}
+            {/* Another service, beside the last one: the mockup's "+ Add a service" card. It
+                only exists once the call forks — a straight line has nothing to add a service
+                to — and adds the option, the branch and the first step together. */}
+            {laneBoxes.length > 1 && (() => {
+              const services = laneBoxes.filter((lane) => lane.id !== "opening");
+              const first = services[0];
+              if (first === undefined) return null;
+              const rightmost = services.reduce((best, lane) => (lane.left > best.left ? lane : best), first);
+              return (
+                <button
+                  type="button"
+                  onClick={addNewService}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className="absolute flex items-center justify-center gap-1.5 rounded-[7px] border border-dashed border-[var(--hairline)] bg-transparent font-mono text-[10px] text-[var(--ink-3)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                  style={{ left: rightmost.left + rightmost.width + 12, top: rightmost.top, width: NODE_W + 16, height: LANE_HEAD + 40 }}
+                >
+                  + add a service
+                </button>
+              );
+            })()}
             <svg className="pointer-events-none absolute inset-0 overflow-visible">
               {edgePaths.map((p) =>
                 p === null ? null : (
@@ -1243,8 +1343,12 @@ export const FlowCanvas = ({
                     chooseStep(n.id);
                     e.stopPropagation();
                   }}
+                  onDragOver={onDragOverTarget(`card:${n.id}`)}
+                  onDragLeave={() => setOver((o) => (o === `card:${n.id}` ? null : o))}
+                  onDrop={onDropOn({ after: n.id })}
                   className={cn(
                     "focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:outline-none",
+                    over === `card:${n.id}` && "ring-2 ring-[var(--accent)]",
                     /* One line: the icon says what kind of step it is, the title says what it
                        does, the subtitle says how. The kind's name is no longer written on
                        the card — "Collect a value" on every question was the heaviest thing
