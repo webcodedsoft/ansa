@@ -4061,6 +4061,16 @@ renaming it renames that option while the branch — which matches nothing by na
 it is. A catch-all standing for nothing in particular still says "anything else", and says why
 on hover.
 
+**The top of a service, and the service by its name (2026-09-04, late).** A drop on a card
+meant "after it", so there was no way to land a step at the top of a service. The half
+decides now: the upper half of a card is before it, the lower half after (`moveBefore`;
+`insertBefore` puts "before the start" right after it), and a lane's header area is "first".
+"User can not drag whole service" — again — because the name field had grown to most of the
+header and swallowed the press, and the cards take theirs, so only slivers of box started a
+lane drag. A press on the name now belongs to the box: it drags the service, and a press that
+never moved focuses the field on release, so the click it looked like is the edit it was. A
+grip on the header says the box moves.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and

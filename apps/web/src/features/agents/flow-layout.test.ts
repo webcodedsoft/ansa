@@ -5,7 +5,7 @@ import { validateFlow } from "@ansa/shared/flow-validate";
 
 import {
   addService, appendToLane, branchHeads, detach, foldedAway, foldedCount, freshServiceName, insertAfter, laneFrames,
-  laneGroups, moveAfter, moveToLane, moveToNewService, onlyReachableThrough, rejoinPoint, removeService, renameService, reorderService,
+  laneGroups, moveAfter, moveBefore, moveToLane, moveToNewService, onlyReachableThrough, rejoinPoint, removeService, renameService, reorderService,
   ROW, sameShape, tidied, TOP,
 } from "./flow-layout";
 
@@ -366,6 +366,19 @@ describe("moving steps and services", () => {
     expect(linksFrom(moved, "rent2")).toEqual(["close"]);
     expect(moved.nodes).toHaveLength(forked().nodes.length);
     expect(shapeProblems(moved)).toEqual([]);
+  });
+
+  it("moves a step to the top of a service, so the branch leads to it first", () => {
+    const moved = moveBefore(forked(), "rent2", "buy1");
+    expect(linksFrom(moved, "fork")).toEqual(["rent1", "rent2"]);
+    expect(linksFrom(moved, "rent2")).toEqual(["buy1"]);
+    expect(linksFrom(moved, "rent1")).toEqual(["close"]);
+    expect(laneGroups(moved).find((lane) => lane.label === "anything else")?.ids).toEqual(["rent2", "buy1"]);
+    expect(shapeProblems(moved)).toEqual([]);
+    // Nothing goes before the answer: "before the start" lands right after it.
+    const first = moveBefore(forked(), "rent2", "start");
+    expect(linksFrom(first, "start")).toEqual(["rent2"]);
+    expect(linksFrom(first, "rent2")).toEqual(["ask"]);
   });
 
   it("moves a step to the end of another service", () => {

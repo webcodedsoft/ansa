@@ -381,6 +381,8 @@ export const insertAfter = (flow: Flow, anchor: string, fresh: FlowNode): Flow =
  */
 export const insertBefore = (flow: Flow, anchor: string, fresh: FlowNode): Flow => {
   if (fresh.kind === "transfer" || fresh.kind === "hangup") return insertAfter(flow, anchor, fresh);
+  // Nothing goes before the answer; "before the start" is the first thing after it.
+  if (flow.nodes.find((n) => n.id === anchor)?.kind === "start") return insertAfter(flow, anchor, fresh);
   const edges = flow.edges.map((edge) => (edge.to === anchor ? { ...edge, to: fresh.id } : edge));
   const onward: FlowEdge = fresh.kind === "decide" ? { from: fresh.id, to: anchor, otherwise: true } : { from: fresh.id, to: anchor };
   return { ...flow, nodes: [...flow.nodes, fresh], edges: [...edges, onward] };
@@ -518,6 +520,14 @@ export const moveAfter = (flow: Flow, id: string, anchor: string): Flow => {
   const moved = lifted(flow, id);
   if (moved === undefined || !flow.nodes.some((n) => n.id === anchor)) return flow;
   return insertAfter(moved.rest, anchor, moved.node);
+};
+
+/** Put a step that is already on the drawing right before another — at the top of a service, say. */
+export const moveBefore = (flow: Flow, id: string, anchor: string): Flow => {
+  if (id === anchor) return flow;
+  const moved = lifted(flow, id);
+  if (moved === undefined || !flow.nodes.some((n) => n.id === anchor)) return flow;
+  return insertBefore(moved.rest, anchor, moved.node);
 };
 
 /**

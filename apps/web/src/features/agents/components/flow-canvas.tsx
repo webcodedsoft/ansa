@@ -7,6 +7,7 @@ import {
 import {
   CheckCircle2,
   GitBranch,
+  GripVertical,
   Maximize2,
   MessageSquareText,
   PhoneForwarded,
@@ -35,8 +36,8 @@ import { cn } from "@/lib/cn";
 import { validateFlow } from "@ansa/shared/flow-validate";
 
 import {
-  addService, appendToLane, branchEdgeOf, foldedAway, freshServiceName, insertAfter, LANE_HEAD, laneFrames, laneGroups, LEFT, movable, moveAfter,
-  moveToLane, moveToNewService, removeService, renameService, reorderService, sameShape, tidied, TOP, type Lane,
+  addService, appendToLane, branchEdgeOf, foldedAway, freshServiceName, insertAfter, insertBefore, LANE_HEAD, laneFrames, laneGroups, LEFT, movable, moveAfter,
+  moveBefore, moveToLane, moveToNewService, removeService, renameService, reorderService, sameShape, tidied, TOP, type Lane,
 } from "../flow-layout";
 
 import {
@@ -367,7 +368,12 @@ const stepForward = (history: History): History => {
 /** What a drag picked up: a kind from the palette, a card by id, or a whole service. */
 type DragSource = { readonly kind: FlowNodeKind } | { readonly node: string } | { readonly lane: Lane };
 /** Where it would land. */
-type DropTarget = { readonly after: string } | { readonly lane: Lane } | { readonly newService: true } | { readonly beforeLane: Lane | null };
+type DropTarget =
+  | { readonly after: string }
+  | { readonly before: string }
+  | { readonly lane: Lane }
+  | { readonly newService: true }
+  | { readonly beforeLane: Lane | null };
 interface LiveDrag {
   readonly source: DragSource;
   readonly startX: number;
@@ -376,6 +382,8 @@ interface LiveDrag {
   readonly offsetY: number;
   began: boolean;
   target: DropTarget | null;
+  /** What was pressed, so a press that never became a drag can still be the click it was. */
+  readonly pressed: EventTarget | null;
   /** Where the pointer last was, so a ghost rendered mid-move appears under it. */
   lastX: number;
   lastY: number;
@@ -383,6 +391,7 @@ interface LiveDrag {
 const sameTarget = (a: DropTarget | null, b: DropTarget | null): boolean => {
   if (a === null || b === null) return a === b;
   if ("after" in a) return "after" in b && a.after === b.after;
+  if ("before" in a) return "before" in b && a.before === b.before;
   if ("lane" in a) return "lane" in b && a.lane.id === b.lane.id;
   if ("newService" in a) return "newService" in b;
   return "beforeLane" in b && (a.beforeLane?.id ?? null) === (b.beforeLane?.id ?? null);
@@ -1146,11 +1155,12 @@ export const FlowCanvas = ({
    * click with nothing selected leaves a step floating, and the layout shows it below the
    * end as unreachable, which is exactly what it is until it is wired.
    */
-  const addNode = (kind: FlowNodeKind, where?: { readonly after?: string; readonly lane?: Lane }) => {
+  const addNode = (kind: FlowNodeKind, where?: { readonly after?: string; readonly before?: string; readonly lane?: Lane }) => {
     const id = freshId(new Set(nodes.map((n) => n.id)));
     const fresh = blankNode(id, kind, 0, 0);
     edit((f) => {
       if (where?.after !== undefined && f.nodes.some((n) => n.id === where.after)) return insertAfter(f, where.after, fresh);
+      if (where?.before !== undefined && f.nodes.some((n) => n.id === where.before)) return insertBefore(f, where.before, fresh);
       if (where?.lane !== undefined) return appendToLane(f, where.lane, fresh);
       return { ...f, nodes: [...f.nodes, fresh] };
     });
@@ -1199,12 +1209,28 @@ export const FlowCanvas = ({
       const before = leftHalf ? services[at] : services[at + 1];
       return { beforeLane: before ?? null };
     }
-    const card = under.closest("[data-flow-node]")?.getAttribute("data-flow-node");
-    if (card !== null && card !== undefined) return "node" in source && card === source.node ? null : { after: card };
+    /* On a card, which half decides: the top half puts the step before it, the bottom half
+       after — so the top of a service is reached by dropping on the upper half of its first
+       card, the way anything is put at the top of a list. */
+    const cardEl = under.closest("[data-flow-node]");
+    const card = cardEl?.getAttribute("data-flow-node");
+    if (cardEl !== null && cardEl !== undefined && card !== null && card !== undefined) {
+      if ("node" in source && card === source.node) return null;
+      const rect = cardEl.getBoundingClientRect();
+      return clientY < rect.top + rect.height / 2 ? { before: card } : { after: card };
+    }
     if (under.closest("[data-add-service]")) return { newService: true };
     const laneId = under.closest("[data-lane]")?.getAttribute("data-lane");
     const lane = lanes.find((one) => one.id === laneId);
-    return lane === undefined ? null : { lane };
+    if (lane === undefined) return null;
+    /* On a lane's own box: above its first card — its header — means first; anywhere else
+       means last. The header is the one part of a lane that is not a card. */
+    const head = lane.ids[0];
+    const headEl = head === undefined ? null : document.querySelector(`[data-flow-node="${head}"]`);
+    if (head !== undefined && headEl !== null && clientY < headEl.getBoundingClientRect().top && !("node" in source && head === source.node)) {
+      return { before: head };
+    }
+    return { lane };
   };
 
   /** What a finished drag does to the graph. */
@@ -1219,12 +1245,14 @@ export const FlowCanvas = ({
         });
         chooseStep(id);
       } else if ("after" in target) addNode(source.kind, { after: target.after });
+      else if ("before" in target) addNode(source.kind, { before: target.before });
       else if ("lane" in target) addNode(source.kind, { lane: target.lane });
       return;
     }
     if ("node" in source) {
       const id = source.node;
       if ("after" in target) edit((f) => moveAfter(f, id, target.after));
+      else if ("before" in target) edit((f) => moveBefore(f, id, target.before));
       else if ("lane" in target) edit((f) => moveToLane(f, id, target.lane));
       else if ("newService" in target) edit((f) => moveToNewService(f, id, freshServiceName(f, laneGroups(f))));
       chooseStep(id);
@@ -1252,7 +1280,7 @@ export const FlowCanvas = ({
     onPointerDown: (e: ReactPointerEvent<HTMLElement>) => {
       if (e.button !== 0) return;
       const rect = e.currentTarget.getBoundingClientRect();
-      dragRef.current = { source, startX: e.clientX, startY: e.clientY, offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top, began: false, target: null, lastX: e.clientX, lastY: e.clientY };
+      dragRef.current = { source, startX: e.clientX, startY: e.clientY, offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top, began: false, target: null, pressed: e.target, lastX: e.clientX, lastY: e.clientY };
       /* Capture so the drag survives the pointer leaving the element. Not fatal without it —
          the drag ends on the next pointerup wherever it lands — so a refusal is ignored. */
       try {
@@ -1269,6 +1297,7 @@ export const FlowCanvas = ({
       if (!live.began) {
         if (Math.hypot(e.clientX - live.startX, e.clientY - live.startY) < 5) return;
         live.began = true;
+        if (document.activeElement instanceof HTMLElement && e.currentTarget.contains(document.activeElement)) document.activeElement.blur();
         setDrag({ source: live.source, target: null });
       }
       const ghost = ghostRef.current;
@@ -1284,7 +1313,13 @@ export const FlowCanvas = ({
       dragRef.current = null;
       if (live === null) return;
       if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
-      if (!live.began) return;
+      /* A press on a service's name that never moved is a click on the name: focus it to
+         edit. The name field gives up its own press (see its `onPointerDown`) so the box
+         can be dragged by it; this is where the click it would have been is honoured. */
+      if (!live.began) {
+        if (live.pressed instanceof HTMLInputElement && e.currentTarget.contains(live.pressed)) live.pressed.focus();
+        return;
+      }
       swallowClick.current = true;
       setDrag(null);
       if (live.target !== null) drop(live.source, live.target);
@@ -1297,6 +1332,7 @@ export const FlowCanvas = ({
 
   /** The card or lane under a drag right now, for the target to say so. */
   const dropAfter = drag?.target !== null && drag?.target !== undefined && "after" in drag.target ? drag.target.after : null;
+  const dropBefore = drag?.target !== null && drag?.target !== undefined && "before" in drag.target ? drag.target.before : null;
   const dropLane = drag?.target !== null && drag?.target !== undefined && "lane" in drag.target ? drag.target.lane.id : null;
   const dropNewService = drag?.target !== null && drag?.target !== undefined && "newService" in drag.target;
   const dropBeforeLane = drag?.target !== null && drag?.target !== undefined && "beforeLane" in drag.target ? (drag.target.beforeLane?.id ?? "") : null;
@@ -1651,6 +1687,9 @@ export const FlowCanvas = ({
                   )}
                   style={{ height: LANE_HEAD - 6, marginTop: 2 }}
                 >
+                  {/* The grip says the box moves. Any part of the box not covered by a card
+                      drags it — the name included — but a name does not look like a handle. */}
+                  {isService && !lane.folded && <GripVertical aria-hidden className="-ml-1 size-3 flex-none text-[var(--ink-3)]" />}
                   {/* The name, edited where it is read, the way a card's question is: click
                       and type, and the branch and the choice's option change together on
                       Enter or on leaving the field. It was a double-click on a label before,
@@ -1666,10 +1705,16 @@ export const FlowCanvas = ({
                       aria-label="Service name"
                       title={
                         catchAll
-                          ? "The answer that brings a caller here — and where the call goes when the answer is none of the others. Click to rename."
-                          : "The answer that brings a caller here. Click to rename."
+                          ? "The answer that brings a caller here — and where the call goes when the answer is none of the others. Click to rename, drag to move the service."
+                          : "The answer that brings a caller here. Click to rename, drag to move the service."
                       }
-                      onPointerDown={(e) => e.stopPropagation()}
+                      /* Not focused on press: the press belongs to the box, which drags the
+                         service by it. If the pointer never moves, the box focuses this on
+                         release and the click is the edit it looked like. */
+                      onPointerDown={(e) => {
+                        if (document.activeElement !== e.currentTarget) e.preventDefault();
+                        else e.stopPropagation();
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") e.currentTarget.blur();
                         if (e.key === "Escape") {
@@ -1826,7 +1871,7 @@ export const FlowCanvas = ({
                        on the drawing and told nobody anything the icon did not. */
                     "group absolute flex w-[208px] touch-none items-start gap-2 rounded-[7px] border bg-[var(--surface-solid)] px-2.5 py-[7px] select-none",
                     movable(n) ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
-                    dropAfter === n.id
+                    dropAfter === n.id || dropBefore === n.id
                       ? "border-[var(--accent)]"
                       : isBad
                       ? "border-[var(--bad)]"
@@ -1895,9 +1940,12 @@ export const FlowCanvas = ({
                       <X className="size-3" />
                     </IconButton>
                   )}
-                  {/* Where a dropped step would go: the gap under this card. */}
+                  {/* Where a dropped step would go: the gap under this card, or above it. */}
                   {dropAfter === n.id && (
                     <span aria-hidden className="absolute right-2 -bottom-[13px] left-2 h-[2px] rounded bg-[var(--accent)]" />
+                  )}
+                  {dropBefore === n.id && (
+                    <span aria-hidden className="absolute -top-[13px] right-2 left-2 h-[2px] rounded bg-[var(--accent)]" />
                   )}
                   {/* The dot a link lands on. Shown while something does land there, so every
                       drawn link visibly begins at one dot and ends at another. */}
