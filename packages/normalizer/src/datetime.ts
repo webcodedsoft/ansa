@@ -424,6 +424,12 @@ export const parseSpokenTime = (text: string): string | null => {
     const token = withMeridiem === null ? next : (withMeridiem[1] ?? "");
     const rawHour = /^\d{1,2}$/.test(token) ? Number(token) : HOUR_WORDS[token];
     if (rawHour === undefined || rawHour > 23) continue;
+    /* "By two" is a time only if what follows could follow a time. "For four days", "by
+       two people", "around nine of them" are a count, and the word after the number says
+       so. The number has to end the thought, or be followed by something that goes after
+       a clock time and nothing else. */
+    const after = tokens[i + 2];
+    if (after !== undefined && !AFTER_AN_HOUR.has(after)) continue;
     const meridiemText = withMeridiem === null ? lower : `${lower} ${withMeridiem[2] ?? ""}`;
     const hour = rawHour > 12 ? rawHour : applyMeridiem(rawHour, meridiemText);
     return `${pad(hour % 24)}:00`;
@@ -442,6 +448,12 @@ export const parseSpokenTime = (text: string): string | null => {
 
 /** The words that put the number after them on the clock. */
 const ON_THE_CLOCK: ReadonlySet<string> = new Set(["by", "at", "for", "around", "about", "before", "after", "till", "until"]);
+
+/** What may follow a bare hour and leave it an hour. Anything else makes it a count. */
+const AFTER_AN_HOUR: ReadonlySet<string> = new Set([
+  "am", "pm", "oclock", "o", "sharp", "in", "on", "this", "tomorrow", "today", "tonight",
+  "then", "please", "thanks", "ok", "okay", "and", "or", "if", "but", "so",
+]);
 
 const partOfDay = (hour: number): string =>
   hour < 12 ? "in the morning" : hour < 17 ? "in the afternoon" : "in the evening";

@@ -193,8 +193,9 @@ const foldRun = (tokens: readonly string[]): number | null => {
     seen = true;
     loneDigit = false;
     if (fractionOf !== null) {
-      // "Half a million": the fraction of the scale, closed off like any scale.
-      total += fractionOf * scale;
+      // "Half a million", and "two and a half thousand": whatever whole number was pending
+      // plus the fraction, times the scale, closed off like any scale.
+      total += (current + fractionOf) * scale;
       fractionOf = null;
       current = 0;
       continue;

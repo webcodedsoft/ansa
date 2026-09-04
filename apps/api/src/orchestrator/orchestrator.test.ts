@@ -2072,6 +2072,31 @@ describe("the prompt the call was configured with", () => {
     expect(h.llm.last().request.system).not.toContain("unclearly");
   });
 
+  it("does not carry a doubted turn forward across an exchange the engine handled", () => {
+    const h = setup({
+      fields: [{ key: "callerName", type: "name", prompt: "Who am I speaking with?", capture: "speech", confirm: "readback", required: true, pattern: "", attempts: 3, options: [] }],
+    });
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    // Doubted, and answered by the model.
+    h.listen.final("I want to move my appointment to the other branch.", 0, 0.4);
+    expect(h.llm.last().request.system).toContain("came through unclearly");
+    h.llm.last().emit("Of course. Who am I speaking with? ");
+    h.llm.last().finish();
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    // Heard clearly, and handled by the engine: a name, read back, agreed.
+    h.listen.final("Sikiru", 0, 0.95);
+    h.tts.last().done();
+    h.stream.ackAll();
+    h.listen.final("Yes, that's right.", 0, 0.95);
+
+    // The model's next turn is about a turn that was clear. The old doubt must not be on it.
+    expect(h.llm.last().request.system).not.toContain("unclearly");
+  });
+
   it("says nothing about hours on an ordinary in-hours turn", () => {
     /* Open is the default the prompt is written against. A block that fires every turn
        costs prompt budget for something the model was going to assume anyway. */

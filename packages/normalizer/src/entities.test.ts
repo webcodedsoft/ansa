@@ -307,6 +307,9 @@ describe("amounts as spoken here", () => {
     ["twenty five k naira", 25_000],
     ["half a million naira", 500_000],
     ["a quarter of a million naira", 250_000],
+    // Found on review: the pending whole number was dropped when the fraction closed it.
+    ["two and a half thousand naira", 2_500],
+    ["one and a quarter million naira", 1_250_000],
     ["2k naira", 2_000],
     ["250k naira", 250_000],
     ["1.5m naira", 1_500_000],
@@ -343,5 +346,18 @@ describe("a bare hour after a clock word", () => {
   it("leaves a bare number that is not on the clock alone", () => {
     expect(parseSpokenTime("I have two policies")).toBeNull();
     expect(parseSpokenTime("give me two")).toBeNull();
+  });
+
+  /* Found on review: "by", "for" and "around" put a number on the clock only when what
+     follows could follow a time. "For four days" is a count, and the first version read
+     it as four in the afternoon. */
+  it.each([
+    "it was signed by two of them",
+    "I waited for four days",
+    "around nine people came",
+    "I have been a customer for two years",
+    "by two people",
+  ])("%s is a count, not a time", (said) => {
+    expect(parseSpokenTime(said)).toBeNull();
   });
 });

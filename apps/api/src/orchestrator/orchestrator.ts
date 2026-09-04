@@ -3246,8 +3246,8 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         pending = null;
         log.info("caller did not continue, answering what we have", { text: whole });
         callState.apply({ kind: "caller.turn.dispatched" });
+        lastTurnUnclear = isUncertain(transcript.confidence);
         if (!captureHandled(whole, wholeForModel, transcript.confidence)) {
-          lastTurnUnclear = isUncertain(transcript.confidence);
           respondTo(whole, wholeForModel);
         }
       }, CONTINUATION_WAIT_MS);
@@ -3258,11 +3258,16 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
 
     callState.apply({ kind: "caller.turn.dispatched" });
 
+    /* Every final, before anything decides who answers it. Set only on the turns that reached
+       the model, a doubted turn answered by the model followed by a clear exchange the engine
+       handled left the doubt standing on the model's next turn — it was told to check a
+       sentence it had already been told about, and to doubt one that was clear. */
+    lastTurnUnclear = isUncertain(transcript.confidence);
+
     // Before the model, never after. R4.3.1 is a gate, and a gate the model can answer
     // around is not a gate.
     if (captureHandled(whole, wholeForModel, transcript.confidence)) return;
 
-    lastTurnUnclear = isUncertain(transcript.confidence);
     respondTo(whole, wholeForModel);
   });
 

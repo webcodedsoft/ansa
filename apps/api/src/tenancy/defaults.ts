@@ -101,13 +101,17 @@ const NIGERIAN_GIVEN_NAMES: readonly string[] = [
  * Pidgin words English models hear as something else. An organisation's own places go in
  * its own keyterms, where it can spend its share of the cap on them.
  *
+ * Kano is not here, on purpose: a boost on four letters that sound like "cannot" would
+ * bias a word said on every call towards a city named on few, and the evidence above is
+ * that keyterm bias does exactly that. An organisation in Kano adds it to its own list.
+ *
  * `Oga`, `Madam` and `Aunty` are here because they are how a caller addresses the agent,
  * and a mangled honorific in the transcript costs the model the register it is meant to
  * answer in. `Sir` and `Ma` are English and need no help.
  */
 const NIGERIAN_PLACES_AND_WORDS: readonly string[] = [
   "Lagos", "Abuja", "Ikeja", "Lekki", "Ikoyi", "Ajah", "Yaba", "Surulere", "Ibadan",
-  "Port Harcourt", "Kano", "Enugu",
+  "Port Harcourt", "Enugu",
   "Oga", "Madam", "Aunty",
   "wahala", "abeg", "oya",
 ];

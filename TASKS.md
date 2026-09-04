@@ -3988,6 +3988,13 @@ this slice: forty new lines across all layers, net of what is removed.
       across `base`, `locale` and `conversation`, about 675 tokens more per turn — under
       the forty-line ceiling. Nothing was removed to pay for it; the next addition should
       look for something to remove first.
+- [x] **Review of this slice (2026-09-04).** Three found by running it. The bare-hour time
+      parse read "for four days" as four in the afternoon — now a number after a clock word
+      is a time only when what follows could follow a time. "Two and a half thousand"
+      dropped the two. And the transcriber's doubt was set only on turns that reached the
+      model, so a doubted turn followed by an engine-handled exchange left the doubt
+      standing on the model's next turn; it is set on every final now. Kano left the
+      keyterms: four letters that sound like "cannot" on every call.
 - [ ] **E4.** After real calls: `GET /calls/catchphrases` for repetition, and the call log
       for how often a clarifying question was asked. This is the only proof that matters
       and it needs a phone.
