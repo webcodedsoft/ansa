@@ -3848,6 +3848,12 @@ covered what the form already does:
   tool is not yet enabled; a transfer step shows the transfer number. A form agent has no
   Flow tab. `/agents/:id/flow` redirects to the agent.
 
+  **Creation follows the same shape.** `/agents/new` is two boxes — Form Builder and Flow
+  Builder — and nothing else. Each opens its own front door (`/agents/new/form`,
+  `/agents/new/flow`): a name, the template cards, and a preview that belongs to that
+  builder — how the call sounds for a form, the steps it draws for a flow. Create lands on
+  the workspace the builder owns.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and

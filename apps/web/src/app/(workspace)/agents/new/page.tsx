@@ -2,27 +2,24 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { PageHeader } from "@/components/ui";
-import { CreateAgent } from "@/features/agents/components/create-agent";
+import { ChooseBuilder } from "@/features/agents/components/choose-builder";
 
 export const metadata: Metadata = { title: "New agent · Ansa" };
 
 /**
- * Creating an agent.
+ * The one decision before an agent exists: which builder.
  *
- * Reads nothing. The old wizard loaded the live configuration and the tool registry because
- * it was really an edit form for the organisation's single configuration — it had to show
- * you what was already there. This creates a new row from a template, so there is nothing
- * to load and no reason to make somebody wait for two requests before they can pick a card.
- *
- * Also the first-run screen: migration 0025 stopped creating an agent automatically, so a
- * new organisation arrives here from the empty state on `/agents` with nothing at all.
+ * Two boxes and nothing else. A form builder and a flow builder are two complete ways of
+ * building an agent, each standing on its own, and this is the door between them. Naming,
+ * templates and everything after belong to whichever builder is chosen — asking for a name
+ * here would be asking for it before the person knows what kind of thing they are naming.
  */
 const NewAgentPage = () => (
   <>
     <PageHeader
       eyebrow="Agents"
       title="New agent"
-      meta="Pick a starting point and give it a name. Everything it says is editable afterwards — the template is there so the first draft is a working conversation rather than a blank page."
+      meta="Two ways to build one. Pick the shape of the conversation first; everything else follows from it."
       actions={
         <Link href="/agents" className="text-sm text-[var(--ink-3)] hover:underline">
           Cancel
@@ -30,7 +27,7 @@ const NewAgentPage = () => (
       }
     />
 
-    <CreateAgent />
+    <ChooseBuilder />
   </>
 );
 

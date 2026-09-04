@@ -1,6 +1,6 @@
 "use client";
 
-import { Check } from "lucide-react";
+import { Check, PhoneIncoming, PhoneOff, TextCursorInput, type LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
@@ -10,11 +10,9 @@ import { Button, CONTROL, Notice, Panel, PanelBody, Tag } from "@/components/ui"
 import { cn } from "@/lib/cn";
 
 import { createAgentFromTemplate } from "../agents.actions";
+import type { CapturedField } from "../agents.schema";
 import { AGENT_TEMPLATES, type AgentTemplate } from "../templates";
 import {
-  AUTHORING_ASYMMETRY,
-  AuthoringModeChoice,
-  DEFAULT_AUTHORING_MODE,
   type AuthoringMode,
 } from "./authoring-mode";
 import { ConversationPreview } from "./conversation-preview";
@@ -79,10 +77,52 @@ const Card = ({
   </button>
 );
 
-export const CreateAgent = () => {
+/**
+ * The front door of one builder.
+ *
+ * `mode` is decided one screen earlier, on `/agents/new`, where the two builders are the only
+ * two things on the page. Here it is a fact about the screen, not a choice on it: the copy,
+ * the preview and where Create lands all follow from it, and nothing on this screen offers
+ * the other builder.
+ */
+/**
+ * The column of steps a template becomes on the canvas — the same seed `flowFromFields`
+ * draws, shown as a list so the preview is the drawing and not a description of it.
+ */
+const FlowPreview = ({ fields }: { readonly fields: readonly CapturedField[] }) => {
+  const steps: readonly { readonly icon: LucideIcon; readonly title: string; readonly detail: string }[] = [
+    { icon: PhoneIncoming, title: "Call answered", detail: "The caller has picked up, or dialled in." },
+    ...fields.map((field) => ({
+      icon: TextCursorInput,
+      title: "Collect a value",
+      detail: field.prompt === "" ? field.key : field.prompt,
+    })),
+    { icon: PhoneOff, title: "End the call", detail: "Says goodbye and hangs up." },
+  ];
+  return (
+    <ol className="flex flex-col">
+      {steps.map((step, at) => (
+        <li key={at} className="flex gap-2.5">
+          <span className="flex flex-col items-center">
+            <span className="grid size-7 flex-none place-items-center rounded-lg border border-[var(--hairline)] bg-[var(--surface-2)]">
+              <step.icon aria-hidden className="size-3.5 text-[var(--accent)]" />
+            </span>
+            {at < steps.length - 1 && <span aria-hidden className="my-0.5 w-px flex-1 bg-[var(--hairline)]" />}
+          </span>
+          <span className="pb-3">
+            <span className="block text-[12.5px] font-medium">{step.title}</span>
+            <span className="block text-[12px] text-[var(--ink-3)]">{step.detail}</span>
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+};
+
+export const CreateAgent = ({ mode }: { readonly mode: AuthoringMode }) => {
   const router = useRouter();
   const [templateId, setTemplateId] = useState(DEFAULT_TEMPLATE);
-  const [authoringMode, setAuthoringMode] = useState<AuthoringMode>(DEFAULT_AUTHORING_MODE);
+  const authoringMode = mode;
   const [name, setName] = useState("");
   const [failure, setFailure] = useState<string | null>(null);
   const [creating, startCreating] = useTransition();
@@ -136,23 +176,13 @@ export const CreateAgent = () => {
         </Panel>
 
         <div>
-          <h2 className="text-[13px] font-medium">How it is built</h2>
-          <p className="mt-1 mb-2.5 max-w-[62ch] text-[12.5px] text-[var(--ink-3)]">
-            {/* Said before the choice, not after it. Somebody who reads this only once they
-                have picked has been told about a door they have already walked through. */}
-            {AUTHORING_ASYMMETRY}
-          </p>
-          <AuthoringModeChoice value={authoringMode} onChange={setAuthoringMode} />
-        </div>
-
-        <div>
           <h2 className="text-[13px] font-medium">Start from</h2>
           <p className="mt-1 mb-2.5 max-w-[62ch] text-[12.5px] text-[var(--ink-3)]">
             Every word of this is editable afterwards. The template decides what the agent
             asks for and how it confirms each answer, which is the part worth getting close
             before the first call.
             {authoringMode === "flow" &&
-              " Its questions become the flow's first steps, wired in the order below, and you take it from there on the canvas."}
+              " Its questions become the flow's first steps, wired top to bottom, and you take it from there on the canvas."}
           </p>
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
             {AGENT_TEMPLATES.map((one) => (
@@ -178,7 +208,8 @@ export const CreateAgent = () => {
                   agreeing to them is cheaper than finding them on the Conversation tab
                   afterwards. They are applied with everything else. */}
               <p className="mt-3 text-[12px] text-[var(--ink-3)]">
-                Applied when the agent is created. Edit them any time on its Conversation tab.
+                Applied when the agent is created. Edit them any time
+                {authoringMode === "flow" ? " under Conversation in the canvas's Settings." : " on its Conversation tab."}
               </p>
             </PanelBody>
           </Panel>
@@ -198,14 +229,30 @@ export const CreateAgent = () => {
       </div>
 
       <div className="glass self-start rounded-xl p-4 lg:sticky lg:top-4">
-        <h3 className="text-[13.5px] font-semibold">How this will sound</h3>
-        <p className="mt-1 mb-3.5 text-[12.5px] text-[var(--ink-3)]">
-          The call this template produces, generated from its own settings.
-        </p>
-        {template === undefined ? (
-          <p className="text-[12.5px] text-[var(--ink-3)]">Pick a starting point.</p>
+        {authoringMode === "flow" ? (
+          <>
+            <h3 className="text-[13.5px] font-semibold">The flow this draws</h3>
+            <p className="mt-1 mb-3.5 text-[12.5px] text-[var(--ink-3)]">
+              The steps the canvas opens with, top to bottom. Branch it from there.
+            </p>
+            {template === undefined ? (
+              <p className="text-[12.5px] text-[var(--ink-3)]">Pick a starting point.</p>
+            ) : (
+              <FlowPreview fields={template.fields} />
+            )}
+          </>
         ) : (
-          <ConversationPreview greeting={template.greeting} fields={template.fields} />
+          <>
+            <h3 className="text-[13.5px] font-semibold">How this will sound</h3>
+            <p className="mt-1 mb-3.5 text-[12.5px] text-[var(--ink-3)]">
+              The call this template produces, generated from its own settings.
+            </p>
+            {template === undefined ? (
+              <p className="text-[12.5px] text-[var(--ink-3)]">Pick a starting point.</p>
+            ) : (
+              <ConversationPreview greeting={template.greeting} fields={template.fields} />
+            )}
+          </>
         )}
       </div>
     </div>
