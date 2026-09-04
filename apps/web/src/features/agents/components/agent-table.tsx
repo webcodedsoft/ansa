@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { Blip, Table, Tag, Td, Th } from "@/components/ui";
+import { Blip, Tag } from "@/components/ui";
 import { phone } from "@/lib/format";
 
 /**
@@ -63,7 +63,8 @@ const StatusTag = ({ status }: { readonly status: AgentStatus }) => {
 const TINTS = ["accent", "warn", "ok"] as const;
 
 const initials = (name: string): string => {
-  const words = name.trim().split(/\s+/).filter((word) => word !== "");
+  // Letters and digits only: "Property enquiries (template)" should not badge as "P(".
+  const words = name.replace(/[^\p{L}\p{N}\s]/gu, " ").trim().split(/\s+/).filter((word) => word !== "");
   const first = words[0]?.[0] ?? "A";
   const second = words.length > 1 ? (words[words.length - 1]?.[0] ?? "") : (words[0]?.[1] ?? "");
   return `${first}${second}`.toUpperCase();
@@ -88,55 +89,52 @@ const Avatar = ({ name }: { readonly name: string }) => {
 const percent = (rate: number | null): string =>
   rate === null ? "—" : `${Math.round(rate * 100)}%`;
 
-export const AgentTable = ({ agents }: { readonly agents: readonly AgentRow[] }) => (
-  <div className="surface overflow-hidden rounded-xl">
-    <Table>
-      <thead>
-        <tr>
-          <Th>Agent</Th>
-          <Th className="w-[190px]">Answers on</Th>
-          <Th className="w-[210px]">Status</Th>
-          <Th className="w-[104px] text-right">Calls, 7d</Th>
-          <Th className="w-[104px] text-right">Resolved</Th>
-          <Th className="w-[92px] text-right">Version</Th>
-        </tr>
-      </thead>
-      <tbody>
-        {agents.map((agent) => (
-          <tr key={agent.id} className="transition-colors hover:bg-[var(--surface-2)]">
-            <Td>
-              {/* The name is the link, matching the calls table. A row-wide overlay
-                  needs `position: relative` on a `<tr>`, which browsers disagree about. */}
-              <Link href={`/agents/${agent.id}`} className="group flex items-center gap-3">
-                <Avatar name={agent.name} />
-                <span className="min-w-0">
-                  <span className="block truncate text-[14px] font-semibold tracking-[-0.012em] group-hover:underline">
-                    {agent.name}
-                  </span>
-                  <span className="block truncate text-[12px] text-[var(--ink-3)]">
-                    {agent.summary}
-                  </span>
-                </span>
-              </Link>
-            </Td>
-            <Td className="font-mono text-[13px] whitespace-nowrap">
-              {agent.answersOn === null ? (
-                <span className="text-[var(--ink-3)]">no number yet</span>
-              ) : (
-                phone(agent.answersOn)
-              )}
-            </Td>
-            <Td>
-              <StatusTag status={agent.status} />
-            </Td>
-            <Td className="text-right tabular-nums">{agent.calls7d}</Td>
-            <Td className="text-right tabular-nums">{percent(agent.resolved)}</Td>
-            <Td className="text-right font-mono text-[13px] tabular-nums text-[var(--ink-2)]">
-              v{agent.version}
-            </Td>
-          </tr>
-        ))}
-      </tbody>
-    </Table>
+/**
+ * One card per agent.
+ *
+ * Cards rather than rows because an agent is a thing with a name and a character, not a
+ * record with six columns — and because with one or three agents a table is mostly header.
+ * The whole card is the link, the figures sit in a row along the bottom, and the number it
+ * answers on reads as what it is: where callers reach it.
+ */
+export const AgentCards = ({ agents }: { readonly agents: readonly AgentRow[] }) => (
+  <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 xl:grid-cols-3">
+    {agents.map((agent) => (
+      <Link
+        key={agent.id}
+        href={`/agents/${agent.id}`}
+        className="surface group flex flex-col gap-3 rounded-xl border border-[var(--hairline)] p-4 transition-colors hover:border-[var(--ink-3)]"
+      >
+        <span className="flex items-start gap-3">
+          <Avatar name={agent.name} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[14.5px] font-semibold tracking-[-0.012em] group-hover:underline">
+              {agent.name}
+            </span>
+            <span className="line-clamp-2 text-[12.5px] leading-snug text-[var(--ink-3)]">{agent.summary}</span>
+          </span>
+        </span>
+
+        <span className="flex flex-wrap items-center gap-1.5">
+          <StatusTag status={agent.status} />
+          {/* The status tag already says "no number" when there is none; saying it twice
+              would be the one thing on the card with no information in it. */}
+          {agent.answersOn !== null && <span className="font-mono text-[12px] text-[var(--ink-2)]">{phone(agent.answersOn)}</span>}
+        </span>
+
+        <span className="mt-auto grid grid-cols-3 gap-2 border-t border-[var(--hairline)] pt-3">
+          <Figure label="Calls, 7d" value={String(agent.calls7d)} />
+          <Figure label="Resolved" value={percent(agent.resolved)} />
+          <Figure label="Version" value={`v${agent.version}`} />
+        </span>
+      </Link>
+    ))}
   </div>
+);
+
+const Figure = ({ label, value }: { readonly label: string; readonly value: string }) => (
+  <span className="min-w-0">
+    <span className="block font-mono text-[9.5px] tracking-[0.12em] text-[var(--ink-3)] uppercase">{label}</span>
+    <span className="block text-[14px] font-semibold tabular-nums">{value}</span>
+  </span>
 );

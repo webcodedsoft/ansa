@@ -5,7 +5,7 @@ import Link from "next/link";
 import { EmptyState, PageHeader, SectionHead, Stat, buttonClass } from "@/components/ui";
 import { liveAgents, readTools, readinessReport } from "@/features/agents/agents.service";
 import {
-  AgentTable,
+  AgentCards,
   type AgentRow,
   type AgentStatus,
 } from "@/features/agents/components/agent-table";
@@ -153,7 +153,7 @@ const AgentsPage = async () => {
           use. Create one, then route one of this organisation&rsquo;s numbers to it.
         </EmptyState>
       ) : (
-        <AgentTable agents={counted} />
+        <AgentCards agents={counted} />
       )}
 
       <SectionHead>Shared across agents</SectionHead>

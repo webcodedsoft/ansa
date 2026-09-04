@@ -2,19 +2,7 @@
 
 import { useActionState, useState } from "react";
 
-import {
-  Button,
-  EmptyState,
-  Notice,
-  Panel,
-  Stack,
-  Table,
-  Tag,
-  Td,
-  Th,
-  Tr,
-  type Tone,
-} from "@/components/ui";
+import { Button, EmptyState, Notice, Panel, Stack, Tag, type Tone } from "@/components/ui";
 import { when } from "@/lib/format";
 import { idleForm } from "@/lib/form-state";
 import { useFormToast } from "@/stores/toast.store";
@@ -120,76 +108,53 @@ export const ToolRegistry = ({
           </EmptyState>
         </Panel>
       ) : (
-        <Panel>
-          <Table>
-            <thead>
-              <tr>
-                <Th>Tool</Th>
-                <Th>Route</Th>
-                <Th>Risk tier</Th>
-                <Th>Added</Th>
-                <Th>Updated</Th>
-                <Th>&nbsp;</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {doc.http.map((tool) => (
-                <Tr key={`http:${tool.name}`}>
-                  <Td className="font-medium">{tool.name}</Td>
-                  <Td className="font-mono text-[12.5px] text-[var(--ink-3)]">
-                    {tool.method} {hostOrRaw(tool.url)}
-                  </Td>
-                  <Td>
-                    <Tag tone={TIER_TONE[tool.riskTier]}>{tool.riskTier}</Tag>
-                  </Td>
-                  {/* Em dash for a tool stored before the stamps existed. Guessing a date
-                      from the configuration version would be inventing a fact. */}
-                  <Td className="whitespace-nowrap text-[12.5px] text-[var(--ink-3)]">
-                    {tool.createdAt === undefined ? "—" : when(tool.createdAt)}
-                  </Td>
-                  <Td className="whitespace-nowrap text-[12.5px] text-[var(--ink-3)]">
-                    {tool.updatedAt === undefined ? "—" : when(tool.updatedAt)}
-                  </Td>
-                  <Td>
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="secondary"
-                        onClick={() =>
-                          setEditing(draftFromApi(tool as unknown as Record<string, unknown>))
-                        }
-                      >
-                        Edit
-                      </Button>
-                      <RemoveTool name={tool.name} configVersion={doc.configVersion} />
-                    </div>
-                  </Td>
-                </Tr>
-              ))}
-              {doc.mcp.flatMap((server) =>
-                server.tools.map((tool) => (
-                  <Tr key={`mcp:${server.url}:${tool.name}`}>
-                    <Td className="font-medium">{tool.name}</Td>
-                    <Td className="font-mono text-[12.5px] text-[var(--ink-3)]">
-                      MCP · {hostOrRaw(server.url)}
-                    </Td>
-                    <Td>
-                      <Tag tone={TIER_TONE[tool.riskTier]}>{tool.riskTier}</Tag>
-                    </Td>
-                    {/* An MCP tool is discovered from its server at handshake, not written
-                        here, so there is no moment this console could call its creation. */}
-                    <Td className="text-[12.5px] text-[var(--ink-3)]">—</Td>
-                    <Td className="text-[12.5px] text-[var(--ink-3)]">—</Td>
-                    <Td>
-                      <span className="block text-right text-[12px] text-[var(--ink-3)]">
-                        no editor
-                      </span>
-                    </Td>
-                  </Tr>
-                )),
-              )}
-            </tbody>
-          </Table>
-        </Panel>
+        /* One card per tool: the sentence the model picks it by is the thing worth reading,
+           and a table gave it no room. */
+        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 xl:grid-cols-3">
+          {doc.http.map((tool) => (
+            <div key={`http:${tool.name}`} className="surface flex flex-col gap-2.5 rounded-xl border border-[var(--hairline)] p-4">
+              <div className="flex items-start gap-2">
+                <span className="flex-1 font-mono text-[13px] font-semibold">{tool.name}</span>
+                <Tag tone={TIER_TONE[tool.riskTier]}>{tool.riskTier}</Tag>
+              </div>
+              <p className="line-clamp-3 text-[12.5px] leading-snug text-[var(--ink-2)]">{tool.description}</p>
+              <p className="truncate font-mono text-[12px] text-[var(--ink-3)]" title={tool.url}>
+                {tool.method} {hostOrRaw(tool.url)}
+              </p>
+              {/* Em dash for a tool stored before the stamps existed. Guessing a date from
+                  the configuration version would be inventing a fact. */}
+              <p className="text-[11.5px] text-[var(--ink-3)]">
+                Added {tool.createdAt === undefined ? "—" : when(tool.createdAt)} · updated{" "}
+                {tool.updatedAt === undefined ? "—" : when(tool.updatedAt)}
+              </p>
+              <div className="mt-auto flex justify-end gap-2 border-t border-[var(--hairline)] pt-3">
+                <Button
+                  variant="secondary"
+                  onClick={() => setEditing(draftFromApi(tool as unknown as Record<string, unknown>))}
+                >
+                  Edit
+                </Button>
+                <RemoveTool name={tool.name} configVersion={doc.configVersion} />
+              </div>
+            </div>
+          ))}
+          {doc.mcp.flatMap((server) =>
+            server.tools.map((tool) => (
+              <div key={`mcp:${server.url}:${tool.name}`} className="surface flex flex-col gap-2.5 rounded-xl border border-[var(--hairline)] p-4">
+                <div className="flex items-start gap-2">
+                  <span className="flex-1 font-mono text-[13px] font-semibold">{tool.name}</span>
+                  <Tag tone={TIER_TONE[tool.riskTier]}>{tool.riskTier}</Tag>
+                </div>
+                <p className="truncate font-mono text-[12px] text-[var(--ink-3)]">MCP · {hostOrRaw(server.url)}</p>
+                {/* An MCP tool is discovered from its server at handshake, not written here,
+                    so there is no editor and no moment this console could call its creation. */}
+                <p className="mt-auto border-t border-[var(--hairline)] pt-3 text-right text-[12px] text-[var(--ink-3)]">
+                  from its server · no editor
+                </p>
+              </div>
+            )),
+          )}
+        </div>
       )}
 
       <Notice tone="error">

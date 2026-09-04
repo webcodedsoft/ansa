@@ -5,6 +5,7 @@ import { Ground } from "@/components/shell/ground";
 import { WorkspaceChrome } from "@/components/shell/workspace-chrome";
 import { signOut } from "@/features/auth/auth.actions";
 import { currentPrincipal } from "@/features/auth/auth.service";
+import { liveAgents } from "@/features/agents/agents.service";
 import { listLiveCalls, listReviewQueue } from "@/features/calls/calls.service";
 import { listNumbers } from "@/features/connect/connect.service";
 import { listMembers } from "@/features/org/org.service";
@@ -27,14 +28,16 @@ import { withSession } from "@/lib/api/server";
 const WorkspaceLayout = async ({ children }: { readonly children: ReactNode }) => {
   const me = await withSession(currentPrincipal);
 
-  const [live, review, members, numbers] = await Promise.allSettled([
+  const [live, review, members, numbers, agents] = await Promise.allSettled([
     listLiveCalls(),
     listReviewQueue(),
     listMembers(),
     listNumbers(),
+    liveAgents(),
   ]);
 
-  const counts: Record<string, number> = { "/agents": 1 };
+  const counts: Record<string, number> = {};
+  if (agents.status === "fulfilled") counts["/agents"] = agents.value.length;
   if (live.status === "fulfilled") counts["/live"] = live.value.length;
   if (review.status === "fulfilled") counts["/review"] = review.value.flagged;
   if (members.status === "fulfilled") counts["/members"] = members.value.items.length;
