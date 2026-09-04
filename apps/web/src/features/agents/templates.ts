@@ -1,4 +1,8 @@
-import type { CapturedField } from "./agents.schema";
+
+import { CATALOGUE_TEMPLATES } from "./templates.catalogue";
+import { field, type AgentTemplate } from "./templates.shape";
+
+export { allFields, field, type AgentTemplate, type TemplateBranch } from "./templates.shape";
 
 /**
  * Starting points for a new agent.
@@ -19,53 +23,14 @@ import type { CapturedField } from "./agents.schema";
  * rewrite before it is usable, which defeats the point of having one.
  */
 
-export interface AgentTemplate {
-  readonly id: string;
-  readonly name: string;
-  /** One line, shown on the card. What this agent is for, not how it works. */
-  readonly summary: string;
-  readonly persona: string;
-  readonly greeting: string;
-  readonly instructions: string;
-  /** In the order the caller is asked, because order is the conversation. */
-  readonly fields: readonly CapturedField[];
-  readonly bargeIn: boolean;
-  readonly answeringMachineDetection: boolean;
-}
-
-/**
- * A field with the safe defaults filled in.
- *
- * The defaults are the cautious reading — captured by speech, unconfirmed, three attempts —
- * so a template only has to name what it actually wants to be different. Anything that ends
- * up confirmed below says so explicitly, which is how it should read: confirmation is the
- * decision worth seeing.
- */
-const field = (
-  key: string,
-  type: CapturedField["type"],
-  prompt: string,
-  over: Partial<CapturedField> = {},
-): CapturedField => ({
-  key,
-  type,
-  prompt,
-  capture: "speech",
-  confirm: "none",
-  pattern: "",
-  attempts: 3,
-  required: true,
-  options: [],
-  ...over,
-});
-
 /** Two letters and seven digits, the shape most Nigerian insurers use for a policy. */
 const POLICY_PATTERN = "^[A-Z]{2}[0-9]{7}$";
 
-export const AGENT_TEMPLATES: readonly AgentTemplate[] = [
+const FOUNDING_TEMPLATES: readonly AgentTemplate[] = [
   {
     id: "customer-service",
-    name: "Customer service",
+    name: "Insurance customer service",
+    sector: "Insurance",
     summary: "Identifies the caller, confirms their policy number, then answers or transfers.",
     persona:
       "Warm and unhurried. Plain Nigerian English, no jargon. Never rush somebody who is reading out a number — wait for them to finish.",
@@ -99,6 +64,7 @@ export const AGENT_TEMPLATES: readonly AgentTemplate[] = [
   {
     id: "after-hours",
     name: "After hours",
+    sector: "Any business",
     summary: "Takes a message when the office is closed. Looks nothing up, promises nothing.",
     persona:
       "Brief and apologetic without over-apologising. Somebody ringing a closed office wants to leave their details and go.",
@@ -129,6 +95,7 @@ export const AGENT_TEMPLATES: readonly AgentTemplate[] = [
   {
     id: "appointment-booking",
     name: "Appointment booking",
+    sector: "Any business",
     summary: "Takes a name, a branch and a preferred day, then reads the booking back.",
     persona:
       "Efficient and friendly. Offers a concrete alternative when the day somebody asks for does not work, rather than asking them to guess again.",
@@ -164,6 +131,7 @@ export const AGENT_TEMPLATES: readonly AgentTemplate[] = [
   {
     id: "renewals-outreach",
     name: "Renewals reminder",
+    sector: "Insurance",
     summary: "Calls out about a renewal, confirms who answered, and records their answer.",
     persona:
       "Polite and direct. This is an unsolicited call, so it says who it is and why it is calling in the first breath, and accepts a no without pushing.",
@@ -201,6 +169,7 @@ export const AGENT_TEMPLATES: readonly AgentTemplate[] = [
   {
     id: "blank",
     name: "Start from nothing",
+    sector: "Any business",
     summary: "A name and nothing else. Write the greeting and the form yourself.",
     persona: "",
     greeting: "",
@@ -212,5 +181,22 @@ export const AGENT_TEMPLATES: readonly AgentTemplate[] = [
 ];
 
 /** Null rather than a throw: a template id in a request body is not to be trusted. */
+/**
+ * Everything, the founding five first and the catalogue after, blank last.
+ *
+ * The catalogue lives in its own file because it is fifty templates of content and this
+ * file is the shape. `field` is exported to it so both build questions the same way.
+ */
+export const AGENT_TEMPLATES: readonly AgentTemplate[] = [
+  ...FOUNDING_TEMPLATES.filter((template) => template.id !== "blank"),
+  ...CATALOGUE_TEMPLATES,
+  ...FOUNDING_TEMPLATES.filter((template) => template.id === "blank"),
+];
+
+/** Every sector in the catalogue, in the order the gallery lists them. */
+export const TEMPLATE_SECTORS: readonly string[] = [
+  ...new Set(AGENT_TEMPLATES.map((template) => template.sector)),
+];
+
 export const findTemplate = (id: string): AgentTemplate | null =>
   AGENT_TEMPLATES.find((template) => template.id === id) ?? null;

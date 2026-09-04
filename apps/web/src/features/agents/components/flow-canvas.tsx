@@ -944,10 +944,12 @@ export const FlowCanvas = ({
               the canvas rather than above it so the actions travel with the thing they act
               on; along the top rather than in a corner so they are found where every toolbar
               is found, and its buttons are buttons. `data-canvas-bar` keeps a press on it
-              from starting a pan. */}
+              from starting a pan. The near-solid ground is deliberate: a node panned under the
+              bar showed its text straight through the lighter one, which read as the node
+              being on top. */}
           <div
             data-canvas-bar
-            className="glass absolute top-3 right-3 left-3 z-[5] flex items-center gap-1.5 rounded-lg border border-[var(--hairline)] px-2 py-1.5"
+            className="glass absolute top-3 right-3 left-3 z-[5] flex items-center gap-1.5 rounded-lg border border-[var(--hairline)] bg-[color-mix(in_srgb,var(--surface-solid)_85%,transparent)] px-2 py-1.5"
           >
             <span className="px-1.5 font-mono text-[11px] text-[var(--ink-3)]">
               {nodes.length} {nodes.length === 1 ? "step" : "steps"} · {edges.length} {edges.length === 1 ? "link" : "links"}

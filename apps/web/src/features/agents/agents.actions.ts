@@ -14,7 +14,7 @@ import {
 import { knowledgeFormSchema } from "./knowledge.schema";
 import { projectToCapturedFields } from "@ansa/shared/flow-project";
 
-import { flowFromFields, readFlow } from "./flow.schema";
+import { flowFromFields, flowFromTemplate, readFlow } from "./flow.schema";
 import {
   capturedFieldsSchema,
   draftSchema,
@@ -54,7 +54,7 @@ import {
   testTool,
   type VoiceChoice,
 } from "./agents.service";
-import { findTemplate } from "./templates";
+import { allFields, findTemplate } from "./templates";
 
 /**
  * Server Actions for the agent workspace.
@@ -473,9 +473,12 @@ export const createAgentFromTemplate = async (input: {
 
   const unfinished: string[] = [];
 
-  if (template.fields.length > 0) {
+  /* The form asks every question the template has, arms included — a list cannot skip, so
+     an arm's questions arrive optional. The flow asks them on their arms. */
+  const asked = input.authoringMode === "flow" ? template.fields : allFields(template);
+  if (asked.length > 0) {
     try {
-      await setAgentFields(agentId, template.fields);
+      await setAgentFields(agentId, asked);
     } catch (error) {
       unfinished.push(`its form (${failureMessage(error)})`);
     }
@@ -514,7 +517,7 @@ export const createAgentFromTemplate = async (input: {
     try {
       await setAgentFlow(agentId, {
         authoringMode: "flow",
-        flow: flowFromFields(template.fields),
+        flow: flowFromTemplate(template),
       });
     } catch (error) {
       unfinished.push(`its flow (${failureMessage(error)})`);

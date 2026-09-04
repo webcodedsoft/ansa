@@ -2962,7 +2962,8 @@ What to listen for, in order of what is actually in doubt:
       that gets believed.
 - [ ] `config.*` is still organisation-scoped and resolves the oldest live agent.
 
-- [ ] Agent templates to pick from when creating the first one, and the create form itself.
+- [x] Agent templates to pick from when creating the first one, and the create form itself.
+      Seventy, in a gallery, every one publishable as-is (2026-09-04; see Slice 15).
 - [ ] Organisation-level general config that an agent's own settings override. Today an
       agent carries every value outright and there is no organisation default beneath it.
 - [~] `config.*` is still organisation-scoped and resolves the oldest live agent — **but it
@@ -3850,9 +3851,25 @@ covered what the form already does:
 
   **Creation follows the same shape.** `/agents/new` is two boxes — Form Builder and Flow
   Builder — and nothing else. Each opens its own front door (`/agents/new/form`,
-  `/agents/new/flow`): a name, the template cards, and a preview that belongs to that
+  `/agents/new/flow`): a name, the chosen template, and a preview that belongs to that
   builder — how the call sounds for a form, the steps it draws for a flow. Create lands on
   the workspace the builder owns.
+
+  **Templates are complete conversations, in a gallery (2026-09-04).** Seventy of them, in
+  `templates.catalogue.ts`, across fifteen kinds of Nigerian business — property, clinics,
+  banks and fintech, telecoms, utilities, logistics, retail, travel, schools, churches and
+  mosques, professional and home services, automotive, and outbound reminders. Each is
+  the greeting, the questions in the order a person would ask them, house rules, closing
+  line and keyterms; a template may `branch` on one choice question with an arm of
+  questions per option. The create screen shows the one chosen and a "Browse 70 templates"
+  button; the gallery is a wide modal with search and sector chips, and a pick closes it.
+  A form agent gets every arm's questions flattened (`allFields`); a flow agent gets the
+  fork drawn (`flowFromTemplate`: shared column → `decide` → arms side by side → a `say`
+  close → `end`). `templates.test.ts` puts every one of the seventy through `validateFlow`
+  and the form schema and fails the build if any needs fixing before publish — a template
+  that needs homework is not a template. Verified in the browser: chooser → Flow Builder →
+  gallery → Property enquiry → name → Create → canvas shows the rent/buy fork → Publish,
+  version 2 live, nothing else touched.
 
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has

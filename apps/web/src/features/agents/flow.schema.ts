@@ -223,3 +223,105 @@ export const flowFromFields = (fields: readonly FlowField[]): Flow => {
   edges.push({ from: previous, to: "end" });
   return { version: FLOW_VERSION, nodes, edges };
 };
+
+/**
+ * A template drawn as the flow it describes — its branch included.
+ *
+ * `flowFromFields` draws a line. A template that forks — rent or buy, in pain or not — is
+ * drawn as a fork: the shared questions in a column, a Branch step reading the choice, one
+ * arm of questions per option laid out side by side, every arm rejoining at a closing Say
+ * step and the hang-up. Every arm has a step even when it asks nothing, so the branch's
+ * "otherwise" always has somewhere to go and the validator has nothing to refuse.
+ *
+ * This is what makes a template a complete flow: somebody who picks "Property enquiry" gets
+ * a canvas that already asks renters and buyers different things, and edits from there.
+ */
+export const flowFromTemplate = (template: {
+  readonly fields: readonly FlowField[];
+  readonly branch?: { readonly on: string; readonly arms: Readonly<Record<string, readonly FlowField[]>> };
+  readonly closing?: string;
+}): Flow => {
+  if (template.branch === undefined) return withClosing(flowFromFields(template.fields), template.closing);
+
+  const { on, arms } = template.branch;
+  const options = Object.keys(arms);
+  const nodes: Flow["nodes"][number][] = [{ id: "start", kind: "start", x: 40, y: 90 }];
+  const edges: Flow["edges"][number][] = [];
+  let y = 90;
+  let previous = "start";
+
+  // The shared questions, in a column. The choice the branch reads is among them.
+  template.fields.forEach((field, index) => {
+    const id = `ask-${index + 1}`;
+    y += 170;
+    nodes.push({ id, kind: "collect", x: 40, y, field });
+    edges.push({ from: previous, to: id });
+    previous = id;
+  });
+
+  y += 170;
+  nodes.push({ id: "branch", kind: "decide", x: 40, y, on });
+  edges.push({ from: previous, to: "branch" });
+
+  // One arm per option, side by side. The last option is the catch-all, since a caller
+  // whose answer matched nothing is still on the call and has to go somewhere.
+  const armBottoms: string[] = [];
+  let deepest = y;
+  options.forEach((option, column) => {
+    const x = 40 + column * 260;
+    let armY = y;
+    let armPrevious = "branch";
+    const isLast = column === options.length - 1;
+    const questions = arms[option] ?? [];
+    if (questions.length === 0) {
+      // A step to land on, so the arm exists on the canvas and the edge has a target.
+      armY += 170;
+      const id = `arm-${column + 1}`;
+      nodes.push({ id, kind: "say", x, y: armY, text: `They said ${option}. Acknowledge it and carry on.` });
+      edges.push(isLast ? { from: "branch", to: id, otherwise: true } : { from: "branch", to: id, when: { equals: option } });
+      armPrevious = id;
+    }
+    questions.forEach((field, index) => {
+      armY += 170;
+      const id = `arm-${column + 1}-${index + 1}`;
+      nodes.push({ id, kind: "collect", x, y: armY, field });
+      edges.push(
+        armPrevious === "branch"
+          ? isLast
+            ? { from: "branch", to: id, otherwise: true }
+            : { from: "branch", to: id, when: { equals: option } }
+          : { from: armPrevious, to: id },
+      );
+      armPrevious = id;
+    });
+    armBottoms.push(armPrevious);
+    deepest = Math.max(deepest, armY);
+  });
+
+  // Rejoin: every arm leads to the close, then the end.
+  const closeY = deepest + 170;
+  nodes.push({ id: "close", kind: "say", x: 40, y: closeY, text: template.closing ?? "Say what happens next, in one sentence." });
+  for (const bottom of armBottoms) edges.push({ from: bottom, to: "close" });
+  nodes.push({ id: "end", kind: "hangup", x: 40, y: closeY + 170 });
+  edges.push({ from: "close", to: "end" });
+
+  return { version: FLOW_VERSION, nodes, edges };
+};
+
+/** A straight flow with a closing Say before the hang-up, when the template has one. */
+const withClosing = (flow: Flow, closing: string | undefined): Flow => {
+  if (closing === undefined) return flow;
+  const end = flow.nodes.find((node) => node.kind === "hangup");
+  if (end === undefined) return flow;
+  const into = flow.edges.filter((edge) => edge.to === end.id);
+  const close = { id: "close", kind: "say" as const, x: end.x, y: end.y, text: closing };
+  return {
+    ...flow,
+    nodes: [...flow.nodes.filter((node) => node.id !== end.id), close, { ...end, y: end.y + 170 }],
+    edges: [
+      ...flow.edges.filter((edge) => edge.to !== end.id),
+      ...into.map((edge) => ({ ...edge, to: "close" })),
+      { from: "close", to: end.id },
+    ],
+  };
+};
