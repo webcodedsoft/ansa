@@ -137,6 +137,50 @@ export const publishConfiguration = async (agentId: string, body: PublishBody) =
   return result;
 };
 
+/**
+ * Publish everything that is staged, as it stands.
+ *
+ * The workspace publishes from its own form, which carries every field of the
+ * configuration. The flow builder is a page of its own with no such form — it has a graph
+ * and a note — so it publishes the configuration as it currently is: the draft where one
+ * exists, the live document where it does not, section by section. Publishing is the one
+ * act, and this is the same act from a different door: the API applies the staged graph,
+ * form, tools and switches in the same transaction whichever door it came through.
+ *
+ * Arrays are copied because the wire types are readonly and the request body is not; the
+ * values are the same.
+ */
+export const publishStaged = async (agentId: string, note: string) => {
+  const [live, unpublished] = await Promise.all([currentConfiguration(agentId), readDraft(agentId)]);
+  const draft = unpublished.draft?.config;
+  const config = { ...live.config, ...stripUndefined(draft ?? {}) };
+  const escalation = config.escalation ?? null;
+  return publishConfiguration(agentId, {
+    name: config.name,
+    voiceId: config.voiceId,
+    speakingRate: config.speakingRate,
+    greeting: config.greeting,
+    persona: config.persona,
+    instructions: config.instructions,
+    keyterms: [...config.keyterms],
+    escalation: escalation === null ? null : { ...escalation },
+    policyBlocks:
+      config.policyBlocks === undefined || config.policyBlocks === null
+        ? undefined
+        : config.policyBlocks.map((block) => ({
+            ...block,
+            canDo: [...block.canDo],
+            cannotDo: [...block.cannotDo],
+            escalateWhen: [...block.escalateWhen],
+          })),
+    note,
+  });
+};
+
+/** A draft section is "not staged" when undefined, and must not overwrite the live value with it. */
+const stripUndefined = <T extends object>(value: T): Partial<T> =>
+  Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as Partial<T>;
+
 export const listVersions = async (agentId: string, page?: number) =>
   (await api()).config.listVersions({
     path: { agentId },

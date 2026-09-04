@@ -3830,10 +3830,14 @@ covered what the form already does:
 - Only **Data captured** locks. An earlier draft locked Conversation too, which would have
   stranded five settings — name, persona, instructions, keyterms and two behaviour switches —
   with nowhere to edit them.
-- The canvas gets **no Save, Publish or Test call of its own**. The workspace header already
-  carries all three and the graph is part of the same draft and the same publish. Its toolbar
-  holds canvas actions only: fit, tidy, undo, redo. The header's unpublished-changes tag covers
-  graph edits too.
+- The canvas was a tab, with no Save or Publish of its own, riding the workspace header's.
+  That was wrong for a different reason than the one considered: a drawing surface inside a
+  1080-pixel column beside nine tabs is a drawing surface nobody can see. **The builder is a
+  page now** — `/agents/:id/flow`, at the width the shell allows a canvas — with its own Save
+  (stages the graph) and Publish (stages it, then publishes everything staged, as one
+  version, with a note). One act, two doors: the API applies the same transaction whichever
+  door it came through. The Flow tab is a summary card that opens the page. A new flow agent
+  lands on its canvas. The toolbar still holds canvas actions only.
 
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has

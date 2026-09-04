@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
 
@@ -16,29 +16,6 @@ import { cn } from "@/lib/cn";
  * half-filled form is still there when you come back to it.
  */
 
-/**
- * How a panel sends someone to a sibling tab.
- *
- * Panels never navigate, so there is no URL for one tab to link to and no setter reachable
- * from inside a panel. The alternative that appeared first was for the panel to find the tab
- * strip in the DOM and click the button whose visible text started with "Flow" — which works,
- * and breaks silently the day the tab is renamed or translated, leaving a button that does
- * nothing and says nothing about why.
- *
- * The id is the stable name; the label is not. Passing it through context keeps the state in
- * this component, where it already lives, and makes the coupling a value the caller writes
- * down rather than a string it has to match.
- */
-const OpenTab = createContext<(id: string) => void>(() => {});
-
-/**
- * Open a sibling tab by id, from inside a panel.
- *
- * Outside a `Tabs` this is a no-op rather than a throw: a panel rendered on its own — in a
- * test, or lifted onto a page of its own later — should still render, and a control that
- * quietly does nothing is a better failure there than a crash.
- */
-export const useOpenTab = (): ((id: string) => void) => useContext(OpenTab);
 export interface TabDef {
   readonly id: string;
   readonly label: ReactNode;
@@ -104,13 +81,11 @@ export const Tabs = ({ tabs, initial }: { readonly tabs: readonly TabDef[]; read
         })}
       </div>
 
-      <OpenTab.Provider value={setOpen}>
-        {tabs.map((tab) => (
-          <div key={tab.id} role="tabpanel" hidden={tab.id !== open} className={cn(tab.id === open && "ansa-enter")}>
-            {tab.panel}
-          </div>
-        ))}
-      </OpenTab.Provider>
+      {tabs.map((tab) => (
+        <div key={tab.id} role="tabpanel" hidden={tab.id !== open} className={cn(tab.id === open && "ansa-enter")}>
+          {tab.panel}
+        </div>
+      ))}
     </>
   );
 };

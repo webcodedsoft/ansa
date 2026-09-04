@@ -98,7 +98,17 @@ export const WorkspaceChrome = ({
         </header>
 
         <main className="min-h-0 flex-1 overflow-y-auto">
-          <div className="ansa-enter mx-auto max-w-[1080px] px-9 pt-9 pb-24">{children}</div>
+          {/* Every page reads at a column width, except a canvas: a drawing surface inside
+              1080 pixels is a drawing surface nobody can see, which is why the flow builder
+              left the workspace's tabs for a page of its own. The route says which it is. */}
+          <div
+            className={cn(
+              "ansa-enter mx-auto px-9 pt-9 pb-24",
+              /\/agents\/[^/]+\/flow$/.test(pathname) ? "max-w-[1600px]" : "max-w-[1080px]",
+            )}
+          >
+            {children}
+          </div>
         </main>
       </div>
     </div>

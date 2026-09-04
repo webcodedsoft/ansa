@@ -41,9 +41,10 @@ import type {
 } from "../agents.service";
 import { branchCount } from "../flow-questions";
 import { readFlow } from "../flow.schema";
+import { validateFlow } from "@ansa/shared/flow-validate";
 import { ConversationTab } from "./conversation-tab";
 import { DataCapturedTab } from "./data-captured-tab";
-import { FlowCanvas } from "./flow-canvas";
+import { FlowSummary } from "./flow-summary";
 import { OverviewTab, type AgentStats, type AttentionItem } from "./overview-tab";
 import { PolicyTab } from "./policy-tab";
 import type { HeldNumber } from "./routing-card";
@@ -255,7 +256,7 @@ export const AgentWorkspace = ({
      API refuses them anyway; this is so the button says so first, and says where, instead of
      letting somebody write a publish note for a publish that cannot happen. Only a flow's
      problems count — a form agent's canvas is a hidden panel nobody is looking at. */
-  const [flowBlocking, setFlowBlocking] = useState(0);
+  const flowBlocking = drawn === null ? 0 : validateFlow(drawn).filter((problem) => problem.blocking).length;
   const cannotPublish = stagedMode === "flow" && flowBlocking > 0;
   /* Offered rather than imposed: when the draft was loaded from a version, that is the most
      likely honest note, and it is the provenance the old rollback used to write by itself. */
@@ -381,12 +382,12 @@ export const AgentWorkspace = ({
             aria-busy={pending}
             title={
               cannotPublish
-                ? `The Flow tab has ${flowBlocking === 1 ? "a problem" : `${flowBlocking} problems`} that must be fixed first.`
+                ? `The flow has ${flowBlocking === 1 ? "a problem" : `${flowBlocking} problems`} that must be fixed in the flow builder first.`
                 : undefined
             }
             onClick={() => setAsking(true)}
           >
-            {pending ? "Publishing…" : cannotPublish ? `Fix ${flowBlocking} on the Flow tab` : "Publish"}
+            {pending ? "Publishing…" : cannotPublish ? `Fix ${flowBlocking} in the flow` : "Publish"}
           </Button>
         </div>
       </header>
@@ -429,7 +430,7 @@ export const AgentWorkspace = ({
                 <OverviewTab stats={stats} attention={attention} recentCalls={recentCalls} />
               ),
             },
-            { id: "flow", label: "Flow", panel: <FlowCanvas key={shownAs([stagedFlow, stagedMode])} flow={stagedFlow} publishForm={PUBLISH_FORM} authoringMode={stagedMode} onBlockingProblems={setFlowBlocking} /> },
+            { id: "flow", label: "Flow", panel: <FlowSummary agentId={agent.agentId} flow={drawn} authoringMode={stagedMode} hasUnpublishedGraph={graph.draft?.flow != null} /> },
             { id: "conversation", label: "Conversation", problem: problemTabs.has("conversation"), panel: <ConversationTab key={shownAs(config)} agent={staged} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
             { id: "data", label: "Data captured", panel: <DataCapturedTab key={shownAs([staged.capturedFields, stagedFlow])} agent={staged} authoringMode={stagedMode} flow={stagedFlow} /> },
             { id: "tools", label: "Tools", panel: <ToolsTab key={shownAs(staged.enabledTools)} agent={staged} tools={tools} /> },

@@ -3,7 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
-import { Button, EmptyState, Notice, Panel, Table, Tag, Td, Th, Tr, useOpenTab } from "@/components/ui";
+import Link from "next/link";
+
+import { Button, EmptyState, Notice, Panel, Table, Tag, Td, Th, Tr, buttonClass } from "@/components/ui";
 import { useToastStore } from "@/stores/toast.store";
 
 import { rebuildAsFlow, rebuildAsForm } from "../agents.actions";
@@ -11,7 +13,7 @@ import type { CapturedField } from "../agents.schema";
 import type { AgentSummary } from "../agents.service";
 import { branchCount, questionsFromFlow } from "../flow-questions";
 import { readFlow } from "../flow.schema";
-import { AUTHORING_ASYMMETRY, FLOW_TAB_ID, type AuthoringMode, type FlowQuestion } from "./authoring-mode";
+import { AUTHORING_ASYMMETRY, type AuthoringMode, type FlowQuestion } from "./authoring-mode";
 import { FieldBuilder } from "./field-builder";
 
 /**
@@ -181,8 +183,6 @@ const FlowQuestions = ({
   readonly questions: readonly FlowQuestion[];
   readonly branches: number;
 }) => {
-  const openTab = useOpenTab();
-
   return (
     <div className="flex flex-col gap-3.5">
       <div>
@@ -195,13 +195,11 @@ const FlowQuestions = ({
 
       <Notice tone="info">
         This agent is built as a flow, so its questions are set on the canvas rather than in
-        a list. Add or change a Collect step on the Flow tab and it appears here.
+        a list. Add or change a Collect step in the flow builder and it appears here.
         <span className="mt-2 block">
-          {/* Not an `<a>`: the tabs switch panels in place and never navigate, so there is no
-              URL for this to be. `useOpenTab` reaches the tab strip's own state by id. */}
-          <Button size="sm" onClick={() => openTab(FLOW_TAB_ID)}>
-            Open the Flow tab
-          </Button>
+          <Link href={`/agents/${agentId}/flow`} className={buttonClass("secondary", "sm")}>
+            Open the flow builder
+          </Link>
         </span>
       </Notice>
 

@@ -842,10 +842,16 @@ export const FlowCanvas = ({ flow, publishForm, authoringMode, onBlockingProblem
           ))}
         </div>
 
+        {/* One grid cell for the drawing and what is said about it, so the palette, this and
+            the inspector stay three columns. Mounted as siblings, the status line took the
+            inspector's column and the inspector wrapped under the palette. */}
+        <div className="flex min-w-0 flex-col gap-3.5">
         <div
           ref={canvasRef}
           className={cn(
-            "relative h-[560px] touch-none overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--surface-2)] shadow-[var(--spec)]",
+            /* As tall as the page allows, and never less than a working height. It was a
+               fixed 560 pixels for a tab; on a page of its own the drawing gets the screen. */
+            "relative h-[max(560px,calc(100vh-240px))] touch-none overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--surface-2)] shadow-[var(--spec)]",
             panRef.current ? "cursor-grabbing" : "cursor-grab",
           )}
           style={{ backgroundImage: "radial-gradient(circle, var(--hairline) 1px, transparent 1px)", backgroundSize: "20px 20px" }}
@@ -1031,6 +1037,7 @@ export const FlowCanvas = ({ flow, publishForm, authoringMode, onBlockingProblem
             gate runs, so nobody reaches a refusal having been told here that it was fine. */}
         <FlowStatus steps={nodes} problems={problems} />
         <FlowProblems steps={nodes} problems={problems} onFocusNode={focusNode} />
+        </div>
 
         <div className="surface rounded-xl p-4">
           {selectedNode === null ? (

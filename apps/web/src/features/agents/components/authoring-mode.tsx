@@ -135,11 +135,3 @@ export interface FlowQuestion {
    */
   readonly asked: string | null;
 }
-
-/**
- * The Flow tab's id on the agent workspace.
- *
- * The id and not the label: `agent-workspace.tsx` keys the tab as "flow" and calls it "Flow"
- * on screen, and only one of those two is safe to depend on. Pass it to `useOpenTab()`.
- */
-export const FLOW_TAB_ID = "flow";
