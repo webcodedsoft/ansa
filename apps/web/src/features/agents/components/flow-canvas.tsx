@@ -1446,17 +1446,11 @@ export const FlowCanvas = ({
         height: bottom - top + LANE_HEAD + 8,
       };
     })
-    .filter((lane): lane is NonNullable<typeof lane> => lane !== null)
-    .map((box, _at, all) => {
-      /* "Everyone gets this" spans the services it splits into, the way the drawing has it
-         — a column of shared questions is narrower than the lanes beneath it, and a box
-         that hugged the column would leave the fan of links starting from nowhere. */
-      if (box.id !== "opening" || all.length < 2) return box;
-      const others = all.filter((other) => other.id !== "opening");
-      const left = Math.min(box.left, ...others.map((other) => other.left));
-      const right = Math.max(box.left + box.width, ...others.map((other) => other.left + other.width));
-      return { ...box, left, width: right - left };
-    });
+    .filter((lane): lane is NonNullable<typeof lane> => lane !== null);
+  /* "Everyone gets this" hugs its own column like every other lane. It used to span the
+     services beneath it, and so grew a card's width with every service added — which read
+     as the opening changing when only the fork below it had. The fan of links leaves the
+     fork's dots and runs along the gap, and needs no box to start from. */
 
   const selectedNode = selected === null ? null : (byId(selected) ?? null);
   const branches = selectedNode === null ? [] : edges.filter(conditional(selectedNode.id));

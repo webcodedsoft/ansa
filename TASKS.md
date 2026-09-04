@@ -4045,6 +4045,11 @@ find the lane by geometry. Found underneath: the wire between two cards took the
 `pointer-events: stroke`, with a click that deleted the link. Wires are inert now; a link is
 changed by moving the step or from the inspector, not by a hairline that deletes on contact.
 
+**The opening keeps its width (2026-09-04, late).** "Everyone gets this" spanned every service
+beneath it, so adding a service widened the opening — which read as the opening changing when
+only the fork below it had. It hugs its own column now, like every other lane; the fan leaves
+the fork's dots and runs along the gap, and never needed the wide box.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and
