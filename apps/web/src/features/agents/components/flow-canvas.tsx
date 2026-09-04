@@ -14,6 +14,7 @@ import {
   TextCursorInput,
   Undo2,
   Wrench,
+  X,
   type LucideIcon,
 } from "lucide-react";
 
@@ -29,7 +30,7 @@ import { cn } from "@/lib/cn";
    console would eventually tell somebody their graph was fine while the API refused it. */
 import { validateFlow } from "@ansa/shared/flow-validate";
 
-import { branchHeads, foldedAway, foldedCount, laneGroups, sameShape, tidied, TOP } from "../flow-layout";
+import { foldedAway, LANE_HEAD, laneGroups, sameShape, tidied, TOP } from "../flow-layout";
 
 import {
   FLOW_FIELD_TYPES,
@@ -114,6 +115,72 @@ const PALETTE: readonly { readonly group: string; readonly kinds: readonly FlowN
   { group: "Logic", kinds: ["decide", "tool"] },
   { group: "Ending", kinds: ["transfer", "hangup"] },
 ];
+
+/* ------------------------------------------------------------------- the card */
+
+/**
+ * What one card says: a title, a subtitle, and which of the two is typed into.
+ *
+ * The card is one line, so the title has to be the thing somebody scans for — the question
+ * a step asks, the tool it calls, the words it says — and the subtitle the thing they check
+ * once they have found it: how the answer is heard, whether it is read back, how many ways
+ * the call can go from here. The kind's own name is not on the card at all; the icon is.
+ */
+interface CardLine {
+  readonly title: string;
+  readonly subtitle: string;
+  /** Which of the two lines is an input, if either. */
+  readonly edit?: "title" | "subtitle";
+  readonly placeholder?: string;
+  readonly onEdit?: (value: string) => void;
+}
+
+const CONFIRM_WORD: Record<string, string> = { none: "", readback: "read back", spellback: "spelled back" };
+
+const cardLineOf = (
+  node: FlowNode,
+  edges: readonly FlowEdge[],
+  onEdit: { readonly text: (value: string) => void; readonly prompt: (value: string) => void },
+): CardLine => {
+  switch (node.kind) {
+    case "start":
+      return { title: "Call answered", subtitle: "the greeting plays" };
+    case "collect": {
+      const field = node.field;
+      const parts: string[] = [field?.type ?? "text"];
+      if (field?.type === "choice") parts.push(`${field.options.length} answers`);
+      else if (field !== undefined && (CONFIRM_WORD[field.confirm] ?? "") !== "") parts.push(CONFIRM_WORD[field.confirm] ?? "");
+      else if (field?.capture === "keypad") parts.push("keypad");
+      return {
+        title: field?.prompt ?? "",
+        subtitle: parts.join(" · "),
+        edit: "title",
+        placeholder: field?.key === "" || field === undefined ? "What the agent asks" : `asks for their ${field.key}`,
+        onEdit: onEdit.prompt,
+      };
+    }
+    case "say":
+      return { title: "Say something", subtitle: node.text ?? "", edit: "subtitle", placeholder: "what to cover, in your own words", onEdit: onEdit.text };
+    case "confirm":
+      return { title: `Confirm ${node.on === "" || node.on === undefined ? "a value" : node.on}`, subtitle: "reads it back" };
+    case "decide": {
+      const ways = edges.filter((edge) => edge.from === node.id).length;
+      return {
+        title: "Branch",
+        subtitle: node.on === "" || node.on === undefined ? "on a value you have not named" : `on ${node.on} · ${ways} ${ways === 1 ? "way" : "ways"}`,
+      };
+    }
+    case "tool":
+      return {
+        title: (node.tool ?? "") === "" ? "Call a tool" : (node.tool ?? ""),
+        subtitle: (node.tool ?? "") === "" ? "no tool chosen yet" : "looks up · then carries on",
+      };
+    case "transfer":
+      return { title: "Transfer to a person", subtitle: "rings a person · ends here" };
+    case "hangup":
+      return { title: "End the call", subtitle: "says goodbye" };
+  }
+};
 
 /* ------------------------------------------------------------------ conditions */
 
@@ -291,8 +358,8 @@ const stepForward = (history: History): History => {
 /* ----------------------------------------------------------------------- layout */
 
 const NODE_W = 208;
-/** A card's height before its port row, for the fallback when a dot has not been measured. */
-const BODY_H = 88;
+/** A card's height, for the fallback before it has been measured. One line: icon, title, subtitle. */
+const BODY_H = 44;
 
 interface Point {
   readonly x: number;
@@ -305,7 +372,11 @@ interface Point {
  * bottom of one card and arrives at the top of the next, and the curve bends vertically.
  */
 const bezier = (p1: Point, p2: Point): string => {
-  const dy = Math.max(46, Math.abs(p2.y - p1.y) * 0.45);
+  /* Straight when it can be. A link down one column is the common case — nearly every link
+     on a drawing — and a curve there reads as a wobble. The bend is kept for a link that
+     crosses to another column, where it is the shape of a fork. */
+  if (Math.abs(p2.x - p1.x) < 2) return `M${p1.x} ${p1.y} L${p2.x} ${p2.y}`;
+  const dy = Math.max(18, Math.abs(p2.y - p1.y) * 0.5);
   return `M${p1.x} ${p1.y} C${p1.x} ${p1.y + dy},${p2.x} ${p2.y - dy},${p2.x} ${p2.y}`;
 };
 
@@ -510,7 +581,10 @@ export const FlowCanvas = ({
   /* Read once, on mount. Later renders keep the operator's work in front of them; the
      workspace remounts this panel with a `key` when the document underneath it changes. */
   const [loaded] = useState(() => readFlow(flow));
-  const [history, setHistory] = useState<History>(() => ({ past: [], present: loaded ?? emptyFlow(), future: [] }));
+  /* Laid out on the way in. Positions are derived from the graph now, so the ones in the
+     stored document are whatever the previous layout left there, and honouring them would
+     open a flow at yesterday's spacing until the first edit. */
+  const [history, setHistory] = useState<History>(() => ({ past: [], present: tidied(loaded ?? emptyFlow()), future: [] }));
   const [pending, setPending] = useState<Readonly<Record<string, readonly FlowCondition[]>>>({});
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [selected, setSelected] = useState<string | null>(null);
@@ -573,6 +647,12 @@ export const FlowCanvas = ({
      hoist and neither do consts, so the order in this file is the dependency order. */
   const hidden = foldedAway(history.present, folded);
 
+  /* The lanes, read off the graph. Declared here, above the links, because a link into a
+     lane's first step is drawn without a word on it — the lane header says which answer it
+     is — and the links are built before the lane boxes are measured. */
+  const lanes = laneGroups(history.present);
+  const laneHeads = new Set(lanes.filter((lane) => lane.id !== "opening").map((lane) => lane.id));
+
   const toggleFold = (head: string) => {
     setFolded((current) => {
       const next = new Set(current);
@@ -619,6 +699,12 @@ export const FlowCanvas = ({
 
   const byId = (id: string): FlowNode | undefined => nodes.find((n) => n.id === id);
 
+  const cardLine = (node: FlowNode, all: readonly FlowEdge[]): CardLine =>
+    cardLineOf(node, all, {
+      text: (value) => updateNode(node.id, { text: value }, "text"),
+      prompt: (value) => updateNodeField(node.id, { prompt: value }, "prompt"),
+    });
+
   /**
    * Change one step's words, named rather than selected.
    *
@@ -636,12 +722,14 @@ export const FlowCanvas = ({
   };
   const portsFor = (node: FlowNode): readonly Port[] => portsOf(node, edges, pending[node.id] ?? []);
 
-  const outPoint = (node: FlowNode, key: string, at: number): Point => {
-    const dot = portRefs.current.get(`${node.id}:${key}`);
-    if (dot) return { x: node.x + dot.offsetLeft + 5.5, y: node.y + dot.offsetTop + 5.5 };
-    const count = portsFor(node).length;
-    return { x: node.x + NODE_W * portAlong(at, count), y: node.y + BODY_H };
-  };
+  /* A link leaves from the middle of the card's bottom edge whichever port it belongs to,
+     so a link down a column is a vertical line and a fork is a fan from one point — the
+     shape the drawing has. The port dots along the edge are where a link is *dragged* from;
+     where a drawn link appears to start is a separate question, and this is its answer. */
+  const outPoint = (node: FlowNode, _key: string, _at: number): Point => ({
+    x: node.x + NODE_W / 2,
+    y: node.y + (cardRefs.current.get(node.id)?.offsetHeight ?? BODY_H),
+  });
   const inPoint = (node: FlowNode): Point => ({ x: node.x + NODE_W / 2, y: node.y });
 
   // Read fresh on every render — `tick` exists purely to force one after visibility flips.
@@ -650,14 +738,22 @@ export const FlowCanvas = ({
     const from = byId(edge.from);
     const to = byId(edge.to);
     if (!from || !to) return null;
-    // A link to a step that has been folded away has nothing to point at.
-    if (hidden.has(edge.from) || hidden.has(edge.to)) return null;
+    // A link to a step that has been folded away has nothing to point at — unless the step
+    // heads a lane, in which case the lane's header is standing in and the link lands on it.
+    if (hidden.has(edge.from)) return null;
+    if (hidden.has(edge.to) && !(laneHeads.has(edge.to) && folded.has(edge.to))) return null;
     const ports = portsFor(from);
     const index = ports.findIndex((port) => port.holds(edge));
     const p1 = outPoint(from, ports[index]?.key ?? "", Math.max(index, 0));
-    const p2 = inPoint(to);
+    const p2 = folded.has(to.id) ? { x: to.x + NODE_W / 2, y: to.y - LANE_HEAD } : inPoint(to);
     const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 - 5 };
-    return { key: at, d: bezier(p1, p2), label: ports[index]?.label ?? "", mid };
+    /* A word on the link only where the call splits. "got it" on every question was a word
+       on every link, which is the same as a word on none; "gave up", "failed" and a branch's
+       answer are the ones that change where the caller ends up. A link into a lane's first
+       step carries no word either: the lane's own header already says which answer it is. */
+    const splits = from.kind === "decide" || index > 0;
+    const intoLane = laneHeads.has(to.id);
+    return { key: at, d: bezier(p1, p2), label: splits && !intoLane ? (ports[index]?.label ?? "") : "", mid };
   });
 
   const localPoint = (e: ReactPointerEvent): Point => {
@@ -862,29 +958,59 @@ export const FlowCanvas = ({
    * the words in it, and a box drawn to a guessed height clips the card it is meant to
    * contain. One render stale is fine and is what the links already accept.
    */
-  const laneBoxes = laneGroups(history.present)
+  const laneBoxes = lanes
     .map((lane) => {
+      const head = lane.id === "opening" ? undefined : byId(lane.id);
+      /* A folded lane is its header and nothing else, sitting where its first card would be:
+         the name, how many steps are behind it, and the button that brings them back. The
+         cards are hidden; the header is what stands in for them. */
+      if (head !== undefined && folded.has(lane.id)) {
+        return {
+          id: lane.id,
+          label: lane.label,
+          steps: lane.ids.length,
+          broken: lane.ids.filter((id) => marked.get(id) === "blocks").length,
+          folded: true,
+          left: head.x - 8,
+          top: head.y - LANE_HEAD,
+          width: NODE_W + 16,
+          height: LANE_HEAD,
+        };
+      }
       const cards = lane.ids
         .filter((id) => !hidden.has(id))
         .map((id) => byId(id))
         .filter((node): node is FlowNode => node !== undefined);
       if (cards.length === 0) return null;
-      const bottom = Math.max(...cards.map((n) => n.y + (cardRefs.current.get(n.id)?.offsetHeight ?? 132)));
+      const top = Math.min(...cards.map((n) => n.y));
+      const bottom = Math.max(...cards.map((n) => n.y + (cardRefs.current.get(n.id)?.offsetHeight ?? BODY_H)));
+      const left = Math.min(...cards.map((n) => n.x));
+      const right = Math.max(...cards.map((n) => n.x + NODE_W));
       return {
         id: lane.id,
         label: lane.label,
         steps: cards.length,
         broken: cards.filter((n) => marked.get(n.id) === "blocks").length,
-        left: Math.min(...cards.map((n) => n.x)) - 13,
-        /* Clear of the link labels. A lane starts a good way above its first card because
-           the words on the link that reaches it — "is rent", "otherwise" — are drawn in the
-           gap between the fork and that card, and two captions in one band read as neither. */
-        top: Math.min(...cards.map((n) => n.y)) - 34,
-        width: Math.max(...cards.map((n) => n.x + NODE_W)) - Math.min(...cards.map((n) => n.x)) + 26,
-        height: bottom - Math.min(...cards.map((n) => n.y)) + 47,
+        folded: false,
+        /* The header sits inside the box above the first card; the box hugs the cards by
+           the same 8 pixels the drawing's lanes use. */
+        left: left - 8,
+        top: top - LANE_HEAD,
+        width: right - left + 16,
+        height: bottom - top + LANE_HEAD + 8,
       };
     })
-    .filter((lane): lane is NonNullable<typeof lane> => lane !== null);
+    .filter((lane): lane is NonNullable<typeof lane> => lane !== null)
+    .map((box, _at, all) => {
+      /* "Everyone gets this" spans the services it splits into, the way the drawing has it
+         — a column of shared questions is narrower than the lanes beneath it, and a box
+         that hugged the column would leave the fan of links starting from nowhere. */
+      if (box.id !== "opening" || all.length < 2) return box;
+      const others = all.filter((other) => other.id !== "opening");
+      const left = Math.min(box.left, ...others.map((other) => other.left));
+      const right = Math.max(box.left + box.width, ...others.map((other) => other.left + other.width));
+      return { ...box, left, width: right - left };
+    });
 
   const selectedNode = selected === null ? null : (byId(selected) ?? null);
   const branches = selectedNode === null ? [] : edges.filter(conditional(selectedNode.id));
@@ -1025,30 +1151,40 @@ export const FlowCanvas = ({
             {laneBoxes.map((lane) => (
               <div
                 key={lane.id}
-                aria-hidden
+                aria-hidden={lane.id === "opening"}
                 className={cn(
-                  "pointer-events-none absolute rounded-[14px] border border-dashed",
-                  lane.broken > 0 ? "border-[var(--bad)]" : "border-[var(--hairline)]",
+                  "pointer-events-none absolute rounded-[7px] border bg-[var(--surface)]",
+                  lane.broken > 0 ? "border-[var(--bad)]" : lane.folded ? "border-[var(--accent)]" : "border-[var(--hairline)]",
                 )}
                 style={{ left: lane.left, top: lane.top, width: lane.width, height: lane.height }}
               >
-                <span
+                <div
                   className={cn(
-                    /* Right edge, not left. A lane whose first card sits directly under the fork has only
-                       the row gap above it, and the link's own label — "is rent" — already lives
-                       there; the space beside a lane is always free. */
-                    "absolute -top-[9px] right-3 flex items-center gap-1.5 rounded-full px-2 py-[1px] font-mono text-[10px] whitespace-nowrap",
-                    "bg-[var(--surface-solid)]",
-                    lane.broken > 0 ? "text-[var(--bad)]" : "text-[var(--ink-3)]",
+                    "mx-2 flex items-center gap-2 font-mono text-[9.5px] tracking-[0.06em]",
+                    lane.folded ? "" : "border-b border-dashed border-[var(--hairline)]",
+                    lane.broken > 0 ? "text-[var(--bad)]" : lane.folded ? "text-[var(--accent)]" : "text-[var(--ink-2)]",
                   )}
+                  style={{ height: LANE_HEAD - 6, marginTop: 2 }}
                 >
-                  {lane.label}
-                  <span className="opacity-70">
-                    {lane.broken > 0
-                      ? `${lane.broken} problem${lane.broken === 1 ? "" : "s"}`
-                      : `${lane.steps} step${lane.steps === 1 ? "" : "s"}`}
+                  <span className="min-w-0 flex-1 truncate">{lane.label}</span>
+                  <span className="flex-none">
+                    {lane.broken > 0 ? `${lane.broken} problem${lane.broken === 1 ? "" : "s"}` : lane.folded ? `${lane.steps} folded` : lane.steps}
                   </span>
-                </span>
+                  {/* Fold a service away, or bring it back. On the lane rather than the fork,
+                      because the lane is the thing that stops fitting the screen. */}
+                  {lane.id !== "opening" && (
+                    <button
+                      type="button"
+                      aria-pressed={lane.folded}
+                      title={lane.folded ? `Show the ${lane.label} steps` : `Fold ${lane.label} away`}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={() => toggleFold(lane.id)}
+                      className="pointer-events-auto grid size-4 flex-none place-items-center rounded-[3px] border border-[var(--hairline)] text-[10px] leading-none text-[var(--ink-3)] hover:border-[var(--ink-3)] hover:text-[var(--ink)]"
+                    >
+                      {lane.folded ? "+" : "−"}
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
             <svg className="pointer-events-none absolute inset-0 overflow-visible">
@@ -1058,8 +1194,8 @@ export const FlowCanvas = ({
                     <path
                       d={p.d}
                       fill="none"
-                      stroke="var(--ink-3)"
-                      strokeWidth={1.8}
+                      stroke="color-mix(in srgb, var(--ink-3) 60%, transparent)"
+                      strokeWidth={1.5}
                       style={{ pointerEvents: "stroke" }}
                       className="cursor-pointer hover:stroke-[var(--bad)]"
                       onClick={() => removeEdge(p.key)}
@@ -1087,6 +1223,8 @@ export const FlowCanvas = ({
             {inGraphOrder.filter((n) => !hidden.has(n.id)).map((n) => {
               const kind = NODE_KINDS[n.kind];
               const ports = portsFor(n);
+              const line = cardLine(n, edges);
+              const isBad = ready.nodes.has(n.id) || marked.get(n.id) === "blocks";
               return (
                 <div
                   key={n.id}
@@ -1098,135 +1236,89 @@ export const FlowCanvas = ({
                   tabIndex={0}
                   role="button"
                   aria-pressed={n.id === selected}
-                  aria-label={`${kind.title}${marked.has(n.id) ? ", has a problem" : ""}. Enter selects, Delete removes.`}
+                  aria-label={`${kind.title}: ${line.title}${marked.has(n.id) ? ", has a problem" : ""}. Enter selects, Delete removes.`}
                   onKeyDown={(e) => onNodeKeyDown(e, n)}
                   onFocus={() => chooseStep(n.id)}
+                  onPointerDown={(e) => {
+                    chooseStep(n.id);
+                    e.stopPropagation();
+                  }}
                   className={cn(
                     "focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:outline-none",
-                    "glass absolute w-[208px] rounded-[13px] border select-none",
-                    ready.nodes.has(n.id) || marked.get(n.id) === "blocks"
+                    /* One line: the icon says what kind of step it is, the title says what it
+                       does, the subtitle says how. The kind's name is no longer written on
+                       the card — "Collect a value" on every question was the heaviest thing
+                       on the drawing and told nobody anything the icon did not. */
+                    "group absolute flex w-[208px] cursor-pointer items-start gap-2 rounded-[7px] border bg-[var(--surface-solid)] px-2.5 py-[7px] select-none",
+                    isBad
                       ? "border-[var(--bad)]"
                       : marked.get(n.id) === "warns"
                         ? "border-[var(--warn)]"
-                      : n.id === selected
-                        ? "border-[var(--accent)] shadow-[0_0_0_2px_var(--accent-soft)]"
-                        : "border-[var(--hairline)]",
+                        : n.id === selected
+                          ? "border-[var(--accent)] shadow-[0_0_0_2px_var(--accent-soft)]"
+                          : "border-[var(--hairline)]",
                   )}
                   style={{ left: n.x, top: n.y }}
                 >
-                  <div
-                    className="flex cursor-pointer items-center gap-[7px] border-b border-[var(--hairline)] px-2.5 py-2"
-                    onPointerDown={(e) => {
-                      chooseStep(n.id);
-                      e.stopPropagation();
-                    }}
+                  <span
+                    className="mt-[1px] grid size-4 flex-none place-items-center rounded-[4px]"
+                    style={{ background: `color-mix(in srgb, ${kind.colour} 16%, transparent)` }}
                   >
-                    <KindIcon kind={n.kind} />
-                    <b className="flex-1 truncate text-[12px] font-[620]">{kind.title}</b>
-                    {/* The problems panel below names it; this is the mark that says which card
-                        it is naming, so a step at the far end of a wide canvas is not found by
-                        reading forty messages. Two channels, not one: the colour of the border
-                        and this label, for anyone who cannot see the first. */}
-                    {marked.has(n.id) && (
-                      <span
-                        role="img"
-                        aria-label={marked.get(n.id) === "blocks" ? "has a problem that blocks publishing" : "has a warning"}
-                        className={cn(
-                          "flex-none rounded-full px-1.5 font-mono text-[9.5px] font-semibold tracking-[0.08em] uppercase",
-                          marked.get(n.id) === "blocks"
-                            ? "bg-[var(--bad-soft)] text-[var(--bad)]"
-                            : "bg-[var(--warn-soft)] text-[var(--warn)]",
-                        )}
-                      >
-                        {marked.get(n.id) === "blocks" ? "fix" : "check"}
-                      </span>
-                    )}
-                    {n.kind !== "start" && (
-                      <IconButton
-                        aria-label="Delete node"
-                        className="size-5"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeNode(n.id);
-                        }}
-                      >
-                        ×
-                      </IconButton>
-                    )}
-                  </div>
-                  {/* The words, edited where they are read. Changing a prompt was the most
-                      common edit on this canvas and the slowest — select the card, find the
-                      field in the inspector, type — so the two kinds that are mostly words
-                      take their text here. Everything else about a step stays in the
-                      inspector, which is where the settings belong. */}
-                  {n.kind === "say" ? (
-                    <textarea
-                      value={n.text ?? ""}
-                      onChange={(e) => updateNode(n.id, { text: e.target.value }, "text")}
-                      onPointerDown={(e) => e.stopPropagation()}
-                      placeholder="What to cover here, in your own words"
-                      aria-label="What this step covers"
-                      rows={2}
-                      className="w-full resize-none border-0 bg-transparent px-2.5 py-[9px] text-[12px] leading-[1.45] text-[var(--ink-2)] placeholder:text-[var(--ink-3)] focus:bg-[var(--surface-2)] focus:text-[var(--ink)] focus:outline-none"
-                    />
-                  ) : n.kind === "collect" ? (
-                    <div className="px-2.5 py-[9px]">
-                      <textarea
-                        value={n.field?.prompt ?? ""}
-                        onChange={(e) => updateNodeField(n.id, { prompt: e.target.value }, "prompt")}
+                    <KindIcon kind={n.kind} size={10} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    {/* The words, edited where they are read. A question is typed into the title
+                        it is shown as; anything else on the step stays in the inspector. */}
+                    {line.edit === "title" ? (
+                      <input
+                        value={line.title}
+                        onChange={(e) => line.onEdit?.(e.target.value)}
                         onPointerDown={(e) => e.stopPropagation()}
-                        placeholder="What the agent asks"
-                        aria-label="What the agent asks"
-                        rows={2}
-                        className="w-full resize-none border-0 bg-transparent p-0 text-[12px] leading-[1.45] text-[var(--ink-2)] placeholder:text-[var(--ink-3)] focus:text-[var(--ink)] focus:outline-none"
+                        placeholder={line.placeholder}
+                        aria-label={line.placeholder}
+                        className="block w-full truncate border-0 bg-transparent p-0 text-[11px] leading-[1.35] font-semibold text-[var(--ink)] placeholder:font-normal placeholder:text-[var(--ink-3)] focus:outline-none"
                       />
-                      <p className="mt-1 truncate font-mono text-[10px] text-[var(--ink-3)]">
-                        {n.field?.key === "" || n.field === undefined ? "unnamed" : n.field.key} · {n.field?.capture ?? "either"} · {n.field?.confirm ?? "none"}
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="px-2.5 py-[9px] text-[12px] leading-[1.45] text-[var(--ink-2)]">{kind.body(n)}</div>
-                  )}
-
-                  {/* Folding a branch away. On the `decide` that owns it, because that is the
-                      step a reader is looking at when six services stop fitting the screen. */}
-                  {n.kind === "decide" && branchHeads(history.present, n).length > 0 && (
-                    <div className="flex flex-wrap gap-1 px-2.5 pb-2">
-                      {branchHeads(history.present, n).map((branch) => (
-                        <button
-                          key={branch.to}
-                          type="button"
-                          onPointerDown={(e) => e.stopPropagation()}
-                          onClick={() => toggleFold(branch.to)}
-                          aria-pressed={folded.has(branch.to)}
-                          title={folded.has(branch.to) ? `Show the ${branch.label} branch` : `Fold the ${branch.label} branch away`}
-                          className={cn(
-                            "max-w-full truncate rounded-full border px-1.5 py-px font-mono text-[9.5px] transition-colors",
-                            folded.has(branch.to)
-                              ? "border-transparent bg-[var(--accent)] text-[var(--accent-on)]"
-                              : "border-[var(--hairline)] text-[var(--ink-3)] hover:border-[var(--ink-3)]",
-                          )}
-                        >
-                          {folded.has(branch.to) ? `${branch.label} · ${foldedCount(history.present, branch.to)} folded` : branch.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {ports.length > 0 && (
-                    <div
-                      className="grid px-1.5 pb-[9px]"
-                      style={{ gridTemplateColumns: `repeat(${ports.length}, minmax(0, 1fr))` }}
-                    >
-                      {ports.map((port) => (
-                        <div key={port.key} className="truncate text-center font-mono text-[10.5px] text-[var(--ink-3)]">
-                          {port.label}
-                        </div>
-                      ))}
-                    </div>
+                    ) : (
+                      <b className="block truncate text-[11px] leading-[1.35] font-semibold text-[var(--ink)]">{line.title}</b>
+                    )}
+                    {line.edit === "subtitle" ? (
+                      <input
+                        value={line.subtitle}
+                        onChange={(e) => line.onEdit?.(e.target.value)}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        placeholder={line.placeholder}
+                        aria-label={line.placeholder}
+                        className="block w-full truncate border-0 bg-transparent p-0 font-mono text-[10px] leading-[1.45] text-[var(--ink-3)] placeholder:text-[var(--ink-3)] focus:text-[var(--ink-2)] focus:outline-none"
+                      />
+                    ) : (
+                      <span className="block truncate font-mono text-[10px] leading-[1.45] text-[var(--ink-3)]">{line.subtitle}</span>
+                    )}
+                  </span>
+                  {/* The mark that says this is the card the problems bar is naming. Two
+                      channels: the border's colour, and this, for anyone who cannot see it. */}
+                  {marked.has(n.id) && (
+                    <span
+                      role="img"
+                      aria-label={marked.get(n.id) === "blocks" ? "has a problem that blocks publishing" : "has a warning"}
+                      className={cn("mt-[3px] size-[7px] flex-none rounded-full", marked.get(n.id) === "blocks" ? "bg-[var(--bad)]" : "bg-[var(--warn)]")}
+                    />
                   )}
                   {n.kind !== "start" && (
-                    <span className="absolute top-[-6px] left-[calc(50%-5.5px)] size-[11px] rounded-full border-2 border-[var(--ink-3)] bg-[var(--surface-solid)]" />
+                    <IconButton
+                      aria-label="Remove this step"
+                      title="Remove this step"
+                      className="absolute top-1 right-1 size-5 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeNode(n.id);
+                      }}
+                      onPointerDown={(e) => e.stopPropagation()}
+                    >
+                      <X className="size-3" />
+                    </IconButton>
                   )}
+                  {/* The dots a link is dragged from. Quiet until the card is hovered or chosen,
+                      because on a drawing of forty cards eighty dots are the drawing. */}
                   {ports.map((port, at) => (
                     <span
                       key={port.key}
@@ -1235,8 +1327,14 @@ export const FlowCanvas = ({
                         if (el) portRefs.current.set(key, el);
                         else portRefs.current.delete(key);
                       }}
-                      className="absolute bottom-[-6px] size-[11px] cursor-crosshair rounded-full border-2 border-[var(--ink-3)] bg-[var(--surface-solid)] transition-transform hover:scale-125 hover:border-[var(--accent)]"
-                      style={{ left: `calc(${portAlong(at, ports.length) * 100}% - 5.5px)` }}
+                      title={port.label === "" ? "Drag to the next step" : `${port.label} — drag to the next step`}
+                      className={cn(
+                        "absolute bottom-[-5px] size-[9px] cursor-crosshair rounded-full border-[1.5px] bg-[var(--surface-solid)] transition-[transform,opacity] hover:scale-125 hover:border-[var(--accent)]",
+                        n.id === selected || edges.some((edge) => port.holds(edge))
+                          ? "border-[var(--ink-3)] opacity-100"
+                          : "border-[var(--ink-3)] opacity-0 group-hover:opacity-100",
+                      )}
+                      style={{ left: `calc(${portAlong(at, ports.length) * 100}% - 4.5px)` }}
                       onPointerDown={(e) => onOutPortPointerDown(e, n, port)}
                       onPointerMove={onOutPortPointerMove}
                       onPointerUp={onOutPortPointerUp}
@@ -1251,11 +1349,12 @@ export const FlowCanvas = ({
         {/* Whether this graph could answer a phone, under the graph itself and recomputed on
             every edit rather than at publish. `validateFlow` is the same function the publish
             gate runs, so nobody reaches a refusal having been told here that it was fine. */}
-        <FlowStatus steps={nodes} problems={problems} />
-        <FlowProblems steps={nodes} problems={problems} onFocusNode={focusNode} />
+        <FlowStatus steps={nodes} problems={problems} onFocusNode={focusNode} />
+        {/* The full list, only once there is more than the dock shows. */}
+        {problems.length > 1 && <FlowProblems steps={nodes} problems={problems} onFocusNode={focusNode} />}
         </div>
 
-        <div className="surface rounded-xl p-4">
+        <div className="surface studio-inspector rounded-xl p-4">
           {/* The settings live here rather than in an overlay, so changing the voice never
               covers the call it speaks. Kept in the tree while hidden — see `settingsPane`. */}
           {settingsPane !== undefined && <div hidden={openSetting === null}>{settingsPane}</div>}
@@ -1270,9 +1369,12 @@ export const FlowCanvas = ({
                 <span className="mt-0.5 grid size-8 flex-none place-items-center rounded-lg bg-[var(--surface-2)]">
                   <KindIcon kind={selectedNode.kind} size={16} />
                 </span>
-                <div>
-                  <p className="mb-0.5 font-mono text-[10px] tracking-[0.15em] text-[var(--ink-3)] uppercase">{selectedNode.kind}</p>
-                  <h3 className="text-[16px] font-[640] tracking-[-0.018em]">{NODE_KINDS[selectedNode.kind].title}</h3>
+                <div className="min-w-0 flex-1">
+                  <p className="mb-0.5 flex items-baseline justify-between gap-2 font-mono text-[9.5px] tracking-[0.13em] text-[var(--ink-3)] uppercase">
+                    <span>{NODE_KINDS[selectedNode.kind].title}</span>
+                    <span>step {inGraphOrder.findIndex((n) => n.id === selectedNode.id) + 1}</span>
+                  </p>
+                  <h3 className="truncate text-[14px] font-[640] tracking-[-0.018em]">{cardLine(selectedNode, edges).title}</h3>
                 </div>
               </div>
 

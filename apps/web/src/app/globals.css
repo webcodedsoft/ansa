@@ -249,3 +249,37 @@
     transition-duration: 0.001ms !important;
   }
 }
+
+/* The flow builder's inspector, at the drawing's density.
+
+   One class rather than a variant on every field component: the inspector is the one place
+   in the console where a form sits beside a drawing and has to read at the drawing's scale —
+   a label in small mono capitals, an input a line high. Everywhere else the fields keep their
+   own size, which is why this is scoped and not a change to the components. */
+/* The title only — the first span of a `Field` — never the hint or the error under it. */
+.studio-inspector label > span:first-child,
+.studio-inspector legend {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 9.5px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-weight: 500;
+}
+.studio-inspector label > span:first-child > span {
+  letter-spacing: 0;
+  text-transform: none;
+}
+/* `font-mono` on a field is meant for the value typed into it — a field key, a phone
+   number — and lands on the label because that is the element the class reaches. The
+   hint under it is prose and reads as prose. */
+.studio-inspector label.font-mono > p {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+}
+.studio-inspector input:not([type="checkbox"]):not([type="radio"]),
+.studio-inspector select,
+.studio-inspector textarea {
+  font-size: 11.5px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}

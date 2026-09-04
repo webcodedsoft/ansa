@@ -13,20 +13,22 @@ import type { Flow, FlowNode } from "./flow.schema";
  * stopped being cosmetic the moment it became the only layout there is.
  */
 
-/** Card geometry. The canvas draws at these, so a change here moves the drawing. */
-export const COLUMN = 260;
-export const ROW = 170;
-export const TOP = 90;
-export const LEFT = 40;
-
 /**
- * Rows by distance from the answer, columns by arrival within the row.
+ * Card geometry. The canvas draws at these, so a change here moves the drawing.
  *
- * Breadth-first from `start`, so the call reads down the page in the order it happens and a
- * fork reads as a fork rather than a staircase. Anything the walk never reaches goes in a row
- * of its own below the end — which is also the clearest way to see that a step is unreachable,
- * without drawing a report about it.
+ * A card is one line — an icon, the question, a small subtitle — so the rows are close: the
+ * drawing should read as a list of what is said, not as a diagram of boxes. `LANE_GAP` is
+ * the extra room after the first fork, where the fan of links lands on the lane headers.
  */
+export const COLUMN = 236;
+export const ROW = 66;
+/** Below the toolbar along the top edge of the drawing, with a lane header's room above the first card. */
+export const TOP = 92;
+export const LEFT = 40;
+export const LANE_GAP = 46;
+/** A lane's header row, drawn above its first card: the name, and how many steps. */
+export const LANE_HEAD = 30;
+
 /**
  * How far down the page each step sits: the longest path from the answer, not the shortest.
  *
@@ -60,8 +62,17 @@ export const depths = (flow: Flow): ReadonlyMap<string, number> => {
   return depth;
 };
 
+/**
+ * Rows by distance from the answer, columns by arrival within the row.
+ *
+ * A fork reads as a fork rather than a staircase because the steps it leads to share a row.
+ * Anything the walk never reaches goes in a row of its own below the end — which is also the
+ * clearest way to see that a step is unreachable, without drawing a report about it.
+ */
 export const tidied = (flow: Flow): Flow => {
   const depth = depths(flow);
+  const fork = firstFork(flow, depth);
+  const forkDepth = fork === undefined ? Infinity : (depth.get(fork.id) ?? Infinity);
 
   const unreached = Math.max(0, ...[...depth.values()].map((value) => value + 1));
   const perRow = new Map<number, number>();
@@ -79,7 +90,9 @@ export const tidied = (flow: Flow): Flow => {
       const across = filled.get(row) ?? 0;
       filled.set(row, across + 1);
       const inRow = perRow.get(row) ?? 1;
-      return { ...node, x: LEFT + ((widest - inRow) / 2 + across) * COLUMN, y: TOP + row * ROW };
+      // Everything below the fork drops by the lane gap, so the fan and the lane headers fit.
+      const y = TOP + row * ROW + (row > forkDepth ? LANE_GAP : 0);
+      return { ...node, x: LEFT + ((widest - inRow) / 2 + across) * COLUMN, y };
     }),
   };
 };
@@ -185,12 +198,15 @@ export interface Lane {
  * lanes — a fork inside a service is drawn inside that service's lane, which is where it
  * belongs, rather than splitting the top level into something the business does not have.
  */
+/** The shallowest reachable `decide`: where the call first splits into services. */
+const firstFork = (flow: Flow, depth: ReadonlyMap<string, number>): FlowNode | undefined =>
+  flow.nodes
+    .filter((node) => node.kind === "decide" && depth.has(node.id))
+    .sort((a, b) => (depth.get(a.id) ?? 0) - (depth.get(b.id) ?? 0))[0];
+
 export const laneGroups = (flow: Flow): readonly Lane[] => {
   const depth = depths(flow);
-  const forks = flow.nodes
-    .filter((node) => node.kind === "decide" && depth.has(node.id))
-    .sort((a, b) => (depth.get(a.id) ?? 0) - (depth.get(b.id) ?? 0));
-  const fork = forks[0];
+  const fork = firstFork(flow, depth);
   if (fork === undefined) return [];
 
   const forkDepth = depth.get(fork.id) ?? 0;

@@ -3954,6 +3954,23 @@ heading and the "Always first · Call answered" row from the drawing — a label
 since the gate refuses a second start. The drawing itself was corrected where it had gone
 stale: it still showed a Tidy up button that no longer exists.
 
+**The canvas is drawn to the Studio design (2026-09-04, late).** The structure had landed and
+the design had not — "not even close", correctly. A card is now one line: an icon, the
+question or the words or the tool as its title, a small mono subtitle saying how (`choice · 2
+answers`, `name · read back`), no kind-name on the card at all and no port row under it.
+The rows are 66px apart instead of 170. A link down a column is a straight line, a link
+across is a curve, and a word sits on a link only where the call splits — "got it" on every
+link was a word on none — and never into a lane's first step, since the lane's header already
+says which answer it is. Lanes are solid panels with the header row inside, and the opening
+lane spans the services beneath it. Folding moved from chips on the fork to a button on the
+lane header, because the lane is the thing that stops fitting; a folded lane keeps its header
+as the chip that stands in for it, and the link lands on that. The inspector reads at the
+drawing's density — mono uppercase titles, a line-high input — by one scoped class, so the
+form fields everywhere else are untouched; its heading is now `BRANCH · STEP 5` over the
+step's own words. The dock under the canvas is the drawing's: the verdict, the first problem's
+sentence naming the step, and Show me; the full list appears only when there is more than one.
+Positions are laid out on load too, since a stored position is whatever the last layout left.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and
