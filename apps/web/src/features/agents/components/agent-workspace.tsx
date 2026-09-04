@@ -17,7 +17,7 @@ import {
   type TabDef,
 } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
-import { dayLabel, when } from "@/lib/format";
+import { dayLabel, when, phone } from "@/lib/format";
 import { useFormToast } from "@/stores/toast.store";
 
 import type { CallSummary } from "@/features/calls/calls.service";
@@ -43,13 +43,12 @@ import type {
 import { branchCount } from "../flow-questions";
 import { readFlow } from "../flow.schema";
 import { validateFlow } from "@ansa/shared/flow-validate";
-import { SlidersHorizontal } from "lucide-react";
 
 import { useWidePage } from "@/stores/layout.store";
 import { ConversationTab } from "./conversation-tab";
 import { DataCapturedTab } from "./data-captured-tab";
 import { FlowCanvas } from "./flow-canvas";
-import { FlowWorkspace } from "./flow-workspace";
+import { SettingsStrip, type StripItem } from "./settings-strip";
 import { OverviewTab, type AgentStats, type AttentionItem } from "./overview-tab";
 import { PolicyTab } from "./policy-tab";
 import type { HeldNumber } from "./routing-card";
@@ -258,7 +257,10 @@ export const AgentWorkspace = ({
      does not lose a sentence somebody already typed. */
   const [asking, setAsking] = useState(false);
   /* The drawer beside a flow agent's canvas, holding every panel a form agent has as tabs. */
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  /* Which agent setting fills the canvas's right-hand pane, or null when that pane belongs
+     to the step being edited. Replaced a boolean for a drawer: settings are no longer a
+     place you go, they are a thing the pane shows. */
+  const [openSetting, setOpenSetting] = useState<string | null>(null);
   useWidePage(stagedMode === "flow");
   /* What the canvas reports each edit: how many of its problems would refuse a publish. The
      API refuses them anyway; this is so the button says so first, and says where, instead of
@@ -319,6 +321,48 @@ export const AgentWorkspace = ({
     { id: "versions", label: "Versions", panel: <VersionsTab agentId={agent.agentId} versions={versions} liveVersion={agent.configVersion} liveShape={stagedMode} liveBranches={liveBranches} /> },
   ];
 
+  /**
+   * The strip along the top of the canvas: one button per panel, each carrying its value.
+   *
+   * Ordered as the caller meets them — what the agent says, how it sounds, what it may do,
+   * where the call reaches it — rather than as the tabs happen to be listed. Overview and
+   * Questions are left off: the first is a report and the second is the canvas itself.
+   */
+  const stripItems: readonly StripItem[] = [
+    {
+      id: "conversation",
+      label: "Greeting",
+      value: config.greeting === null || config.greeting.trim() === "" ? "not set" : `“${config.greeting}”`,
+      tone: problemTabs.has("conversation") ? "problem" : config.greeting === null ? "missing" : undefined,
+    },
+    {
+      id: "voice",
+      label: "Voice",
+      value: `${config.voiceId ?? "default"}${config.speakingRate === null ? "" : ` · ${config.speakingRate}×`}`,
+      tone: problemTabs.has("voice") ? "problem" : undefined,
+    },
+    {
+      id: "policies",
+      label: "House rules",
+      value: String(config.policyBlocks?.length ?? 0),
+      tone: problemTabs.has("policies") ? "problem" : undefined,
+    },
+    { id: "tools", label: "Tools", value: String(staged.enabledTools.length) },
+    {
+      id: "knowledge",
+      label: "Knowledge",
+      value: staged.knowledgeSources.length === 1 ? "1 source" : `${staged.knowledgeSources.length} sources`,
+    },
+    {
+      id: "routing",
+      label: "Number",
+      value: operatorManaged.dialledNumber === null ? "none yet" : phone(operatorManaged.dialledNumber),
+      tone: problemTabs.has("routing") ? "problem" : operatorManaged.dialledNumber === null ? "missing" : undefined,
+    },
+    { id: "versions", label: "Versions", value: `v${agent.configVersion}` },
+    { id: "overview", label: "Overview", value: `${stats.calls7d} calls, 7d` },
+  ];
+
   return (
     <>
       {/* An entity header, not a page header: an agent is a thing you opened,
@@ -368,12 +412,6 @@ export const AgentWorkspace = ({
           <Link href="#test-call" className={buttonClass()}>
             Test call
           </Link>
-          {stagedMode === "flow" && (
-            <Button variant="secondary" onClick={() => setSettingsOpen(true)}>
-              <SlidersHorizontal className="size-3.5" />
-              Settings
-            </Button>
-          )}
           {/* Retiring is a form of its own rather than a button on the publish form, because it
               is the one action here that is not "save what I typed" — submitting the publish
               form to archive an agent would carry every field on it along for the ride. */}
@@ -473,24 +511,29 @@ export const AgentWorkspace = ({
             are the same draft, the same Save and the same Publish, because the fields on
             every panel write into this form by id wherever they are rendered. */}
         {stagedMode === "flow" ? (
-          <FlowWorkspace
-            open={settingsOpen}
-            onOpen={() => setSettingsOpen(true)}
-            onClose={() => setSettingsOpen(false)}
-            canvas={
-              <FlowCanvas
-                key={shownAs([stagedFlow, stagedMode])}
-                flow={stagedFlow}
-                publishForm={PUBLISH_FORM}
-                authoringMode={stagedMode}
-                onBlockingProblems={() => undefined}
-                availableTools={registryTools(tools).map((tool) => ({ name: tool.name, enabled: staged.enabledTools.includes(tool.name) }))}
-                transferNumber={config.escalation?.toNumber ?? null}
-                onOpenSettings={() => setSettingsOpen(true)}
-              />
-            }
-            settings={<Tabs tabs={panels} />}
-          />
+          <>
+            <SettingsStrip items={stripItems} active={openSetting} onSelect={setOpenSetting} />
+            <FlowCanvas
+              key={shownAs([stagedFlow, stagedMode])}
+              flow={stagedFlow}
+              publishForm={PUBLISH_FORM}
+              authoringMode={stagedMode}
+              onBlockingProblems={() => undefined}
+              availableTools={registryTools(tools).map((tool) => ({ name: tool.name, enabled: staged.enabledTools.includes(tool.name) }))}
+              transferNumber={config.escalation?.toNumber ?? null}
+              onOpenSettings={() => setOpenSetting("routing")}
+              openSetting={openSetting}
+              onChooseStep={() => setOpenSetting(null)}
+              /* Every panel, all of them mounted: they carry the fields Save and Publish
+                 submit, so one that unmounted would take its edits with it. Only the chosen
+                 one is shown, which is what the strip is for. */
+              settingsPane={panels.map((panel) => (
+                <div key={panel.id} hidden={panel.id !== openSetting}>
+                  {panel.panel}
+                </div>
+              ))}
+            />
+          </>
         ) : (
           <Tabs tabs={panels} />
         )}

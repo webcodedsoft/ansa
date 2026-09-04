@@ -3924,6 +3924,20 @@ branches out together rather than one at a time, because two arms sharing a clos
 release it once both are folded. Twelve tests in `flow-layout.test.ts`, two of which caught
 real bugs before they shipped.
 
+**The settings drawer is gone; the strip replaced it (2026-09-04).** The complaint that
+started this — "putting something inside settings on the flow builder" — was right. The
+greeting, the voice, the house rules and the tools are not settings *about* a call, they are
+part of what the caller hears, and a drawer put them one click and one overlay away from the
+steps they belong beside while covering the drawing you were reading. So `flow-workspace.tsx`
+is deleted and `settings-strip.tsx` sits along the top of the canvas: one button per panel,
+each carrying its own value — the greeting in quotes, the voice and rate, the rule count, the
+number or "none yet" in amber when there isn't one. Pressing one fills the pane the canvas
+already has on the right, so nothing ever opens on top of the call; pressing it again, or
+choosing any step, hands that pane back to the step. Every panel stays mounted whether shown
+or not, because they carry the fields Save and Publish submit. `onChooseStep` exists because
+without it a click on a card highlighted the card and left the voice on screen, which reads
+as broken.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and

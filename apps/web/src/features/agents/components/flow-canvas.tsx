@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 
 import {
   CheckCircle2,
@@ -474,8 +474,25 @@ interface FlowCanvasProps {
   readonly availableTools: readonly { readonly name: string; readonly enabled: boolean }[];
   /** Where a transfer step sends the call, from the agent's routing, or null when unset. */
   readonly transferNumber: string | null;
-  /** Open the agent's settings drawer, at whatever a step turns out to need. */
+  /** Show the agent's settings, at whatever a step turns out to need. */
   readonly onOpenSettings: () => void;
+  /**
+   * The agent's settings panels, to fill the right-hand pane when one is chosen on the strip.
+   *
+   * Always mounted, hidden when a step is being edited instead: the panels carry the fields
+   * Save and Publish submit, and one that unmounted would take its edits with it. Which is
+   * why this is a node rather than a render prop — the caller keeps it alive.
+   */
+  readonly settingsPane?: ReactNode;
+  /** Which setting is open, or null when the pane belongs to the selected step. */
+  readonly openSetting?: string | null;
+  /**
+   * A step was chosen, so the right-hand pane belongs to it again.
+   *
+   * Without this, clicking a card while a setting is open looks broken: the card highlights
+   * and the pane goes on showing the voice. Selecting a step is a request to see that step.
+   */
+  readonly onChooseStep?: () => void;
 }
 
 export const FlowCanvas = ({
@@ -486,6 +503,9 @@ export const FlowCanvas = ({
   availableTools,
   transferNumber,
   onOpenSettings,
+  settingsPane,
+  openSetting = null,
+  onChooseStep,
 }: FlowCanvasProps) => {
   /* Read once, on mount. Later renders keep the operator's work in front of them; the
      workspace remounts this panel with a `key` when the document underneath it changes. */
@@ -588,6 +608,12 @@ export const FlowCanvas = ({
       const next = sameShape(current.present, changed) ? changed : tidied(changed);
       return merge ? { ...current, present: next, future: [] } : remember(current, next);
     });
+  };
+
+  /** Select a step, and give it the right-hand pane if a setting had taken it. */
+  const chooseStep = (id: string) => {
+    setSelected(id);
+    onChooseStep?.();
   };
 
   const byId = (id: string): FlowNode | undefined => nodes.find((n) => n.id === id);
@@ -738,7 +764,7 @@ export const FlowCanvas = ({
     switch (e.key) {
       case "Enter":
       case " ":
-        setSelected(n.id);
+        chooseStep(n.id);
         break;
       case "Escape":
         setSelected(null);
@@ -756,7 +782,7 @@ export const FlowCanvas = ({
   const addNode = (kind: FlowNodeKind) => {
     const id = freshId(new Set(nodes.map((n) => n.id)));
     edit((f) => ({ ...f, nodes: [...f.nodes, blankNode(id, kind, 120 - pan.x + ((f.nodes.length % 4) * 26), 460 - pan.y)] }));
-    setSelected(id);
+    chooseStep(id);
   };
 
   const removeNode = (id: string) => {
@@ -782,7 +808,7 @@ export const FlowCanvas = ({
   const focusNode = (nodeId: string): void => {
     const node = byId(nodeId);
     if (node === undefined) return;
-    setSelected(nodeId);
+    chooseStep(nodeId);
     setPan({ x: 120 - node.x, y: 90 - node.y });
   };
 
@@ -991,7 +1017,7 @@ export const FlowCanvas = ({
                   aria-pressed={n.id === selected}
                   aria-label={`${kind.title}${marked.has(n.id) ? ", has a problem" : ""}. Enter selects, Delete removes.`}
                   onKeyDown={(e) => onNodeKeyDown(e, n)}
-                  onFocus={() => setSelected(n.id)}
+                  onFocus={() => chooseStep(n.id)}
                   className={cn(
                     "focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:outline-none",
                     "glass absolute w-[208px] rounded-[13px] border select-none",
@@ -1008,7 +1034,7 @@ export const FlowCanvas = ({
                   <div
                     className="flex cursor-pointer items-center gap-[7px] border-b border-[var(--hairline)] px-2.5 py-2"
                     onPointerDown={(e) => {
-                      setSelected(n.id);
+                      chooseStep(n.id);
                       e.stopPropagation();
                     }}
                   >
@@ -1147,6 +1173,10 @@ export const FlowCanvas = ({
         </div>
 
         <div className="surface rounded-xl p-4">
+          {/* The settings live here rather than in an overlay, so changing the voice never
+              covers the call it speaks. Kept in the tree while hidden — see `settingsPane`. */}
+          {settingsPane !== undefined && <div hidden={openSetting === null}>{settingsPane}</div>}
+          <div hidden={openSetting !== null}>
           {selectedNode === null ? (
             <p className="py-6 text-center text-[12.5px] leading-relaxed text-[var(--ink-3)]">
               Select a node to edit what it says and how it behaves.
@@ -1371,6 +1401,7 @@ export const FlowCanvas = ({
               )}
             </div>
           )}
+          </div>
         </div>
       </div>
     </div>
