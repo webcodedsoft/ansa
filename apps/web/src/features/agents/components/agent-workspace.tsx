@@ -14,6 +14,7 @@ import {
   Tag,
   TextAreaField,
   buttonClass,
+  type TabDef,
 } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 import { dayLabel, when } from "@/lib/format";
@@ -42,15 +43,19 @@ import type {
 import { branchCount } from "../flow-questions";
 import { readFlow } from "../flow.schema";
 import { validateFlow } from "@ansa/shared/flow-validate";
+import { SlidersHorizontal } from "lucide-react";
+
+import { useWidePage } from "@/stores/layout.store";
 import { ConversationTab } from "./conversation-tab";
 import { DataCapturedTab } from "./data-captured-tab";
-import { FlowSummary } from "./flow-summary";
+import { FlowCanvas } from "./flow-canvas";
+import { FlowWorkspace } from "./flow-workspace";
 import { OverviewTab, type AgentStats, type AttentionItem } from "./overview-tab";
 import { PolicyTab } from "./policy-tab";
 import type { HeldNumber } from "./routing-card";
 import { RoutingTab } from "./routing-tab";
 import { KnowledgeTab } from "./knowledge-tab";
-import { ToolsTab } from "./tools-tab";
+import { registryTools, ToolsTab } from "./tools-tab";
 import { VersionsTab, type VersionRow } from "./versions-tab";
 import { VoiceTab } from "./voice-tab";
 
@@ -252,6 +257,9 @@ export const AgentWorkspace = ({
   /* Held here rather than left to the textarea, so closing the dialog and opening it again
      does not lose a sentence somebody already typed. */
   const [asking, setAsking] = useState(false);
+  /* The drawer beside a flow agent's canvas, holding every panel a form agent has as tabs. */
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  useWidePage(stagedMode === "flow");
   /* What the canvas reports each edit: how many of its problems would refuse a publish. The
      API refuses them anyway; this is so the button says so first, and says where, instead of
      letting somebody write a publish note for a publish that cannot happen. Only a flow's
@@ -278,6 +286,38 @@ export const AgentWorkspace = ({
     setAsking(false);
     if (state.status === "succeeded") setNote("");
   }, [state, errors]);
+
+  /**
+   * Every panel an agent has, whichever way it is built.
+   *
+   * For a form agent these are the tabs. For a flow agent they are the drawer beside the
+   * canvas, minus nothing: routing, voice, versions and the rest are the same agent either
+   * way. Data captured is "Questions" for a flow, since there it is a read-only view of what
+   * the canvas asks and the place to switch back to a form.
+   */
+  const panels: readonly TabDef[] = [
+    {
+      id: "overview",
+      label: "Overview",
+      panel: <OverviewTab stats={stats} attention={attention} recentCalls={recentCalls} />,
+    },
+    { id: "conversation", label: "Conversation", problem: problemTabs.has("conversation"), panel: <ConversationTab key={shownAs(config)} agent={staged} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
+    {
+      id: "data",
+      label: stagedMode === "flow" ? "Questions" : "Data captured",
+      panel: <DataCapturedTab key={shownAs([staged.capturedFields, stagedFlow])} agent={staged} authoringMode={stagedMode} flow={stagedFlow} />,
+    },
+    { id: "tools", label: "Tools", panel: <ToolsTab key={shownAs(staged.enabledTools)} agent={staged} tools={tools} /> },
+    {
+      id: "knowledge",
+      label: "Knowledge",
+      panel: <KnowledgeTab key={shownAs(staged.knowledgeSources)} agent={staged} knowledge={knowledge} />,
+    },
+    { id: "voice", label: "Voice", problem: problemTabs.has("voice"), panel: <VoiceTab key={shownAs(config)} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
+    { id: "policies", label: "Policies", problem: problemTabs.has("policies"), panel: <PolicyTab key={shownAs(config)} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
+    { id: "routing", label: "Routing & hours", problem: problemTabs.has("routing"), panel: <RoutingTab key={shownAs(config)} agentId={agent.agentId} held={held} config={config} operatorManaged={operatorManaged} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
+    { id: "versions", label: "Versions", panel: <VersionsTab agentId={agent.agentId} versions={versions} liveVersion={agent.configVersion} liveShape={stagedMode} liveBranches={liveBranches} /> },
+  ];
 
   return (
     <>
@@ -328,6 +368,12 @@ export const AgentWorkspace = ({
           <Link href="#test-call" className={buttonClass()}>
             Test call
           </Link>
+          {stagedMode === "flow" && (
+            <Button variant="secondary" onClick={() => setSettingsOpen(true)}>
+              <SlidersHorizontal className="size-3.5" />
+              Settings
+            </Button>
+          )}
           {/* Retiring is a form of its own rather than a button on the publish form, because it
               is the one action here that is not "save what I typed" — submitting the publish
               form to archive an agent would carry every field on it along for the ride. */}
@@ -421,32 +467,34 @@ export const AgentWorkspace = ({
           </Notice>
         )}
 
-        <Tabs
-          tabs={[
-            {
-              id: "overview",
-              label: "Overview",
-              panel: (
-                <OverviewTab stats={stats} attention={attention} recentCalls={recentCalls} />
-              ),
-            },
-            { id: "flow", label: "Flow", panel: <FlowSummary agentId={agent.agentId} flow={drawn} authoringMode={stagedMode} hasUnpublishedGraph={graph.draft?.flow != null} /> },
-            { id: "conversation", label: "Conversation", problem: problemTabs.has("conversation"), panel: <ConversationTab key={shownAs(config)} agent={staged} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
-            { id: "data", label: "Data captured", panel: <DataCapturedTab key={shownAs([staged.capturedFields, stagedFlow])} agent={staged} authoringMode={stagedMode} flow={stagedFlow} /> },
-            { id: "tools", label: "Tools", panel: <ToolsTab key={shownAs(staged.enabledTools)} agent={staged} tools={tools} /> },
-            {
-              id: "knowledge",
-              label: "Knowledge",
-              panel: <KnowledgeTab key={shownAs(staged.knowledgeSources)} agent={staged} knowledge={knowledge} />,
-            },
-            { id: "voice", label: "Voice", problem: problemTabs.has("voice"), panel: <VoiceTab key={shownAs(config)} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
-            { id: "policies", label: "Policies", problem: problemTabs.has("policies"), panel: <PolicyTab key={shownAs(config)} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
-            { id: "routing", label: "Routing & hours", problem: problemTabs.has("routing"), panel: <RoutingTab key={shownAs(config)} agentId={agent.agentId} held={held} config={config} operatorManaged={operatorManaged} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
-            { id: "versions", label: "Versions", panel: <VersionsTab agentId={agent.agentId} versions={versions} liveVersion={agent.configVersion} liveShape={stagedMode} liveBranches={liveBranches} /> },
-          ]}
-        />
+        {/* Two agents, two workspaces, one form. A form agent is built in tabs. A flow agent
+            is built on its canvas — the canvas is the page, and everything else about the
+            agent sits in a drawer beside it, so a flow author never leaves the drawing. Both
+            are the same draft, the same Save and the same Publish, because the fields on
+            every panel write into this form by id wherever they are rendered. */}
+        {stagedMode === "flow" ? (
+          <FlowWorkspace
+            open={settingsOpen}
+            onOpen={() => setSettingsOpen(true)}
+            onClose={() => setSettingsOpen(false)}
+            canvas={
+              <FlowCanvas
+                key={shownAs([stagedFlow, stagedMode])}
+                flow={stagedFlow}
+                publishForm={PUBLISH_FORM}
+                authoringMode={stagedMode}
+                onBlockingProblems={() => undefined}
+                availableTools={registryTools(tools).map((tool) => ({ name: tool.name, enabled: staged.enabledTools.includes(tool.name) }))}
+                transferNumber={config.escalation?.toNumber ?? null}
+                onOpenSettings={() => setSettingsOpen(true)}
+              />
+            }
+            settings={<Tabs tabs={panels} />}
+          />
+        ) : (
+          <Tabs tabs={panels} />
+        )}
       </form>
-
       {/* Outside the form on purpose. `form=` binds the field and the button to it by id, so
           the dialog can collect the last thing the submit needs without the overlay being
           part of the form's layout — and without the note existing at all when a tab's own

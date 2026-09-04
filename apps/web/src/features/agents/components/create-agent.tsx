@@ -108,8 +108,8 @@ export const CreateAgent = () => {
         return;
       }
       // Straight to the agent, warning and all: it exists either way, and the place to
-      // finish it is the page it already has — and for a flow, that page is the canvas.
-      router.push(authoringMode === "flow" ? `/agents/${result.agentId}/flow` : `/agents/${result.agentId}`);
+      // finish it is the page it already has — for a flow, that page is the canvas.
+      router.push(`/agents/${result.agentId}`);
     });
   };
 

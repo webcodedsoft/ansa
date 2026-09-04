@@ -518,9 +518,29 @@ interface FlowCanvasProps {
    * nobody passed would be a button that lets somebody try a publish the API refuses.
    */
   readonly onBlockingProblems: (count: number) => void;
+  /**
+   * The organisation's tools, and which this agent has enabled.
+   *
+   * A tool step names a tool, and a name typed by hand is a name that may not exist. The
+   * inspector offers the registry instead, and says when the one chosen is not yet enabled
+   * — the publish gate refuses a step that names a tool the agent has not been given.
+   */
+  readonly availableTools: readonly { readonly name: string; readonly enabled: boolean }[];
+  /** Where a transfer step sends the call, from the agent's routing, or null when unset. */
+  readonly transferNumber: string | null;
+  /** Open the agent's settings drawer, at whatever a step turns out to need. */
+  readonly onOpenSettings: () => void;
 }
 
-export const FlowCanvas = ({ flow, publishForm, authoringMode, onBlockingProblems }: FlowCanvasProps) => {
+export const FlowCanvas = ({
+  flow,
+  publishForm,
+  authoringMode,
+  onBlockingProblems,
+  availableTools,
+  transferNumber,
+  onOpenSettings,
+}: FlowCanvasProps) => {
   /* Read once, on mount. Later renders keep the operator's work in front of them; the
      workspace remounts this panel with a `key` when the document underneath it changes. */
   const [loaded] = useState(() => readFlow(flow));
@@ -1234,13 +1254,50 @@ export const FlowCanvas = ({ flow, publishForm, authoringMode, onBlockingProblem
               )}
 
               {selectedNode.kind === "tool" && (
-                <TextField
-                  label="Tool"
-                  value={selectedNode.tool ?? ""}
-                  onChange={(e) => updateSelected({ tool: e.target.value }, "tool")}
-                  className="font-mono"
-                  hint="A tool already enabled on the Tools tab. Placing a node here does not enable one."
-                />
+                <div className="flex flex-col gap-2">
+                  <SelectField
+                    label="Tool"
+                    value={selectedNode.tool ?? ""}
+                    onChange={(e) => updateSelected({ tool: e.target.value }, "tool")}
+                    hint="From the organisation's registry. The step uses it; enabling it for this agent is in Settings, under Tools."
+                  >
+                    <option value="">— choose a tool —</option>
+                    {availableTools.map((tool) => (
+                      <option key={tool.name} value={tool.name}>
+                        {tool.name}
+                        {tool.enabled ? "" : " — not enabled yet"}
+                      </option>
+                    ))}
+                    {/* Platform tools are on every call and never need enabling. */}
+                    <option value="business_hours">business_hours — always available</option>
+                  </SelectField>
+                  {selectedNode.tool !== undefined &&
+                    selectedNode.tool !== "" &&
+                    availableTools.some((tool) => tool.name === selectedNode.tool && !tool.enabled) && (
+                      <Notice tone="warn">
+                        This agent has not been given {selectedNode.tool}, so publishing will be refused
+                        until it is enabled.
+                        <span className="mt-2 block">
+                          <Button size="sm" onClick={onOpenSettings}>
+                            Open Settings
+                          </Button>
+                        </span>
+                      </Notice>
+                    )}
+                </div>
+              )}
+
+              {selectedNode.kind === "transfer" && (
+                <Notice tone={transferNumber === null ? "warn" : "info"}>
+                  {transferNumber === null
+                    ? "No transfer number is set on this agent, so a caller reaching this step would be apologised to and hung up on."
+                    : `Hands the call to ${transferNumber}, the transfer number under Routing & hours.`}
+                  <span className="mt-2 block">
+                    <Button size="sm" onClick={onOpenSettings}>
+                      {transferNumber === null ? "Set a transfer number" : "Change it"}
+                    </Button>
+                  </span>
+                </Notice>
               )}
 
               {selectedNode.kind === "decide" && (

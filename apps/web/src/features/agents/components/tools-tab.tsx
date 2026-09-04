@@ -84,7 +84,8 @@ const hostOf = (url: string): string => {
   }
 };
 
-const flatten = (tools: ToolsDocument): readonly Entry[] => [
+/** Every tool the organisation's registry holds, flat, however it is reached. */
+export const registryTools = (tools: ToolsDocument): readonly Entry[] => [
   ...tools.http.map((tool) => ({
     name: tool.name,
     description: tool.description,
@@ -120,7 +121,7 @@ export const ToolsTab = ({
   readonly agent: AgentSummary;
   readonly tools: ToolsDocument;
 }) => {
-  const entries = flatten(tools);
+  const entries = registryTools(tools);
 
   /* What this agent can actually hand a tool. A dispatch that cannot resolve an identifier
      answers `unconfirmed-identity` and the tool does not run — correct, and invisible:

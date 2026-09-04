@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
 import { IconButton } from "@/components/ui";
+import { useLayoutStore } from "@/stores/layout.store";
 import { cn } from "@/lib/cn";
 
 import { CommandPalette } from "./command-palette";
@@ -42,6 +43,7 @@ export const WorkspaceChrome = ({
 }) => {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
+  const wide = useLayoutStore((store) => store.wide);
 
   /* Longest matching destination wins, so `/agents/new` reads as "Build an
      agent" rather than "All agents" — a breadcrumb that names the wrong page
@@ -99,14 +101,10 @@ export const WorkspaceChrome = ({
 
         <main className="min-h-0 flex-1 overflow-y-auto">
           {/* Every page reads at a column width, except a canvas: a drawing surface inside
-              1080 pixels is a drawing surface nobody can see, which is why the flow builder
-              left the workspace's tabs for a page of its own. The route says which it is. */}
-          <div
-            className={cn(
-              "ansa-enter mx-auto px-9 pt-9 pb-24",
-              /\/agents\/[^/]+\/flow$/.test(pathname) ? "max-w-[1600px]" : "max-w-[1080px]",
-            )}
-          >
+              1080 pixels is a drawing surface nobody can see. A flow agent's workspace is
+              one, and the route cannot say so — `/agents/:id` is the same for both kinds —
+              so the page claims the width through the layout store. */}
+          <div className={cn("ansa-enter mx-auto px-9 pt-9 pb-24", wide ? "max-w-[1600px]" : "max-w-[1080px]")}>
             {children}
           </div>
         </main>

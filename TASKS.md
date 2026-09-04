@@ -3839,6 +3839,15 @@ covered what the form already does:
   door it came through. The Flow tab is a summary card that opens the page. A new flow agent
   lands on its canvas. The toolbar still holds canvas actions only.
 
+  **And then the page went too**, the same day. Two ways of building an agent means two
+  workspaces that each stand on their own: a form agent is built in tabs, a flow agent on its
+  canvas — the canvas *is* its workspace, at full width, and every other panel a form agent
+  has (conversation, voice, tools, routing, versions, the questions read-only) is a drawer
+  beside it, opened from the header or from a step that needs something set. Same form,
+  same draft, same Save and Publish. A tool step picks from the registry and says when the
+  tool is not yet enabled; a transfer step shows the transfer number. A form agent has no
+  Flow tab. `/agents/:id/flow` redirects to the agent.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and

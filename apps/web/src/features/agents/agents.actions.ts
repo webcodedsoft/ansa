@@ -49,7 +49,6 @@ import {
   setAgentTools,
   stageAgentBehaviour,
   publishConfiguration,
-  publishStaged,
   replaceTools,
   rollbackToVersion,
   testTool,
@@ -557,60 +556,6 @@ export const saveAgentTools = async (
   }
 };
 
-
-/**
- * Save the canvas, from the flow builder's own page.
- *
- * The same hidden `flow` field the workspace form carries, read the same way, staged
- * through the same endpoint. Nothing a caller hears moves.
- */
-export type SaveFlowState = FormState<{ readonly updatedAt: string }>;
-
-export const saveFlowAction = async (_previous: SaveFlowState, form: FormData): Promise<SaveFlowState> => {
-  const agentId = agentFrom(form);
-  if (agentId === null) return failedForm("This form does not say which agent it is for.");
-  const drawn = form.get("flow");
-  const graph = typeof drawn === "string" ? readDrawnFlow(drawn) : undefined;
-  if (graph === undefined) return failedForm("The flow could not be read, so nothing was saved.");
-
-  try {
-    const result = await setAgentFlow(agentId, { flow: graph });
-    revalidatePath("/agents", "layout");
-    return succeededForm({ updatedAt: result.updatedAt });
-  } catch (error) {
-    return failedForm(failureMessage(error));
-  }
-};
-
-/**
- * Publish, from the flow builder's own page.
- *
- * Stages the drawing first, then publishes everything staged — the graph, and whatever
- * else is sitting in the draft from the other tabs — as one version. One act, two doors;
- * see `publishStaged`. The note is required for the same reason it is on the workspace:
- * a version nobody described is a version nobody can explain later.
- */
-export const publishFlowAction = async (_previous: PublishState, form: FormData): Promise<PublishState> => {
-  const agentId = agentFrom(form);
-  if (agentId === null) return failedForm("This form does not say which agent it is for.");
-  const note = String(form.get("note") ?? "").trim();
-  if (note === "") return invalidForm(publishNoteSchema.safeParse({ note }).error ?? new z.ZodError([]));
-  const drawn = form.get("flow");
-  const graph = typeof drawn === "string" ? readDrawnFlow(drawn) : undefined;
-  if (graph === undefined) return failedForm("The flow could not be read, so nothing was published.");
-
-  try {
-    await setAgentFlow(agentId, { flow: graph });
-    const result = await publishStaged(agentId, note);
-    revalidatePath("/agents", "layout");
-    return succeededForm({ version: result.version.version, publishedAt: result.version.publishedAt });
-  } catch (error) {
-    return failedForm(failureMessage(error));
-  }
-};
-
-/** The one rule a publish note has, so the page can refuse the way the workspace does. */
-const publishNoteSchema = z.object({ note: z.string().trim().min(1, "Say what changed.") });
 
 /**
  * Rebuild an existing agent as a flow.

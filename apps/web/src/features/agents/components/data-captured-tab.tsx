@@ -3,9 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
-import Link from "next/link";
-
-import { Button, EmptyState, Notice, Panel, Table, Tag, Td, Th, Tr, buttonClass } from "@/components/ui";
+import { Button, EmptyState, Notice, Panel, Table, Tag, Td, Th, Tr } from "@/components/ui";
 import { useToastStore } from "@/stores/toast.store";
 
 import { rebuildAsFlow, rebuildAsForm } from "../agents.actions";
@@ -195,12 +193,7 @@ const FlowQuestions = ({
 
       <Notice tone="info">
         This agent is built as a flow, so its questions are set on the canvas rather than in
-        a list. Add or change a Collect step in the flow builder and it appears here.
-        <span className="mt-2 block">
-          <Link href={`/agents/${agentId}/flow`} className={buttonClass("secondary", "sm")}>
-            Open the flow builder
-          </Link>
-        </span>
+        a list. Add or change a Collect step on the canvas and it appears here.
       </Notice>
 
       <Panel>
