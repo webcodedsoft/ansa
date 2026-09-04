@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 
-import { CONTROL, IconButton, Notice, SelectField, TextAreaField, TextField } from "@/components/ui";
+import { LayoutGrid, Maximize2, Redo2, Undo2 } from "lucide-react";
+
+import { Button, CONTROL, IconButton, Notice, SelectField, TextAreaField, TextField } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
 /* The validator itself, from `@ansa/shared`, imported by subpath so a browser bundle does not
@@ -845,7 +847,55 @@ export const FlowCanvas = ({ flow, publishForm, authoringMode, onBlockingProblem
         {/* One grid cell for the drawing and what is said about it, so the palette, this and
             the inspector stay three columns. Mounted as siblings, the status line took the
             inspector's column and the inspector wrapped under the palette. */}
-        <div className="flex min-w-0 flex-col gap-3.5">
+        <div className="flex min-w-0 flex-col gap-2.5">
+          {/* The toolbar. Canvas actions only — Save and Publish belong to the page header,
+              where they act on the whole agent. A row above the drawing rather than a
+              floating bar in its corner, so it is found where every toolbar is found, does
+              not cover the bottom of a tall graph, and its buttons are buttons. */}
+          <div
+            data-canvas-bar
+            className="flex items-center gap-1.5 rounded-lg border border-[var(--hairline)] bg-[var(--surface-2)] px-2 py-1.5"
+          >
+            <span className="px-1.5 font-mono text-[11px] text-[var(--ink-3)]">
+              {nodes.length} {nodes.length === 1 ? "step" : "steps"} · {edges.length} {edges.length === 1 ? "link" : "links"}
+            </span>
+            <span className="flex-1" />
+            <Button size="sm" variant="ghost" onClick={fit} title="Bring the drawing back under the viewport">
+              <Maximize2 className="size-3.5" />
+              Fit
+            </Button>
+            <Button size="sm" variant="ghost" onClick={tidyUp} title="Lay the steps out in the order a call meets them">
+              <LayoutGrid className="size-3.5" />
+              Tidy up
+            </Button>
+            <span aria-hidden className="mx-1 h-4 w-px bg-[var(--hairline)]" />
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={history.past.length === 0}
+              title="Undo"
+              onClick={() => {
+                coalescing.current = null;
+                setHistory(stepBack);
+              }}
+            >
+              <Undo2 className="size-3.5" />
+              Undo
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={history.future.length === 0}
+              title="Redo"
+              onClick={() => {
+                coalescing.current = null;
+                setHistory(stepForward);
+              }}
+            >
+              <Redo2 className="size-3.5" />
+              Redo
+            </Button>
+          </div>
         <div
           ref={canvasRef}
           className={cn(
@@ -989,46 +1039,6 @@ export const FlowCanvas = ({ flow, publishForm, authoringMode, onBlockingProblem
                 </div>
               );
             })}
-          </div>
-
-          {/* Canvas actions only. Save, Publish and Test call live in the workspace header,
-              where they act on the whole agent rather than on this one tab. */}
-          <div
-            data-canvas-bar
-            className="glass absolute bottom-3 left-3 z-[5] flex items-center gap-1.5 rounded-lg border border-[var(--hairline)] px-2 py-1.5 text-[11.5px] text-[var(--ink-3)]"
-          >
-            <span>
-              {nodes.length} nodes · {edges.length} links
-            </span>
-            <span>·</span>
-            <button type="button" className="underline" onClick={fit}>
-              Fit
-            </button>
-            <button type="button" className="underline" onClick={tidyUp}>
-              Tidy up
-            </button>
-            <button
-              type="button"
-              className={cn("underline", history.past.length === 0 && "opacity-40")}
-              disabled={history.past.length === 0}
-              onClick={() => {
-                coalescing.current = null;
-                setHistory(stepBack);
-              }}
-            >
-              Undo
-            </button>
-            <button
-              type="button"
-              className={cn("underline", history.future.length === 0 && "opacity-40")}
-              disabled={history.future.length === 0}
-              onClick={() => {
-                coalescing.current = null;
-                setHistory(stepForward);
-              }}
-            >
-              Redo
-            </button>
           </div>
         </div>
 
