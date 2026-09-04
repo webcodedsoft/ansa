@@ -193,6 +193,20 @@ export interface Guidance {
  * changes every turn. The choice case lists the options verbatim and names the tool, since
  * the option the model records has to match a branch exactly.
  */
+/**
+ * Said on every turn that asks for something.
+ *
+ * The director already accepts an answer to any question in the graph, from anywhere in the
+ * call — `forVolunteered` finds the one an overheard value belongs to, `answerable` accepts
+ * a recorded answer for any key, and the walk skips whatever is settled. None of that helps
+ * if the model believes its instructions forbid it: "one step at a time" reads as *do not
+ * accept ahead* unless something says otherwise. This is that something, and it sits here
+ * rather than only in the standing prompt because it has to be true on the turn the caller
+ * runs ahead, not merely somewhere in the instructions.
+ */
+const TAKE_WHAT_THEY_GIVE =
+  "- If they tell you more than you asked for, take it: record any choice or free-text answer with record_answer now, whichever question it belongs to, and never ask again for something they have already said.";
+
 export const renderGuidance = (guidance: Guidance): string => {
   const lines: string[] = ["Where this call is:"];
   for (const text of guidance.cover) lines.push(`- Cover this now, in your own words: ${text}`);
@@ -205,6 +219,7 @@ export const renderGuidance = (guidance: Guidance): string => {
           ? `- Next, ask for their ${next.field.key}.`
           : `- Next, ask: "${next.field.prompt}"`,
       );
+      lines.push(TAKE_WHAT_THEY_GIVE);
       break;
     case "ask-choice": {
       const options = next.options.map((option) => `"${option}"`).join(", ");
@@ -216,6 +231,7 @@ export const renderGuidance = (guidance: Guidance): string => {
       lines.push(
         `- When they have answered, record it with record_answer (field "${next.key}") using exactly one of those options. Do not move on until it is recorded.`,
       );
+      lines.push(TAKE_WHAT_THEY_GIVE);
       break;
     }
     case "end":

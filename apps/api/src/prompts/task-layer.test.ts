@@ -118,3 +118,54 @@ describe("composition", () => {
     expect(layer.split("\n\n")).toHaveLength(3);
   });
 });
+
+/**
+ * A steered call is conducted by a graph, and the risk is that "one step at a time" reads as
+ * an instruction to ignore anything the caller says early. A flow agent that re-asks what it
+ * has already been told is the worst version of this product — worse than the list director,
+ * whose prompt has always said not to. These are the sentences that stop it.
+ */
+describe("a call the graph steers", () => {
+  const choice = (): CollectedField => ({
+    key: "intent",
+    type: "choice",
+    prompt: "Are you looking to rent, or to buy?",
+    capture: "speech",
+    confirm: "none",
+    required: true,
+    pattern: "",
+    attempts: 3,
+    options: ["rent", "buy"],
+  });
+
+  it("tells the model the path is announced turn by turn rather than listing it once", () => {
+    const layer = taskLayer([], [field()], true);
+
+    expect(layer).toContain('a block headed "Where this call is" tells you');
+    expect(layer).not.toContain("Ask for them in this order");
+  });
+
+  it("separates not asking ahead from not listening ahead", () => {
+    const layer = taskLayer([], [field(), choice()], true);
+
+    expect(layer).toContain("do not ask ahead");
+    expect(layer).toContain("Not asking ahead is not the same as not listening ahead.");
+    expect(layer).toContain("record a choice or a");
+    expect(layer).toContain("whichever question it");
+  });
+
+  it("says what happens to an answer given early, so re-asking reads as the fault it is", () => {
+    const layer = taskLayer([], [field()], true);
+
+    expect(layer).toContain("Anything already answered leaves the path");
+    expect(layer).toContain("asking anyway makes them repeat themselves");
+  });
+
+  it("still names every question and how each one is captured", () => {
+    const layer = taskLayer([], [field(), choice()], true);
+
+    expect(layer).toContain("- callbackNumber: ask for their callback number");
+    expect(layer).toContain('- intent: "Are you looking to rent, or to buy?"');
+    expect(layer).toContain("record their answer with record_answer");
+  });
+});

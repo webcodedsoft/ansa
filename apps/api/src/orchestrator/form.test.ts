@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { CollectedField } from "../tenancy/captured-fields";
 
-import { createForm } from "./form";
+import { createForm, renderGuidance, type Guidance } from "./form";
 import { FACT_FIELD_FOR } from "./orchestrator";
 
 /**
@@ -279,5 +279,56 @@ describe("what a tool can be handed without a configured field", () => {
     expect(new Set(Object.values(FACT_FIELD_FOR))).toEqual(
       new Set(["callerName", "policyNumber"]),
     );
+  });
+});
+
+/**
+ * The steering block, which is the nearest text to the generation and therefore the one the
+ * model actually obeys. The permission to take an early answer belongs here as well as in
+ * the standing prompt: it has to be true on the turn the caller runs ahead.
+ */
+describe("the steering the graph writes each turn", () => {
+  const asking: Guidance = {
+    cover: [],
+    tools: [],
+    next: {
+      kind: "ask",
+      field: { key: "callbackNumber", prompt: "What's the best number to reach you on?", entity: "phone", required: true, type: "phone" },
+    },
+  } as unknown as Guidance;
+
+  const choosing: Guidance = {
+    cover: [],
+    tools: [],
+    next: { kind: "ask-choice", key: "intent", prompt: "Are you looking to rent, or to buy?", options: ["rent", "buy"] },
+  };
+
+  it("asks the next question", () => {
+    expect(renderGuidance(asking)).toContain(`- Next, ask: "What's the best number to reach you on?"`);
+  });
+
+  it("lets an answer arrive early, whichever question it belongs to", () => {
+    for (const guidance of [asking, choosing]) {
+      const rendered = renderGuidance(guidance);
+      expect(rendered).toContain("If they tell you more than you asked for, take it");
+      expect(rendered).toContain("whichever question it belongs to");
+      expect(rendered).toContain("never ask again for something they have already said");
+    }
+  });
+
+  it("names the tool and the exact options for a choice", () => {
+    const rendered = renderGuidance(choosing);
+
+    expect(rendered).toContain('The answer is one of "rent", "buy"');
+    expect(rendered).toContain('record_answer (field "intent")');
+  });
+
+  /* Nothing is being asked for on these turns, so the permission would be noise — and the
+     end and transfer lines are the two the model must act on rather than read past. */
+  it("says nothing about early answers once there is nothing left to ask", () => {
+    for (const kind of ["end", "transfer", "free"] as const) {
+      const rendered = renderGuidance({ cover: [], tools: [], next: { kind } });
+      expect(rendered).not.toContain("more than you asked for");
+    }
   });
 });

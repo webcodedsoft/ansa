@@ -125,6 +125,12 @@ const collectionSection = (fields: readonly CollectedField[], steered: boolean):
       "what to cover and what to ask next — follow it, one step at a time, and do not ask ahead",
       "of it. The questions it can ask for are:",
       ...fields.map(questionLine),
+      "Not asking ahead is not the same as not listening ahead. Let them lead: if they answer",
+      "more than you asked, or answer something further along, take it — record a choice or a",
+      "free-text answer with record_answer the moment they say it, whichever question it",
+      "belongs to. Anything already answered leaves the path and you will not be told to ask",
+      "it again; asking anyway makes them repeat themselves, which is the one thing a person",
+      "on the phone will not forgive.",
       "If they ask a question mid-way, answer it and come back to the step you were on.",
     ];
   }
