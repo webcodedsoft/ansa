@@ -1,5 +1,5 @@
 import {
-  AGENT_MEMORY, EMERGENCY, NIGERIA, NO_PROMISES, SOMEBODY_ELSE, address, amount, anythingElse, choice, complaint, date, desk, forked, handover, inbound, name, phone, policy, quantity, ref, rules, service, text, time,
+  address, AGENT_MEMORY, amount, anythingElse, choice, complaint, date, desk, EMERGENCY, forked, handover, inbound, name, NIGERIA, NO_PROMISES, phone, policy, quantity, ref, rules, service, SOMEBODY_ELSE, text, time,
 } from "./kit";
 
 const PROPERTY_WORDS = [
@@ -265,13 +265,18 @@ export const PROPERTY = [
         ],
         "Tell them a sales adviser will call with the current prices, the payment plans and the documents the project has.",
       ),
-      "book a site visit": service(
+      "book a site visit": forked(
         [
           text("visitProject", "Which project would you like to see?"),
           date("visitDate", "Which day?"),
           quantity("visitParty", "How many of you will be coming?"),
         ],
-        "Read the visit back, say a person will confirm the time and the pick-up point by text, and ask them to bring an ID.",
+        "visitTransport",
+        "Will you be coming in your own vehicle, or would you like the site bus?",
+        {
+          "my own vehicle": service([], "Read the visit back, say a person will confirm the time and send the site's location pin by text, and ask them to bring an ID."),
+          "the site bus": service([text("visitPickup", "Which pick-up point is nearest to you?")], "Read the visit back, say a person will confirm the bus time and the pick-up point by text, and ask them to bring an ID."),
+        },
       ),
       "my allocation or payment plan": handover(
         [

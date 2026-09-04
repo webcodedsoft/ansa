@@ -1,5 +1,5 @@
 import {
-  EMERGENCY, NIGERIA, NO_PROMISES, SOMEBODY_ELSE, address, amount, choice, complaint, date, desk, forked, handover, inbound, policy, ref, rules, service, text, time,
+  address, amount, choice, complaint, date, desk, EMERGENCY, forked, handover, inbound, NIGERIA, NO_PROMISES, policy, ref, rules, service, SOMEBODY_ELSE, text, time,
 } from "./kit";
 
 const CARS = [
@@ -73,13 +73,19 @@ export const AUTOMOTIVE = [
       SOMEBODY_ELSE,
     ],
     ...desk({
-      "find a car": service(
+      "find a car": forked(
         [
           text("carWanted", "What are you looking for — a model, or a type like an SUV or a bus?"),
           amount("carBudget", "What's your budget?"),
-          choice("carCondition", "Brand new, Tokunbo, or Nigerian used?", ["brand new", "Tokunbo", "Nigerian used", "any"]),
         ],
-        "Say a sales adviser will send what matches by WhatsApp with photos and prices today.",
+        "carCondition",
+        "Brand new, Tokunbo, or Nigerian used?",
+        {
+          "brand new": service([choice("carColour", "Any colour preference?", ["black", "white", "silver", "no preference"])], "Say a sales adviser will send what is in stock and on order by WhatsApp with prices today."),
+          Tokunbo: service([choice("carPapers", "Do you need it with full custom papers?", ["yes", "no"])], "Say a sales adviser will send what matches by WhatsApp with photos, inspection reports and prices today."),
+          "Nigerian used": service([], "Say a sales adviser will send what matches by WhatsApp with photos and prices today, and that the inspection report comes with each car."),
+          any: service([], "Say a sales adviser will send what matches across all three by WhatsApp with photos and prices today."),
+        },
       ),
       "book an inspection or test drive": service(
         [text("inspectCar", "Which car? The model, or the stock number from the listing."), date("inspectDate", "Which day?"), time("inspectTime", "And what time?")],

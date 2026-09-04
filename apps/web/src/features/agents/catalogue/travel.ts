@@ -1,5 +1,5 @@
 import {
-  NIGERIA, NO_PROMISES, SOMEBODY_ELSE, anythingElse, choice, complaint, date, desk, forked, handover, inbound, policy, quantity, ref, rules, service, text,
+  anythingElse, choice, complaint, date, desk, forked, handover, inbound, NIGERIA, NO_PROMISES, policy, quantity, ref, rules, service, SOMEBODY_ELSE, text,
 } from "./kit";
 
 const TRIPS = [
@@ -85,12 +85,24 @@ export const TRAVEL = [
         ["Take the booking and the reason.", "Say the terms for that tour apply and the bookings desk confirms any refund."],
         ["Promise a refund or say how much."],
       ),
+      policy(
+        "Visas on tours",
+        "They ask whether the tour includes the visa, or whether they will get one.",
+        ["Say what visa support the tour includes and that the embassy decides."],
+        ["Guarantee a visa.", "Say a trip can go ahead without one."],
+      ),
       NO_PROMISES,
     ],
     ...desk({
-      "join a group tour": service(
+      "join a group tour": forked(
         [text("tourDestination", "Which tour or destination?"), date("tourDate", "Which departure?"), quantity("tourTravellers", "How many travellers, and any children?")],
-        "Say the brochure and the price for that departure will be sent by WhatsApp, with what is included.",
+        "tourHasPassport",
+        "If it's abroad — does everyone have a valid passport, with at least six months left on it?",
+        {
+          yes: service([], "Say the brochure and the price for that departure will be sent by WhatsApp, with what is included and the visa requirement if any."),
+          "no or not sure": service([], "Say a passport with six months' validity is needed for any trip abroad, that renewal takes weeks, and that the brochure will be sent by WhatsApp anyway."),
+          "it's within Nigeria": service([], "Say the brochure and the price for that departure will be sent by WhatsApp, with what is included."),
+        },
       ),
       "plan a private trip": service(
         [text("privateDestination", "Where would you like to go?"), date("privateDate", "Roughly when?"), quantity("privateTravellers", "How many of you?"), text("privateOccasion", "Is it a special occasion — a honeymoon, a birthday?", false)],

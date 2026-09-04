@@ -1,5 +1,5 @@
 import {
-  AGENT_MEMORY, EMERGENCY, NIGERIA, NO_PROMISES, address, amount, anythingElse, choice, complaint, date, desk, forked, handover, inbound, name, phone, policy, quantity, ref, rules, service, text, time,
+  address, AGENT_MEMORY, amount, anythingElse, choice, complaint, date, desk, EMERGENCY, forked, handover, inbound, name, NIGERIA, NO_PROMISES, phone, policy, quantity, ref, rules, service, text, time,
 } from "./kit";
 
 const POWER = [
@@ -144,6 +144,12 @@ export const UTILITIES = [
         ["Take an order first.", "Book a visit for later."],
         ["Any of the above."],
       ),
+      policy(
+        "Cylinders",
+        "They ask whether their cylinder is safe, too old, or whether an exchange cylinder is good.",
+        ["Say cylinders past their test date are not refilled and the rider will say if theirs is.", "Say exchange cylinders are tested."],
+        ["Say a cylinder is safe without it being inspected."],
+      ),
       NO_PROMISES,
     ],
     ...desk(
@@ -157,9 +163,14 @@ export const UTILITIES = [
           ],
           "Read the order back, say the total including delivery will be confirmed by text, and give the usual delivery window.",
         ),
-        "buy a new cylinder": service(
-          [choice("newSize", "What size?", ["3kg", "6kg", "12.5kg", "25kg", "50kg"]), choice("newFilled", "Filled, or empty?", ["filled", "empty"]), address("newAddress", "Where should it be delivered?")],
-          "Say the price and delivery fee will be sent by text for confirmation.",
+        "buy a new cylinder": forked(
+          [choice("newSize", "What size?", ["3kg", "6kg", "12.5kg", "25kg", "50kg"]), address("newAddress", "Where should it be delivered?")],
+          "newFilled",
+          "Filled, or empty?",
+          {
+            filled: service([choice("newAccessories", "Do you need a regulator and hose as well?", ["yes", "no"])], "Read it back and say the price with gas and delivery will be sent by text for confirmation."),
+            empty: service([], "Read it back and say the cylinder price and delivery fee will be sent by text for confirmation."),
+          },
         ),
         "a leak or a smell of gas": handover(
           [address("leakAddress", "Where are you? A landmark, quickly.")],

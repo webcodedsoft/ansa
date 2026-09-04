@@ -1,5 +1,5 @@
 import {
-  AGENT_MEMORY, NIGERIA, NO_PROMISES, SOMEBODY_ELSE, address, anythingElse, choice, complaint, date, desk, forked, handover, inbound, phone, policy, ref, rules, service, text, time,
+  address, AGENT_MEMORY, anythingElse, choice, complaint, date, desk, forked, handover, inbound, NIGERIA, NO_PROMISES, phone, policy, ref, rules, service, SOMEBODY_ELSE, text, time,
 } from "./kit";
 
 const NETWORK = [
@@ -85,6 +85,12 @@ export const TELECOMS = [
         ["Book them to come in with an ID.", "Say why: a swap without the owner present is how lines get stolen."],
         ["Do a swap or registration over the phone.", "Ask for a NIN or any ID number."],
       ),
+      policy(
+        "Devices",
+        "A phone they bought has a fault, or they ask whether a phone is original.",
+        ["Take the model, the receipt number and the fault, and book them to bring it in.", "Say every phone is checked against its IMEI at the counter."],
+        ["Say a fault is covered before the phone is seen.", "Promise a replacement."],
+      ),
       SOMEBODY_ELSE,
     ],
     ...desk({
@@ -92,9 +98,14 @@ export const TELECOMS = [
         [choice("simService", "Is it a new registration, or a swap?", ["new registration", "a swap"]), date("simDate", "Which day can you come in?"), time("simTime", "And what time?")],
         "Read it back and say to come with a valid ID, and the old SIM if it is a swap.",
       ),
-      "my line has stopped working": service(
+      "my line has stopped working": forked(
         [phone("affectedLine", "Which number is affected?"), text("lineSymptom", "What happens when you try to call or use data?")],
-        "Say the most common cause is NIN linking, and that they should come in with their NIN slip; otherwise the shop will call back.",
+        "lineLinked",
+        "Has the line been linked already — did you get the confirmation text after the linking?",
+        {
+          yes: service([], "Say that if it is linked and still barred the network has to lift it, and that the shop will raise it and call back within one working day."),
+          "no or not sure": service([date("linkVisitDate", "Which day can you come in?")], "Say the most common cause is NIN linking, that the shop can do it in minutes with the NIN slip and an ID, and read the day back."),
+        },
       ),
       "data or airtime": service(
         [phone("bundleLine", "Which number is it for?"), text("bundleWanted", "Which bundle or amount?")],
@@ -129,6 +140,12 @@ export const TELECOMS = [
         ["Say the provider's prices apply and how to pay.", "For a payment not reflecting, say to check the reference and call the provider, or the shop will help in person."],
         ["Quote a package price.", "Take card or account details."],
       ),
+      policy(
+        "Rain and weather",
+        "The signal drops when it rains, or comes and goes.",
+        ["Say heavy rain interrupts satellite signal briefly and it returns on its own.", "If it stays off after the rain, book a technician."],
+        ["Send a technician out for a signal that is off only while it rains."],
+      ),
       NO_PROMISES,
     ],
     ...desk({
@@ -145,9 +162,14 @@ export const TELECOMS = [
           "not sure": service([], "Say to check the subscription first with the provider's app or USSD, and that if it is active and still no signal, to call back and a technician will be booked."),
         },
       ),
-      "move my dish or decoder": service(
+      "move my dish or decoder": forked(
         [address("moveFrom", "Where is it now?"), address("moveTo", "And where is it going?"), date("moveDate", "Which day?")],
-        "Read it back and say a technician will confirm the time and the relocation fee.",
+        "moveKeepDish",
+        "Are you taking the dish with you, or does the new place have one?",
+        {
+          "taking mine": service([], "Read it back and say the technician will take the dish down, re-install it and confirm the time and the relocation fee."),
+          "the new place has one": service([], "Read it back and say the technician only needs to re-align and re-scan, and will confirm the time and the fee."),
+        },
       ),
       "packages and payment": service(
         [text("packageQuestion", "What would you like to know?")],

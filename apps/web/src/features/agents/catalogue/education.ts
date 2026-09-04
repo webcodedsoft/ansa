@@ -1,5 +1,5 @@
 import {
-  AGENT_MEMORY, EMERGENCY, NIGERIA, NO_PROMISES, SOMEBODY_ELSE, anythingElse, choice, complaint, date, desk, forked, handover, inbound, name, phone, policy, quantity, ref, rules, service, text,
+  AGENT_MEMORY, anythingElse, choice, complaint, date, desk, EMERGENCY, forked, handover, inbound, name, NIGERIA, NO_PROMISES, phone, policy, quantity, ref, rules, service, SOMEBODY_ELSE, text,
 } from "./kit";
 
 const SCHOOL = [
@@ -35,14 +35,18 @@ export const EDUCATION = [
     policies: [CHILD_PRIVACY, policy("Fees", "They ask what fees are, whether they can pay in parts, or about a discount.", ["Say the fee schedule is sent on admission and the bursar handles payment plans."], ["Quote a fee, agree an instalment, or offer a discount."]), EMERGENCY],
     ...desk(
       {
-        "admission for my child": service(
+        "admission for my child": forked(
           [
             quantity("childAge", "How old is the child?"),
             choice("childClass", "Which class are you looking at — nursery, primary, junior secondary, or senior secondary?", ["nursery", "primary", "junior secondary", "senior secondary"]),
-            choice("boarding", "Day, or boarding?", ["day", "boarding"]),
             date("startTerm", "And when would you like them to start?"),
           ],
-          "Say the admissions office will call with the entrance assessment date, the requirements and the fee schedule, and invite them to an open day.",
+          "boarding",
+          "Day, or boarding?",
+          {
+            day: service([text("homeArea", "Which area do you live in? It helps with the bus route.")], "Say the admissions office will call with the entrance assessment date, the requirements and the fee schedule, and invite them to an open day."),
+            boarding: service([choice("boardingBefore", "Has the child boarded before?", ["yes", "no"])], "Say the admissions office will call with the assessment date, the boarding requirements and the fee schedule, and invite them to see the hostels."),
+          },
         ),
         "fees or the bursary": service(
           [ref("feesPupil", "Which child, and which class?"), text("feesQuestion", "And what's the question?")],
@@ -88,9 +92,14 @@ export const EDUCATION = [
         [ref("jambNumber", "What's your JAMB registration number?"), text("courseWanted", "Which course did you apply for?")],
         "Say the admissions office responds on the portal and by email, and the screening dates are published there.",
       ),
-      "a transcript or result": service(
-        [ref("matricNumber", "What's your matric number?"), choice("recordWanted", "Is it a transcript, or a result?", ["a transcript", "a result"])],
-        "Say the records office will respond by email within five working days, and that transcripts are requested on the portal.",
+      "a transcript or result": forked(
+        [ref("matricNumber", "What's your matric number?")],
+        "recordWanted",
+        "Is it a transcript, or a result?",
+        {
+          "a transcript": service([text("transcriptTo", "Where should it be sent — which institution or address?")], "Say transcripts are requested and paid for on the portal, and the records office dispatches within the stated days once processed."),
+          "a result": service([text("resultSemester", "Which semester or session?")], "Say results are released on the portal and any missing result is raised through the department, and the records office responds by email."),
+        },
       ),
       "fees or registration": service(
         [ref("feesMatric", "What's your matric or application number?"), text("feesIssue", "What's the problem?")],
@@ -122,6 +131,12 @@ export const EDUCATION = [
     keyterms: [...SCHOOL, "course", "bootcamp", "cohort", "weekend class", "weekday class", "online", "physical", "data analysis", "software development", "UI/UX", "product management", "cybersecurity", "digital marketing", "project management", "PMP", "certificate", "internship", "laptop"],
     policies: [
       policy("Jobs and placements", "They ask whether they will get a job after the course.", ["Say what career support the academy offers."], ["Promise a job, a placement or a salary."]),
+      policy(
+        "Refunds and deferrals",
+        "They want to defer to a later cohort, or their money back.",
+        ["Say a deferral to the next cohort is usually possible with notice, and take the details for admissions."],
+        ["Promise a refund or say how much."],
+      ),
       NO_PROMISES,
     ],
     ...desk({
@@ -168,7 +183,16 @@ export const EDUCATION = [
       "Do not promise a grade or a pass.",
     ),
     keyterms: [...SCHOOL, "lesson", "home lesson", "private tutor", "mathematics", "English", "physics", "chemistry", "biology", "further maths", "common entrance", "Cambridge", "IGCSE", "SAT", "IELTS", "phonics", "coding for kids"],
-    policies: [CHILD_PRIVACY, policy("Results", "They ask for a guarantee of a grade or a pass.", ["Say what the programme covers and how progress is reported."], ["Promise a grade, a score or a pass."])],
+    policies: [
+      CHILD_PRIVACY,
+      policy("Results", "They ask for a guarantee of a grade or a pass.", ["Say what the programme covers and how progress is reported."], ["Promise a grade, a score or a pass."]),
+      policy(
+        "Tutors at home",
+        "They ask about a tutor's background, or whether a tutor can be alone with the child.",
+        ["Say every tutor is vetted with an ID and references, and a parent or adult should be at home during lessons."],
+        ["Share a tutor's personal details."],
+      ),
+    ],
     ...desk({
       "lessons for a child": forked(
         [quantity("pupilAge", "How old is the child?"), text("pupilClass", "Which class are they in?"), text("pupilSubjects", "Which subjects?")],
@@ -186,6 +210,10 @@ export const EDUCATION = [
       "schedule or fees": service(
         [ref("existingPupil", "Which child?"), text("scheduleQuestion", "What would you like to change or know?")],
         "Say the coordinator will call back within one working day.",
+      ),
+      "a lesson today": handover(
+        [ref("todayPupil", "Which child?"), text("todayIssue", "What's happening — has the tutor not arrived, or do you need to cancel?")],
+        "Say you are putting them through to the coordinator now, and pass on the child and the issue.",
       ),
       "change my tutor": service(
         [ref("tutorPupil", "Which child, and which subject?"), text("tutorReason", "And what's the concern?")],
@@ -220,9 +248,14 @@ export const EDUCATION = [
       EMERGENCY,
     ],
     ...desk({
-      "enrol my child": service(
-        [quantity("childMonths", "How old is the child, in months or years?"), choice("careDays", "Every weekday, or some days?", ["every weekday", "some days"]), choice("careHours", "Full day, or half day?", ["full day", "half day"]), date("careStart", "And from when?")],
-        "Say the head will call with a visit date, the requirements and the fee schedule.",
+      "enrol my child": forked(
+        [quantity("childMonths", "How old is the child, in months or years?"), choice("careDays", "Every weekday, or some days?", ["every weekday", "some days"]), date("careStart", "And from when?")],
+        "careHours",
+        "Full day, or half day?",
+        {
+          "full day": service([choice("careMeals", "Will the child be bringing food, or would you like the creche's meals?", ["bringing food", "the creche's meals"])], "Say the head will call with a visit date, the requirements and the fee schedule."),
+          "half day": service([choice("careSession", "Morning, or afternoon?", ["morning", "afternoon"])], "Say the head will call with a visit date, the requirements and the fee schedule."),
+        },
       ),
       "fees or hours": service([text("feesQuestion", "What would you like to know?")], "Say the opening hours if you know them and that the fee schedule will be sent by the office."),
       "about my child today": handover(

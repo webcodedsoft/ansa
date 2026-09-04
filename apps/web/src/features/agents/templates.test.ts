@@ -77,10 +77,18 @@ describe("the template catalogue", () => {
 
   it.each(catalogue.map((template) => [template.id, template] as const))("%s is a whole front desk, not one task", (_id, template) => {
     // An outbound campaign is one call with one purpose; everything inbound is a business
-    // that is rung about several things.
-    if (template.sector !== "Outbound") expect(servicesOf(template).length).toBeGreaterThanOrEqual(3);
+    // that is rung about several things, and the bar is the depth of the best ones: a fork
+    // inside a service where the real call forks, a hand-over where a machine must not
+    // decide, and three policies — one is a rule, three is how the business behaves.
     expect(template.policies.length).toBeGreaterThanOrEqual(1);
     expect(template.keyterms.length).toBeGreaterThanOrEqual(5);
+    if (template.sector === "Outbound") return;
+    expect(servicesOf(template).length).toBeGreaterThanOrEqual(3);
+    const all = forks(template.branch, template.fields);
+    expect(all.length, "a nested fork").toBeGreaterThanOrEqual(2);
+    const arms = all.flatMap(({ branch }) => Object.values(branch.arms));
+    expect(arms.some((arm) => arm.handover !== undefined), "a hand-over to a person").toBe(true);
+    expect(template.policies.length, "three policies").toBeGreaterThanOrEqual(3);
   });
 
   it.each(each)("%s fits the API's limits on the words around the questions", (_id, template) => {

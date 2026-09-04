@@ -1,5 +1,5 @@
 import {
-  NIGERIA, NO_PROMISES, SOMEBODY_ELSE, address, anythingElse, choice, complaint, date, desk, forked, handover, inbound, policy, quantity, ref, rules, service, text, time,
+  address, anythingElse, choice, complaint, date, desk, forked, handover, inbound, NIGERIA, NO_PROMISES, policy, quantity, ref, rules, service, SOMEBODY_ELSE, text, time,
 } from "./kit";
 
 const OFFICE = [...NIGERIA, "consultation", "retainer", "engagement letter", "invoice", "quotation", "proposal", "deadline", "filing", "CAC", "FIRS", "TIN", "LIRS"];
@@ -113,12 +113,23 @@ export const PROFESSIONAL = [
     keyterms: [...OFFICE, "vacancy", "job description", "CV", "resume", "shortlist", "interview", "offer letter", "salary", "outsourcing", "staffing", "drivers", "security guards", "cleaners", "customer service", "sales executives", "accountant", "HR", "LinkedIn", "Jobberman"],
     policies: [
       policy("Job seekers", "A candidate asks about fees, a guarantee of a job, or their application status.", ["Say the agency does not charge candidates and never guarantees a role.", "Take their details for the recruiter."], ["Ask a candidate for money.", "Promise a job or an interview.", "Confirm an application status."]),
+      policy(
+        "Employers' terms",
+        "An employer asks about the fee, the guarantee period, or replacement if a hire leaves.",
+        ["Say the terms are in the engagement letter and the consultant explains them."],
+        ["Quote a fee percentage or promise a replacement."],
+      ),
       SOMEBODY_ELSE,
     ],
     ...desk({
-      "I'm an employer with a vacancy": service(
-        [text("employerCompany", "What's the company?"), text("vacancyRole", "What's the role?"), quantity("vacancyCount", "How many positions?"), choice("vacancyUrgency", "Is it urgent, or a normal timeline?", ["urgent", "normal"])],
-        "Say a consultant will call within one working day to take the brief and agree terms.",
+      "I'm an employer with a vacancy": forked(
+        [text("employerCompany", "What's the company?"), text("vacancyRole", "What's the role?"), quantity("vacancyCount", "How many positions?")],
+        "vacancyUrgency",
+        "Is it urgent, or a normal timeline?",
+        {
+          urgent: handover([], "Say you are putting them through to a consultant now to take the brief, and pass on the company and the role."),
+          normal: service([date("vacancyStart", "When would you like the person to start?")], "Say a consultant will call within one working day to take the brief and agree terms."),
+        },
       ),
       "register as a candidate": service(
         [text("candidateRole", "What kind of role are you looking for?"), text("candidateExperience", "And what's your experience, briefly?"), text("candidateArea", "Which area do you live in?")],
@@ -152,12 +163,23 @@ export const PROFESSIONAL = [
     keyterms: [...OFFICE, "flyers", "banners", "roll-up", "business cards", "complimentary cards", "letterhead", "brochure", "sticker", "T-shirt", "polo", "mug", "jotter", "signage", "3D sign", "vehicle branding", "A4", "A3", "A5", "gsm", "matte", "gloss", "proof", "artwork", "vector", "CMYK"],
     policies: [
       policy("Proofs", "They want to skip the proof, or say the printed job differs from what they wanted.", ["Say every job is proofed and approved before printing, and take the job reference for a reprint query."], ["Print without an approved proof.", "Promise a free reprint."]),
+      policy(
+        "Rush jobs",
+        "They need it today or tomorrow.",
+        ["Take the job and say production will confirm within the hour whether it can be done and the rush charge."],
+        ["Promise a same-day job."],
+      ),
       NO_PROMISES,
     ],
     ...desk({
-      "get a quotation": service(
-        [date("jobDeadline", "When do you need it?"), text("jobSpec", "What's the job — what, how many, what size, and any material or finish?"), choice("jobArtwork", "Do you have the artwork ready, or do you need design?", ["artwork ready", "need design"])],
-        "Read it back and say the quotation will be sent by WhatsApp within the hour, with the design fee if design is needed.",
+      "get a quotation": forked(
+        [date("jobDeadline", "When do you need it?"), text("jobSpec", "What's the job — what, how many, what size, and any material or finish?")],
+        "jobArtwork",
+        "Do you have the artwork ready, or do you need design?",
+        {
+          "artwork ready": service([choice("artworkFormat", "Is it a print-ready file — PDF, AI or CorelDraw — or an image?", ["print-ready file", "an image"])], "Read it back and say the quotation will be sent by WhatsApp within the hour, and where to send the file."),
+          "need design": service([text("designBrief", "Tell me roughly what it should look like — colours, a logo, text?")], "Read it back and say the quotation with the design fee will be sent by WhatsApp within the hour."),
+        },
       ),
       "artwork or a proof": service(
         [ref("proofJob", "What's the job reference or the name it's under?"), text("proofChange", "What needs changing, or are you approving it?")],
@@ -202,9 +224,14 @@ export const PROFESSIONAL = [
         [text("studyCountry", "Which country, or which countries?"), choice("studyLevel", "Which level — undergraduate, master's, or PhD?", ["undergraduate", "master's", "PhD"]), text("studyCourse", "And which course?"), date("studyIntake", "Which intake are you aiming for?")],
         "Say a counsellor will call within one working day with schools, requirements and the timeline, and that the embassy decides visas.",
       ),
-      "work or relocation": service(
+      "work or relocation": forked(
         [text("workCountry", "Which country?"), text("workProfession", "What's your profession, and how many years' experience?")],
-        "Say a consultant will call with the routes that fit, the requirements and the fees.",
+        "workHasOffer",
+        "Do you have a job offer from abroad already?",
+        {
+          yes: service([text("workEmployer", "Who is the employer, and what have they sent you?")], "Say a consultant will call to review the offer and the permit route it supports."),
+          no: service([choice("workEnglishTest", "Have you taken an English test like IELTS?", ["yes", "no"])], "Say a consultant will call with the routes that fit, the requirements and the fees."),
+        },
       ),
       "my application": handover(
         [ref("applicationReference", "What's your client reference, or the counsellor's name?")],

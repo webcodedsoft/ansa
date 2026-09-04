@@ -1,5 +1,5 @@
 import {
-  AGENT_MEMORY, NIGERIA, SOMEBODY_ELSE, amount, anythingElse, choice, complaint, date, desk, forked, handover, inbound, policy, quantity, ref, rules, service, text,
+  AGENT_MEMORY, amount, anythingElse, choice, complaint, date, desk, forked, handover, inbound, NIGERIA, policy, quantity, ref, rules, service, SOMEBODY_ELSE, text,
 } from "./kit";
 
 const MONEY = [
@@ -261,6 +261,13 @@ export const FINANCE = [
         ["Take the membership number and the question for the secretary."],
         ["Quote a figure, or discuss another member."],
       ),
+      policy(
+        "Guarantors",
+        "A member asks what standing guarantor means, or says a member they guaranteed has not paid.",
+        ["Explain that a guarantor's savings cover a default under the rules.", "Take the details for the secretary."],
+        ["Say whether a guarantor's savings will be taken, or negotiate."],
+        ["A guarantor says they are being pursued for a loan they did not know about."],
+      ),
       NEVER_ASK,
     ],
     ...desk({
@@ -272,9 +279,14 @@ export const FINANCE = [
         [ref("membershipNumber", "What's your membership number?"), text("contributionQuestion", "And what would you like to know?")],
         "Say the secretary will confirm and call or text back within one working day.",
       ),
-      "request a loan": service(
-        [ref("loanMembership", "What's your membership number?"), amount("loanAmount", "How much would you like?"), text("loanGuarantor", "Who will be your guarantor? A member's name.")],
-        "Read it back, say the loan committee meets on the usual day and the secretary will call with the decision.",
+      "request a loan": forked(
+        [ref("loanMembership", "What's your membership number?"), amount("loanAmount", "How much would you like?")],
+        "loanHasGuarantor",
+        "Do you have a guarantor already — another member who will stand for you?",
+        {
+          yes: service([text("loanGuarantor", "Who is the guarantor? A member's name.")], "Read it back, say the loan committee meets on the usual day and the secretary will call with the decision."),
+          "not yet": service([], "Say a guarantor who is a member in good standing is needed before the committee sees it, and that the secretary will call to explain."),
+        },
       ),
       "a withdrawal or leaving": service(
         [ref("withdrawMembership", "What's your membership number?"), choice("withdrawKind", "Is it a partial withdrawal, or are you leaving the cooperative?", ["partial withdrawal", "leaving"])],

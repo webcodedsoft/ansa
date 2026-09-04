@@ -1,5 +1,5 @@
 import {
-  EMERGENCY, NIGERIA, NO_PROMISES, address, choice, complaint, date, desk, forked, handover, inbound, policy, quantity, ref, rules, service, text, time,
+  address, choice, complaint, date, desk, EMERGENCY, forked, handover, inbound, NIGERIA, NO_PROMISES, policy, quantity, ref, rules, service, text, time,
 } from "./kit";
 
 const HOME = [...NIGERIA, "flat", "duplex", "compound", "estate", "landmark", "gate", "generator", "inverter", "borehole", "tank", "soakaway"];
@@ -21,6 +21,12 @@ export const HOME_SERVICES = [
     keyterms: [...HOME, "deep cleaning", "post-construction", "fumigation", "move-in clean", "move-out clean", "office cleaning", "laundry", "dry cleaning", "ironing", "duvet", "curtains", "rug", "sofa", "pickup", "starch"],
     policies: [
       policy("Damage and missing items", "Something was damaged, or is missing, after a clean or a laundry job.", ["Take the job reference and the item.", "Say the manager will call within one working day."], ["Admit fault or promise compensation."]),
+      policy(
+        "Access and keys",
+        "They will not be home during the clean, or want to leave a key.",
+        ["Say a cleaner can be let in by a named person or security, and take the name.", "Say keys are not held by the company."],
+        ["Agree to hold a key or enter an empty property without a named person."],
+      ),
       NO_PROMISES,
     ],
     ...desk({
@@ -119,12 +125,23 @@ export const HOME_SERVICES = [
     keyterms: [...HOME, "braids", "knotless", "cornrows", "weave", "wig install", "frontal", "closure", "relaxer", "wash and set", "haircut", "fade", "beard", "manicure", "pedicure", "gel", "acrylic", "lashes", "brows", "facial", "massage", "bridal", "makeup", "gele tying"],
     policies: [
       policy("Lateness and no-shows", "They are running late, or ask about a deposit.", ["Say slots are held for fifteen minutes, and that bridal and long services need a deposit."], ["Waive a deposit or promise to hold a slot indefinitely."]),
+      policy(
+        "Hair and skin reactions",
+        "They mention a scalp condition, a previous reaction, or ask whether a product is safe.",
+        ["Note it on the booking and say the stylist will do a patch test where one is needed."],
+        ["Say a product or treatment is safe for them."],
+      ),
       NO_PROMISES,
     ],
     ...desk({
-      "book an appointment": service(
-        [text("serviceWanted", "What would you like done?"), date("appointmentDate", "Which day?"), time("appointmentTime", "And what time?"), text("stylistWanted", "Any particular stylist?", false)],
-        "Read it back and say a text will confirm it, and the price list will be sent with it.",
+      "book an appointment": forked(
+        [text("serviceWanted", "What would you like done?"), date("appointmentDate", "Which day?"), time("appointmentTime", "And what time?")],
+        "stylistPreference",
+        "Any particular stylist, or whoever is free?",
+        {
+          "a particular stylist": service([text("stylistWanted", "Who?")], "Read it back, say a text will confirm whether that stylist is free at that time, and the price list will be sent with it."),
+          "whoever is free": service([], "Read it back and say a text will confirm it, and the price list will be sent with it."),
+        },
       ),
       "bridal or an event": service(
         [date("eventDate", "When is the event?"), quantity("eventPeople", "How many people need doing?"), text("eventServices", "And what — hair, makeup, gele, nails?")],
@@ -158,12 +175,23 @@ export const HOME_SERVICES = [
     keyterms: [...HOME, "membership", "monthly", "quarterly", "annual", "trial", "personal trainer", "PT", "class", "spin", "HIIT", "yoga", "boxing", "aerobics", "weight loss", "bulking", "freeze", "locker", "swimming pool", "sauna"],
     policies: [
       policy("Health", "They mention an injury, a condition, pregnancy, or ask what to do to lose weight.", ["Say a trainer will assess and advise, and to mention it at the induction."], ["Give fitness, diet or medical advice."]),
+      policy(
+        "Guests and children",
+        "They want to bring a friend, or ask whether children can come.",
+        ["Say guests come on a day pass and the age rule for the floor."],
+        ["Waive a day pass or admit a child under the age rule."],
+      ),
       NO_PROMISES,
     ],
     ...desk({
-      "join or try the gym": service(
+      "join or try the gym": forked(
         [choice("joinGoal", "What are you hoping for — weight loss, strength, general fitness, or a class?", ["weight loss", "strength", "general fitness", "a class"]), choice("joinWhen", "Mornings, evenings, or weekends?", ["mornings", "evenings", "weekends"])],
-        "Say the plans will be sent by WhatsApp and invite them for a free trial, and that a trainer does the induction.",
+        "joinTrial",
+        "Would you like to come in for a free trial first, or go straight to a membership?",
+        {
+          "a trial first": service([date("trialDate", "Which day?"), time("trialTime", "And what time?")], "Read it back, say the front desk will confirm the trial by text, and to come in sports wear with a water bottle."),
+          "straight to membership": service([choice("membershipLength", "Monthly, quarterly, or annual?", ["monthly", "quarterly", "annual"])], "Say the plans and prices will be sent by WhatsApp with how to pay, and that a trainer does the induction on the first visit."),
+        },
       ),
       "personal training": service(
         [text("ptGoal", "What's your goal?"), quantity("ptSessions", "How many sessions a week are you thinking?")],
@@ -194,6 +222,12 @@ export const HOME_SERVICES = [
     keyterms: [...HOME, "photographer", "videographer", "drone", "pre-wedding", "traditional wedding", "white wedding", "birthday shoot", "maternity", "studio", "album", "highlight video", "decor", "balloon", "DJ", "MC", "hype man", "live band", "photobooth", "soft copies"],
     policies: [
       policy("Delivery of photos", "They ask when their photos or video will be ready, or say they are late.", ["Take the event date and the name, and say the studio manager will respond within one working day."], ["Promise a delivery date."]),
+      policy(
+        "Deposits and dates",
+        "They want to hold a date, or move one.",
+        ["Say a date is held only on a deposit and moving it depends on availability.", "Take the change for the coordinator."],
+        ["Hold a date without a deposit.", "Promise a deposit refund."],
+      ),
       NO_PROMISES,
     ],
     ...desk({
@@ -265,9 +299,15 @@ export const HOME_SERVICES = [
         [address("newPropertyAddress", "Where is the property?"), choice("newPropertyKind", "A flat, or a whole house?", ["a flat", "a whole house"]), date("moveInDate", "And when are you moving in?")],
         "Say the technician will call to book it before the move-in date and quote.",
       ),
-      "a regular contract": service(
-        [choice("contractKind", "Is it a home, an estate, or a business?", ["a home", "an estate", "a business"]), address("contractAddress", "Where?"), choice("contractOften", "Monthly, or quarterly?", ["monthly", "quarterly"])],
-        "Say the contracts team will call to set it up with a fixed price.",
+      "a regular contract": forked(
+        [address("contractAddress", "Where?"), choice("contractOften", "Monthly, or quarterly?", ["monthly", "quarterly"])],
+        "contractKind",
+        "Is it a home, an estate, or a business?",
+        {
+          "a home": service([], "Say the contracts team will call to set it up with a fixed price."),
+          "an estate": service([quantity("contractUnits", "Roughly how many houses or flats?")], "Say the contracts team will call to arrange a walk-through and a per-unit price."),
+          "a business": service([choice("contractFood", "Is food prepared or stored on the premises?", ["yes", "no"])], "Say the contracts team will call to set it up, with a food-safe treatment plan if food is handled."),
+        },
       ),
       "a complaint": complaint(),
     }),

@@ -1,5 +1,5 @@
 import {
-  AGENT_MEMORY, NIGERIA, SOMEBODY_ELSE, address, anythingElse, choice, complaint, date, desk, forked, handover, inbound, name, phone, policy, quantity, ref, rules, service, text, time,
+  address, AGENT_MEMORY, anythingElse, choice, complaint, date, desk, forked, handover, inbound, name, NIGERIA, phone, policy, quantity, ref, rules, service, SOMEBODY_ELSE, text, time,
 } from "./kit";
 
 const MEDICAL = [
@@ -104,9 +104,15 @@ export const HEALTHCARE = [
         [text("painDetail", "I'm sorry. Where is the pain, and how long has it been?"), choice("painToday", "Can you come in today?", ["yes", "no"])],
         "Say you are getting the clinic desk on the line to fit them in as soon as possible today, and pass on what they said.",
       ),
-      "braces, whitening or cosmetic": service(
-        [choice("cosmeticInterest", "Is it braces or aligners, whitening, or something else?", ["braces or aligners", "whitening", "something else"]), date("consultDate", "Which day would suit you for a consultation?")],
-        "Read it back, say the consultation will be confirmed by text, and that the dentist will discuss options and costs after examining.",
+      "braces, whitening or cosmetic": forked(
+        [date("consultDate", "Which day would suit you for a consultation?")],
+        "cosmeticInterest",
+        "Is it braces or aligners, whitening, or something else?",
+        {
+          "braces or aligners": service([choice("bracesFor", "Is it for yourself, or a child?", ["myself", "a child"])], "Read it back, say the consultation will be confirmed by text, and that braces usually start with an X-ray and a treatment plan the dentist explains with costs."),
+          whitening: service([], "Read it back, say the consultation will be confirmed by text, and that the dentist checks the teeth are suitable before whitening."),
+          "something else": service([text("cosmeticOther", "Tell me what you have in mind.")], "Read it back and say the consultation will be confirmed by text."),
+        },
       ),
       "HMO or payment": service(
         [text("hmoName", "Which HMO are you with, or are you paying yourself?"), text("hmoQuestion", "And what's the question?")],
@@ -149,9 +155,14 @@ export const HEALTHCARE = [
         [text("refillMedication", "Which medication? Read it from the pack or the prescription."), choice("refillHasScript", "Do you have the prescription with you, or is it on file with us?", ["with me", "on file"])],
         "Say the pharmacist will check and call back to say when it can be collected or delivered.",
       ),
-      "home delivery": service(
+      "home delivery": forked(
         [text("deliveryItems", "What would you like delivered?"), address("deliveryAddress", "Where should it go? A landmark helps the rider.")],
-        "Read the items and address back, and say the total and delivery fee will be confirmed by text before the rider leaves.",
+        "deliveryNeedsScript",
+        "Is any of it a prescription medicine?",
+        {
+          yes: service([choice("deliveryScriptHow", "Can you send a photo of the prescription by WhatsApp, or is it on file with us?", ["send a photo", "on file"])], "Read it back, say the pharmacist checks the prescription before dispatch, and the total will be confirmed by text."),
+          no: service([], "Read the items and address back, and say the total and delivery fee will be confirmed by text before the rider leaves."),
+        },
       ),
       "speak to the pharmacist": handover(
         [text("pharmacistQuestion", "Briefly, what is it about?")],
@@ -206,9 +217,16 @@ export const HEALTHCARE = [
         [ref("resultReference", "What's the receipt or patient number?"), text("resultTest", "And which test?")],
         "Say the laboratory will call back to say whether it is ready and how to collect it.",
       ),
-      "a scan or X-ray": service(
-        [choice("scanType", "Is it an ultrasound, an X-ray, an ECG, or something else?", ["ultrasound", "X-ray", "ECG", "something else"]), date("scanDate", "Which day?"), time("scanTime", "And what time?")],
-        "Read it back and say a person will confirm the appointment and any preparation.",
+      "a scan or X-ray": forked(
+        [date("scanDate", "Which day?"), time("scanTime", "And what time?")],
+        "scanType",
+        "Is it an ultrasound, an X-ray, an ECG, or something else?",
+        {
+          ultrasound: service([text("scanArea", "Which part of the body, or is it a pregnancy scan?")], "Read it back, say a person will confirm the appointment, and that some scans need a full bladder — the confirmation text will say."),
+          "X-ray": service([text("xrayArea", "Which part of the body?"), choice("xrayRequest", "Do you have a doctor's request form?", ["yes", "no"])], "Read it back and say a person will confirm the appointment; a request form is needed for an X-ray."),
+          ECG: service([], "Read it back and say a person will confirm the appointment; no preparation is needed."),
+          "something else": service([text("scanOther", "What is it?")], "Read it back and say a person will confirm the appointment and any preparation."),
+        },
       ),
       "prices": handover(
         [text("priceTests", "Which tests do you want prices for?")],
@@ -238,12 +256,23 @@ export const HEALTHCARE = [
         ["Book it for another day.", "Suggest drops or a remedy."],
         ["Any of the above."],
       ),
+      policy(
+        "Prescriptions",
+        "They ask for their prescription, or want lenses made from another clinic's prescription.",
+        ["Say a prescription is released to the patient after a test, and an outside one is accepted if it is under a year old."],
+        ["Read out a prescription.", "Make lenses from a prescription you have not seen."],
+      ),
       NOT_A_CLINICIAN,
     ],
     ...desk({
-      "book an eye test": service(
-        [date("testDate", "Which day would suit you?"), time("testTime", "And what time?"), choice("testFor", "Is it for yourself, or a child?", ["myself", "a child"])],
-        "Read it back and say a text will confirm the appointment.",
+      "book an eye test": forked(
+        [date("testDate", "Which day would suit you?"), time("testTime", "And what time?")],
+        "testFor",
+        "Is it for yourself, or a child?",
+        {
+          myself: service([choice("wearsGlasses", "Do you wear glasses or contacts at the moment?", ["yes", "no"])], "Read it back, say a text will confirm the appointment, and to bring the current glasses if they have any."),
+          "a child": service([quantity("childAge", "How old is the child?")], "Read it back, say a text will confirm the appointment, and that a parent should come with the child."),
+        },
       ),
       "collect glasses or lenses": service(
         [ref("collectReference", "What name or receipt number is the order under?")],

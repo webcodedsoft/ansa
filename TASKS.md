@@ -3876,6 +3876,16 @@ covered what the form already does:
   mocks the service boundary and fails when the draft wiring is deleted — checked by deleting
   it. Not yet verified in the browser this round: the apps were stopped on request.
 
+  Second pass the same day, after an audit of every template's depth: the thinnest inbound
+  ones had no nested fork, two policies and a service that asked nothing. Thirty-six were
+  deepened — a fork where the real call forks (a gym's trial-or-membership, a lab's scan type,
+  a church's wedding-dedication-funeral, a bank cooperative's guarantor), a third policy that
+  is how the business actually behaves (rain and satellite signal, substitutions on a
+  grocery order, guarantors' savings), and a question in every arm that had none. The test
+  now holds every inbound organisation to that floor — a nested fork, a hand-over, three
+  policies — so the catalogue cannot drift back. Totals: 68 nested forks, 110 hand-overs,
+  207 policies, 1,037 questions across 69 templates.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and

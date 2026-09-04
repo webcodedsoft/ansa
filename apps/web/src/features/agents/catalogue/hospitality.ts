@@ -1,5 +1,5 @@
 import {
-  EMERGENCY, NIGERIA, NO_PROMISES, SOMEBODY_ELSE, address, amount, anythingElse, choice, complaint, date, desk, forked, handover, inbound, name, phone, policy, quantity, ref, rules, service, text, time,
+  address, amount, anythingElse, choice, complaint, date, desk, EMERGENCY, forked, handover, inbound, name, NIGERIA, NO_PROMISES, phone, policy, quantity, ref, rules, service, SOMEBODY_ELSE, text, time,
 } from "./kit";
 
 const FOOD = [
@@ -189,9 +189,14 @@ export const HOSPITALITY = [
         ],
         "Say the events office will check the date and call back today with the halls that fit and what each includes.",
       ),
-      "book an inspection": service(
+      "book an inspection": forked(
         [date("inspectionDate", "Which day would you like to come and see the halls?"), time("inspectionTime", "And what time?")],
-        "Read the inspection back and say a person will confirm it by text.",
+        "inspectionHasDate",
+        "Do you have an event date in mind already?",
+        {
+          yes: service([date("inspectionEventDate", "Which date?")], "Read the inspection back, say the events office will check that date before the visit so you can talk about what is free, and confirm by text."),
+          "not yet": service([], "Read the inspection back and say a person will confirm it by text."),
+        },
       ),
       "my existing booking": handover(
         [ref("bookingReference", "What name is the booking under, or the reference?"), text("bookingMatter", "And what do you need?")],
@@ -220,13 +225,19 @@ export const HOSPITALITY = [
       "Menus and per-head prices depend on the event; do not quote a figure. Say a proposal will follow.",
       "Take the date first — a caterer who is already booked that day should know before anything else.",
     ),
-    keyterms: [...NIGERIA, ...FOOD, "per head", "per plate", "tasting", "menu", "cocktail", "buffet", "plated", "corporate lunch", "office lunch", "packs", "food packs"],
+    keyterms: [...NIGERIA, ...FOOD, "per head", "per plate", "tasting", "menu", "cocktail", "buffet", "plated", "corporate lunch", "office lunch", "packs", "food packs", "chafing dish", "waiters", "servers"],
     policies: [
       policy(
         "Allergies and dietary needs",
         "They mention an allergy, halal, vegetarian, or a health condition.",
         ["Note it on the enquiry so it is on the proposal."],
         ["Say a dish is safe or suitable."],
+      ),
+      policy(
+        "Deposits and changes",
+        "They ask to hold a date, change the guest count, or cancel.",
+        ["Say a date is held on a deposit and the guest count can change up to a stated number of days before.", "Take the change for the events team."],
+        ["Hold a date without a deposit.", "Promise a refund of a deposit."],
       ),
       NO_PROMISES,
     ],
@@ -241,9 +252,14 @@ export const HOSPITALITY = [
         ],
         "Say a proposal with menus and a price per head will be sent within two working days, and offer a tasting once they shortlist.",
       ),
-      "book a tasting": service(
+      "book a tasting": forked(
         [date("tastingDate", "Which day would you like to come?"), quantity("tastingParty", "How many of you?")],
-        "Read it back and say a person will confirm the time.",
+        "tastingHasProposal",
+        "Have you received a proposal from us already, or is this before one?",
+        {
+          "I have a proposal": service([ref("tastingProposal", "What name is the proposal under?")], "Read it back, say the tasting will feature the dishes on that proposal, and that a person will confirm the time."),
+          "before a proposal": service([text("tastingInterest", "Which dishes or menu style would you like to taste?")], "Read it back and say a person will confirm the time and any tasting fee."),
+        },
       ),
       "regular office lunches": service(
         [
@@ -281,6 +297,12 @@ export const HOSPITALITY = [
         ["Take the order and say the kitchen will call back within the hour to say yes or no."],
         ["Promise a same-day custom cake."],
       ),
+      policy(
+        "Allergies",
+        "They mention a nut, egg, dairy or gluten allergy, or ask whether a cake is free of one.",
+        ["Note it on the order so the kitchen sees it."],
+        ["Say a cake is free of an allergen; the kitchen shares equipment."],
+      ),
       NO_PROMISES,
     ],
     ...desk({
@@ -299,9 +321,14 @@ export const HOSPITALITY = [
           deliver: service([address("cakeAddress", "Where should it be delivered?")], "Read the order and the address back, and say the quotation with the delivery fee will be sent by text for confirmation."),
         },
       ),
-      "order bread or pastries": service(
+      "order bread or pastries": forked(
         [text("bakeryItems", "What would you like, and how many of each?"), date("bakeryDate", "For which day?"), time("bakeryTime", "And what time?")],
-        "Read the order back with quantities and say it will be ready at that time.",
+        "bakeryMode",
+        "Will you collect it, or should it be delivered?",
+        {
+          collect: service([], "Read the order back with quantities and say it will be ready at that time at the counter."),
+          deliver: service([address("bakeryAddress", "Where should it go? A landmark helps the rider.")], "Read the order and the address back and say the total with delivery will be confirmed by text."),
+        },
       ),
       "check on an order": service(
         [ref("statusReference", "What name or number is the order under?")],

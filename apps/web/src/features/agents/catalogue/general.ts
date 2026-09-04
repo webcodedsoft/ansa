@@ -1,5 +1,5 @@
 import {
-  AGENT_MEMORY, EMERGENCY, NIGERIA, SOMEBODY_ELSE, anythingElse, complaint, desk, handover, inbound, name, phone, policy, rules, service, text, choice, ref,
+  AGENT_MEMORY, anythingElse, complaint, date, desk, EMERGENCY, forked, handover, inbound, name, NIGERIA, phone, policy, ref, rules, service, SOMEBODY_ELSE, text,
 } from "./kit";
 
 /** For a business of any kind: the reception, and the same reception after hours. */
@@ -30,13 +30,17 @@ export const GENERAL = [
       EMERGENCY,
     ],
     ...desk({
-      "buy something or get a quote": service(
+      "buy something or get a quote": forked(
         [
           text("salesNeed", "What are you looking to buy, or get a quote for?"),
           text("salesQuantity", "Roughly how many, or how much, are we talking about?", false),
-          choice("salesUrgency", "Is this for now, or are you planning ahead?", ["now", "planning ahead"]),
         ],
-        "Tell them somebody from sales will call back with a quotation within one working day.",
+        "salesUrgency",
+        "Is this for now, or are you planning ahead?",
+        {
+          now: handover([], "Say you are putting them through to sales now, and pass on what they need."),
+          "planning ahead": service([date("salesWhen", "Roughly when would you need it?")], "Tell them somebody from sales will call back with a quotation within one working day."),
+        },
       ),
       "help with something you bought": service(
         [
@@ -73,19 +77,36 @@ export const GENERAL = [
       "You cannot look anything up on this call and you have no access to any records. Do not offer to check.",
       "Take the message, read the number back, and end the call politely. Do not say somebody will definitely call at a particular time.",
     ),
-    keyterms: [...NIGERIA, "urgent", "emergency", "tomorrow morning", "Monday"],
-    policies: [EMERGENCY, AGENT_MEMORY],
+    keyterms: [...NIGERIA, "urgent", "emergency", "tomorrow morning", "Monday", "on-call", "callback"],
+    policies: [
+      EMERGENCY,
+      AGENT_MEMORY,
+      policy(
+        "What counts as urgent",
+        "They say it is urgent, or ask to be put through to somebody now.",
+        ["Ask briefly what has happened.", "Put through anything involving safety, a system down, or money leaving an account."],
+        ["Put through a routine enquiry because they asked firmly.", "Decide something is not urgent without asking what it is."],
+      ),
+    ],
     ...desk(
       {
-        "leave a message": service(
+        "leave a message": forked(
           [text("message", "Go ahead with the message, and I'll take it down.")],
-          "Read the message back in one sentence, say it will be seen first thing in the morning, and say goodbye.",
+          "messageFor",
+          "Is it for a particular person, or for whoever handles it?",
+          {
+            "a particular person": service([text("messagePerson", "Who is it for?")], "Read the message back in one sentence, say it will be on that person's desk first thing, and say goodbye."),
+            "whoever handles it": service([], "Read the message back in one sentence, say it will be seen first thing in the morning, and say goodbye."),
+          },
         ),
         "it's urgent and can't wait": handover(
           [text("urgentMatter", "Tell me briefly what's happened.")],
           "Say you are putting them through to the on-call person now, and pass on what they told you.",
         ),
-        "ask when you open": service([], "Say the opening hours again, slowly, and ask whether they would like to leave a message as well."),
+        "ask when you open": service(
+          [text("openingQuestion", "Which day, or which office, are you asking about?")],
+          "Say the opening hours again, slowly, and ask whether they would like to leave a message as well.",
+        ),
       },
       "Would you like to leave a message, is it urgent, or do you want to know when we open?",
       [name("Can I take your name?"), phone()],

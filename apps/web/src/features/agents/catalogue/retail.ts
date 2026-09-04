@@ -1,5 +1,5 @@
 import {
-  AGENT_MEMORY, NIGERIA, NO_PROMISES, SOMEBODY_ELSE, address, amount, anythingElse, choice, complaint, date, desk, forked, handover, inbound, policy, quantity, ref, rules, service, text, time,
+  address, AGENT_MEMORY, amount, anythingElse, choice, complaint, date, desk, forked, handover, inbound, NIGERIA, NO_PROMISES, policy, quantity, ref, rules, service, SOMEBODY_ELSE, text, time,
 } from "./kit";
 
 const SHOP = [
@@ -69,15 +69,29 @@ export const RETAIL = [
       "For a delivery order, take the list in their words and read it back with quantities.",
     ),
     keyterms: [...SHOP, "rice", "bag of rice", "50kg", "25kg", "vegetable oil", "groundnut oil", "Milo", "Peak milk", "indomie", "semovita", "golden morn", "diapers", "Pampers", "toiletries", "detergent", "cartons", "crates"],
-    policies: [RETURNS, AGENT_MEMORY],
+    policies: [
+      RETURNS,
+      AGENT_MEMORY,
+      policy(
+        "Substitutions",
+        "An item on a delivery order is out of stock.",
+        ["Say the shop will call before substituting anything, and ask now whether a similar brand is acceptable."],
+        ["Substitute without asking.", "Promise an item is in stock."],
+      ),
+    ],
     ...desk({
       "is something in stock": service(
         [text("stockItem", "What are you looking for?"), quantity("stockQuantity", "How many?")],
         "Say the shop will check and text back with availability and the price.",
       ),
-      "order for delivery": service(
+      "order for delivery": forked(
         [text("deliveryList", "Go through what you'd like, and I'll read it back."), address("deliveryAddress", "Where should it go? A landmark helps."), time("deliveryTime", "And by roughly what time?")],
-        "Read the list back with quantities, and say the total and delivery fee will be confirmed by text before it goes out.",
+        "deliveryPayment",
+        "Will you pay by transfer before it leaves, or on delivery?",
+        {
+          "transfer before": service([], "Read the list back with quantities, say the total and delivery fee will be sent by text with the account details, and that it goes out once payment lands."),
+          "on delivery": service([choice("deliveryPayHow", "Cash, or POS at the door?", ["cash", "POS"])], "Read the list back with quantities, and say the total and delivery fee will be confirmed by text before it goes out."),
+        },
       ),
       "a bulk or corporate order": service(
         [text("bulkItems", "What do you need, and how much?"), text("bulkFor", "Is it for an event, a business, or a regular supply?")],
@@ -110,6 +124,12 @@ export const RETAIL = [
         "They need an outfit by a date.",
         ["Take the date and say the studio confirms whether it can be made in time.", "Say bespoke usually needs two to three weeks."],
         ["Promise a date."],
+      ),
+      policy(
+        "Fabric and fit",
+        "They say an outfit does not fit, or the fabric is not what they chose.",
+        ["Take the order name and the problem, and book a fitting.", "Say alterations after a fitting are included."],
+        ["Promise a remake or a refund."],
       ),
       NO_PROMISES,
     ],
@@ -159,6 +179,24 @@ export const RETAIL = [
         ["Take the item, the receipt number and the fault.", "Say the shop checks it against the warranty when the device is brought in."],
         ["Say a fault is or is not covered."],
       ),
+      policy(
+        "Originality",
+        "They ask whether a phone is original, refurbished, or has a genuine battery.",
+        ["Say the condition is stated on the receipt and the IMEI can be checked at the counter."],
+        ["Say a phone is original without checking."],
+      ),
+      policy(
+        "Originality",
+        "They ask whether a phone is original, refurbished, or has a genuine battery.",
+        ["Say the condition is stated on the receipt and the IMEI can be checked at the counter."],
+        ["Say a phone is original without checking."],
+      ),
+      policy(
+        "Originality",
+        "They ask whether a phone is original, refurbished, or has a genuine battery.",
+        ["Say the condition is stated on the receipt and the IMEI can be checked at the counter."],
+        ["Say a phone is original without checking."],
+      ),
       RETURNS,
     ],
     ...desk({
@@ -200,7 +238,16 @@ export const RETAIL = [
       "Site deliveries need a landmark and a phone number for somebody on site.",
     ),
     keyterms: [...SHOP, "cement", "Dangote", "BUA", "bags", "iron rod", "12mm", "16mm", "blocks", "six inches", "nine inches", "granite", "sharp sand", "plaster sand", "tiles", "roofing sheets", "aluminium", "stone coated", "POP", "plywood", "trip", "tipper", "site"],
-    policies: [NO_PROMISES, SOMEBODY_ELSE],
+    policies: [
+      NO_PROMISES,
+      SOMEBODY_ELSE,
+      policy(
+        "Quality and returns",
+        "They ask whether the cement or rods are original, or want to return unused material.",
+        ["Say every item is sold with the manufacturer's marking and a receipt.", "Say unopened material can be returned within the stated days with the receipt, less the delivery cost."],
+        ["Promise a refund on opened or delivered material.", "Say a product is original without seeing it."],
+      ),
+    ],
     ...desk({
       "get a quotation": service(
         [text("materialsList", "Go through the list with quantities, and I'll read it back."), address("siteAddress", "Where is the site, if it's for delivery?")],
@@ -210,9 +257,14 @@ export const RETAIL = [
         [text("priceItems", "Which items?")],
         "Say today's prices will be sent by text and that availability is confirmed at the same time.",
       ),
-      "a delivery to site": service(
+      "a delivery to site": forked(
         [ref("deliveryQuote", "Is there a quotation or invoice number?"), address("deliverySite", "Where is the site? A landmark and a number for somebody there."), date("deliveryDate", "Which day?")],
-        "Read it back and say dispatch will confirm the truck and time by text.",
+        "siteAccess",
+        "Can a big truck get into the site, or will it need a smaller vehicle?",
+        {
+          "a big truck is fine": service([], "Read it back and say dispatch will confirm the truck and time by text."),
+          "needs a smaller vehicle": service([text("siteAccessNote", "What's the access like — a narrow road, a gate height, stairs?")], "Read it back and say dispatch will plan the vehicle and confirm the time and any extra trips by text."),
+        },
       ),
       "a contractor or bulk account": service(
         [text("contractorCompany", "What's the company, and what do you build?"), text("contractorVolume", "Roughly what volume a month?")],

@@ -1,5 +1,5 @@
 import {
-  AGENT_MEMORY, EMERGENCY, NIGERIA, SOMEBODY_ELSE, address, amount, anythingElse, choice, complaint, date, desk, forked, handover, inbound, policy, ref, rules, service, text,
+  address, AGENT_MEMORY, amount, anythingElse, choice, complaint, date, desk, EMERGENCY, forked, handover, inbound, NIGERIA, policy, quantity, ref, rules, service, SOMEBODY_ELSE, text,
 } from "./kit";
 
 /** Churches, mosques and the organisations that serve a community. */
@@ -32,9 +32,15 @@ export const COMMUNITY = [
         [text("careMatter", "Briefly, what would you like to talk about? You can say as little as you like."), choice("careHow", "Would you prefer a call, or a visit?", ["a call", "a visit"])],
         "Say you are putting them through to the pastoral office, and pass on what they said.",
       ),
-      "a wedding, dedication or funeral": service(
-        [choice("ceremonyKind", "Is it a wedding, a dedication, or a funeral?", ["a wedding", "a dedication", "a funeral"]), date("ceremonyDate", "Which date are you hoping for?"), text("ceremonyDetail", "Tell me a little about it.")],
-        "Say a pastor will call within one working day to discuss it, and that dates are confirmed by the church office.",
+      "a wedding, dedication or funeral": forked(
+        [date("ceremonyDate", "Which date are you hoping for?")],
+        "ceremonyKind",
+        "Is it a wedding, a dedication, or a funeral?",
+        {
+          "a wedding": service([text("weddingCouple", "Whose wedding — the names of the couple?"), choice("weddingMembers", "Are both of you members here?", ["yes", "one of us", "neither"])], "Say the pastor will call to begin counselling and confirm the date, and that weddings need the counselling sessions first."),
+          "a dedication": service([text("dedicationChild", "The baby's name, and the parents?")], "Say the church office will confirm the service date and what to bring, and congratulate them."),
+          "a funeral": service([text("funeralDeceased", "I'm so sorry. Whose funeral, and were they a member?")], "Say a pastor will call today to support the family and arrange the service, and speak gently."),
+        },
       ),
       "giving or a receipt": service(
         [text("givingQuestion", "What do you need?")],
@@ -76,9 +82,14 @@ export const COMMUNITY = [
         [text("deceasedName", "May Allah have mercy. What is the name of the deceased?"), address("janazahLocation", "And where is the body now?")],
         "Say you are putting them through to the Imam's office now, and pass on the name and the location.",
       ),
-      "Quran or Arabic classes": service(
-        [choice("classFor", "Is it for a child, or an adult?", ["a child", "an adult"]), text("classLevel", "And what level — beginner, reading already, or tajweed?")],
-        "Say the madrasah coordinator will call with the timetable and the fee.",
+      "Quran or Arabic classes": forked(
+        [text("classLevel", "What level — beginner, reading already, or tajweed?")],
+        "classFor",
+        "Is it for a child, or an adult?",
+        {
+          "a child": service([quantity("classChildAge", "How old is the child?"), choice("classChildWhen", "After school on weekdays, or weekends?", ["weekdays", "weekends"])], "Say the madrasah coordinator will call with the timetable and the fee."),
+          "an adult": service([choice("classAdultMode", "In person, or online?", ["in person", "online"])], "Say the coordinator will call with the adult class timetable and the fee."),
+        },
       ),
       "zakat or sadaqah": service([text("givingQuestion", "What would you like to know?")], "Say the zakat committee will call back, and how to pay if you know it."),
       "welfare or help": service([text("welfareNeed", "Tell me what you need.")], "Say the welfare committee will call back within one working day."),
@@ -162,9 +173,15 @@ export const COMMUNITY = [
           no: service([], "Say it has been logged for the security committee, who will follow up."),
         },
       ),
-      "waste, roads or lights": service(
+      "waste, roads or lights": forked(
         [text("issueWhere", "Where exactly is it?"), text("issueDetail", "And what's the problem?")],
-        "Say it has been logged for the works committee and will be raised with the contractor or the council.",
+        "issueKind",
+        "Is it waste collection, the road, or the lights?",
+        {
+          "waste collection": service([quantity("wasteDaysMissed", "How many collection days has it missed?")], "Say the waste contractor will be called today and the works committee will follow up."),
+          "the road": service([choice("roadPassable", "Is the road still passable?", ["yes", "no"])], "Say it has been logged for the works committee, who will raise it with the council or the estate's contractor."),
+          "the lights": service([], "Say the electrician will check on the next round and it has been logged for the works committee."),
+        },
       ),
       "meetings and elections": service([text("meetingQuestion", "What would you like to know?")], "Answer from what you know and say the secretary will confirm."),
       "a neighbour dispute": service(

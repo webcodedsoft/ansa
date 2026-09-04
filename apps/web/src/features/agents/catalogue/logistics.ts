@@ -1,5 +1,5 @@
 import {
-  EMERGENCY, NIGERIA, NO_PROMISES, SOMEBODY_ELSE, address, choice, complaint, date, desk, forked, handover, inbound, policy, quantity, ref, rules, service, text, time,
+  address, choice, complaint, date, desk, EMERGENCY, forked, handover, inbound, NIGERIA, NO_PROMISES, policy, quantity, ref, rules, service, SOMEBODY_ELSE, text, time,
 } from "./kit";
 
 const MOVING = [
@@ -104,9 +104,14 @@ export const LOGISTICS = [
         ],
         "Read it back, say a person will call to confirm the crew and truck and send a quotation within one working day, and offer a survey for a whole house.",
       ),
-      "hire a truck": service(
+      "hire a truck": forked(
         [choice("truckSize", "What size — a small van, a five-tonne, or a ten-tonne and above?", ["a small van", "five-tonne", "ten-tonne and above"]), text("truckRoute", "Where from and where to?"), date("truckDate", "Which day?")],
-        "Say the operations team will confirm availability and the price by text.",
+        "truckCrew",
+        "Do you need loaders as well, or just the truck and driver?",
+        {
+          "loaders too": service([quantity("loaderCount", "Roughly how many people's worth of loading — two, four?")], "Read it back and say the operations team will confirm the truck, the crew and the price by text."),
+          "just the truck": service([], "Read it back and say the operations team will confirm availability and the price by text."),
+        },
       ),
       "a job happening now": handover(
         [ref("jobReference", "What name or reference is the job under?"), text("jobIssue", "What's happening?")],
@@ -144,7 +149,7 @@ export const LOGISTICS = [
       SOMEBODY_ELSE,
     ],
     ...desk({
-      "book a seat": service(
+      "book a seat": forked(
         [
           text("routeFrom", "Where are you leaving from?"),
           text("routeTo", "And where to?"),
@@ -152,7 +157,12 @@ export const LOGISTICS = [
           choice("travelTime", "Morning departure, or afternoon?", ["morning", "afternoon"]),
           quantity("seats", "How many seats?"),
         ],
-        "Read the booking back, say the fare and payment details will be sent by text, and that the seat is held for two hours.",
+        "busClass",
+        "The regular bus, or the luxury coach?",
+        {
+          regular: service([], "Read the booking back, say the fare and payment details will be sent by text, and that the seat is held for two hours."),
+          "luxury coach": service([choice("coachSeat", "Any seat preference — front, window, or no preference?", ["front", "window", "no preference"])], "Read the booking back, say the fare and payment details will be sent by text, and that the seat is held for two hours."),
+        },
       ),
       "fares and departure times": service(
         [text("fareRoute", "Which route?")],
