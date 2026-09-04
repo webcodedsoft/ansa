@@ -1,7 +1,8 @@
 "use client";
 
 import {
-  Activity, Bot, ChevronsUpDown, FileText, ListChecks, LogOut, PhoneCall, Settings, Table2, Users, Wrench,
+  Activity, Bot, ChevronsUpDown, FileText, KeyRound, Link2, ListChecks, LogOut,
+  Phone, PhoneCall, Plus, ScrollText, ShieldCheck, Table2, Users, Wrench,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -10,18 +11,25 @@ import type { ComponentType } from "react";
 import { IconButton } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
-import { allowedDestinations, isSettingsPath, settingsDestinations, type Destination } from "./navigation";
+import { NAV_GROUPS, allowedDestinations, type Destination } from "./navigation";
 
-/** One icon per sidebar row, keyed by href so the list stays the single source. */
+/** One icon per destination, keyed by href so the list stays the single source. */
 const ICONS: Record<string, ComponentType<{ className?: string }>> = {
   "/calls": PhoneCall,
   "/live": Activity,
   "/review": ListChecks,
   "/data": Table2,
-  "/contacts": Users,
   "/metrics": FileText,
   "/agents": Bot,
+  "/agents/new": Plus,
   "/tools": Wrench,
+  "/numbers": Phone,
+  "/webhooks": Link2,
+  "/credentials": KeyRound,
+  "/members": Users,
+  "/invitations": Users,
+  "/consent": ShieldCheck,
+  "/audit": ScrollText,
 };
 
 const isActive = (pathname: string, href: string): boolean => {
@@ -51,44 +59,42 @@ export const Sidebar = ({
   readonly collapsed?: boolean;
 }) => {
   const pathname = usePathname();
-  const allowed = allowedDestinations(capabilities).filter((d) => d.inSidebar !== false);
+  const allowed = allowedDestinations(capabilities);
   const initials = organisation.slice(0, 1).toUpperCase();
 
-  /* Settings is one row for seven pages. It goes to the first of them this caller may
-     open — usually the organisation itself — and lights up on any of them, because the
-     tabs across the top of those pages are the navigation from there. */
-  const settings = settingsDestinations(capabilities)[0];
-
-  const row = (href: string, label: string, Icon: ComponentType<{ className?: string }>, on: boolean, count?: number) => (
-    <Link
-      key={href}
-      href={href}
-      aria-current={on ? "page" : undefined}
-      title={collapsed ? label : undefined}
-      className={cn(
-        "relative flex items-center gap-2.5 rounded-lg border py-[5px] text-[13.5px] transition-colors",
-        collapsed ? "justify-center px-2" : "px-2.5",
-        on
-          ? "border-[var(--hairline)] bg-[var(--glass-hi)] font-medium text-[var(--ink)] shadow-[var(--shadow-s),var(--spec)]"
-          : "border-transparent text-[var(--ink-2)] hover:bg-[var(--glass-hi)] hover:text-[var(--ink)]",
-      )}
-    >
-      {/* A short bar rather than a tinted pill, so the selection reads at a glance without
-          the accent competing with every icon in the list. */}
-      {on && !collapsed && (
-        <span aria-hidden className="absolute top-1/2 -left-px h-[15px] w-[2.5px] -translate-y-1/2 rounded-r bg-[var(--accent)]" />
-      )}
-      <Icon className={cn("size-4 flex-none", on ? "text-[var(--accent)]" : "text-[var(--ink-3)]")} />
-      {!collapsed && <span className="flex-1 truncate">{label}</span>}
-      {!collapsed && count !== undefined && count !== 0 && (
-        <span className="rounded-full border border-[var(--hairline)] bg-[var(--surface-2)] px-1.5 py-px font-mono text-[10.5px] text-[var(--ink-3)] tabular-nums">
-          {count}
-        </span>
-      )}
-    </Link>
-  );
-
-  const item = (d: Destination) => row(d.href, d.label, ICONS[d.href] ?? Bot, isActive(pathname, d.href), counts?.[d.href]);
+  const item = (d: Destination) => {
+    const Icon = ICONS[d.href] ?? Bot;
+    const on = isActive(pathname, d.href);
+    return (
+      <Link
+        key={d.href}
+        href={d.href}
+        aria-current={on ? "page" : undefined}
+        title={collapsed ? d.label : undefined}
+        className={cn(
+          "relative flex items-center gap-2.5 rounded-lg border py-1.5 text-[13.5px] transition-colors",
+          collapsed ? "justify-center px-2" : "px-2.5",
+          on
+            ? "border-[var(--hairline)] bg-[var(--glass-hi)] font-medium text-[var(--ink)] shadow-[var(--shadow-s),var(--spec)]"
+            : "border-transparent text-[var(--ink-2)] hover:bg-[var(--glass-hi)] hover:text-[var(--ink)]",
+        )}
+      >
+        {/* A short bar rather than a tinted pill: with sixteen destinations the
+            selection has to read at a glance without the accent competing with
+            every icon in the list. */}
+        {on && !collapsed && (
+          <span aria-hidden className="absolute top-1/2 -left-px h-[15px] w-[2.5px] -translate-y-1/2 rounded-r bg-[var(--accent)]" />
+        )}
+        <Icon className={cn("size-4 flex-none", on ? "text-[var(--accent)]" : "text-[var(--ink-3)]")} />
+        {!collapsed && <span className="flex-1 truncate">{d.label}</span>}
+        {!collapsed && counts?.[d.href] !== undefined && counts[d.href] !== 0 && (
+          <span className="rounded-full border border-[var(--hairline)] bg-[var(--surface-2)] px-1.5 py-px font-mono text-[10.5px] text-[var(--ink-3)] tabular-nums">
+            {counts[d.href]}
+          </span>
+        )}
+      </Link>
+    );
+  };
 
   return (
     // `h-full` is load-bearing, not tidying. The grid stretches the wrapper to
@@ -118,25 +124,20 @@ export const Sidebar = ({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-        {(["Operate", "Build"] as const).map((group) => {
+        {NAV_GROUPS.map((group) => {
           const items = allowed.filter((d) => d.group === group);
           if (items.length === 0) return null;
           return (
-            <div key={group} className="mt-3 first:mt-1">
+            <div key={group} className="mt-3.5 first:mt-1">
               {!collapsed && (
-                <h6 className="mb-1 px-2.5 font-mono text-[10px] font-medium tracking-[0.13em] text-[var(--ink-3)] uppercase">
+                <h6 className="mb-1.5 px-2.5 font-mono text-[10px] font-medium tracking-[0.13em] text-[var(--ink-3)] uppercase">
                   {group}
                 </h6>
               )}
-              <div className="flex flex-col gap-px">{items.map(item)}</div>
+              <div className="flex flex-col gap-0.5">{items.map(item)}</div>
             </div>
           );
         })}
-        {settings !== undefined && (
-          <div className="mt-3 border-t border-[var(--hairline)] pt-2.5">
-            {row(settings.href, "Settings", Settings, isSettingsPath(pathname))}
-          </div>
-        )}
       </div>
 
       <div

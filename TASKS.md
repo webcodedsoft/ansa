@@ -3886,16 +3886,6 @@ covered what the form already does:
   policies — so the catalogue cannot drift back. Totals: 68 nested forks, 110 hand-overs,
   207 policies, 1,037 questions across 69 templates.
 
-**The sidebar, shortened (2026-09-04).** Sixteen rows under four headings was longer than the
-window. Now three groups and the third is one row: *Operate* (Calls, Live, Review queue,
-Collected data, Contacts, Metrics), *Build* (Agents, Tool registry) and *Settings* — one row
-that opens the organisation page and lights up on any of the eight configuration pages, which
-are navigated by a tab strip across their top (`SettingsTabs`, from the same `Destination` list
-the sidebar and palette read). Those pages moved into an app-router route group,
-`(workspace)/(settings)/`, so every URL is unchanged. "Build an agent" left the sidebar — it is
-the New agent button on the agents list — and stays in the list with `inSidebar: false` for
-the palette and the breadcrumb.
-
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and
