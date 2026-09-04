@@ -226,3 +226,52 @@ describe("the collection section", () => {
     expect(prompt.indexOf("policyNumber")).toBeLessThan(prompt.lastIndexOf(GUARANTEES_LAYER));
   });
 });
+
+/**
+ * Slice 12: the lines that make the agent sound like a person on a Nigerian line.
+ *
+ * Each is asserted by a fragment that could not survive a rewrite that lost the rule, so
+ * a later edit that "tidies" one of these out fails here rather than on a call.
+ */
+describe("sounding like a person on a Nigerian line", () => {
+  const shared = composeSystemPrompt({ organization: null, tools: [] });
+
+  it("asks one question at a time, and bans the words of a script", () => {
+    expect(shared).toContain("One question per turn.");
+    expect(shared).toContain("Never say: certainly, absolutely, kindly, I apologise");
+  });
+
+  it("knows the money, the times and the Pidgin", () => {
+    expect(shared).toContain('"2k" is two thousand naira');
+    expect(shared).toContain('"By two" is at two o\'clock');
+    expect(shared).toContain("Na so = yes");
+    expect(shared).toContain("The network =");
+  });
+
+  it("answers an honorific in kind, once, and asks back how they are", () => {
+    expect(shared).toContain("use theirs back once");
+    expect(shared).toContain("ask them back, once");
+  });
+
+  it("takes an address as landmarks and a name as said", () => {
+    expect(shared).toContain("Addresses come as landmarks");
+    expect(shared).toContain("Yoruba, Igbo and Hausa names are tonal");
+    expect(shared).toContain("an\nodd word where a name should be is a name");
+  });
+
+  it("asks by offering the two readings, never by saying please repeat", () => {
+    expect(shared).toContain('don\'t say "please repeat that"');
+    expect(shared).toContain("Offer the two things it");
+  });
+
+  it("asks which, when a request could mean two things that lead somewhere different", () => {
+    expect(shared).toContain("could mean two different things");
+    expect(shared).toContain("Only when the difference changes what you'd do next");
+  });
+
+  it("checks a decision before acting on it, and keeps that apart from mirroring", () => {
+    expect(shared).toContain("Before you act on anything with a consequence");
+    expect(shared).toContain("say it back in one short line as a question and wait");
+    expect(shared).toContain("it is not the same\nas mirroring");
+  });
+});

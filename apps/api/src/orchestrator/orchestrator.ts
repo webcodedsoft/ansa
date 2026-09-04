@@ -22,6 +22,7 @@ import {
   confirmedUtterance,
   idle,
   isAffirmative,
+  isUncertain,
   type CaptureState,
   type EntityKind,
 } from "./capture";
@@ -349,10 +350,21 @@ export interface OrchestratorDeps {
  * out — a caller cannot act on a regular expression, and it would take longer to say than
  * the number it describes.
  */
-const retryLine = (field: { readonly prompt: string }): string =>
+/**
+ * The value was heard perfectly and is not the shape the organisation said it would be.
+ *
+ * Named after the thing — "that doesn't look like a policy number" — and not after "the
+ * format", which is a word from the console and means nothing on a phone. The key is the
+ * operator's identifier, so it is spoken the way `task-layer.ts` speaks it: `policyNumber`
+ * becomes "policy number".
+ */
+const spokenKey = (key: string): string =>
+  key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ").toLowerCase();
+
+const retryLine = (field: { readonly key: string; readonly prompt: string }): string =>
   field.prompt === ""
-    ? "That does not look like the right format. Could you give it to me again?"
-    : `That does not look like the right format. ${field.prompt}`;
+    ? `Hmm, that doesn't look like a ${spokenKey(field.key)} — could you give it to me once more?`
+    : `Hmm, that doesn't look like a ${spokenKey(field.key)}. ${field.prompt}`;
 
 /**
  * The line when the attempts are used up and there is nobody to transfer to.
@@ -362,7 +374,7 @@ const retryLine = (field: { readonly prompt: string }): string =>
  * carrying on without the value.
  */
 const GAVE_UP =
-  "I am still not getting that in a form I can use, and I do not want to keep you repeating it. Let us carry on without it for now.";
+  "I'm still not getting that clearly, and I don't want to keep you repeating it. Let's carry on without it for now.";
 
 /*
  * Exported for one guard test, and for one reason: `apps/web/.../tools-tab.tsx` keeps its
@@ -487,12 +499,12 @@ const THIRD_FILLER_AFTER_MS = 4500;
  * different ways of asking the same short thing.
  */
 const RECOVERY_LINES: readonly string[] = [
-  "Sorry, I did not catch that. Could you say it again?",
+  "Sorry, I didn't catch that. Could you say it again?",
   "Sorry — I missed that. Come again?",
   // Every one of them apologises. Two tests assert it and they are right to: a turn that
   // produced nothing is our failure, and varying the wording is not licence to drop that.
-  "Sorry, I did not get that one. Say it again for me?",
-  "Sorry, the line is not clear. One more time?",
+  "Sorry, I didn't get that one. Say it again for me?",
+  "Sorry, the line isn't clear. One more time?",
 ];
 
 /**
@@ -787,6 +799,15 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
    * it is the invariant `outstanding() === null` implies `complete()` — and this is the one
    * place an irreversible effect rides on it, so it is checked rather than assumed.
    */
+  /**
+   * Whether the transcriber doubted the caller's last turn, for the situation block.
+   *
+   * Set from the final transcript just before the model is asked to answer it, using the
+   * same threshold the capture engine uses to decide a value needs extra checking. Read
+   * once per turn where the prompt is built; the next final overwrites it.
+   */
+  let lastTurnUnclear = false;
+
   let flowHandedOver = false;
   let flowEndReached = false;
   /** The `say` texts already put in front of the model, and the tools that have run. */
@@ -2165,6 +2186,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         businessHours: deps.businessHours ?? null,
         failedTurns: watch.failedTurns(),
         escalationOffered: watch.handedOver(),
+        lastTurnUnclear,
         /* Whatever has arrived. A read started as the call connected, so on turn one it is
            usually there and occasionally not — and "not" renders nothing rather than
            waiting, because a turn that waits on a query is the two-loop rule broken. */
@@ -3225,6 +3247,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
         log.info("caller did not continue, answering what we have", { text: whole });
         callState.apply({ kind: "caller.turn.dispatched" });
         if (!captureHandled(whole, wholeForModel, transcript.confidence)) {
+          lastTurnUnclear = isUncertain(transcript.confidence);
           respondTo(whole, wholeForModel);
         }
       }, CONTINUATION_WAIT_MS);
@@ -3239,6 +3262,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     // around is not a gate.
     if (captureHandled(whole, wholeForModel, transcript.confidence)) return;
 
+    lastTurnUnclear = isUncertain(transcript.confidence);
     respondTo(whole, wholeForModel);
   });
 

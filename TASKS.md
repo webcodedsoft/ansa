@@ -3881,6 +3881,117 @@ cannot currently see, so it is likely its own slice. And an in-flight call keeps
 version it started with; a stored graph inherits that, which is right but should be stated
 rather than inherited by accident.
 
+## Slice 12 — Sounding like a person on a Nigerian line (2026-09-04)
+
+The prompt stack is nine layers and about two thousand lines, and the base is strong. What
+it lacks is specific, and most of it was found by reading the lines a caller actually hears:
+the least conversational sentences in the product are spoken by code, not by the model;
+uncertainty about what was heard never reaches the model; there is one rule about repeating
+back and it is a prohibition; and the Nigerian layer is four bullets with no honorifics, no
+idiom, no names and no place in the transcriber's vocabulary.
+
+Four groups, in the order they are heard: the engine's own lines first, then what the model
+is told about Nigeria, then asking, then repeating back. Every task names its files and what
+proves it. A prompt line is verified by a layer test asserting it is present; an engine line
+by a scenario asserting the new wording *and* that the caller's yes/no still parses, since
+`YES`/`NO` read the caller and a readback that no longer ends in a question breaks them.
+
+**Prompt budget.** Every added line costs tokens on every turn of every call. Ceiling for
+this slice: forty new lines across all layers, net of what is removed.
+
+### A — Conversationalist: the lines code speaks
+
+- [x] **A1. Readbacks from a pool, in the register the prompt demands.** `capture.ts`
+      `readback()` — a pool of three or four per subject class (name, identifier, other),
+      rotated within a call by the same rotator `pickCourtesy` uses, never the same line
+      twice in one call. Contractions, twelve words. Each keeps a yes/no tail.
+      **Done when** a scenario hears two different readbacks on one call and "yes" still
+      confirms the second.
+- [x] **A2. Retry, spell, keypad, gave-up and recovery lines rewritten.** `capture.ts`
+      `retryPrompt`, `spellPrompt`, `keypadPrompt`; `orchestrator.ts` `RECOVERY_LINES`,
+      `GAVE_UP`, `retryLine` — the last naming the thing ("that doesn't look like a policy
+      number") instead of "the right format". `filler.ts` reviewed.
+      **Done when** `capture.test.ts` and the scenarios pass with the new wording and no
+      line spoken by code is over fourteen words or lacks a contraction where one belongs.
+- [x] **A3. The twelve `ask` lines reviewed** for the same register. Keep "N I N" and
+      "B V N" spaced — the normalizer and TTS need them.
+- [x] **A4. `BASE_CONDUCT` additions**, five lines at most: one question per turn; a word of
+      acknowledgement before a question; a short banned list — certainly, absolutely, I
+      apologise, kindly, please be advised.
+      **Done when** `base.test.ts` (new, or the compose test) asserts the lines.
+
+### B — Ask when unclear or uncertain
+
+- [x] **B1. The confidence channel (code).** The transcript's confidence reaches
+      `captureHandled()` and stops. Carry it to the situation block: below the threshold
+      `spokenAttemptsFor` already uses, render "Their last turn came through unclearly. If
+      the meaning matters, check it with one short question rather than guessing."
+      `orchestrator.ts` where `describeSituation` is called; `conversation/situation.ts`.
+      **Done when** a test shows the line present for a low-confidence final and absent
+      for a clear one.
+- [x] **B2. How to ask, in `LOCALE_LAYER`:** offer the two likely readings — "Ikeja or
+      Ikoyi?" — never "please repeat"; a name or a place is said back, never guessed at.
+- [x] **B3. Intent ambiguity, in `CONVERSATION_LAYER`:** if what they want could mean two
+      things, ask which in one question naming both — and only when the difference changes
+      what happens next.
+- [x] **B4. A rejected readback asks what it should be.** `capture.ts` `confirming()`: when
+      the caller says no and carries no correction, say "Sorry — what should it be?"
+      rather than "once more, slowly?". A correction carried in the same turn is already
+      taken; keep that.
+      **Done when** the capture tests show the new line and the correction path unchanged.
+
+### C — Repeat back, conversationally
+
+- [x] **C1. A positive rule in `CONVERSATION_LAYER`:** before acting on anything with a
+      consequence — a cancellation, a date, an amount, which order — say it back in one
+      short line as a question and wait. Named as different from mirroring feelings or
+      restating the whole message, which stays banned. Generalises the sums rule.
+- [x] **C2. Readback phrasing per entity, checked in the engine.** Heard, not read: phone as
+      "oh eight oh three, eight one seven…", amount as "two hundred and fifty thousand
+      naira", date as "Monday the fourteenth of September", time as "two o'clock in the
+      afternoon", email spelled before the at. Nothing needed fixing beyond D5.
+
+### D — Nigerian awareness
+
+- [x] **D1. `LOCALE_LAYER` expanded**: honorifics answered in kind once — ma, sir, oga,
+      madam, aunty, uncle — and not in every sentence; an idiom glossary with meanings (how
+      far, wetin, abeg, I dey, e don do, na so, sha, o, oya, sef, I'm coming, leave it,
+      next tomorrow, by two, flash, airtime, credit, the network); money as spoken (2k,
+      250k, 1.5m, half a million); address landmarks (junction, bus stop, estate,
+      opposite, after the roundabout, before the filling station).
+- [x] **D2. Names**, in `LOCALE_LAYER` and the engine: Yoruba, Igbo and Hausa names are
+      tonal and the transcriber mangles them — take them as said, confirm by spelling,
+      never anglicise, and when an odd word lands where a name should be, treat it as one.
+- [x] **D3. Transcriber vocabulary (code — the real lever).** `tenancy/defaults.ts`
+      `BASE_KEYTERMS`: Nigerian states, the main Lagos, Abuja and Port Harcourt areas, the
+      honorifics and the idiom words, inside the hundred-term cap with room left for an
+      organisation's own.
+      **Done when** `defaults.test.ts` asserts the count is under the cap with at least
+      thirty spare, and the merge test still passes.
+- [x] **D4. Asking back.** Not in `courtesy.ts` after all: those replies sit in front of a
+      readback, and "and yourself? Sikiru — is that right?" is two questions in one breath,
+      which A4 bans and the courtesy test already refused. The model asks back instead, from
+      one line in `LOCALE_LAYER`, on the turns where nothing else follows.
+- [x] **D5. Normalizer, not prompt.** Three bugs, not gaps, found by saying the amounts:
+      "one point five million" parsed as 1.5, "two fifty k" as 52,000 and "half a
+      million" as a full one — each would have been read back with confidence. Fixed, with
+      "2k", "250k", "1.5m", "a quarter of a million", and "by two" / "at two" / "2pm" as
+      times. Twenty-two cases added to `entities.test.ts`.
+
+### E — Verification and measurement
+
+- [x] **E1.** Every prompt rule above has a layer test asserting it (existing pattern in
+      `prompts/*.test.ts`).
+- [x] **E2.** Every engine line has a scenario or capture test, including yes/no parsing
+      after the new readbacks.
+- [x] **E3.** `pnpm lint && pnpm typecheck && pnpm test` green. Prompt budget: 34 net lines
+      across `base`, `locale` and `conversation`, about 675 tokens more per turn — under
+      the forty-line ceiling. Nothing was removed to pay for it; the next addition should
+      look for something to remove first.
+- [ ] **E4.** After real calls: `GET /calls/catchphrases` for repetition, and the call log
+      for how often a clarifying question was asked. This is the only proof that matters
+      and it needs a phone.
+
 ## Session discipline
 
 - Update this file before you stop working. Check boxes, note what broke.

@@ -43,6 +43,16 @@ export interface SituationInput {
   /** True once a transfer has been triggered. Nothing should offer a person twice. */
   readonly escalationOffered: boolean;
   /**
+   * The transcriber was not sure of the caller's last turn.
+   *
+   * This value has always existed — the transcriber reports a confidence with every final
+   * — and it reached the capture engine, which shortens its attempts on it, and stopped
+   * there. The model was told to assume a nonsensical word was misheard and answer the
+   * sensible reading, and was never told when the whole turn was doubtful. So it guessed,
+   * confidently, on the turns where it should have asked.
+   */
+  readonly lastTurnUnclear: boolean;
+  /**
    * What this number has done before, or null when it is not known.
    *
    * Null covers three cases the block treats identically — a withheld number, a deployment
@@ -53,6 +63,7 @@ export interface SituationInput {
 }
 
 export interface Situation {
+  readonly lastTurnUnclear: boolean;
   readonly partOfDay: PartOfDay;
   /** 24-hour WAT, for the model to read rather than to say. */
   readonly localTime: string;
@@ -136,6 +147,7 @@ export const describeSituation = (input: SituationInput): Situation => {
        would have the agent behaving as though the caller had been waiting. */
     minutesElapsed: Math.max(0, Math.floor((input.now.getTime() - input.callStartedAtMs) / 60_000)),
     failedTurns: input.failedTurns,
+    lastTurnUnclear: input.lastTurnUnclear,
     escalationOffered: input.escalationOffered,
     history: input.history,
   };
@@ -267,6 +279,11 @@ export const renderSituation = (situation: Situation): string => {
     ...historyLines(situation),
     ...lengthLines(situation),
     ...escalationLines(situation),
+    ...(situation.lastTurnUnclear
+      ? [
+          "- Their last turn came through unclearly. If what they said changes what you do next, check it with one short question rather than guessing. If it doesn't matter, carry on.",
+        ]
+      : []),
   ];
 
   /* The clock line used to be suppressed on its own, because by itself it mostly invited

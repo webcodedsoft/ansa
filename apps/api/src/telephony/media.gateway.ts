@@ -953,6 +953,8 @@ export class MediaGateway implements OnApplicationShutdown {
         businessHours: settings.businessHours,
         failedTurns: 0,
         escalationOffered: false,
+        // Nothing has been said yet, so nothing has been doubted.
+        lastTurnUnclear: false,
         history: null,
       });
       const lead = chooseGreetingLead({

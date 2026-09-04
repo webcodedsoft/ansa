@@ -28,6 +28,7 @@ const at = (over: Partial<SituationInput> = {}): SituationInput => {
     now,
     callStartedAtMs: now.getTime(),
     businessHours: OFFICE,
+    lastTurnUnclear: false,
     failedTurns: 0,
     escalationOffered: false,
     history: null,
@@ -261,5 +262,16 @@ describe("what we already know about this caller", () => {
     // Their fourth: three before this one.
     expect(thrice).toContain("their 4th call this week");
     expect(thrice).toContain("get them to a person now");
+  });
+});
+
+describe("a turn the transcriber doubted", () => {
+  it("tells the model to check before acting, and only then", () => {
+    const doubted = renderSituation(describeSituation(at({ lastTurnUnclear: true })));
+    const clear = renderSituation(describeSituation(at({ lastTurnUnclear: false })));
+
+    expect(doubted).toContain("came through unclearly");
+    expect(doubted).toContain("one short question rather than guessing");
+    expect(clear).not.toContain("unclearly");
   });
 });

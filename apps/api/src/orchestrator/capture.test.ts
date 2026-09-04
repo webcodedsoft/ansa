@@ -79,7 +79,7 @@ describe("digits split across two turns", () => {
 
     const second = speak(first.state, "five zero");
     expect(second.state.kind).toBe("confirming");
-    expect(second.say).toContain("Is that right?");
+    expect(second.say?.trim().endsWith("?")).toBe(true);
   });
 
   it("takes a caller who starts over rather than gluing it to the last attempt", () => {
@@ -138,7 +138,7 @@ describe("readback", () => {
     // Nothing downstream may see the value yet. This is the whole requirement.
     expect(r.captured).toBeNull();
     expect(r.say).toContain("four one seven");
-    expect(r.say).toContain("Is that right?");
+    expect(r.say?.trim().endsWith("?")).toBe(true);
   });
 
   it("does nothing when the caller said no number at all", () => {
@@ -918,5 +918,60 @@ describe("what the model is told once a value is confirmed", () => {
     for (const kind of Object.keys(ENTITY_POLICY) as (keyof typeof ENTITY_POLICY)[]) {
       expect(confirmedUtterance(kind, "x"), kind).toMatch(/^Yes, that is/);
     }
+  });
+});
+
+/**
+ * The readbacks are a pool, and the pool has to keep the two properties the exchange
+ * depends on: the value is in the sentence, and the sentence is a question the caller
+ * answers with yes or no.
+ */
+describe("how a value is read back", () => {
+  const readbackFor = (subject: "name" | "reference" | "amount", said: string): string => {
+    const r = speak(expecting(subject).state, said);
+    expect(r.state.kind, said).toBe("confirming");
+    return r.say ?? "";
+  };
+
+  it("says the value, as a question, every time", () => {
+    for (const [subject, values] of [
+      ["name", ["Sikiru", "Adaeze", "Chukwuemeka", "Ngozi", "Tunde"]],
+      ["reference", ["PM one two three", "AXA four four two one", "CL nine nine zero one"]],
+    ] as const) {
+      for (const said of values) {
+        const line = readbackFor(subject, said);
+        expect(line.trim().endsWith("?"), line).toBe(true);
+        expect(line.length, line).toBeLessThan(80);
+      }
+    }
+  });
+
+  it("does not say the same sentence to everybody", () => {
+    const shapes = new Set(
+      ["Sikiru", "Adaeze", "Chukwuemeka", "Ngozi", "Tunde", "Bola", "Emeka"].map((name) =>
+        readbackFor("name", name).replace(name, "X"),
+      ),
+    );
+    // Seven callers, and at least three different sentences among them.
+    expect(shapes.size).toBeGreaterThanOrEqual(3);
+  });
+
+  it("still takes yes and no whichever sentence carried the value", () => {
+    for (const name of ["Sikiru", "Adaeze", "Chukwuemeka", "Ngozi"]) {
+      const asked = speak(expecting("name").state, name);
+      expect(speak(asked.state, "Yes, that's right.").state.kind, name).toBe("confirmed");
+      expect(speak(asked.state, "No.").state.kind, name).not.toBe("confirmed");
+    }
+  });
+
+  it("asks what it should be when the caller says no with nothing to replace it", () => {
+    const asked = speak(expecting("reference").state, "PM one two three four five six seven");
+    const refused = speak(asked.state, "No, that's wrong.");
+
+    expect(refused.say).toContain("what should it be");
+    // And takes the correction on the next turn, as it always did.
+    const corrected = speak(refused.state, "PM one two three four five six eight");
+    expect(corrected.state.kind).toBe("confirming");
+    expect(corrected.say).toContain("eight");
   });
 });

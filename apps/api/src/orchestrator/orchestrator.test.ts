@@ -1322,9 +1322,11 @@ describe("readback in the turn loop (R4.3)", () => {
     // The gate's whole purpose: the model must not get to answer around a number that
     // has not been confirmed.
     expect(h.llm.completions.length).toBe(before);
-    const said = h.tts.texts().join(" ");
-    expect(said).toContain("read that back");
+    // A readback: the value, said back, as a question. Which of the pool's sentences carried
+    // it is not the point — that it was put to the caller before the model saw it is.
+    const said = h.tts.texts().at(-1) ?? "";
     expect(said).toContain("four one seven");
+    expect(said.trim().endsWith("?")).toBe(true);
     assertInvariants(h);
   });
 
@@ -2047,6 +2049,27 @@ describe("the prompt the call was configured with", () => {
       const caller = turns.filter((t) => t.speaker === "caller");
       expect(caller.map((t) => t.startedOffsetMs)).toEqual([9_000]);
     });
+  });
+
+  /**
+   * The transcriber's doubt reaches the model. It always reached the capture engine, which
+   * checks a doubtful value harder; the model was left to answer the sensible reading of
+   * every turn, doubted or not, and guessed on the ones it should have asked about.
+   */
+  it("tells the model when the caller's last turn was doubtful, and not otherwise", () => {
+    const h = setup();
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("I want to move my appointment to the other branch.", 0, 0.4);
+    expect(h.llm.last().request.system).toContain("came through unclearly");
+    h.llm.last().emit("Which branch would that be? ");
+    h.llm.last().finish();
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("The one on the mainland, please.", 0, 0.95);
+    expect(h.llm.last().request.system).not.toContain("unclearly");
   });
 
   it("says nothing about hours on an ordinary in-hours turn", () => {

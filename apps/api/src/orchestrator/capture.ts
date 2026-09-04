@@ -78,6 +78,17 @@ const MAX_SPOKEN_ATTEMPTS = 2;
 const UNCERTAIN_BELOW = 0.7;
 
 /**
+ * Whether a transcript's confidence is low enough to doubt the whole turn.
+ *
+ * One threshold, shared with the orchestrator's situation block, so the engine's "check
+ * this value harder" and the model's "ask before you act on that" agree about what
+ * doubtful means. Null is not doubt: a transcriber that reports nothing is trusted the way
+ * it always was.
+ */
+export const isUncertain = (confidence: number | null | undefined): boolean =>
+  typeof confidence === "number" && confidence < UNCERTAIN_BELOW;
+
+/**
  * Every structured value the agent captures.
  *
  * The identifier types are separate rather than one `reference` because their shapes are
@@ -490,7 +501,7 @@ export const ENTITY_POLICY: Readonly<Record<EntityKind, EntityPolicy>> = {
     confirm: "always",
     fallback: "keypad",
     label: "that number",
-    ask: "What's the number?",
+    ask: "What's the number on it?",
     parse: (text) => digitsOf(text),
     // Some organizations number records with letters and no digits at all. A run of single
     // letters cannot be recognised as a value in free speech — every sentence would
@@ -542,7 +553,7 @@ export const ENTITY_POLICY: Readonly<Record<EntityKind, EntityPolicy>> = {
     confirm: "always",
     fallback: "retry",
     label: "the address",
-    ask: "What's the address?",
+    ask: "And the address?",
     parse: (text) => parseSpokenAddress(text),
     parseDirected: (text) => tidyAddress(text),
     say: (value) => sayAddress(value),
@@ -594,7 +605,7 @@ export const ENTITY_POLICY: Readonly<Record<EntityKind, EntityPolicy>> = {
     confirm: "always",
     fallback: "keypad",
     label: "the amount",
-    ask: "How much is it?",
+    ask: "How much are we talking?",
     parse: (text) => amountString(parseSpokenAmount(text)),
     parseDirected: (text) => amountString(parseBareAmount(text)),
     say: (value) => sayAmount(Number(value)),
@@ -660,7 +671,7 @@ export const ENTITY_POLICY: Readonly<Record<EntityKind, EntityPolicy>> = {
     confirm: "when-uncertain",
     fallback: "retry",
     label: "that",
-    ask: "Sorry, how many was that?",
+    ask: "How many?",
     parse: (text) => {
       const value = parseSpokenNumber(text);
       return value === null ? null : String(value);
@@ -895,6 +906,58 @@ export const isAffirmative = (text: string): boolean =>
  * value is repeated as a sentence, because "the fourteenth of August, is that right?" is
  * how a person confirms a date and "let me read that back" is not.
  */
+/**
+ * The readbacks, as pools rather than one sentence each.
+ *
+ * The prompt tells the model two callers must never hear the same sentence, and then this
+ * file said "Let me read that back — X. Is that right?" ten times a call, word for word.
+ * These are the lines a caller hears most, so they are the ones that most decide whether
+ * the thing on the line sounds like a person.
+ *
+ * Every line ends in a question, because the caller's next turn is read by `YES` and `NO`
+ * and a readback that trails off gets "okay" instead of "yes". Every line has the value in
+ * it — a readback that does not say the value back is not one. Contractions, and short:
+ * the value itself may be eleven digits and the words around it should not add to that.
+ *
+ * `pickBy` is a hash of the value and not a counter, because this state machine is pure
+ * and carries no per-call memory. Two different values fall on different lines; the same
+ * value read back a second time takes the second-attempt line instead.
+ */
+const NAME_READBACKS: readonly ((spoken: string) => string)[] = [
+  (spoken) => `${spoken} — have I got that right?`,
+  (spoken) => `${spoken}, is it?`,
+  (spoken) => `Did I get that right — ${spoken}?`,
+  (spoken) => `${spoken}, yes?`,
+];
+
+const IDENTIFIER_READBACKS: readonly ((spoken: string) => string)[] = [
+  (spoken) => `Let me read that back — ${spoken}. Is that right?`,
+  (spoken) => `So that's ${spoken} — right?`,
+  (spoken) => `I've got ${spoken}. Is that right?`,
+  (spoken) => `${spoken} — did I get that right?`,
+];
+
+const PLAIN_READBACKS: readonly ((spoken: string) => string)[] = [
+  (spoken) => `${spoken} — is that right?`,
+  (spoken) => `${spoken}, yes?`,
+  (spoken) => `So, ${spoken} — right?`,
+];
+
+const AGAIN_READBACKS: readonly ((spoken: string) => string)[] = [
+  (spoken) => `Sorry — ${spoken}. Is that right?`,
+  (spoken) => `Once more — ${spoken}, right?`,
+  (spoken) => `Let me try again: ${spoken}?`,
+];
+
+/** A small stable hash, so the same value lands on the same line and different ones spread. */
+const pickBy = <T>(pool: readonly T[], seed: string): T => {
+  let hash = 0;
+  for (const char of seed) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  const chosen = pool[hash % pool.length];
+  if (chosen === undefined) throw new Error("a readback pool is empty");
+  return chosen;
+};
+
 const readback = (
   value: string,
   subject: EntityKind,
@@ -904,15 +967,11 @@ const readback = (
   const policy = ENTITY_POLICY[subject];
   const spoken = policy.say(value, atMs);
 
-  if (attempt > 1) {
-    // Second time of asking. Shorter, and it acknowledges that it is the second time.
-    return forSpeech(`Sorry — ${spoken}. Is that right?`);
-  }
-  if (subject === "name") return forSpeech(`${spoken} — have I got that right?`);
-  if (policy.risk === "identifier") {
-    return forSpeech(`Let me read that back — ${spoken}. Is that right?`);
-  }
-  return forSpeech(`${spoken} — is that right?`);
+  // Second time of asking. Shorter, and it acknowledges that it is the second time.
+  if (attempt > 1) return forSpeech(pickBy(AGAIN_READBACKS, `${value}:${attempt}`)(spoken));
+  if (subject === "name") return forSpeech(pickBy(NAME_READBACKS, value)(spoken));
+  if (policy.risk === "identifier") return forSpeech(pickBy(IDENTIFIER_READBACKS, value)(spoken));
+  return forSpeech(pickBy(PLAIN_READBACKS, value)(spoken));
 };
 
 /**
@@ -926,17 +985,24 @@ const spellPromptFor = (attempt: number, subject: EntityKind): string => {
   // whole address letter by letter, "G, M, A, I, L", is what makes callers give up.
   const what = subject === "email" ? "the part before the at" : "it";
   return attempt <= 0
-    ? forSpeech(`Sorry about that. Could you spell ${what} for me?`)
+    ? forSpeech(`Sorry — could you spell ${what} for me?`)
     // B, C, D, E, G, P, T, V, Z and J all rhyme, and 8kHz strips the high-frequency
     // detail that separates them, so bare letters are what this channel is worst at. A
     // word per letter replaces a one-phoneme distinction with a whole-word one.
     : forSpeech("Take it slowly for me — a word for each letter, like A for Abuja.");
 };
 
-const keypadPrompt = forSpeech("Could you type it on your keypad, then press hash?");
+const keypadPrompt = forSpeech("Could you type it on your keypad for me, then press hash?");
 
 /** Asking again after a rejection. Short, because they already know what we want. */
-const retryPrompt = forSpeech("Sorry — once more, slowly?");
+/**
+ * When the caller said no and gave nothing to replace it with.
+ *
+ * "Once more, slowly?" asked them to say the whole thing again, and they may have only
+ * disagreed with one digit. Asking what it should be lets them give the part that was
+ * wrong, and `reparse` takes a whole value or a corrected one alike.
+ */
+const retryPrompt = forSpeech("Sorry — what should it be?");
 
 const escalation = forSpeech("Let me get a colleague for you.");
 

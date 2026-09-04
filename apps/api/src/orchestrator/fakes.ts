@@ -103,7 +103,7 @@ export interface FakeListen {
    */
   speechStart(offsetMs: number): void;
   endOfTurn(offsetMs: number): void;
-  final(text: string, offsetMs?: number): void;
+  final(text: string, offsetMs?: number, confidence?: number | null): void;
   interim(text: string, offsetMs?: number): void;
   /** The connection died. The agent is now deaf. */
   failWith(reason: string): void;
@@ -113,7 +113,7 @@ export interface FakeListen {
 
 export const fakeListen = (): FakeListen => {
   const written: AudioChunk[] = [];
-  const interimL: ((t: { text: string; words: []; confidence: null; offsetMs: number }) => void)[] = [];
+  const interimL: ((t: { text: string; words: []; confidence: number | null; offsetMs: number }) => void)[] = [];
   const finalL: typeof interimL = [];
   const startL: ((e: { offsetMs: number }) => void)[] = [];
   const eotL: typeof startL = [];
@@ -127,8 +127,8 @@ export const fakeListen = (): FakeListen => {
     closed: false,
     speechStart: (offsetMs) => startL.forEach((l) => l({ offsetMs })),
     endOfTurn: (offsetMs) => eotL.forEach((l) => l({ offsetMs })),
-    final: (text, offsetMs = 0) =>
-      finalL.forEach((l) => l({ text, words: [], confidence: null, offsetMs })),
+    final: (text, offsetMs = 0, confidence = null) =>
+      finalL.forEach((l) => l({ text, words: [], confidence, offsetMs })),
     interim: (text, offsetMs = 0) =>
       interimL.forEach((l) => l({ text, words: [], confidence: null, offsetMs })),
     failWith: (reason) => failureL.forEach((l) => l(reason)),

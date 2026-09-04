@@ -37,13 +37,24 @@ const SCALES: Readonly<Record<string, number>> = {
  * "Forty-five K" is how a Nigerian quotes a premium out loud at least as often as
  * "forty-five thousand", and "45k" is how a transcriber renders it.
  */
+/**
+ * "2k", "250k", "1.5m": the way a Nigerian quotes money in a text message and, since
+ * transcribers write what they would type, in a transcript. "k" is thousand and "m" is
+ * million; "b" is deliberately absent, because "5b" is a bus stop as often as it is money.
+ */
 const K_SUFFIX = /^(\d+(?:\.\d+)?)k$/;
+const M_SUFFIX = /^(\d+(?:\.\d+)?)m$/;
 
-/** Words that sit inside a number without contributing one. */
-const BRIDGES = ["and", "point"];
+/**
+ * "Half a million", "a quarter of a million". A fraction word in front of a scale word
+ * is the scale multiplied down, and "a" between them is noise.
+ */
+const FRACTIONS: Readonly<Record<string, number>> = { half: 0.5, quarter: 0.25 };
+
+const BRIDGES = ["and", "point", "a", "an", "of"];
 
 const isNumberWord = (token: string): boolean =>
-  token in UNITS || token in TENS || token in SCALES || token === "k";
+  token in UNITS || token in TENS || token in SCALES || token in FRACTIONS || token === "k" || token === "m";
 
 const tokenize = (text: string): string[] =>
   text
@@ -62,7 +73,11 @@ const isNumeric = (token: string): boolean => /^\d+(?:\.\d+)?$/.test(token);
  * started, or every conjunction in the sentence would look like the middle of a number.
  */
 const continuesRun = (token: string, started: boolean): boolean =>
-  isNumeric(token) || isNumberWord(token) || K_SUFFIX.test(token) || (started && BRIDGES.includes(token));
+  isNumeric(token) ||
+  isNumberWord(token) ||
+  K_SUFFIX.test(token) ||
+  M_SUFFIX.test(token) ||
+  (started && BRIDGES.includes(token));
 
 /**
  * One run of number tokens, accumulated the way the words compose.
@@ -70,11 +85,19 @@ const continuesRun = (token: string, started: boolean): boolean =>
  * "two million five hundred thousand" is 2,500,000 and not 2,000,000 + 500 + 1000, so
  * scale words multiply what is pending rather than adding to a total.
  */
+/** Whether anything numeric was actually folded, so a stray "half" is not read as zero. */
+const seenScaleOrDigits = (total: number, current: number): boolean => total !== 0 || current !== 0;
+
 const foldRun = (tokens: readonly string[]): number | null => {
   let total = 0;
   let current = 0;
   let seen = false;
   let fraction: string | null = null;
+
+  /** "Half" or "quarter" waiting for its scale word. */
+  let fractionOf: number | null = null;
+  /** The last thing folded was a lone unit digit, so a tens word next is "two fifty". */
+  let loneDigit = false;
 
   for (const token of tokens) {
     if (fraction !== null) {
@@ -83,38 +106,83 @@ const foldRun = (tokens: readonly string[]): number | null => {
       if (isNumeric(token)) { fraction += token; continue; }
       const unit = UNITS[token];
       if (unit !== undefined && unit < 10) { fraction += String(unit); continue; }
+      /* "One point five million". The decimal is finished and a scale word follows, so
+         the whole decimal is what gets scaled — the reading that was returning 1.5 for a
+         million and a half, which on a naira amount is the worst mistake this file can
+         make. Only "thousand" and up: "one point five hundred" is not a number anybody
+         says. */
+      const scale = SCALES[token];
+      if (scale !== undefined && scale >= 1_000) {
+        // The decimal is the whole pending number — "one point five" — scaled as one value.
+        total = Math.round(Number(`${total + current}.${fraction}`) * scale);
+        current = 0;
+        fraction = null;
+        loneDigit = false;
+        continue;
+      }
       break;
     }
 
     if (token === "point") {
       if (!seen) return null;
       fraction = "";
+      loneDigit = false;
       continue;
     }
-    if (token === "and") continue;
+    if (token === "and" || token === "a" || token === "an" || token === "of") continue;
+
+    const fractionWord = FRACTIONS[token];
+    if (fractionWord !== undefined) {
+      fractionOf = fractionWord;
+      seen = true;
+      continue;
+    }
 
     const kMatch = K_SUFFIX.exec(token);
     if (kMatch !== null) {
       total += Number(kMatch[1]) * 1000;
       seen = true;
+      loneDigit = false;
       continue;
     }
-    if (token === "k") {
+    const mMatch = M_SUFFIX.exec(token);
+    if (mMatch !== null) {
+      total += Number(mMatch[1]) * 1_000_000;
+      seen = true;
+      loneDigit = false;
+      continue;
+    }
+    if (token === "k" || token === "m") {
       // A bare "k" scales whatever is pending: "forty five k" is forty-five thousand.
+      // A bare "m" the same, for a million: "one point five m".
       if (!seen || current === 0) return seen ? total : null;
-      total += current * 1000;
+      total += current * (token === "k" ? 1000 : 1_000_000);
       current = 0;
+      loneDigit = false;
       continue;
     }
 
     if (isNumeric(token)) {
       current += Number(token);
       seen = true;
+      loneDigit = false;
       continue;
     }
 
-    const unit = UNITS[token] ?? TENS[token];
+    const tens = TENS[token];
+    if (tens !== undefined && loneDigit && current >= 1 && current <= 9) {
+      /* "Two fifty", "three twenty", "one eighty": a lone digit straight into a tens word
+         is a hundreds count, the way prices are said here — two-fifty is two hundred and
+         fifty, never fifty-two. Only a single digit, and only into tens: "twenty five" is
+         tens then units and folds as it always did. */
+      current = current * 100 + tens;
+      loneDigit = false;
+      continue;
+    }
+
+    const unit = UNITS[token] ?? tens;
     if (unit !== undefined) {
+      loneDigit = current === 0 && unit >= 1 && unit <= 9;
       current += unit;
       seen = true;
       continue;
@@ -123,6 +191,14 @@ const foldRun = (tokens: readonly string[]): number | null => {
     const scale = SCALES[token];
     if (scale === undefined) continue;
     seen = true;
+    loneDigit = false;
+    if (fractionOf !== null) {
+      // "Half a million": the fraction of the scale, closed off like any scale.
+      total += fractionOf * scale;
+      fractionOf = null;
+      current = 0;
+      continue;
+    }
     if (scale === 100) {
       // "hundred" multiplies only what is immediately pending: "five hundred" is 500,
       // and "two thousand five hundred" leaves the two thousand alone.
@@ -134,6 +210,9 @@ const foldRun = (tokens: readonly string[]): number | null => {
     total += (current === 0 ? 1 : current) * scale;
     current = 0;
   }
+
+  // A fraction word with no scale after it — "half" on its own — is not a number here.
+  if (fractionOf !== null && !seenScaleOrDigits(total, current)) return null;
 
   if (!seen) return null;
   const whole = total + current;

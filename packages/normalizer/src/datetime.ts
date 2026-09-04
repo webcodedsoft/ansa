@@ -411,8 +411,37 @@ export const parseSpokenTime = (text: string): string | null => {
     return `${pad(hour % 24)}:${pad(minutes)}`;
   }
 
+  /* "By two", "at two", "for two", "around two", "2pm": a bare hour after the word that
+     puts it on the clock. "By" is the Nigerian one — "I'll call by two" is at two, not
+     before it — and the others are how everybody says an appointment. A bare hour with no
+     such word is left alone: "I have two" is a count, and treating it as a time is how a
+     caller with two policies gets booked in for the afternoon. */
+  for (let i = 0; i < tokens.length; i += 1) {
+    const marker = tokens[i] ?? "";
+    if (!ON_THE_CLOCK.has(marker)) continue;
+    const next = tokens[i + 1] ?? "";
+    const withMeridiem = /^(\d{1,2})(am|pm)$/.exec(next);
+    const token = withMeridiem === null ? next : (withMeridiem[1] ?? "");
+    const rawHour = /^\d{1,2}$/.test(token) ? Number(token) : HOUR_WORDS[token];
+    if (rawHour === undefined || rawHour > 23) continue;
+    const meridiemText = withMeridiem === null ? lower : `${lower} ${withMeridiem[2] ?? ""}`;
+    const hour = rawHour > 12 ? rawHour : applyMeridiem(rawHour, meridiemText);
+    return `${pad(hour % 24)}:00`;
+  }
+  // "2pm" on its own carries its own clock word.
+  const bareMeridiem = /\b(\d{1,2})\s?(am|pm)\b/.exec(lower);
+  if (bareMeridiem !== null) {
+    const rawHour = Number(bareMeridiem[1]);
+    if (rawHour >= 1 && rawHour <= 12) {
+      return `${pad(applyMeridiem(rawHour, `${lower} ${bareMeridiem[2] ?? ""}`) % 24)}:00`;
+    }
+  }
+
   return null;
 };
+
+/** The words that put the number after them on the clock. */
+const ON_THE_CLOCK: ReadonlySet<string> = new Set(["by", "at", "for", "around", "about", "before", "after", "till", "until"]);
 
 const partOfDay = (hour: number): string =>
   hour < 12 ? "in the morning" : hour < 17 ? "in the afternoon" : "in the evening";

@@ -91,7 +91,34 @@ const NIGERIAN_GIVEN_NAMES: readonly string[] = [
  * `mergedKeyterms` puts these first on purpose: when the list has to be cut it is the
  * terms that fail on *every* call that must survive, and a caller's name is exactly that.
  */
-export const BASE_KEYTERMS: readonly string[] = ["Ansa", "naira", ...NIGERIAN_GIVEN_NAMES];
+/**
+ * The places and words a Nigerian caller says on any call, whatever the business.
+ *
+ * The same argument as the names, one level out: an individual address is unknown, but the
+ * set of places callers name is a knowable vocabulary, and a transcriber that has never
+ * been told "Lekki" returns "lucky". Kept to the places that recur across organisations —
+ * the biggest cities and the Lagos areas a caller gives as a landmark — and the handful of
+ * Pidgin words English models hear as something else. An organisation's own places go in
+ * its own keyterms, where it can spend its share of the cap on them.
+ *
+ * `Oga`, `Madam` and `Aunty` are here because they are how a caller addresses the agent,
+ * and a mangled honorific in the transcript costs the model the register it is meant to
+ * answer in. `Sir` and `Ma` are English and need no help.
+ */
+const NIGERIAN_PLACES_AND_WORDS: readonly string[] = [
+  "Lagos", "Abuja", "Ikeja", "Lekki", "Ikoyi", "Ajah", "Yaba", "Surulere", "Ibadan",
+  "Port Harcourt", "Kano", "Enugu",
+  "Oga", "Madam", "Aunty",
+  "wahala", "abeg", "oya",
+];
+
+export const BASE_KEYTERMS: readonly string[] = [
+  "Ansa",
+  "naira",
+  ...NIGERIAN_GIVEN_NAMES,
+  ...NIGERIAN_PLACES_AND_WORDS,
+];
+
 
 /**
  * Deepgram accepts a bounded keyterm list. The cap is enforced here rather than
@@ -99,3 +126,11 @@ export const BASE_KEYTERMS: readonly string[] = ["Ansa", "naira", ...NIGERIAN_GI
  * exactly like a transcriber that simply mishears the word.
  */
 export const MAX_KEYTERMS = 100;
+
+/**
+ * What is left of the cap for an organisation's own vocabulary.
+ *
+ * Asserted by a test, because the base list is a standing charge against every
+ * organisation's budget and the only thing that stops it growing is somebody noticing.
+ */
+export const KEYTERMS_LEFT_FOR_ORGANISATIONS = MAX_KEYTERMS - BASE_KEYTERMS.length;

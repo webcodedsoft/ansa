@@ -288,3 +288,60 @@ describe("dictated values degrade rather than mangle", () => {
     expect(sayDigits("KR7392")).toBe("K R seven, three nine two");
   });
 });
+
+/**
+ * Money the way a Nigerian says it, and three bugs found by saying it.
+ *
+ * "One point five million" was reading as one and a half naira, "two fifty k" as
+ * fifty-two thousand, and "half a million" as a full one. Every one of those would have
+ * been read back with confidence, and a caller who hears their own amount said back at
+ * a thousandth of its size does not always notice.
+ */
+describe("amounts as spoken here", () => {
+  it.each([
+    ["one point five million naira", 1_500_000],
+    ["one point two five million naira", 1_250_000],
+    ["two fifty k naira", 250_000],
+    ["three twenty naira", 320],
+    ["twenty five thousand naira", 25_000],
+    ["twenty five k naira", 25_000],
+    ["half a million naira", 500_000],
+    ["a quarter of a million naira", 250_000],
+    ["2k naira", 2_000],
+    ["250k naira", 250_000],
+    ["1.5m naira", 1_500_000],
+    ["two thousand five hundred naira", 2_500],
+    ["five hundred thousand naira", 500_000],
+  ])("%s → %d", (said, naira) => {
+    expect(parseSpokenAmount(said)).toBe(naira);
+  });
+
+  it("still folds tens then units the ordinary way, and a count is still a count", () => {
+    expect(parseSpokenNumber("twenty five")).toBe(25);
+    expect(parseSpokenNumber("I have three policies")).toBe(3);
+    expect(parseSpokenNumber("half")).toBeNull();
+  });
+});
+
+/**
+ * "By two" is at two. Not before two — that is what "by" means in London and not what it
+ * means in Lagos, where "I'll call you by two" is an appointment.
+ */
+describe("a bare hour after a clock word", () => {
+  it.each([
+    ["I'll call by two", "14:00"],
+    ["at two", "14:00"],
+    ["around nine", "09:00"],
+    ["by nine in the morning", "09:00"],
+    ["2pm", "14:00"],
+    ["by 2 pm", "14:00"],
+    ["before six", "18:00"],
+  ])("%s → %s", (said, time) => {
+    expect(parseSpokenTime(said)).toBe(time);
+  });
+
+  it("leaves a bare number that is not on the clock alone", () => {
+    expect(parseSpokenTime("I have two policies")).toBeNull();
+    expect(parseSpokenTime("give me two")).toBeNull();
+  });
+});
