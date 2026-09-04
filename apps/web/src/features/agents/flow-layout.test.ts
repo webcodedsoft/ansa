@@ -155,7 +155,7 @@ describe("grouping the drawing into lanes", () => {
     expect(laneGroups(forked())).toEqual([
       { id: "opening", label: "everyone gets this", ids: ["start", "ask", "fork"] },
       { id: "rent1", label: "rent", ids: ["rent1", "rent2"], fork: "fork", head: "rent1" },
-      { id: "buy1", label: "anything else", ids: ["buy1"], fork: "fork", head: "buy1" },
+      { id: "buy1", label: "anything else", ids: ["buy1"], fork: "fork", head: "buy1", catchAll: true },
     ]);
   });
 
@@ -451,6 +451,32 @@ describe("moving steps and services", () => {
 
     const catchAll = laneGroups(base).find((lane) => lane.label === "anything else");
     expect(removeService(base, catchAll ?? rent)).toBe(base);
+  });
+
+  it("names the catch-all by the one option the named branches leave uncovered, and renames that option", () => {
+    /* A template's "rent or buy" draws buy as the catch-all so the fork can publish. On the
+       canvas that lane is still the buy service, and it must say so and be renameable. */
+    const base: Flow = {
+      ...withChoice(),
+      nodes: withChoice().nodes.map((n) => (n.id === "ask" && n.field !== undefined ? { ...n, field: { ...n.field, options: ["rent", "buy"] } } : n)),
+    };
+    const lanes = laneGroups(base);
+    expect(lanes.map((lane) => lane.label)).toEqual(["everyone gets this", "rent", "buy"]);
+    const buy = lanes[2];
+    expect(buy?.catchAll).toBe(true);
+    if (buy === undefined) throw new Error("no buy lane");
+
+    const renamed = renameService(base, buy, "purchase");
+    expect(renamed.nodes.find((n) => n.id === "ask")?.field?.options).toEqual(["rent", "purchase"]);
+    expect(renamed.edges.find((e) => e.to === "buy1")).toEqual({ from: "fork", to: "buy1", otherwise: true });
+    expect(laneGroups(renamed).map((lane) => lane.label)).toEqual(["everyone gets this", "rent", "purchase"]);
+    expect(renameService(base, buy, "rent")).toBe(base);
+
+    // With two options uncovered there is no one name to give it.
+    const wide: Flow = { ...base, nodes: base.nodes.map((n) => (n.id === "ask" && n.field !== undefined ? { ...n, field: { ...n.field, options: ["rent", "buy", "let"] } } : n)) };
+    expect(laneGroups(wide)[2]?.label).toBe("anything else");
+    // And an empty catch-all lane is keyed by that name, the way a named one is.
+    expect(removeService(base, buy)).toBe(base);
   });
 
   it("renames a service on the branch and on the choice together, and refuses a taken name", () => {

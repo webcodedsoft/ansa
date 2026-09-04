@@ -35,7 +35,7 @@ import { cn } from "@/lib/cn";
 import { validateFlow } from "@ansa/shared/flow-validate";
 
 import {
-  addService, appendToLane, foldedAway, freshServiceName, insertAfter, LANE_HEAD, laneFrames, laneGroups, LEFT, movable, moveAfter,
+  addService, appendToLane, branchEdgeOf, foldedAway, freshServiceName, insertAfter, LANE_HEAD, laneFrames, laneGroups, LEFT, movable, moveAfter,
   moveToLane, moveToNewService, removeService, renameService, reorderService, sameShape, tidied, TOP, type Lane,
 } from "../flow-layout";
 
@@ -448,10 +448,6 @@ const elbow = (p1: Point, p2: Point, busY: number): string => {
   ].join(" ");
 };
 
-/** The answer a fork's edge carries, worded the way the lanes are. */
-const branchLabel = (edge: FlowEdge): string =>
-  edge.otherwise === true ? "anything else" : edge.when !== undefined && "equals" in edge.when ? edge.when.equals : (edge.port ?? "next");
-
 /**
  * Where the `at`-th of `count` ports sits along a card's bottom edge, as a fraction of its
  * width.
@@ -684,8 +680,6 @@ export const FlowCanvas = ({
    * re-renders on crossing a target and not on every pixel.
    */
   const [drag, setDrag] = useState<{ readonly source: DragSource; readonly target: DropTarget | null } | null>(null);
-  /** The lane whose name is being typed over, by lane id. */
-  const [renaming, setRenaming] = useState<string | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -853,7 +847,7 @@ export const FlowCanvas = ({
     /* The branch of a service with nothing in it points past the service at the shared
        close. Drawn that way the empty lane would hang off nothing, so the link is drawn in
        two: into the top of the empty box, and on from its bottom to where it was going. */
-    const emptyLane = from.id === laneFork ? lanes.find((lane) => lane.ids.length === 0 && lane.head === to.id && lane.label === branchLabel(edge)) : undefined;
+    const emptyLane = from.id === laneFork ? lanes.find((lane) => lane.ids.length === 0 && branchEdgeOf(history.present, lane) === edge) : undefined;
     const frame = emptyLane === undefined ? undefined : frames.find((one) => one.id === emptyLane.id);
     if (frame !== undefined) {
       const x = frame.left + frame.width / 2;
@@ -1613,13 +1607,16 @@ export const FlowCanvas = ({
             {laneBoxes.map((lane) => {
               const group = lanes.find((one) => one.id === lane.id);
               const isService = lane.id !== "opening" && group !== undefined;
-              const catchAll = lane.label === "anything else";
+              const catchAll = group?.catchAll === true;
+              /* A catch-all standing in for the one uncovered option has that option's name
+                 and can be renamed; one standing for nothing in particular has no name. */
+              const nameless = catchAll && lane.label === "anything else";
               return (
               <div
                 key={lane.id}
                 data-lane={lane.id}
                 aria-hidden={lane.id === "opening"}
-                {...(isService && !lane.folded && renaming !== lane.id ? draggable({ lane: group }) : {})}
+                {...(isService && !lane.folded ? draggable({ lane: group }) : {})}
                 className={cn(
                   "absolute rounded-[7px] border bg-[var(--surface)] transition-colors",
                   /* A service is picked up by any part of its box — the cards on top take
@@ -1654,14 +1651,24 @@ export const FlowCanvas = ({
                   )}
                   style={{ height: LANE_HEAD - 6, marginTop: 2 }}
                 >
-                  {/* The name, typed over in place: a double-click on a service's name edits
-                      it, and the branch and the choice's option change together. The
-                      catch-all has no name to edit — it is whatever the others are not. */}
-                  {renaming === lane.id && group !== undefined ? (
+                  {/* The name, edited where it is read, the way a card's question is: click
+                      and type, and the branch and the choice's option change together on
+                      Enter or on leaving the field. It was a double-click on a label before,
+                      and that never fired — the box captures the pointer on press, so the
+                      browser aims the click at the box and the label never hears it. Keyed by
+                      the name so a refused rename (empty, or taken) snaps back to what stands.
+                      The catch-all is not a name: it is whatever the caller says that is not
+                      one of the others, and the label says so rather than pretending. */}
+                  {isService && !nameless && !lane.folded ? (
                     <input
-                      autoFocus
+                      key={lane.label}
                       defaultValue={lane.label}
                       aria-label="Service name"
+                      title={
+                        catchAll
+                          ? "The answer that brings a caller here — and where the call goes when the answer is none of the others. Click to rename."
+                          : "The answer that brings a caller here. Click to rename."
+                      }
                       onPointerDown={(e) => e.stopPropagation()}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") e.currentTarget.blur();
@@ -1672,18 +1679,15 @@ export const FlowCanvas = ({
                       }}
                       onBlur={(e) => {
                         const name = e.currentTarget.value;
-                        setRenaming(null);
+                        if (name.trim() === lane.label) return;
                         edit((f) => renameService(f, group, name));
                       }}
-                      className="min-w-0 flex-1 border-0 bg-transparent p-0 font-mono text-[9.5px] tracking-[0.06em] text-[var(--ink)] focus:outline-none"
+                      className="min-w-0 flex-1 cursor-text truncate rounded-[3px] border-0 bg-transparent px-0.5 py-0 font-mono text-[9.5px] tracking-[0.06em] text-inherit hover:bg-[var(--surface-2)] focus:bg-[var(--surface-2)] focus:text-[var(--ink)] focus:outline-none"
                     />
                   ) : (
                     <span
                       className="min-w-0 flex-1 truncate"
-                      title={isService && !catchAll ? "Double-click to rename" : undefined}
-                      onDoubleClick={() => {
-                        if (isService && !catchAll) setRenaming(lane.id);
-                      }}
+                      title={nameless ? "Whatever the caller says that is not one of the other services. It has no name of its own." : undefined}
                     >
                       {lane.label}
                     </span>

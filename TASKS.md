@@ -4050,6 +4050,17 @@ beneath it, so adding a service widened the opening — which read as the openin
 only the fork below it had. It hugs its own column now, like every other lane; the fan leaves
 the fork's dots and runs along the gap, and never needed the wide box.
 
+**Naming a service (2026-09-04, late).** "User can not name service." Two causes. The rename
+was a double-click on the label, and a double-click there never fires: the box captures the
+pointer on press, so the browser aims the click at the box and the label never hears it. The
+name is a text field now, edited where it is read like a card's question — click, type,
+Enter. And the template's "buy" arm is drawn as the catch-all so the fork can publish, which
+made the buy service read "anything else" on the canvas. A catch-all now carries the one
+option the named branches leave uncovered when there is exactly one (`Lane.catchAll`), and
+renaming it renames that option while the branch — which matches nothing by name — stays as
+it is. A catch-all standing for nothing in particular still says "anything else", and says why
+on hover.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and

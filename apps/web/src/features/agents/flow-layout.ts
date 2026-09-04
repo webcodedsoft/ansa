@@ -255,6 +255,13 @@ export interface Lane {
   /** The fork this lane is a branch of, and the step the branch points at. Absent on the opening. */
   readonly fork?: string;
   readonly head?: string;
+  /**
+   * The branch the call takes when the answer is none of the named ones. Labelled by the one
+   * option the named branches leave uncovered when there is exactly one — a template's
+   * "rent or buy" draws buy as the catch-all, and the lane should still say buy — and
+   * "anything else" otherwise.
+   */
+  readonly catchAll?: true;
 }
 
 /**
@@ -282,21 +289,32 @@ export const laneGroups = (flow: Flow): readonly Lane[] => {
     .map((node) => node.id);
 
   const lanes: Lane[] = [{ id: "opening", label: "everyone gets this", ids: opening }];
+  const named = new Set(flow.edges.filter((edge) => edge.from === fork.id && edge.when !== undefined && "equals" in edge.when).map((edge) => (edge.when as { equals: string }).equals));
+  const uncovered = (choiceOf(flow, fork)?.options ?? []).filter((option) => !named.has(option));
   for (const branch of branchHeads(flow, fork)) {
     /* A branch that leads straight to a step other branches also reach — the close, say —
        has no steps of its own. The lane still exists, because the service does: the option
        is on the choice and the fork takes it. It is drawn empty, and keyed by its answer
        since its head is somebody else's. */
     const owned = !reachableWithout({ ...flow, edges: flow.edges.filter((edge) => edge !== branch.edge) }, new Set()).has(branch.to);
+    const catchAll = branch.edge.otherwise === true;
+    const label = catchAll && uncovered.length === 1 ? (uncovered[0] ?? branch.label) : branch.label;
     lanes.push({
-      id: owned ? branch.to : `via:${branch.label}`,
-      label: branch.label,
+      id: owned ? branch.to : `via:${label}`,
+      label,
       ids: owned ? [branch.to, ...onlyReachableThrough(flow, branch.to)] : [],
       fork: fork.id,
       head: branch.to,
+      ...(catchAll ? { catchAll: true as const } : {}),
     });
   }
   return lanes;
+};
+
+/** The choice a fork reads, when it is one: the `collect` step whose field the fork is on. */
+const choiceOf = (flow: Flow, fork: FlowNode) => {
+  const field = flow.nodes.find((n) => n.kind === "collect" && n.field !== undefined && n.field.key === fork.on)?.field;
+  return field !== undefined && field.type === "choice" ? field : undefined;
 };
 
 /** The branch heads: every step a `decide` leads to, labelled by the answer that gets there. */
@@ -410,7 +428,7 @@ export const branchEdgeOf = (flow: Flow, lane: Lane): FlowEdge | undefined =>
     (edge) =>
       edge.from === lane.fork &&
       edge.to === lane.head &&
-      (lane.label === "anything else" ? edge.otherwise === true : edge.when !== undefined && "equals" in edge.when && edge.when.equals === lane.label),
+      (lane.catchAll === true ? edge.otherwise === true : edge.when !== undefined && "equals" in edge.when && edge.when.equals === lane.label),
   );
 
 /**
@@ -569,17 +587,25 @@ export const removeService = (flow: Flow, lane: Lane): Flow => {
 export const renameService = (flow: Flow, lane: Lane, name: string): Flow => {
   const trimmed = name.trim();
   const branch = branchEdgeOf(flow, lane);
-  if (branch === undefined || branch.otherwise === true || trimmed === "" || trimmed === lane.label) return flow;
+  if (branch === undefined || trimmed === "" || trimmed === lane.label) return flow;
   const fork = flow.nodes.find((n) => n.id === lane.fork);
-  const taken = flow.edges.some((edge) => edge.from === lane.fork && edge.when !== undefined && "equals" in edge.when && edge.when.equals === trimmed);
-  if (fork === undefined || taken) return flow;
+  if (fork === undefined) return flow;
+  const field = choiceOf(flow, fork);
+  const taken =
+    flow.edges.some((edge) => edge.from === lane.fork && edge.when !== undefined && "equals" in edge.when && edge.when.equals === trimmed) ||
+    (field?.options ?? []).includes(trimmed);
+  if (taken) return flow;
+  /* The catch-all has a name only when one option is left uncovered and it stands in for it;
+     renaming it renames that option, and the branch — which matches nothing by name — is
+     untouched. With no such option there is nothing to rename. */
+  if (lane.catchAll === true && (field === undefined || !field.options.includes(lane.label))) return flow;
   return {
     ...flow,
     nodes: flow.nodes.map((node) => {
       if (node.kind !== "collect" || node.field === undefined || node.field.key !== fork.on || node.field.type !== "choice") return node;
       return { ...node, field: { ...node.field, options: node.field.options.map((option) => (option === lane.label ? trimmed : option)) } };
     }),
-    edges: flow.edges.map((edge) => (edge === branch ? { ...edge, when: { equals: trimmed } } : edge)),
+    edges: lane.catchAll === true ? flow.edges : flow.edges.map((edge) => (edge === branch ? { ...edge, when: { equals: trimmed } } : edge)),
   };
 };
 
