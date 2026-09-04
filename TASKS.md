@@ -3938,6 +3938,22 @@ or not, because they carry the fields Save and Publish submit. `onChooseStep` ex
 without it a click on a card highlighted the card and left the voice on screen, which reads
 as broken.
 
+**Lanes, and the canvas matches the Studio drawing (2026-09-04).** `laneGroups` in
+`flow-layout.ts` reads the groups off the graph rather than being told them: everything at or
+above the first fork is asked of everybody, and everything only one branch can reach belongs
+to that branch. A shared closing line two arms meet at belongs to neither and sits outside
+every lane; a fork *inside* a service stays inside that service's lane rather than splitting
+the top level into something the business does not have; a call that never forks gets no lanes
+at all, because a box round a straight line labels nothing. The canvas draws each as a dashed
+box with its name and step count — red with a problem count when a step inside it blocks
+publishing — measured from the cards themselves, since a card grows with the words in it and
+a guessed height clips what the box is meant to contain. The label sits at the box's right
+edge: a lane whose first card is directly under the fork has only the row gap above it, and
+the link's own label ("is rent") already lives there. The palette gained the "Add a step"
+heading and the "Always first · Call answered" row from the drawing — a label, not a button,
+since the gate refuses a second start. The drawing itself was corrected where it had gone
+stale: it still showed a Tidy up button that no longer exists.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and

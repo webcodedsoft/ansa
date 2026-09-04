@@ -29,7 +29,7 @@ import { cn } from "@/lib/cn";
    console would eventually tell somebody their graph was fine while the API refused it. */
 import { validateFlow } from "@ansa/shared/flow-validate";
 
-import { branchHeads, foldedAway, foldedCount, sameShape, tidied, TOP } from "../flow-layout";
+import { branchHeads, foldedAway, foldedCount, laneGroups, sameShape, tidied, TOP } from "../flow-layout";
 
 import {
   FLOW_FIELD_TYPES,
@@ -524,6 +524,7 @@ export const FlowCanvas = ({
   const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const portRefs = useRef(new Map<string, HTMLSpanElement>());
+  const cardRefs = useRef(new Map<string, HTMLDivElement>());
   const wireRef = useRef<{ from: string; port: Port } | null>(null);
   const panRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
   const coalescing = useRef<string | null>(null);
@@ -854,6 +855,37 @@ export const FlowCanvas = ({
     return worst;
   }, [problems]);
 
+  /**
+   * The labelled boxes behind the cards: the shared opening, then one per service.
+   *
+   * Read from the DOM for height the same way the links read the ports — a card grows with
+   * the words in it, and a box drawn to a guessed height clips the card it is meant to
+   * contain. One render stale is fine and is what the links already accept.
+   */
+  const laneBoxes = laneGroups(history.present)
+    .map((lane) => {
+      const cards = lane.ids
+        .filter((id) => !hidden.has(id))
+        .map((id) => byId(id))
+        .filter((node): node is FlowNode => node !== undefined);
+      if (cards.length === 0) return null;
+      const bottom = Math.max(...cards.map((n) => n.y + (cardRefs.current.get(n.id)?.offsetHeight ?? 132)));
+      return {
+        id: lane.id,
+        label: lane.label,
+        steps: cards.length,
+        broken: cards.filter((n) => marked.get(n.id) === "blocks").length,
+        left: Math.min(...cards.map((n) => n.x)) - 13,
+        /* Clear of the link labels. A lane starts a good way above its first card because
+           the words on the link that reaches it — "is rent", "otherwise" — are drawn in the
+           gap between the fork and that card, and two captions in one band read as neither. */
+        top: Math.min(...cards.map((n) => n.y)) - 34,
+        width: Math.max(...cards.map((n) => n.x + NODE_W)) - Math.min(...cards.map((n) => n.x)) + 26,
+        height: bottom - Math.min(...cards.map((n) => n.y)) + 47,
+      };
+    })
+    .filter((lane): lane is NonNullable<typeof lane> => lane !== null);
+
   const selectedNode = selected === null ? null : (byId(selected) ?? null);
   const branches = selectedNode === null ? [] : edges.filter(conditional(selectedNode.id));
   const waiting = selectedNode === null ? [] : (pending[selectedNode.id] ?? []);
@@ -886,6 +918,9 @@ export const FlowCanvas = ({
 
       <div className="hidden items-start gap-3.5 sm:grid lg:grid-cols-[186px_minmax(0,1fr)_280px]">
         <div className="surface flex flex-col gap-0.5 rounded-xl p-2.5">
+          <h5 className="mt-0.5 mb-1.5 ml-1.5 font-mono text-[9.5px] tracking-[0.14em] text-[var(--ink-3)] uppercase">
+            Add a step
+          </h5>
           {PALETTE.map((group) => (
             <div key={group.group}>
               <h6 className="mt-1 mb-1 ml-1.5 font-mono text-[9.5px] tracking-[0.13em] text-[var(--ink-3)] uppercase">
@@ -904,6 +939,18 @@ export const FlowCanvas = ({
               ))}
             </div>
           ))}
+          {/* Named but not offered. Every call starts one way and the publish gate refuses a
+              second start, so a button here would be a button whose only outcome is a refusal
+              — this says the step exists and that it is already on the drawing. */}
+          <div>
+            <h6 className="mt-1 mb-1 ml-1.5 font-mono text-[9.5px] tracking-[0.13em] text-[var(--ink-3)] uppercase">
+              Always first
+            </h6>
+            <p className="flex w-full items-center gap-2 rounded-lg px-2.5 py-[7px] text-[12.5px] text-[var(--ink-3)]">
+              <KindIcon kind="start" />
+              {NODE_KINDS.start.title}
+            </p>
+          </div>
         </div>
 
         {/* One grid cell for the drawing and what is said about it, so the palette, this and
@@ -972,6 +1019,38 @@ export const FlowCanvas = ({
             </Button>
           </div>
           <div className="absolute inset-0" style={{ transform: `translate(${pan.x}px,${pan.y}px)`, transformOrigin: "0 0" }}>
+            {/* The lanes, behind everything and clickable through: a label saying which part
+                of the business a column of cards belongs to. `pointer-events-none` because a
+                box is a caption, not a target — clicking inside one should reach the card. */}
+            {laneBoxes.map((lane) => (
+              <div
+                key={lane.id}
+                aria-hidden
+                className={cn(
+                  "pointer-events-none absolute rounded-[14px] border border-dashed",
+                  lane.broken > 0 ? "border-[var(--bad)]" : "border-[var(--hairline)]",
+                )}
+                style={{ left: lane.left, top: lane.top, width: lane.width, height: lane.height }}
+              >
+                <span
+                  className={cn(
+                    /* Right edge, not left. A lane whose first card sits directly under the fork has only
+                       the row gap above it, and the link's own label — "is rent" — already lives
+                       there; the space beside a lane is always free. */
+                    "absolute -top-[9px] right-3 flex items-center gap-1.5 rounded-full px-2 py-[1px] font-mono text-[10px] whitespace-nowrap",
+                    "bg-[var(--surface-solid)]",
+                    lane.broken > 0 ? "text-[var(--bad)]" : "text-[var(--ink-3)]",
+                  )}
+                >
+                  {lane.label}
+                  <span className="opacity-70">
+                    {lane.broken > 0
+                      ? `${lane.broken} problem${lane.broken === 1 ? "" : "s"}`
+                      : `${lane.steps} step${lane.steps === 1 ? "" : "s"}`}
+                  </span>
+                </span>
+              </div>
+            ))}
             <svg className="pointer-events-none absolute inset-0 overflow-visible">
               {edgePaths.map((p) =>
                 p === null ? null : (
@@ -1012,6 +1091,10 @@ export const FlowCanvas = ({
                 <div
                   key={n.id}
                   data-flow-node={n.id}
+                  ref={(el) => {
+                    if (el) cardRefs.current.set(n.id, el);
+                    else cardRefs.current.delete(n.id);
+                  }}
                   tabIndex={0}
                   role="button"
                   aria-pressed={n.id === selected}

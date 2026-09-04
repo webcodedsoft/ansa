@@ -1,7 +1,7 @@
 import type { Flow, FlowNode } from "./flow.schema";
 import { describe, expect, it } from "vitest";
 
-import { branchHeads, foldedAway, foldedCount, onlyReachableThrough, ROW, sameShape, tidied, TOP } from "./flow-layout";
+import { branchHeads, foldedAway, foldedCount, laneGroups, onlyReachableThrough, ROW, sameShape, tidied, TOP } from "./flow-layout";
 
 /**
  * The layout is no longer decoration.
@@ -141,5 +141,54 @@ describe("folding a branch away", () => {
       { to: "rent1", label: "rent" },
       { to: "buy1", label: "anything else" },
     ]);
+  });
+});
+
+describe("grouping the drawing into lanes", () => {
+  it("names the shared opening and one lane per service", () => {
+    expect(laneGroups(forked())).toEqual([
+      { id: "opening", label: "everyone gets this", ids: ["start", "ask", "fork"] },
+      { id: "rent1", label: "rent", ids: ["rent1", "rent2"] },
+      { id: "buy1", label: "anything else", ids: ["buy1"] },
+    ]);
+  });
+
+  /* The ending both services meet at belongs to neither, so it sits outside every lane —
+     drawing it inside one would say a shared goodbye is part of booking a viewing. */
+  it("leaves a shared ending out of every lane", () => {
+    const inLanes = new Set(laneGroups(forked()).flatMap((lane) => lane.ids));
+
+    expect(inLanes.has("close")).toBe(false);
+    expect(inLanes.has("end")).toBe(false);
+  });
+
+  it("draws no lanes at all when the call never forks", () => {
+    const straight: Flow = {
+      version: 1,
+      nodes: [node("start", "start"), node("ask"), node("end", "hangup")],
+      edges: [
+        { from: "start", to: "ask" },
+        { from: "ask", to: "end" },
+      ],
+    };
+    // A straight line has one lane, and a box round the whole drawing labels nothing.
+    expect(laneGroups(straight)).toEqual([]);
+  });
+
+  it("keeps a fork inside a service in that service's lane rather than splitting the top", () => {
+    const nested: Flow = {
+      ...forked(),
+      nodes: [...forked().nodes, node("inner", "decide"), node("deep")],
+      edges: [
+        ...forked().edges,
+        { from: "rent2", to: "inner" },
+        { from: "inner", to: "deep", otherwise: true },
+        { from: "deep", to: "close" },
+      ],
+    };
+    const lanes = laneGroups(nested);
+
+    expect(lanes.map((lane) => lane.label)).toEqual(["everyone gets this", "rent", "anything else"]);
+    expect(lanes.find((lane) => lane.id === "rent1")?.ids).toEqual(expect.arrayContaining(["inner", "deep"]));
   });
 });

@@ -27,20 +27,24 @@ export const LEFT = 40;
  * of its own below the end — which is also the clearest way to see that a step is unreachable,
  * without drawing a report about it.
  */
-export const tidied = (flow: Flow): Flow => {
+/**
+ * How far down the page each step sits: the longest path from the answer, not the shortest.
+ *
+ * Breadth-first gives a step the row of the quickest way to it, which puts a shared closing
+ * line level with the arm that took the long way round — two arms rejoining, drawn side by
+ * side, with the link between them running sideways instead of down. Relaxing to the longest
+ * path puts a rejoin below everything that reaches it, which is the whole reason the drawing
+ * reads as a call.
+ *
+ * Bounded by the node count because a graph reaching here has been validated by nobody: a
+ * cycle would otherwise relax forever. It settles at the cap and still draws.
+ */
+export const depths = (flow: Flow): ReadonlyMap<string, number> => {
   const first = flow.nodes.find((node) => node.kind === "start") ?? flow.nodes[0];
   const reached = reachableWithout(flow, new Set());
   const depth = new Map<string, number>();
   if (first !== undefined) depth.set(first.id, 0);
 
-  /* Longest path from the answer, not shortest. Breadth-first gives a step the row of the
-     quickest way to it, which puts a shared closing line level with the arm that took the
-     long way round — two arms rejoining, drawn side by side, with the link between them
-     running sideways instead of down. Relaxing to the longest path puts a rejoin below
-     everything that reaches it, which is the whole reason the drawing reads as a call.
-
-     Bounded by the node count because a graph reaching here has been validated by nobody:
-     a cycle would otherwise relax forever. It settles at the cap and still draws. */
   for (let pass = 0; pass < reached.size; pass += 1) {
     let moved = false;
     for (const edge of flow.edges) {
@@ -53,6 +57,11 @@ export const tidied = (flow: Flow): Flow => {
     }
     if (!moved) break;
   }
+  return depth;
+};
+
+export const tidied = (flow: Flow): Flow => {
+  const depth = depths(flow);
 
   const unreached = Math.max(0, ...[...depth.values()].map((value) => value + 1));
   const perRow = new Map<number, number>();
@@ -151,6 +160,50 @@ const reachableOnlyVia = (flow: Flow, heads: ReadonlySet<string>): ReadonlySet<s
 
 /** How many steps a folded branch stands in for, counting its own head. */
 export const foldedCount = (flow: Flow, head: string): number => onlyReachableThrough(flow, head).size + 1;
+
+/**
+ * One labelled group of steps on the canvas — the shared opening, then a lane per service.
+ *
+ * A six-service front desk drawn as twenty-four cards is a wall, and the only way to tell
+ * which service you are looking at is to trace links upward with your eyes. The graph already
+ * knows the answer: everything before the first fork is asked of everybody, and everything
+ * only one branch can reach belongs to that branch. Naming those groups on the drawing costs
+ * nothing and is the difference between a diagram and a business.
+ */
+export interface Lane {
+  /** The branch head this lane belongs to, or `"opening"` for the shared questions. */
+  readonly id: string;
+  readonly label: string;
+  readonly ids: readonly string[];
+}
+
+/**
+ * The lanes, or none at all.
+ *
+ * None when the call never forks: a straight line has one lane, and drawing a box round the
+ * whole drawing to say so is a label that tells nobody anything. Only the *first* fork makes
+ * lanes — a fork inside a service is drawn inside that service's lane, which is where it
+ * belongs, rather than splitting the top level into something the business does not have.
+ */
+export const laneGroups = (flow: Flow): readonly Lane[] => {
+  const depth = depths(flow);
+  const forks = flow.nodes
+    .filter((node) => node.kind === "decide" && depth.has(node.id))
+    .sort((a, b) => (depth.get(a.id) ?? 0) - (depth.get(b.id) ?? 0));
+  const fork = forks[0];
+  if (fork === undefined) return [];
+
+  const forkDepth = depth.get(fork.id) ?? 0;
+  const opening = flow.nodes
+    .filter((node) => (depth.get(node.id) ?? Infinity) <= forkDepth)
+    .map((node) => node.id);
+
+  const lanes: Lane[] = [{ id: "opening", label: "everyone gets this", ids: opening }];
+  for (const branch of branchHeads(flow, fork)) {
+    lanes.push({ id: branch.to, label: branch.label, ids: [branch.to, ...onlyReachableThrough(flow, branch.to)] });
+  }
+  return lanes;
+};
 
 /** The branch heads: every step a `decide` leads to, labelled by the answer that gets there. */
 export const branchHeads = (
