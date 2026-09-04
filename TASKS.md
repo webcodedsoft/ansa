@@ -3996,6 +3996,29 @@ trusted wheel events (prevented, panned, clamped at both edges); the browser ext
 cancelling every wheel on the page and watching it scroll anyway — so it proves nothing
 either way about a real mouse, which Chrome does honour.
 
+**Direct manipulation (2026-09-04, late).** "The drag is not smooth" was the browser's own
+drag-and-drop: a translucent snapshot the browser moves on its schedule, drop targets reported
+at a throttle, and nothing drawable. Replaced with pointer events — a ghost this component
+owns, moved by writing its transform on every event, the target read from `elementFromPoint`
+and pushed into state only when it changes. The same handlers make three things draggable: a
+palette step, a card, a lane header. Cards move (`detach` + `insertAfter`/`appendToLane`; not
+the start, not a fork); lanes reorder (`reorderService`, an edge reorder that the director
+ignores and the drawing does not — laid out by hand because `sameShape` cannot see it); a card
+dropped on the add-a-service box becomes a new service (`moveToNewService`). A new service now
+lands *last*, where the box was, and the box moves along — the old "ahead of the catch-all"
+order was presentation dressed as semantics. A service emptied by dragging its steps away
+survives as an empty lane at its own column (`laneFrames`), keyed `via:<answer>` since its
+head is somebody else's, drawn "drop a step here", and its branch wire runs through the box.
+Double-clicking a lane's name renames it — branch condition and choice option together
+(`renameService`), catch-all excluded, taken names refused. Wires that fan out or rejoin run
+as elbows along the gaps (`elbow`, `REJOIN_GAP`) instead of curving through a neighbouring
+lane. The pan is written to the layer's transform at pointer rate and committed to state once
+a frame (`applyPan`); `validateFlow` is memoised on the graph. Found on the way: tailwind-merge
+drops an earlier `border-*` when a later one is in the same `cn()`, and a guarded
+`releasePointerCapture` — a pointer that lost capture would otherwise strand the drag. Ten
+layout tests added; verified in the browser: every drop path, reorder, rename, empty lane,
+undo.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and

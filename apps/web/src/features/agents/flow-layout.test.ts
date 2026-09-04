@@ -4,8 +4,9 @@ import { describe, expect, it } from "vitest";
 import { validateFlow } from "@ansa/shared/flow-validate";
 
 import {
-  addService, appendToLane, branchHeads, foldedAway, foldedCount, freshServiceName, insertAfter, laneGroups,
-  onlyReachableThrough, rejoinPoint, ROW, sameShape, tidied, TOP,
+  addService, appendToLane, branchHeads, detach, foldedAway, foldedCount, freshServiceName, insertAfter, laneFrames,
+  laneGroups, moveAfter, moveToLane, moveToNewService, onlyReachableThrough, rejoinPoint, renameService, reorderService,
+  ROW, sameShape, tidied, TOP,
 } from "./flow-layout";
 
 /**
@@ -142,7 +143,7 @@ describe("folding a branch away", () => {
     const fork = forked().nodes.find((n) => n.id === "fork");
     if (fork === undefined) throw new Error("no fork");
 
-    expect(branchHeads(forked(), fork)).toEqual([
+    expect(branchHeads(forked(), fork).map(({ to, label }) => ({ to, label }))).toEqual([
       { to: "rent1", label: "rent" },
       { to: "buy1", label: "anything else" },
     ]);
@@ -153,8 +154,8 @@ describe("grouping the drawing into lanes", () => {
   it("names the shared opening and one lane per service", () => {
     expect(laneGroups(forked())).toEqual([
       { id: "opening", label: "everyone gets this", ids: ["start", "ask", "fork"] },
-      { id: "rent1", label: "rent", ids: ["rent1", "rent2"] },
-      { id: "buy1", label: "anything else", ids: ["buy1"] },
+      { id: "rent1", label: "rent", ids: ["rent1", "rent2"], fork: "fork", head: "rent1" },
+      { id: "buy1", label: "anything else", ids: ["buy1"], fork: "fork", head: "buy1" },
     ]);
   });
 
@@ -289,10 +290,10 @@ describe("growing the drawing", () => {
     const branch = grown.edges.find((e) => e.from === "fork" && e.to === "viewHead");
     expect(branch?.when).toEqual({ equals: "book a viewing" });
     expect(linksFrom(grown, "viewHead")).toEqual(["close"]);
-    // The catch-all stays last, so a named answer is always tried before "anything else".
-    const forkEdges = grown.edges.filter((e) => e.from === "fork");
-    expect(forkEdges[forkEdges.length - 1]?.otherwise).toBe(true);
-    expect(laneGroups(grown).map((lane) => lane.label)).toEqual(["everyone gets this", "rent", "book a viewing", "anything else"]);
+    /* The new lane is drawn last — where the "add a service" box was, which then moves
+       along. Drawing order is all a branch's position is: the director tries every named
+       answer before the catch-all wherever the catch-all sits. */
+    expect(laneGroups(grown).map((lane) => lane.label)).toEqual(["everyone gets this", "rent", "anything else", "book a viewing"]);
     expect(shapeProblems(grown)).toEqual([]);
   });
 
@@ -331,5 +332,125 @@ describe("lanes with uneven depth", () => {
     const cols = [x("rent1"), x("view1"), x("buy1")];
     expect(new Set(cols).size).toBe(3);
     expect(cols).toEqual([...cols].sort((a, b) => (a ?? 0) - (b ?? 0)));
+  });
+});
+
+describe("moving steps and services", () => {
+  const linksFrom = (flow: Flow, id: string) => flow.edges.filter((e) => e.from === id).map((e) => e.to);
+  const SHAPE = new Set(["unreachable", "dead-end", "decide-without-otherwise", "edge-to-nowhere", "cycle", "no-start", "many-starts", "shadowed-branch", "branch-value-not-an-option"]);
+  const shapeProblems = (flow: Flow) => validateFlow(flow).filter((p) => SHAPE.has(p.code)).map((p) => `${p.code}@${p.nodeId ?? "flow"}`);
+  /** The fixture with the fork wired to a real choice, so services can be added and renamed. */
+  const withChoice = (): Flow => ({
+    ...forked(),
+    nodes: forked().nodes.map((n) =>
+      n.id === "ask"
+        ? { ...n, field: { key: "intent", type: "choice", prompt: "Rent or buy?", capture: "speech", confirm: "none", pattern: "", attempts: 3, required: true, options: ["rent"] } }
+        : n.id === "fork"
+          ? { ...n, on: "intent" }
+          : n,
+    ),
+  });
+
+  it("closes the gap a lifted step leaves, so the call skips it rather than stopping at it", () => {
+    const lifted = detach(forked(), "rent1");
+    expect(linksFrom(lifted, "fork")).toEqual(["rent2", "buy1"]);
+    expect(linksFrom(lifted, "rent1")).toEqual([]);
+    // The step is still there — a move puts it back somewhere.
+    expect(lifted.nodes.some((n) => n.id === "rent1")).toBe(true);
+  });
+
+  it("moves a step after another, taking it off its old path first", () => {
+    const moved = moveAfter(forked(), "rent2", "buy1");
+    expect(linksFrom(moved, "rent1")).toEqual(["close"]);
+    expect(linksFrom(moved, "buy1")).toEqual(["rent2"]);
+    expect(linksFrom(moved, "rent2")).toEqual(["close"]);
+    expect(moved.nodes).toHaveLength(forked().nodes.length);
+    expect(shapeProblems(moved)).toEqual([]);
+  });
+
+  it("moves a step to the end of another service", () => {
+    const lanes = laneGroups(forked());
+    const buy = lanes.find((lane) => lane.label === "anything else");
+    if (buy === undefined) throw new Error("no buy lane");
+    const moved = moveToLane(forked(), "rent1", buy);
+    expect(linksFrom(moved, "fork")).toEqual(["rent2", "buy1"]);
+    expect(linksFrom(moved, "buy1")).toEqual(["rent1"]);
+    expect(linksFrom(moved, "rent1")).toEqual(["close"]);
+    expect(shapeProblems(moved)).toEqual([]);
+  });
+
+  it("refuses to move the start or a fork, and a drop onto itself changes nothing", () => {
+    const base = forked();
+    expect(moveAfter(base, "fork", "buy1")).toBe(base);
+    expect(moveAfter(base, "start", "buy1")).toBe(base);
+    expect(moveAfter(base, "rent1", "rent1")).toBe(base);
+  });
+
+  it("keeps a service whose steps were all moved away, drawn empty and still owning a column", () => {
+    const lanes = laneGroups(forked());
+    const buy = lanes.find((lane) => lane.label === "anything else");
+    if (buy === undefined) throw new Error("no buy lane");
+    // Move both rent steps to the other service: the rent branch now points straight at the close.
+    const once = moveToLane(forked(), "rent1", buy);
+    const twice = moveToLane(once, "rent2", laneGroups(once).find((lane) => lane.label === "anything else") ?? buy);
+    expect(linksFrom(twice, "fork")).toEqual(["close", "buy1"]);
+
+    const after = laneGroups(twice);
+    const rent = after.find((lane) => lane.label === "rent");
+    expect(rent?.ids).toEqual([]);
+    expect(rent?.head).toBe("close");
+    // The close is nobody's: it is shared, and it is drawn between the lanes as before.
+    expect(after.flatMap((lane) => lane.ids)).not.toContain("close");
+    expect(laneFrames(twice).map((frame) => frame.id)).toEqual(["via:rent", "buy1"]);
+    expect(shapeProblems(twice)).toEqual([]);
+
+    // A step dropped onto the empty lane goes on its branch and leads on to the close.
+    const refilled = appendToLane(twice, rent ?? buy, node("back"));
+    expect(linksFrom(refilled, "fork")).toEqual(["back", "buy1"]);
+    expect(linksFrom(refilled, "back")).toEqual(["close"]);
+    expect(laneGroups(refilled).find((lane) => lane.label === "rent")?.ids).toEqual(["back"]);
+  });
+
+  it("makes a moved step the first step of a new service", () => {
+    const grown = moveToNewService(withChoice(), "rent2", "book a viewing");
+    expect(linksFrom(grown, "rent1")).toEqual(["close"]);
+    expect(grown.edges.find((e) => e.from === "fork" && e.to === "rent2")?.when).toEqual({ equals: "book a viewing" });
+    expect(linksFrom(grown, "rent2")).toEqual(["close"]);
+    expect(grown.nodes.find((n) => n.id === "ask")?.field?.options).toEqual(["rent", "book a viewing"]);
+    expect(shapeProblems(grown)).toEqual([]);
+  });
+
+  it("draws a service before another, or last, without changing where any answer leads", () => {
+    const base = withChoice();
+    const three = addService(base, laneGroups(base), node("viewHead"), "book a viewing");
+    const lanes = laneGroups(three);
+    const viewing = lanes.find((lane) => lane.label === "book a viewing");
+    const rent = lanes.find((lane) => lane.label === "rent");
+    if (viewing === undefined || rent === undefined) throw new Error("lanes missing");
+
+    const first = reorderService(three, viewing, rent);
+    expect(laneGroups(first).map((lane) => lane.label)).toEqual(["everyone gets this", "book a viewing", "rent", "anything else"]);
+    const last = reorderService(first, laneGroups(first).find((lane) => lane.label === "rent") ?? rent, null);
+    expect(laneGroups(last).map((lane) => lane.label)).toEqual(["everyone gets this", "book a viewing", "anything else", "rent"]);
+    // Same links, only in a different order.
+    expect(new Set(last.edges.map((e) => JSON.stringify(e)))).toEqual(new Set(three.edges.map((e) => JSON.stringify(e))));
+  });
+
+  it("renames a service on the branch and on the choice together, and refuses a taken name", () => {
+    const base = withChoice();
+    const rent = laneGroups(base).find((lane) => lane.label === "rent");
+    if (rent === undefined) throw new Error("no rent lane");
+
+    const renamed = renameService(base, rent, " lettings ");
+    expect(renamed.edges.find((e) => e.to === "rent1")?.when).toEqual({ equals: "lettings" });
+    expect(renamed.nodes.find((n) => n.id === "ask")?.field?.options).toEqual(["lettings"]);
+    expect(laneGroups(renamed).map((lane) => lane.label)).toEqual(["everyone gets this", "lettings", "anything else"]);
+    expect(shapeProblems(renamed)).toEqual([]);
+
+    const grown = addService(base, laneGroups(base), node("viewHead"), "book a viewing");
+    const clash = renameService(grown, laneGroups(grown).find((lane) => lane.label === "rent") ?? rent, "book a viewing");
+    expect(clash).toBe(grown);
+    const catchAll = laneGroups(base).find((lane) => lane.label === "anything else");
+    expect(renameService(base, catchAll ?? rent, "other")).toBe(base);
   });
 });

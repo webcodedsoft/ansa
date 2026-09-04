@@ -31,7 +31,8 @@ import { cn } from "@/lib/cn";
 import { validateFlow } from "@ansa/shared/flow-validate";
 
 import {
-  addService, appendToLane, foldedAway, freshServiceName, insertAfter, LANE_HEAD, laneGroups, sameShape, tidied, TOP, type Lane,
+  addService, appendToLane, foldedAway, freshServiceName, insertAfter, LANE_HEAD, laneFrames, laneGroups, movable, moveAfter,
+  moveToLane, moveToNewService, renameService, reorderService, sameShape, tidied, TOP, type Lane,
 } from "../flow-layout";
 
 import {
@@ -359,6 +360,30 @@ const stepForward = (history: History): History => {
 
 /* ----------------------------------------------------------------------- layout */
 
+/** What a drag picked up: a kind from the palette, a card by id, or a whole service. */
+type DragSource = { readonly kind: FlowNodeKind } | { readonly node: string } | { readonly lane: Lane };
+/** Where it would land. */
+type DropTarget = { readonly after: string } | { readonly lane: Lane } | { readonly newService: true } | { readonly beforeLane: Lane | null };
+interface LiveDrag {
+  readonly source: DragSource;
+  readonly startX: number;
+  readonly startY: number;
+  readonly offsetX: number;
+  readonly offsetY: number;
+  began: boolean;
+  target: DropTarget | null;
+  /** Where the pointer last was, so a ghost rendered mid-move appears under it. */
+  lastX: number;
+  lastY: number;
+}
+const sameTarget = (a: DropTarget | null, b: DropTarget | null): boolean => {
+  if (a === null || b === null) return a === b;
+  if ("after" in a) return "after" in b && a.after === b.after;
+  if ("lane" in a) return "lane" in b && a.lane.id === b.lane.id;
+  if ("newService" in a) return "newService" in b;
+  return "beforeLane" in b && (a.beforeLane?.id ?? null) === (b.beforeLane?.id ?? null);
+};
+
 const NODE_W = 208;
 /** A card's height, for the fallback before it has been measured. One line: icon, title, subtitle. */
 const BODY_H = 44;
@@ -381,6 +406,33 @@ const bezier = (p1: Point, p2: Point): string => {
   const dy = Math.max(18, Math.abs(p2.y - p1.y) * 0.5);
   return `M${p1.x} ${p1.y} C${p1.x} ${p1.y + dy},${p2.x} ${p2.y - dy},${p2.x} ${p2.y}`;
 };
+
+/**
+ * A connector that runs along a gap: down from the card, across at `busY`, down into the
+ * next card. For the links that leave a lane or fan out into the lanes — a curve between two
+ * columns passes straight through whatever lane lies between them, and a link across
+ * somebody else's cards reads as a link to them. The gap between the lanes is the one place
+ * a sideways run touches nothing.
+ */
+const elbow = (p1: Point, p2: Point, busY: number): string => {
+  const r = 8;
+  const dx = p2.x - p1.x;
+  if (Math.abs(dx) < 2 * r + 2) return bezier(p1, p2);
+  const s = Math.sign(dx);
+  const y = Math.min(Math.max(busY, p1.y + r), p2.y - r);
+  return [
+    `M${p1.x} ${p1.y}`,
+    `V${y - r}`,
+    `Q${p1.x} ${y} ${p1.x + s * r} ${y}`,
+    `H${p2.x - s * r}`,
+    `Q${p2.x} ${y} ${p2.x} ${y + r}`,
+    `V${p2.y}`,
+  ].join(" ");
+};
+
+/** The answer a fork's edge carries, worded the way the lanes are. */
+const branchLabel = (edge: FlowEdge): string =>
+  edge.otherwise === true ? "anything else" : edge.when !== undefined && "equals" in edge.when ? edge.when.equals : (edge.port ?? "next");
 
 /** Where the `at`-th of `count` ports sits along a card's bottom edge, as a fraction of its width. */
 const portAlong = (at: number, count: number): number => (2 * at + 1) / (2 * Math.max(count, 1));
@@ -596,13 +648,26 @@ export const FlowCanvas = ({
   const [tick, setTick] = useState(0);
   /** Branch heads the reader has folded away, so six services fit a laptop. */
   const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
-  /** The kind being dragged in from the palette, while it is; the drop targets light up for it. */
-  const [dragging, setDragging] = useState<FlowNodeKind | null>(null);
-  /** The card or lane the drag is over, so exactly one target says "here". */
-  const [over, setOver] = useState<string | null>(null);
+  /**
+   * What is being dragged and where it would land, while something is. Rendering reads this;
+   * the pointer writes `dragRef` and only touches this when the answer changes, so a drag
+   * re-renders on crossing a target and not on every pixel.
+   */
+  const [drag, setDrag] = useState<{ readonly source: DragSource; readonly target: DropTarget | null } | null>(null);
+  /** The lane whose name is being typed over, by lane id. */
+  const [renaming, setRenaming] = useState<string | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
+  /** The layer the drawing is on — panned by writing its transform, see `applyPan`. */
+  const layerRef = useRef<HTMLDivElement>(null);
+  /** The pan as the screen has it, ahead of `pan`, which follows at the end of a gesture. */
+  const panLive = useRef<Point>({ x: 0, y: 0 });
+  const panCommit = useRef<number | null>(null);
+  const ghostRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<LiveDrag | null>(null);
+  /** Set by a drag that began on a palette button, so the click that follows it adds nothing. */
+  const swallowClick = useRef(false);
   const portRefs = useRef(new Map<string, HTMLSpanElement>());
   const cardRefs = useRef(new Map<string, HTMLDivElement>());
   const wireRef = useRef<{ from: string; port: Port } | null>(null);
@@ -658,6 +723,9 @@ export const FlowCanvas = ({
      is — and the links are built before the lane boxes are measured. */
   const lanes = laneGroups(history.present);
   const laneHeads = new Set(lanes.filter((lane) => lane.id !== "opening").map((lane) => lane.id));
+  /** The fork the lanes hang off, and every step that is inside some service's lane. */
+  const laneFork = lanes.find((lane) => lane.id === "opening")?.ids.find((id) => nodes.find((n) => n.id === id)?.kind === "decide");
+  const inService = new Set(lanes.filter((lane) => lane.id !== "opening").flatMap((lane) => lane.ids));
 
   const toggleFold = (head: string) => {
     setFolded((current) => {
@@ -740,18 +808,33 @@ export const FlowCanvas = ({
 
   // Read fresh on every render — `tick` exists purely to force one after visibility flips.
   void tick;
-  const edgePaths = edges.map((edge, at) => {
+  const frames = laneFrames(history.present);
+  const edgePaths = edges.flatMap((edge, at) => {
     const from = byId(edge.from);
     const to = byId(edge.to);
-    if (!from || !to) return null;
+    if (!from || !to) return [];
     // A link to a step that has been folded away has nothing to point at — unless the step
     // heads a lane, in which case the lane's header is standing in and the link lands on it.
-    if (hidden.has(edge.from)) return null;
-    if (hidden.has(edge.to) && !(laneHeads.has(edge.to) && folded.has(edge.to))) return null;
+    if (hidden.has(edge.from)) return [];
+    if (hidden.has(edge.to) && !(laneHeads.has(edge.to) && folded.has(edge.to))) return [];
     const ports = portsFor(from);
     const index = ports.findIndex((port) => port.holds(edge));
     const p1 = outPoint(from, ports[index]?.key ?? "", Math.max(index, 0));
     const p2 = folded.has(to.id) ? { x: to.x + NODE_W / 2, y: to.y - LANE_HEAD } : inPoint(to);
+    /* The branch of a service with nothing in it points past the service at the shared
+       close. Drawn that way the empty lane would hang off nothing, so the link is drawn in
+       two: into the top of the empty box, and on from its bottom to where it was going. */
+    const emptyLane = from.id === laneFork ? lanes.find((lane) => lane.ids.length === 0 && lane.head === to.id && lane.label === branchLabel(edge)) : undefined;
+    const frame = emptyLane === undefined ? undefined : frames.find((one) => one.id === emptyLane.id);
+    if (frame !== undefined) {
+      const x = frame.left + frame.width / 2;
+      const boxTop = { x, y: frame.top - LANE_HEAD };
+      const boxBottom = { x, y: frame.top + BODY_H + 8 };
+      return [
+        { key: `${at}`, edge: at, d: elbow(p1, boxTop, boxTop.y - 12), label: "", mid: boxTop },
+        { key: `${at}b`, edge: at, d: elbow(boxBottom, p2, p2.y - 16), label: "", mid: p2 },
+      ];
+    }
     const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 - 5 };
     /* A word on the link only where the call splits. "got it" on every question was a word
        on every link, which is the same as a word on none; "gave up", "failed" and a branch's
@@ -759,17 +842,18 @@ export const FlowCanvas = ({
        step carries no word either: the lane's own header already says which answer it is. */
     const splits = from.kind === "decide" || index > 0;
     const intoLane = laneHeads.has(to.id);
-    return { key: at, d: bezier(p1, p2), label: splits && !intoLane ? (ports[index]?.label ?? "") : "", mid };
+    /* Fanning out into the lanes runs along the gap above their headers; leaving a lane for
+       the shared close runs along the gap below them. Everything else curves or drops. */
+    const fansOut = from.id === laneFork && (intoLane || lanes.some((lane) => lane.head === to.id));
+    const rejoins = inService.has(from.id) && !inService.has(to.id);
+    const d = fansOut ? elbow(p1, p2, p2.y - LANE_HEAD - 12) : rejoins ? elbow(p1, p2, p2.y - 16) : bezier(p1, p2);
+    return [{ key: `${at}`, edge: at, d, label: splits && !intoLane ? (ports[index]?.label ?? "") : "", mid }];
   });
 
   const localPoint = (e: ReactPointerEvent): Point => {
     const box = canvasRef.current?.getBoundingClientRect();
-    return { x: e.clientX - (box?.left ?? 0) - pan.x, y: e.clientY - (box?.top ?? 0) - pan.y };
+    return { x: e.clientX - (box?.left ?? 0) - panLive.current.x, y: e.clientY - (box?.top ?? 0) - panLive.current.y };
   };
-
-  /* Dragging a card used to live here. It is gone on purpose: with the layout derived from
-     the graph, moving a card by hand would be undone by the next edit, which is a worse
-     experience than not being able to move it at all. Clicking a header still selects. */
 
   const onOutPortPointerDown = (e: ReactPointerEvent<HTMLSpanElement>, node: FlowNode, port: Port) => {
     wireRef.current = { from: node.id, port };
@@ -835,16 +919,41 @@ export const FlowCanvas = ({
   const clampRef = useRef(clampPan);
   clampRef.current = clampPan;
 
+  /**
+   * Move the drawing now, and tell React later.
+   *
+   * A pan that went through state re-rendered every card, every link and the validator on
+   * every pointer move, and on a laptop that is a drawing that lags the hand. So the layer's
+   * transform is written directly, at pointer rate, and the `pan` state — which nothing
+   * needs until the gesture is over — catches up once per frame. React leaves a style it
+   * did not change alone, so the two never fight.
+   */
+  const applyPan = (next: Point) => {
+    const clamped = clampRef.current(next);
+    panLive.current = clamped;
+    const layer = layerRef.current;
+    if (layer !== null) layer.style.transform = `translate(${clamped.x}px,${clamped.y}px)`;
+    if (panCommit.current === null) {
+      panCommit.current = requestAnimationFrame(() => {
+        panCommit.current = null;
+        setPan(panLive.current);
+      });
+    }
+  };
+  useEffect(() => () => {
+    if (panCommit.current !== null) cancelAnimationFrame(panCommit.current);
+  }, []);
+
   const onCanvasPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if ((e.target as HTMLElement).closest("[data-flow-node], [data-canvas-bar]")) return;
-    panRef.current = { startX: e.clientX, startY: e.clientY, panX: pan.x, panY: pan.y };
+    if ((e.target as HTMLElement).closest("[data-flow-node], [data-canvas-bar], [data-lane-head], [data-add-service]")) return;
+    panRef.current = { startX: e.clientX, startY: e.clientY, panX: panLive.current.x, panY: panLive.current.y };
     e.currentTarget.setPointerCapture(e.pointerId);
     setSelected(null);
   };
   const onCanvasPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const p = panRef.current;
     if (!p) return;
-    setPan(clampPan({ x: p.panX + (e.clientX - p.startX), y: p.panY + (e.clientY - p.startY) }));
+    applyPan({ x: p.panX + (e.clientX - p.startX), y: p.panY + (e.clientY - p.startY) });
   };
   const onCanvasPointerUp = () => {
     panRef.current = null;
@@ -854,14 +963,15 @@ export const FlowCanvas = ({
      Attached by hand rather than as `onWheel`: React registers wheel listeners as passive,
      and a passive listener cannot stop the page from scrolling underneath — which is the one
      thing this has to do. The drawing takes the wheel whether or not it can move further,
-     the way any canvas does; the page is a mouse-width away. The clamp is read through a
-     ref so the one listener sees the current drawing without being re-attached per render. */
+     the way any canvas does; the page is a mouse-width away. */
+  const applyPanRef = useRef(applyPan);
+  applyPanRef.current = applyPan;
   useEffect(() => {
     const view = canvasRef.current;
     if (view === null) return;
     const onWheel = (e: WheelEvent): void => {
       e.preventDefault();
-      setPan((current) => clampRef.current({ x: current.x - e.deltaX, y: current.y - e.deltaY }));
+      applyPanRef.current({ x: panLive.current.x - e.deltaX, y: panLive.current.y - e.deltaY });
     };
     view.addEventListener("wheel", onWheel, { passive: false });
     return () => view.removeEventListener("wheel", onWheel);
@@ -959,25 +1069,133 @@ export const FlowCanvas = ({
     chooseStep(id);
   };
 
-  /* Dropping from the palette. HTML drag and drop rather than the pointer capture the ports
-     use: a port drag draws a wire between two things on the canvas, while this brings a
-     thing in from outside it, and the browser's own drag already handles leaving the palette,
-     crossing the canvas and landing. */
-  const onDropOn = (target: { readonly after?: string; readonly lane?: Lane }) => (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const kind = (e.dataTransfer.getData("text/x-ansa-step") || dragging) as FlowNodeKind | "";
-    setDragging(null);
-    setOver(null);
-    if (kind === "") return;
-    addNode(kind, target);
+  /**
+   * Where a drag would land, read off whatever is under the pointer.
+   *
+   * The ghost that follows the pointer takes no pointer events, so `elementFromPoint` sees
+   * through it to the card, lane or box beneath. A card is "after this card"; a lane is "at
+   * the end of this lane"; the add-a-service box is "as a new service". A lane being dragged
+   * reads other lanes as "before this one" or "after this one" by which half the pointer is
+   * in, and the box as "last". A card cannot be dropped on itself.
+   */
+  const targetAt = (source: DragSource, clientX: number, clientY: number): DropTarget | null => {
+    const under = document.elementFromPoint(clientX, clientY);
+    if (under === null) return null;
+    if ("lane" in source) {
+      if (under.closest("[data-add-service]")) return { beforeLane: null };
+      const box = under.closest("[data-lane]");
+      const id = box?.getAttribute("data-lane");
+      const services = lanes.filter((one) => one.id !== "opening");
+      const at = services.findIndex((one) => one.id === id);
+      if (box === null || box === undefined || at < 0 || id === source.lane.id) return null;
+      const rect = box.getBoundingClientRect();
+      const leftHalf = clientX < rect.left + rect.width / 2;
+      const before = leftHalf ? services[at] : services[at + 1];
+      return { beforeLane: before ?? null };
+    }
+    const card = under.closest("[data-flow-node]")?.getAttribute("data-flow-node");
+    if (card !== null && card !== undefined) return "node" in source && card === source.node ? null : { after: card };
+    if (under.closest("[data-add-service]")) return { newService: true };
+    const laneId = under.closest("[data-lane]")?.getAttribute("data-lane");
+    const lane = lanes.find((one) => one.id === laneId);
+    return lane === undefined ? null : { lane };
   };
-  const onDragOverTarget = (id: string) => (e: React.DragEvent) => {
-    if (dragging === null) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
-    if (over !== id) setOver(id);
+
+  /** What a finished drag does to the graph. */
+  const drop = (source: DragSource, target: DropTarget) => {
+    if ("kind" in source) {
+      if ("newService" in target) {
+        const id = freshId(new Set(nodes.map((n) => n.id)));
+        const head = blankNode(id, source.kind, 0, 0);
+        edit((f) => {
+          const current = laneGroups(f);
+          return addService(f, current, head, freshServiceName(f, current));
+        });
+        chooseStep(id);
+      } else if ("after" in target) addNode(source.kind, { after: target.after });
+      else if ("lane" in target) addNode(source.kind, { lane: target.lane });
+      return;
+    }
+    if ("node" in source) {
+      const id = source.node;
+      if ("after" in target) edit((f) => moveAfter(f, id, target.after));
+      else if ("lane" in target) edit((f) => moveToLane(f, id, target.lane));
+      else if ("newService" in target) edit((f) => moveToNewService(f, id, freshServiceName(f, laneGroups(f))));
+      chooseStep(id);
+      return;
+    }
+    /* Laid out by hand: a reorder keeps every step and every link, so `sameShape` would call
+       it unchanged and leave the lanes where they were — the one edit whose whole point is
+       where things are. */
+    if ("beforeLane" in target) edit((f) => tidied(reorderService(f, source.lane, target.beforeLane)));
   };
+
+  /**
+   * The pointer handlers that make something draggable, for a palette button, a card or a
+   * lane header alike.
+   *
+   * Pointer events rather than the browser's drag-and-drop, which was tried first: that
+   * ghost is a translucent snapshot the browser moves on its own schedule, the target under
+   * it is reported at a throttled rate, and nothing about it can be drawn — a step
+   * crossing the canvas looked like a screenshot being posted. Here the ghost is an element
+   * this component owns, moved with the pointer on every event by writing its transform,
+   * and the target is whatever is under the pointer right now. A press that moves less than
+   * a few pixels is a click, and is left to be one.
+   */
+  const draggable = (source: DragSource) => ({
+    onPointerDown: (e: ReactPointerEvent<HTMLElement>) => {
+      if (e.button !== 0) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      dragRef.current = { source, startX: e.clientX, startY: e.clientY, offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top, began: false, target: null, lastX: e.clientX, lastY: e.clientY };
+      /* Capture so the drag survives the pointer leaving the element. Not fatal without it —
+         the drag ends on the next pointerup wherever it lands — so a refusal is ignored. */
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        /* an inactive pointer; the drag still runs on the events that reach the element */
+      }
+    },
+    onPointerMove: (e: ReactPointerEvent<HTMLElement>) => {
+      const live = dragRef.current;
+      if (live === null) return;
+      live.lastX = e.clientX;
+      live.lastY = e.clientY;
+      if (!live.began) {
+        if (Math.hypot(e.clientX - live.startX, e.clientY - live.startY) < 5) return;
+        live.began = true;
+        setDrag({ source: live.source, target: null });
+      }
+      const ghost = ghostRef.current;
+      if (ghost !== null) ghost.style.transform = `translate(${e.clientX - live.offsetX}px,${e.clientY - live.offsetY}px)`;
+      const next = targetAt(live.source, e.clientX, e.clientY);
+      if (!sameTarget(live.target, next)) {
+        live.target = next;
+        setDrag({ source: live.source, target: next });
+      }
+    },
+    onPointerUp: (e: ReactPointerEvent<HTMLElement>) => {
+      const live = dragRef.current;
+      dragRef.current = null;
+      if (live === null) return;
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+      if (!live.began) return;
+      swallowClick.current = true;
+      setDrag(null);
+      if (live.target !== null) drop(live.source, live.target);
+    },
+    onPointerCancel: () => {
+      dragRef.current = null;
+      setDrag(null);
+    },
+  });
+
+  /** The card or lane under a drag right now, for the target to say so. */
+  const dropAfter = drag?.target !== null && drag?.target !== undefined && "after" in drag.target ? drag.target.after : null;
+  const dropLane = drag?.target !== null && drag?.target !== undefined && "lane" in drag.target ? drag.target.lane.id : null;
+  const dropNewService = drag?.target !== null && drag?.target !== undefined && "newService" in drag.target;
+  const dropBeforeLane = drag?.target !== null && drag?.target !== undefined && "beforeLane" in drag.target ? (drag.target.beforeLane?.id ?? "") : null;
+  const draggedNode = drag !== null && "node" in drag.source ? drag.source.node : null;
+  const draggedLane = drag !== null && "lane" in drag.source ? drag.source.lane.id : null;
 
   const removeNode = (id: string) => {
     edit((f) => ({ ...f, nodes: f.nodes.filter((n) => n.id !== id), edges: f.edges.filter((x) => x.from !== id && x.to !== id) }));
@@ -1003,13 +1221,13 @@ export const FlowCanvas = ({
     const node = byId(nodeId);
     if (node === undefined) return;
     chooseStep(nodeId);
-    setPan({ x: 120 - node.x, y: 90 - node.y });
+    applyPan({ x: 120 - node.x, y: 90 - node.y });
   };
 
   const fit = () => {
     const first = nodes[0];
-    if (first === undefined) return setPan({ x: 0, y: 0 });
-    setPan(clampPan({ x: 24 - Math.min(...nodes.map((n) => n.x)), y: TOP - Math.min(...nodes.map((n) => n.y)) }));
+    if (first === undefined) return applyPan({ x: 0, y: 0 });
+    applyPan({ x: 24 - Math.min(...nodes.map((n) => n.x)), y: TOP - Math.min(...nodes.map((n) => n.y)) });
   };
 
   const updateSelected = (patch: Partial<FlowNode>, what: string) => {
@@ -1028,10 +1246,9 @@ export const FlowCanvas = ({
     );
   };
 
-  /* Recomputed from the graph on every edit, not memoised against a key: the graph is at
-     most 120 nodes and the walk is linear, and a stale problem list is worse than a cheap
-     one — it would tell somebody a step is fixed while the publish still refuses it. */
-  const problems = validateFlow(history.present);
+  /* Recomputed whenever the graph changes and not otherwise: a drag re-renders on every
+     target it crosses, and re-validating 120 steps for a hover is work with no answer. */
+  const problems = useMemo(() => validateFlow(history.present), [history.present]);
   const blockingCount = problems.filter((problem) => problem.blocking).length;
   useEffect(() => {
     onBlockingProblems(blockingCount);
@@ -1068,6 +1285,7 @@ export const FlowCanvas = ({
           steps: lane.ids.length,
           broken: lane.ids.filter((id) => marked.get(id) === "blocks").length,
           folded: true,
+          empty: false,
           left: head.x - 8,
           top: head.y - LANE_HEAD,
           width: NODE_W + 16,
@@ -1078,7 +1296,25 @@ export const FlowCanvas = ({
         .filter((id) => !hidden.has(id))
         .map((id) => byId(id))
         .filter((node): node is FlowNode => node !== undefined);
-      if (cards.length === 0) return null;
+      /* A service with nothing in it — just added, or its steps all dragged elsewhere —
+         has no cards to measure, so it is drawn at the column the layout keeps for it,
+         one card tall, with room to drop the first step onto. */
+      if (cards.length === 0) {
+        const frame = laneFrames(history.present).find((one) => one.id === lane.id);
+        if (frame === undefined || lane.id === "opening") return null;
+        return {
+          id: lane.id,
+          label: lane.label,
+          steps: 0,
+          broken: 0,
+          folded: false,
+          empty: true,
+          left: frame.left + (frame.width - NODE_W) / 2 - 8,
+          top: frame.top - LANE_HEAD,
+          width: NODE_W + 16,
+          height: LANE_HEAD + BODY_H + 8,
+        };
+      }
       const top = Math.min(...cards.map((n) => n.y));
       const bottom = Math.max(...cards.map((n) => n.y + (cardRefs.current.get(n.id)?.offsetHeight ?? BODY_H)));
       const left = Math.min(...cards.map((n) => n.x));
@@ -1089,6 +1325,7 @@ export const FlowCanvas = ({
         steps: cards.length,
         broken: cards.filter((n) => marked.get(n.id) === "blocks").length,
         folded: false,
+        empty: false,
         /* The header sits inside the box above the first card; the box hugs the cards by
            the same 8 pixels the drawing's lanes use. */
         left: left - 8,
@@ -1153,19 +1390,16 @@ export const FlowCanvas = ({
                 <button
                   key={kind}
                   type="button"
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData("text/x-ansa-step", kind);
-                    e.dataTransfer.effectAllowed = "copy";
-                    setDragging(kind);
+                  {...draggable({ kind })}
+                  onClick={() => {
+                    if (swallowClick.current) {
+                      swallowClick.current = false;
+                      return;
+                    }
+                    addNode(kind, selected === null ? undefined : { after: selected });
                   }}
-                  onDragEnd={() => {
-                    setDragging(null);
-                    setOver(null);
-                  }}
-                  onClick={() => addNode(kind, selected === null ? undefined : { after: selected })}
                   title={selected === null ? "Drag onto the drawing, or click to add" : "Drag onto the drawing, or click to add after the selected step"}
-                  className="flex w-full cursor-grab items-center gap-2 rounded-lg px-2.5 py-[7px] text-left text-[12.5px] text-[var(--ink-2)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--ink)] active:cursor-grabbing"
+                  className="flex w-full cursor-grab touch-none items-center gap-2 rounded-lg px-2.5 py-[7px] text-left text-[12.5px] text-[var(--ink-2)] transition-colors select-none hover:bg-[var(--surface-2)] hover:text-[var(--ink)] active:cursor-grabbing"
                 >
                   <KindIcon kind={kind} />
                   {NODE_KINDS[kind].title}
@@ -1203,12 +1437,6 @@ export const FlowCanvas = ({
           onPointerDown={onCanvasPointerDown}
           onPointerMove={onCanvasPointerMove}
           onPointerUp={onCanvasPointerUp}
-          onDragOver={(e) => {
-            if (dragging === null) return;
-            e.preventDefault();
-            e.dataTransfer.dropEffect = "copy";
-          }}
-          onDrop={onDropOn({})}
         >
           {/* The toolbar, inside the drawing along its top edge. Canvas actions only — Save
               and Publish belong to the page header, where they act on the whole agent. On
@@ -1258,47 +1486,92 @@ export const FlowCanvas = ({
               Redo
             </Button>
           </div>
-          <div className="absolute inset-0" style={{ transform: `translate(${pan.x}px,${pan.y}px)`, transformOrigin: "0 0" }}>
+          <div ref={layerRef} className="absolute inset-0" style={{ transform: `translate(${pan.x}px,${pan.y}px)`, transformOrigin: "0 0" }}>
             {/* The lanes, behind everything and clickable through: a label saying which part
                 of the business a column of cards belongs to. `pointer-events-none` because a
                 box is a caption, not a target — clicking inside one should reach the card. */}
-            {laneBoxes.map((lane) => (
+            {laneBoxes.map((lane) => {
+              const group = lanes.find((one) => one.id === lane.id);
+              const isService = lane.id !== "opening" && group !== undefined;
+              const catchAll = lane.label === "anything else";
+              return (
               <div
                 key={lane.id}
+                data-lane={lane.id}
                 aria-hidden={lane.id === "opening"}
-                onDragOver={onDragOverTarget(`lane:${lane.id}`)}
-                onDragLeave={() => setOver((o) => (o === `lane:${lane.id}` ? null : o))}
-                onDrop={onDropOn({ lane: lanes.find((one) => one.id === lane.id) })}
                 className={cn(
                   "absolute rounded-[7px] border bg-[var(--surface)] transition-colors",
-                  /* Inert until a step is being dragged, so a click inside a lane reaches the
-                     card underneath; while one is, the lane is the thing being aimed at. */
-                  dragging === null ? "pointer-events-none" : "pointer-events-auto",
-                  over === `lane:${lane.id}`
+                  /* Inert until something is being dragged, so a click inside a lane reaches
+                     the card underneath; while one is, the lane is the thing being aimed at. */
+                  drag === null ? "pointer-events-none" : "pointer-events-auto",
+                  draggedLane === lane.id && "opacity-50",
+                  dropLane === lane.id
                     ? "border-[var(--accent)] bg-[var(--accent-soft)]"
                     : lane.broken > 0
                       ? "border-[var(--bad)]"
                       : lane.folded
                         ? "border-[var(--accent)]"
-                        : "border-[var(--hairline)]",
+                        : lane.empty
+                          ? "border-dashed border-[var(--hairline)]"
+                          : "border-[var(--hairline)]",
                 )}
                 style={{ left: lane.left, top: lane.top, width: lane.width, height: lane.height }}
               >
+                {/* Where a dragged lane would go: a bar down this lane's left edge. */}
+                {dropBeforeLane === lane.id && (
+                  <span aria-hidden className="absolute top-1 bottom-1 -left-[7px] w-[3px] rounded bg-[var(--accent)]" />
+                )}
                 <div
+                  data-lane-head
+                  {...(isService && !lane.folded && renaming !== lane.id ? draggable({ lane: group }) : {})}
                   className={cn(
-                    "mx-2 flex items-center gap-2 font-mono text-[9.5px] tracking-[0.06em]",
+                    "pointer-events-auto mx-2 flex items-center gap-2 font-mono text-[9.5px] tracking-[0.06em] select-none",
+                    isService && !lane.folded && "cursor-grab touch-none active:cursor-grabbing",
                     lane.folded ? "" : "border-b border-dashed border-[var(--hairline)]",
                     lane.broken > 0 ? "text-[var(--bad)]" : lane.folded ? "text-[var(--accent)]" : "text-[var(--ink-2)]",
                   )}
                   style={{ height: LANE_HEAD - 6, marginTop: 2 }}
                 >
-                  <span className="min-w-0 flex-1 truncate">{lane.label}</span>
+                  {/* The name, typed over in place: a double-click on a service's name edits
+                      it, and the branch and the choice's option change together. The
+                      catch-all has no name to edit — it is whatever the others are not. */}
+                  {renaming === lane.id && group !== undefined ? (
+                    <input
+                      autoFocus
+                      defaultValue={lane.label}
+                      aria-label="Service name"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") e.currentTarget.blur();
+                        if (e.key === "Escape") {
+                          e.currentTarget.value = lane.label;
+                          e.currentTarget.blur();
+                        }
+                      }}
+                      onBlur={(e) => {
+                        const name = e.currentTarget.value;
+                        setRenaming(null);
+                        edit((f) => renameService(f, group, name));
+                      }}
+                      className="min-w-0 flex-1 border-0 bg-transparent p-0 font-mono text-[9.5px] tracking-[0.06em] text-[var(--ink)] focus:outline-none"
+                    />
+                  ) : (
+                    <span
+                      className="min-w-0 flex-1 truncate"
+                      title={isService && !catchAll ? "Double-click to rename" : undefined}
+                      onDoubleClick={() => {
+                        if (isService && !catchAll) setRenaming(lane.id);
+                      }}
+                    >
+                      {lane.label}
+                    </span>
+                  )}
                   <span className="flex-none">
                     {lane.broken > 0 ? `${lane.broken} problem${lane.broken === 1 ? "" : "s"}` : lane.folded ? `${lane.steps} folded` : lane.steps}
                   </span>
                   {/* Fold a service away, or bring it back. On the lane rather than the fork,
                       because the lane is the thing that stops fitting the screen. */}
-                  {lane.id !== "opening" && (
+                  {lane.id !== "opening" && !lane.empty && (
                     <button
                       type="button"
                       aria-pressed={lane.folded}
@@ -1311,8 +1584,18 @@ export const FlowCanvas = ({
                     </button>
                   )}
                 </div>
+                {lane.empty && (
+                  <p className="grid place-items-center px-3 text-center font-mono text-[9.5px] text-[var(--ink-3)]" style={{ height: BODY_H + 4 }}>
+                    drop a step here
+                  </p>
+                )}
+                {/* Where a dropped step would go on this lane: its end. */}
+                {dropLane === lane.id && !lane.empty && (
+                  <span aria-hidden className="absolute right-3 bottom-[3px] left-3 h-[2px] rounded bg-[var(--accent)]" />
+                )}
               </div>
-            ))}
+              );
+            })}
             {/* Another service, beside the last one: the mockup's "+ Add a service" card. It
                 only exists once the call forks — a straight line has nothing to add a service
                 to — and adds the option, the branch and the first step together. */}
@@ -1321,21 +1604,25 @@ export const FlowCanvas = ({
               const first = services[0];
               if (first === undefined) return null;
               const rightmost = services.reduce((best, lane) => (lane.left > best.left ? lane : best), first);
+              const aimedAt = dropNewService || dropBeforeLane === "";
               return (
                 <button
                   type="button"
+                  data-add-service
                   onClick={addNewService}
                   onPointerDown={(e) => e.stopPropagation()}
-                  className="absolute flex items-center justify-center gap-1.5 rounded-[7px] border border-dashed border-[var(--hairline)] bg-transparent font-mono text-[10px] text-[var(--ink-3)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                  className={cn(
+                    "absolute flex items-center justify-center gap-1.5 rounded-[7px] border border-dashed bg-transparent font-mono text-[10px] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]",
+                    aimedAt ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]" : "border-[var(--hairline)] text-[var(--ink-3)]",
+                  )}
                   style={{ left: rightmost.left + rightmost.width + 12, top: rightmost.top, width: NODE_W + 16, height: LANE_HEAD + 40 }}
                 >
-                  + add a service
+                  {dropBeforeLane === "" ? "move here" : drag !== null && "node" in drag.source ? "+ as a new service" : "+ add a service"}
                 </button>
               );
             })()}
             <svg className="pointer-events-none absolute inset-0 overflow-visible">
-              {edgePaths.map((p) =>
-                p === null ? null : (
+              {edgePaths.map((p) => (
                   <g key={p.key}>
                     <path
                       d={p.d}
@@ -1344,7 +1631,7 @@ export const FlowCanvas = ({
                       strokeWidth={1.5}
                       style={{ pointerEvents: "stroke" }}
                       className="cursor-pointer hover:stroke-[var(--bad)]"
-                      onClick={() => removeEdge(p.key)}
+                      onClick={() => removeEdge(p.edge)}
                     />
                     {p.label !== "" && (
                       <text x={p.mid.x} y={p.mid.y} textAnchor="middle" className="pointer-events-none fill-[var(--ink-3)] font-mono text-[9.5px]">
@@ -1352,8 +1639,7 @@ export const FlowCanvas = ({
                       </text>
                     )}
                   </g>
-                ),
-              )}
+              ))}
               {temp !== null && (
                 <path
                   d={bezier({ x: temp.x1, y: temp.y1 }, { x: temp.x2, y: temp.y2 })}
@@ -1385,22 +1671,24 @@ export const FlowCanvas = ({
                   aria-label={`${kind.title}: ${line.title}${marked.has(n.id) ? ", has a problem" : ""}. Enter selects, Delete removes.`}
                   onKeyDown={(e) => onNodeKeyDown(e, n)}
                   onFocus={() => chooseStep(n.id)}
+                  {...(movable(n) ? draggable({ node: n.id }) : {})}
                   onPointerDown={(e) => {
                     chooseStep(n.id);
                     e.stopPropagation();
+                    if (movable(n)) draggable({ node: n.id }).onPointerDown(e);
                   }}
-                  onDragOver={onDragOverTarget(`card:${n.id}`)}
-                  onDragLeave={() => setOver((o) => (o === `card:${n.id}` ? null : o))}
-                  onDrop={onDropOn({ after: n.id })}
                   className={cn(
                     "focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:outline-none",
-                    over === `card:${n.id}` && "ring-2 ring-[var(--accent)]",
+                    draggedNode === n.id && "opacity-40",
                     /* One line: the icon says what kind of step it is, the title says what it
                        does, the subtitle says how. The kind's name is no longer written on
                        the card — "Collect a value" on every question was the heaviest thing
                        on the drawing and told nobody anything the icon did not. */
-                    "group absolute flex w-[208px] cursor-pointer items-start gap-2 rounded-[7px] border bg-[var(--surface-solid)] px-2.5 py-[7px] select-none",
-                    isBad
+                    "group absolute flex w-[208px] touch-none items-start gap-2 rounded-[7px] border bg-[var(--surface-solid)] px-2.5 py-[7px] select-none",
+                    movable(n) ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
+                    dropAfter === n.id
+                      ? "border-[var(--accent)]"
+                      : isBad
                       ? "border-[var(--bad)]"
                       : marked.get(n.id) === "warns"
                         ? "border-[var(--warn)]"
@@ -1467,6 +1755,10 @@ export const FlowCanvas = ({
                       <X className="size-3" />
                     </IconButton>
                   )}
+                  {/* Where a dropped step would go: the gap under this card. */}
+                  {dropAfter === n.id && (
+                    <span aria-hidden className="absolute right-2 -bottom-[13px] left-2 h-[2px] rounded bg-[var(--accent)]" />
+                  )}
                   {/* The dots a link is dragged from. Quiet until the card is hovered or chosen,
                       because on a drawing of forty cards eighty dots are the drawing. */}
                   {ports.map((port, at) => (
@@ -1494,6 +1786,45 @@ export const FlowCanvas = ({
               );
             })}
           </div>
+          {/* The thing being dragged, following the pointer. Fixed to the screen and outside
+              the panned layer, since a fixed element inside a transform is fixed to the
+              transform. Takes no pointer events, so the target beneath it is what is hit. */}
+          {drag !== null && (
+            <div
+              ref={ghostRef}
+              aria-hidden
+              className="pointer-events-none fixed top-0 left-0 z-50 will-change-transform"
+              style={{ transform: `translate(${(dragRef.current?.lastX ?? -9999) - (dragRef.current?.offsetX ?? 0)}px,${(dragRef.current?.lastY ?? -9999) - (dragRef.current?.offsetY ?? 0)}px)` }}
+            >
+              {"kind" in drag.source && (
+                <div className="flex items-center gap-2 rounded-[7px] border border-[var(--accent)] bg-[var(--surface-solid)] px-2.5 py-[7px] text-[11px] font-semibold text-[var(--ink)] shadow-lg">
+                  <KindIcon kind={drag.source.kind} size={10} />
+                  {NODE_KINDS[drag.source.kind].title}
+                </div>
+              )}
+              {"node" in drag.source && (() => {
+                const node = byId(drag.source.node);
+                if (node === undefined) return null;
+                const line = cardLine(node, edges);
+                return (
+                  <div className="flex w-[208px] items-start gap-2 rounded-[7px] border border-[var(--accent)] bg-[var(--surface-solid)] px-2.5 py-[7px] shadow-lg">
+                    <span className="mt-[1px] grid size-4 flex-none place-items-center rounded-[4px]" style={{ background: `color-mix(in srgb, ${NODE_KINDS[node.kind].colour} 16%, transparent)` }}>
+                      <KindIcon kind={node.kind} size={10} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <b className="block truncate text-[11px] leading-[1.35] font-semibold text-[var(--ink)]">{line.title || line.placeholder}</b>
+                      <span className="block truncate font-mono text-[10px] leading-[1.45] text-[var(--ink-3)]">{line.subtitle}</span>
+                    </span>
+                  </div>
+                );
+              })()}
+              {"lane" in drag.source && (
+                <div className="rounded-[7px] border border-[var(--accent)] bg-[var(--surface)] px-3 py-1.5 font-mono text-[9.5px] tracking-[0.06em] text-[var(--ink)] shadow-lg" style={{ width: NODE_W + 16 }}>
+                  {drag.source.lane.label} · {drag.source.lane.ids.length}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Whether this graph could answer a phone, under the graph itself and recomputed on
