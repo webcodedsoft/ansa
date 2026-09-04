@@ -59,7 +59,7 @@ export const Sidebar = ({
   readonly collapsed?: boolean;
 }) => {
   const pathname = usePathname();
-  const allowed = allowedDestinations(capabilities);
+  const allowed = allowedDestinations(capabilities).filter((d) => d.inSidebar !== false);
   const initials = organisation.slice(0, 1).toUpperCase();
 
   const item = (d: Destination) => {

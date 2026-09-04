@@ -16,6 +16,12 @@ export interface Destination {
   readonly group: NavGroup;
   /** Hidden when the caller lacks it. Presentation only — the API still checks. */
   readonly capability?: string;
+  /**
+   * Reachable from the sidebar as its own row. False for a destination that is a button
+   * on the page it belongs to and only needs to exist here for the palette and the
+   * breadcrumb — "Build an agent" is the New agent button on the agents list.
+   */
+  readonly inSidebar?: false;
 }
 
 export type NavGroup = "Operate" | "Agents" | "Connect" | "Organisation";
@@ -31,7 +37,7 @@ export const DESTINATIONS: readonly Destination[] = [
   { href: "/metrics", label: "Metrics", group: "Operate", capability: "calls:read" },
 
   { href: "/agents", label: "All agents", group: "Agents", capability: "config:read" },
-  { href: "/agents/new", label: "Build an agent", group: "Agents", capability: "config:write" },
+  { href: "/agents/new", label: "Build an agent", group: "Agents", capability: "config:write", inSidebar: false },
   { href: "/tools", label: "Tool registry", group: "Agents", capability: "config:read" },
 
   { href: "/numbers", label: "Numbers", group: "Connect", capability: "config:read" },
