@@ -4003,6 +4003,19 @@ this slice: forty new lines across all layers, net of what is removed.
       net lines. The keyterm bias was measured, not argued: on a real call the shipped list
       is byte-identical to names alone (see `defaults.ts`). The sign-in intermittent now
       reports the body it got, so the next failure says what happened.
+- [x] **Memory and warmth (2026-09-04).** Three things, one of them code. *Past calls:*
+      `CallerHistory.knownAs` is the name confirmed on an earlier call from this number,
+      offered to the model as something to check — "is that Adaeze?" — and never to open
+      with, because a number is a phone and not a person. RLS-tested against another
+      organisation's more recent name. *This call:* everything the caller has said is for
+      using anywhere it fits — the name when reassuring, asking, correcting, closing; the
+      place, the number, the thing they asked three turns ago, said back as the particular
+      and never as "that" — with the name's own lines rendered only once there is one.
+      *Warmth:* thanks for waiting when they waited, sorry once when there was trouble, a
+      few words for the thing they told you, an acknowledgement before the answer — and
+      never on schedule. Found on the way: a configured `name` field confirmed the
+      operator's key and left the identifier slot saying "still checking it, do not use it
+      yet", so the model was told both on every call with a name field. Fixed.
 - [ ] **E4.** After real calls: `GET /calls/catchphrases` for repetition, and the call log
       for how often a clarifying question was asked. This is the only proof that matters
       and it needs a phone.

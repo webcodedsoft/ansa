@@ -183,7 +183,9 @@ describe("what we already know about this caller", () => {
     contactsThisWeek: number;
     lastCallAbout: string | null;
     lastCallHandedOver: boolean;
+    knownAs: string | null;
   }> = {}) => ({
+    knownAs: null as string | null,
     lastContactDaysAgo: 1,
     contactsThisWeek: 1,
     lastCallAbout: null as string | null,
@@ -263,6 +265,19 @@ describe("what we already know about this caller", () => {
     expect(thrice).toContain("their 4th call this week");
     expect(thrice).toContain("get them to a person now");
   });
+
+  it("offers a name from an earlier call as something to check, never to open with", () => {
+    const rendered = renderSituation(describeSituation(at({ history: rang({ knownAs: "Adaeze" }) })));
+
+    expect(rendered).toContain('gave the name "Adaeze"');
+    expect(rendered).toContain('"is that Adaeze?"');
+    expect(rendered).toContain("Never open with it");
+  });
+
+  it("says nothing about a name when no earlier call confirmed one", () => {
+    expect(renderSituation(describeSituation(at({ history: rang() })))).not.toContain("gave the name");
+  });
+
 });
 
 describe("a turn the transcriber doubted", () => {

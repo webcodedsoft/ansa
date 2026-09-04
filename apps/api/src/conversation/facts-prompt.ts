@@ -106,5 +106,20 @@ export const renderFacts = (facts: CallFacts): string => {
   // the agent knows nothing, which is both a waste of the prompt and an odd thing to read.
   if (known.length === 0) return "";
 
-  return [HEADER, "", ...known, "", ...RULES].join("\n");
+  /* How to use what is known. Everything above is there to be used, not only recorded:
+     the particular said back — the name, the number, the place — is what tells a caller
+     they were listened to. The name gets its own lines once there is one, because it is
+     the single biggest thing that makes a call feel like a person was on it and the
+     easiest to overdo: a name in every sentence is a telesales script. */
+  const usingIt = [
+    "Use all of this wherever a person who was listening would: say the particular back — the place, the number, the thing they asked for — rather than \"that\" or \"your request\".",
+    ...(facts.callerName.status === "UNKNOWN"
+      ? []
+      : [
+          "Use their name the way a person would: when you first have it, when you reassure them, when you ask something that matters, when you have to give bad news, when you correct yourself, and when you say goodbye. Wherever it fits — and not in every sentence.",
+          "First name, unless they gave a title with it. Never add Mr or Mrs yourself. If they have been calling you sir or ma, give it back at the moments it fits: \"Of course, ma.\" \"Goodbye, Mr Adewale.\"",
+        ]),
+  ];
+
+  return [HEADER, "", ...known, "", ...RULES, ...usingIt].join("\n");
 };

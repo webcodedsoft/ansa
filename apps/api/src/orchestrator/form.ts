@@ -219,7 +219,7 @@ export const renderGuidance = (guidance: Guidance): string => {
       break;
     }
     case "end":
-      lines.push("- You have everything this call needed. Wrap up, say goodbye, and use end_call.");
+      lines.push("- You have everything this call needed. Wrap up in their terms — what they asked for, what happens next — say goodbye, and use end_call.");
       break;
     case "transfer":
       lines.push("- This call now goes to a person. Say so, and use transfer_to_human.");

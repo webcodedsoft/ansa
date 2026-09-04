@@ -246,6 +246,15 @@ const historyLines = (situation: Situation): readonly string[] => {
     );
   }
 
+  if (history.knownAs !== null) {
+    /* A number is a phone, not a person. The name is offered as something to check, in the
+       words a person would use — and the model is told what not to do with it, because the
+       obvious move, "Welcome back, Adaeze!", is the one that goes wrong on a shared phone. */
+    lines.push(
+      `- Somebody calling from this number before gave the name "${history.knownAs}". It may be them or somebody else on the same phone: check — "is that ${history.knownAs}?" — and use it once they say so. Never open with it as though you know who is calling.`,
+    );
+  }
+
   if (history.lastCallHandedOver) {
     /* A handover is a fact; what it was about is not, so the line says only what is known.
        An agent told "their last issue is unresolved" will invent the issue. */

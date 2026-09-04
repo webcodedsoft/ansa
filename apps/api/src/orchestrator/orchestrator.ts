@@ -2842,6 +2842,21 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
           log.warn("a confirmed value was contradicted and not applied", { field });
           record.event("fact contested", { field });
         }
+        /* A configured question that is *also* an identifier — a `name` field, whatever the
+           operator keyed it — confirms the identifier too. Without this the value landed
+           under the operator's key as "you may use it" while the identifier slot, which the
+           STT observation had left uncertain, went on saying "still checking it, do not use
+           it yet" — two lines about one name, contradicting each other, on every call with a
+           name field. Found by asking the goodbye turn what it knew. */
+        const identifier = FACT_FIELD_FOR[capturedKind];
+        if (target !== null && target !== undefined && identifier !== undefined) {
+          deps.facts?.observe({
+            field: identifier,
+            value: captured,
+            source: "caller-confirmation",
+            atMs: Date.now(),
+          });
+        }
       }
       // Whatever the form wants next, so the caller's following turn is parsed as an
       // answer to it rather than guessed at.

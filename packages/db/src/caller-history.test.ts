@@ -108,6 +108,26 @@ beforeAll(async () => {
        values ($1, $2, 'escalated to a human', '{"text":"let me get a colleague"}'::jsonb)`,
       [ORGANIZATION, CALL_YESTERDAY],
     );
+    /* A name confirmed last week, and a policy number confirmed yesterday. Only the name
+       is a name; the newer capture must not be mistaken for one. On the call in progress a
+       name is confirmed too, and it must not read as history. */
+    await scope.query(
+      `insert into call_captures (organization_id, call_id, field_key, field_type, value, confirmed_at)
+       values ($1, $2, 'callerName', 'name', 'Adaeze', $3),
+              ($1, $4, 'policyNumber', 'reference', 'PM8592625', $5),
+              ($1, $6, 'callerName', 'name', 'Somebody Else', $7)`,
+      [ORGANIZATION, CALL_LAST_WEEK, daysAgo(6), CALL_YESTERDAY, daysAgo(1), CALL_TODAY, NOW.toISOString()],
+    );
+  });
+  /* The other organisation heard a name from this number too, more recently. Must be
+     invisible — and written in its own scope, because RLS refusing a row aborts the whole
+     transaction it was attempted in, not just the statement. */
+  await withOrganization(db, OTHER, async (scope) => {
+    await scope.query(
+      `insert into call_captures (organization_id, call_id, field_key, field_type, value, confirmed_at)
+       values ($1, $2, 'callerName', 'name', 'Not Ours', $3)`,
+      [OTHER, CALL_OTHER_ORG, daysAgo(2)],
+    );
   });
 });
 
@@ -141,6 +161,17 @@ describe("what this number has done before", () => {
     expect((await read()).contactsThisWeek).toBe(2);
   });
 
+  it("remembers the name they confirmed on an earlier call, and only a name", async () => {
+    const history = await read();
+
+    expect(history.knownAs).toBe("Adaeze");
+  });
+
+  it("does not take the name confirmed on the call in progress as history", async () => {
+    // Only the earlier one is there, so the newest capture — today's — was excluded.
+    expect((await read()).knownAs).not.toBe("Somebody Else");
+  });
+
   it("reports a handover on their last call", async () => {
     expect((await read()).lastCallHandedOver).toBe(true);
   });
@@ -153,6 +184,7 @@ describe("what this number has done before", () => {
       // Nothing to have been about, because there was no previous call.
       lastCallAbout: null,
       lastCallHandedOver: false,
+      knownAs: null,
     });
   });
 

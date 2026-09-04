@@ -269,6 +269,22 @@ describe("sounding like a person on a Nigerian line", () => {
     expect(shared).toContain("Only when the difference changes what you'd do next");
   });
 
+  it("is kind at the moments kindness belongs, and acknowledges before it acts", () => {
+    expect(shared).toContain("Kindness, in small doses");
+    expect(shared).toContain("Thank them for waiting when they waited.");
+    expect(shared).toContain("Acknowledge before you act.");
+    expect(shared).toContain("Warmth that arrives every turn is a script");
+  });
+
+  it("uses what was said earlier on the call, in the caller's own particulars", () => {
+    expect(shared).toContain("Everything they have told you on this call is yours to use, anywhere it fits");
+    expect(shared).toContain("Don't wait to be asked, and don't save it for the goodbye.");
+  });
+
+  it("closes by name when it has one", () => {
+    expect(shared).toContain("close warmly — by name, if you have it");
+  });
+
   it("checks a decision before acting on it, and keeps that apart from mirroring", () => {
     expect(shared).toContain("Before you act on anything with a consequence");
     expect(shared).toContain("say it back in one short line as a question and wait");

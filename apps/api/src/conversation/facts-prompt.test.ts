@@ -32,6 +32,21 @@ describe("renderFacts", () => {
     expect(block).toContain("Do not ask for any of it again.");
   });
 
+  it("says how to use the name, and only once there is one", () => {
+    const store = facts();
+    // A policy number alone: something is known, but nothing to call them by.
+    store.observe({ field: "policyNumber", value: "PM8592625", source: "caller-confirmation", atMs: 0 });
+    expect(renderFacts(store.facts)).not.toContain("Use their name");
+    // But everything known is for using, name or not.
+    expect(renderFacts(store.facts)).toContain("say the particular back");
+
+    store.observe({ field: "callerName", value: "Adewale", source: "caller-confirmation", atMs: 1 });
+    const block = renderFacts(store.facts);
+    expect(block).toContain("Use their name the way a person would");
+    expect(block).toContain("Wherever it fits — and not in every sentence.");
+    expect(block).toContain("Never add Mr or Mrs yourself.");
+  });
+
   // The one that matters. A model that can see the candidate will say it back — "thanks,
   // Adeyemi" — and the caller hears a wrong name asserted as fact by the same agent that
   // is supposedly still checking it.

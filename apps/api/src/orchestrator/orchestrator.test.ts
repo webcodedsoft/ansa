@@ -1615,6 +1615,7 @@ describe("the prompt the call was configured with", () => {
         lastContactDaysAgo: 1,
         contactsThisWeek: 2,
         lastCallAbout: null,
+        knownAs: null,
       lastCallHandedOver: true,
       }),
     });
@@ -3354,6 +3355,29 @@ describe("the platform tools on a call", () => {
       // No handoff, so the steering is all there is: the model is asked to speak, and told.
       expect(h.llm.completions.length).toBe(before + 1);
       expect(h.llm.last().request.system).toContain("transfer_to_human");
+    });
+
+    /**
+     * The whole of "remember who you are talking to", on one call: the name is heard,
+     * read back, agreed — and the goodbye turn is told the name, told how to use it, and
+     * told to use it now.
+     */
+    it("takes the caller's name into the goodbye", () => {
+      const facts = createCallFacts({
+        organizationId: asOrganizationId("11111111-1111-4111-8111-111111111111"),
+        callId: asCallId("CA-goodbye"),
+        callDirection: "inbound",
+      });
+      const h = setup({ flow: oneQuestionThenEnd("hangup"), makeTools: platform(), facts });
+      answerTheOnlyQuestion(h);
+
+      const goodbye = h.llm.last().request.system;
+      // Found on the way here: the identifier slot said "still checking it, do not use it
+      // yet" while the operator's key said "you may use it", about the same name.
+      expect(goodbye).not.toContain("still checking it");
+      expect(goodbye).toContain("Their name: Sikiru. They confirmed it. You may use it.");
+      expect(goodbye).toContain("Use their name the way a person would");
+      expect(goodbye).toContain("Wrap up in their terms");
     });
 
     it("does not treat a graph that asks nothing as an instruction to greet and hang up", () => {

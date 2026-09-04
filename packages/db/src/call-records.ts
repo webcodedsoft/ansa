@@ -344,6 +344,15 @@ export interface CallerHistory {
    */
   readonly lastCallAbout: string | null;
   readonly lastCallHandedOver: boolean;
+  /**
+   * The name somebody gave, and confirmed, on the most recent earlier call from this number.
+   *
+   * A number is a phone, not a person: a family shares one, an office passes one round. So
+   * this is what the agent may *check* — "is that Adaeze?" — and never what it may assert,
+   * and the situation block says so. Null when no earlier call in the window captured a
+   * confirmed name.
+   */
+  readonly knownAs: string | null;
 }
 
 export interface CallerHistoryRequest {
@@ -454,8 +463,25 @@ export const readCallerHistory = async (
       contactsThisWeek: 0,
       lastCallAbout: null,
       lastCallHandedOver: false,
+      knownAs: null,
     };
   }
+
+  /* The newest confirmed name from any earlier call in the window, not only the last call:
+     the last call may have been a wrong number or a hang-up, and the name they gave the
+     week before is still the name. Scoped by RLS like everything here. */
+  const named = await scope.query<{ value: string }>(
+    `select cc.value
+       from call_captures cc
+       join calls c on c.id = cc.call_id
+      where c.caller = $1
+        and c.carrier_call_id <> $2
+        and c.created_at >= $3
+        and cc.field_type = 'name'
+      order by cc.confirmed_at desc
+      limit 1`,
+    [request.caller, request.carrierCallId, since.toISOString()],
+  );
 
   const handover = await scope.query<{ handed_over: boolean }>(
     `select exists (
@@ -492,5 +518,6 @@ export const readCallerHistory = async (
       .length,
     lastCallAbout: subjectOf(said.map((row) => row.text)),
     lastCallHandedOver: handover[0]?.handed_over ?? false,
+    knownAs: named[0]?.value.trim() || null,
   };
 };
