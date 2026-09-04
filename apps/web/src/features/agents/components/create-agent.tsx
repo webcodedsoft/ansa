@@ -169,20 +169,24 @@ export const CreateAgent = ({ mode }: { readonly mode: AuthoringMode }) => {
         </div>
       </div>
 
-      {/* Capped to the viewport and scrolling inside itself: a preview that outgrows the
-          window is the thing this replaced. */}
-      <div className="glass max-h-[calc(100vh-2rem)] self-start overflow-y-auto rounded-xl p-4 lg:sticky lg:top-4">
-        <h3 className="text-[13.5px] font-semibold">{authoringMode === "flow" ? "The flow this draws" : "How this will sound"}</h3>
-        <p className="mt-1 mb-3 text-[12.5px] text-[var(--ink-3)]">
-          {authoringMode === "flow"
-            ? "One caller's path through the canvas, from answer to end."
-            : "One call this template produces, from its own settings."}
-        </p>
-        {template === null ? (
-          <p className="text-[12.5px] text-[var(--ink-3)]">Pick a starting point.</p>
-        ) : (
-          <TemplatePreview key={template.id} template={template} mode={authoringMode} />
-        )}
+      {/* The same height as the form beside it, exactly. The panel is taken out of the row's
+          height calculation — absolute inside its cell — so the row is as tall as the form
+          and no taller, and the call scrolls inside the panel rather than running past
+          "Create agent". Below `lg` the columns stack and the panel is an ordinary block. */}
+      <div className="relative lg:min-h-0">
+        <div className="glass flex flex-col rounded-xl p-4 lg:absolute lg:inset-0">
+          <h3 className="text-[13.5px] font-semibold">{authoringMode === "flow" ? "The flow this draws" : "How this will sound"}</h3>
+          <p className="mt-1 mb-3 text-[12.5px] text-[var(--ink-3)]">
+            {authoringMode === "flow"
+              ? "One caller's path through the canvas, from answer to end."
+              : "One call this template produces, from its own settings."}
+          </p>
+          {template === null ? (
+            <p className="text-[12.5px] text-[var(--ink-3)]">Pick a starting point.</p>
+          ) : (
+            <TemplatePreview key={template.id} template={template} mode={authoringMode} />
+          )}
+        </div>
       </div>
     </div>
   );

@@ -69,15 +69,19 @@ const walk = (template: AgentTemplate, service: string | null): Walk => {
   };
 };
 
+/**
+ * A chat, not a script: the agent on the left, the caller on the right, and no role label on
+ * every line — the side says who is speaking, as it does in any messaging app. The flat
+ * corner sits where the speaker is, the way a bubble's tail would.
+ */
 const Line = ({ who, text }: { readonly who: "agent" | "caller"; readonly text: string }) => (
-  <div>
-    <p className="mb-1 font-mono text-[9.5px] tracking-[0.13em] text-[var(--ink-3)] uppercase">{who}</p>
+  <div className={cn("flex", who === "agent" ? "justify-start" : "justify-end")}>
     <p
       className={cn(
-        "rounded-[10px] border px-3 py-2 text-[12.5px]",
+        "max-w-[86%] border px-3 py-1.5 text-[12.5px] leading-snug",
         who === "agent"
-          ? "border-[var(--hairline)] bg-[var(--surface-2)] text-[var(--ink)]"
-          : "border-[color-mix(in_srgb,var(--accent)_26%,transparent)] bg-[var(--accent-soft)] text-[var(--ink)]",
+          ? "rounded-[12px] rounded-bl-[4px] border-[var(--hairline)] bg-[var(--surface-2)] text-[var(--ink)]"
+          : "rounded-[12px] rounded-br-[4px] border-[color-mix(in_srgb,var(--accent)_26%,transparent)] bg-[var(--accent-soft)] text-[var(--ink)]",
       )}
     >
       {text}
@@ -98,28 +102,28 @@ const Ending = ({ ending }: { readonly ending: Walk["ending"] }) => {
 };
 
 const Note = ({ icon: Icon, title, text }: { readonly icon: LucideIcon; readonly title: string; readonly text: string }) => (
-  <div className="flex gap-2.5 rounded-[10px] border border-dashed border-[var(--hairline)] px-3 py-2">
+  <div className="mx-auto mt-1 flex max-w-[92%] gap-2 rounded-[10px] border border-dashed border-[var(--hairline)] px-3 py-2">
     <Icon aria-hidden className="mt-0.5 size-3.5 flex-none text-[var(--accent)]" />
     <span>
-      <span className="block text-[12px] font-medium">{title}</span>
-      <span className="block text-[12px] text-[var(--ink-3)]">{text}</span>
+      <span className="block text-[11.5px] font-medium">{title}</span>
+      <span className="block text-[11.5px] text-[var(--ink-3)]">{text}</span>
     </span>
   </div>
 );
 
 const Transcript = ({ template, walked }: { readonly template: AgentTemplate; readonly walked: Walk }) => (
-  <div className="flex flex-col gap-2.5">
+  <div className="flex flex-col gap-1.5">
     {template.greeting !== "" && <Line who="agent" text={template.greeting} />}
     {walked.steps.map((step, at) =>
       step.kind === "fork" ? (
-        <div key={at} className="flex flex-col gap-2.5">
+        <div key={at} className="flex flex-col gap-1.5">
           {/* The greeting already asks what they rang about; asking again right after it
               would be two agent turns in a row, which no agent gets to have. */}
           {!(at === 0 && template.greeting !== "") && <Line who="agent" text={step.on.prompt} />}
           <Line who="caller" text={step.chose} />
         </div>
       ) : (
-        <div key={at} className="flex flex-col gap-2.5">
+        <div key={at} className="flex flex-col gap-1.5">
           <Line who="agent" text={step.field.prompt === "" ? `asks for their ${step.field.key}` : step.field.prompt} />
           <Line who="caller" text={heardAs(step.field, step.answer)} />
           {step.field.confirm !== "none" && (
@@ -187,9 +191,12 @@ export const TemplatePreview = ({ template, mode }: { readonly template: AgentTe
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    /* Three bands, like a messaging window: what to play stays at the top, the call scrolls
+       in the middle, the tally stays at the bottom. `min-h-0` on the middle band is what
+       lets it scroll instead of stretching the panel past the column it sits beside. */
+    <div className="flex h-full min-h-0 flex-col">
       {services.length > 0 && (
-        <div>
+        <div className="mb-3">
           <p className="mb-1.5 text-[11.5px] text-[var(--ink-3)]">
             {mode === "flow" ? "Follow one caller's path. Choose what they rang about:" : "Play one call. Choose what the caller rang about:"}
           </p>
@@ -214,7 +221,9 @@ export const TemplatePreview = ({ template, mode }: { readonly template: AgentTe
         </div>
       )}
 
-      {mode === "flow" ? <Steps walked={walked} /> : <Transcript template={template} walked={walked} />}
+      <div className="min-h-0 flex-1 overflow-y-auto pr-1 pb-2">
+        {mode === "flow" ? <Steps walked={walked} /> : <Transcript template={template} walked={walked} />}
+      </div>
 
       <div className="flex flex-wrap items-center gap-1.5 border-t border-[var(--hairline)] pt-2.5">
         {services.length > 0 && <Tag tone="accent">{services.length} services</Tag>}
