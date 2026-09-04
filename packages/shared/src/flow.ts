@@ -143,8 +143,8 @@ export const MAX_FLOW_FIELDS = 40;
 export const emptyFlow = (): Flow => ({
   version: FLOW_VERSION,
   nodes: [
-    { id: "start", kind: "start", x: 40, y: 120 },
-    { id: "end", kind: "hangup", x: 380, y: 120 },
+    { id: "start", kind: "start", x: 40, y: 90 },
+    { id: "end", kind: "hangup", x: 40, y: 260 },
   ],
   edges: [{ from: "start", to: "end" }],
 });

@@ -151,8 +151,8 @@ export type Flow = z.infer<typeof flowSchema>;
 export const emptyFlow = (): Flow => ({
   version: FLOW_VERSION,
   nodes: [
-    { id: "start", kind: "start", x: 40, y: 120 },
-    { id: "end", kind: "hangup", x: 380, y: 120 },
+    { id: "start", kind: "start", x: 40, y: 90 },
+    { id: "end", kind: "hangup", x: 40, y: 260 },
   ],
   edges: [{ from: "start", to: "end" }],
 });
@@ -194,8 +194,8 @@ export const readFlow = (value: unknown): Flow | null => {
  * operator's word and can be renamed on the canvas afterwards; a node id that travelled
  * with it would leave every edge pointing at a node that no longer exists.
  *
- * One row, left to right. `Tidy up` re-lays it the moment anybody branches — this only has
- * to be legible and not overlapping.
+ * One column, top to bottom. `Tidy up` re-lays it the moment anybody branches — this only
+ * has to be legible and not overlapping.
  */
 export const flowFromFields = (fields: readonly FlowField[]): Flow => {
   // The API caps a form at forty questions and therefore caps a graph's projection at forty.
@@ -206,18 +206,20 @@ export const flowFromFields = (fields: readonly FlowField[]): Flow => {
      the same places. Two near-identical starting graphs would be one more thing that can
      drift apart, and the difference between them would be four pixels nobody chose. */
   if (asked.length === 0) return emptyFlow();
-  const nodes: Flow["nodes"][number][] = [{ id: "start", kind: "start", x: 40, y: 120 }];
+  // Top to bottom, one step under the last: the way the call reads, and the way the canvas
+  // lays a flow out. Tidy up re-lays it the moment anybody branches.
+  const nodes: Flow["nodes"][number][] = [{ id: "start", kind: "start", x: 40, y: 90 }];
   const edges: Flow["edges"][number][] = [];
 
   let previous = "start";
   asked.forEach((field, index) => {
     const id = `ask-${index + 1}`;
-    nodes.push({ id, kind: "collect", x: 40 + (index + 1) * 220, y: 120, field });
+    nodes.push({ id, kind: "collect", x: 40, y: 90 + (index + 1) * 170, field });
     edges.push({ from: previous, to: id });
     previous = id;
   });
 
-  nodes.push({ id: "end", kind: "hangup", x: 40 + (asked.length + 1) * 220, y: 120 });
+  nodes.push({ id: "end", kind: "hangup", x: 40, y: 90 + (asked.length + 1) * 170 });
   edges.push({ from: previous, to: "end" });
   return { version: FLOW_VERSION, nodes, edges };
 };

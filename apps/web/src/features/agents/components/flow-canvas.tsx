@@ -2,7 +2,21 @@
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 
-import { LayoutGrid, Maximize2, Redo2, Undo2 } from "lucide-react";
+import {
+  CheckCircle2,
+  GitBranch,
+  LayoutGrid,
+  Maximize2,
+  MessageSquareText,
+  PhoneForwarded,
+  PhoneIncoming,
+  PhoneOff,
+  Redo2,
+  TextCursorInput,
+  Undo2,
+  Wrench,
+  type LucideIcon,
+} from "lucide-react";
 
 import { Button, CONTROL, IconButton, Notice, SelectField, TextAreaField, TextField } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -67,22 +81,31 @@ import { FlowStatus } from "./flow-status";
 interface NodeKindSpec {
   readonly title: string;
   readonly colour: string;
+  /** What the step does, at a glance: a card and a palette row read faster by shape than by title. */
+  readonly icon: LucideIcon;
   readonly body: (node: FlowNode) => string;
 }
 
 const NODE_KINDS: Record<FlowNodeKind, NodeKindSpec> = {
-  start: { title: "Call answered", colour: "var(--ok)", body: () => "The caller has picked up, or has dialled in." },
-  say: { title: "Say something", colour: "var(--accent)", body: (n) => (n.text ?? "") === "" ? "Nothing to cover here yet." : `“${n.text ?? ""}”` },
+  start: { title: "Call answered", colour: "var(--ok)", icon: PhoneIncoming, body: () => "The caller has picked up, or has dialled in." },
+  say: { title: "Say something", colour: "var(--accent)", icon: MessageSquareText, body: (n) => (n.text ?? "") === "" ? "Nothing to cover here yet." : `“${n.text ?? ""}”` },
   collect: {
     title: "Collect a value",
     colour: "var(--ok)",
+    icon: TextCursorInput,
     body: (n) => `${n.field?.key === "" || n.field === undefined ? "unnamed" : n.field.key} · ${n.field?.capture ?? "either"} · ${n.field?.confirm ?? "none"}`,
   },
-  confirm: { title: "Confirm a value", colour: "var(--ok)", body: (n) => `Read back ${n.on === "" || n.on === undefined ? "a value you have not named" : n.on}` },
-  decide: { title: "Branch", colour: "var(--accent)", body: (n) => `On ${n.on === "" || n.on === undefined ? "a value you have not named" : n.on}` },
-  tool: { title: "Call a tool", colour: "var(--warn)", body: (n) => (n.tool ?? "") === "" ? "No tool chosen yet." : (n.tool ?? "") },
-  transfer: { title: "Transfer to human", colour: "var(--bad)", body: () => "Rings a person. Irreversible tools land here." },
-  hangup: { title: "End the call", colour: "var(--ink-3)", body: () => "Says goodbye and hangs up." },
+  confirm: { title: "Confirm a value", colour: "var(--ok)", icon: CheckCircle2, body: (n) => `Read back ${n.on === "" || n.on === undefined ? "a value you have not named" : n.on}` },
+  decide: { title: "Branch", colour: "var(--accent)", icon: GitBranch, body: (n) => `On ${n.on === "" || n.on === undefined ? "a value you have not named" : n.on}` },
+  tool: { title: "Call a tool", colour: "var(--warn)", icon: Wrench, body: (n) => (n.tool ?? "") === "" ? "No tool chosen yet." : (n.tool ?? "") },
+  transfer: { title: "Transfer to human", colour: "var(--bad)", icon: PhoneForwarded, body: () => "Rings a person. Irreversible tools land here." },
+  hangup: { title: "End the call", colour: "var(--ink-3)", icon: PhoneOff, body: () => "Says goodbye and hangs up." },
+};
+
+/** A step kind's icon, in its colour. The one mark that is the same in the palette, on the card and in the inspector. */
+const KindIcon = ({ kind, size = 14 }: { readonly kind: FlowNodeKind; readonly size?: number }) => {
+  const Icon = NODE_KINDS[kind].icon;
+  return <Icon aria-hidden className="flex-none" style={{ color: NODE_KINDS[kind].colour, width: size, height: size }} />;
 };
 
 const PALETTE: readonly { readonly group: string; readonly kinds: readonly FlowNodeKind[] }[] = [
@@ -160,10 +183,20 @@ const onlyPort = (from: string): Port => ({
   wire: (to) => ({ from, to }),
 });
 
-const namedPort = (from: string, name: string, label: string): Port => ({
+/**
+ * A named way out of a step.
+ *
+ * The first port also holds an edge that names no port at all. That is the director's rule
+ * — a port with no edge of its own takes the first edge — and a graph seeded from a form
+ * has exactly those edges. Without this the canvas drew the link from the first port and
+ * the inspector said the port led nowhere, about the same edge.
+ */
+const namedPort = (from: string, name: string, label: string, first = false): Port => ({
   key: name,
   label,
-  holds: (edge) => edge.from === from && edge.port === name,
+  holds: (edge) =>
+    edge.from === from &&
+    (edge.port === name || (first && edge.port === undefined && edge.when === undefined && edge.otherwise !== true)),
   wire: (to) => ({ from, to, port: name }),
 });
 
@@ -212,11 +245,11 @@ const portsOf = (node: FlowNode, edges: readonly FlowEdge[], pending: readonly F
     case "say":
       return [onlyPort(node.id)];
     case "collect":
-      return [namedPort(node.id, "got", "got it"), namedPort(node.id, "gave-up", "gave up")];
+      return [namedPort(node.id, "got", "got it", true), namedPort(node.id, "gave-up", "gave up")];
     case "confirm":
-      return [namedPort(node.id, "yes", "yes"), namedPort(node.id, "no", "no")];
+      return [namedPort(node.id, "yes", "yes", true), namedPort(node.id, "no", "no")];
     case "tool":
-      return [namedPort(node.id, "ok", "ok"), namedPort(node.id, "failed", "failed")];
+      return [namedPort(node.id, "ok", "ok", true), namedPort(node.id, "failed", "failed")];
     case "decide":
       return branchPorts(node.id, edges, pending);
     case "transfer":
@@ -257,19 +290,30 @@ const stepForward = (history: History): History => {
 /* ----------------------------------------------------------------------- layout */
 
 const NODE_W = 208;
-const HEAD = 15;
+/** A card's height before its port row, for the fallback when a dot has not been measured. */
+const BODY_H = 88;
 const COLUMN = 260;
-const ROW = 150;
+const ROW = 170;
+/** Where the first row sits: under the toolbar that lies along the top edge of the drawing. */
+const TOP = 90;
 
 interface Point {
   readonly x: number;
   readonly y: number;
 }
 
+/**
+ * A connector runs downwards. The call reads top to bottom — the answer at the top, the
+ * goodbye at the bottom, branches spreading sideways in between — so a link leaves the
+ * bottom of one card and arrives at the top of the next, and the curve bends vertically.
+ */
 const bezier = (p1: Point, p2: Point): string => {
-  const dx = Math.max(46, Math.abs(p2.x - p1.x) * 0.45);
-  return `M${p1.x} ${p1.y} C${p1.x + dx} ${p1.y},${p2.x - dx} ${p2.y},${p2.x} ${p2.y}`;
+  const dy = Math.max(46, Math.abs(p2.y - p1.y) * 0.45);
+  return `M${p1.x} ${p1.y} C${p1.x} ${p1.y + dy},${p2.x} ${p2.y - dy},${p2.x} ${p2.y}`;
 };
+
+/** Where the `at`-th of `count` ports sits along a card's bottom edge, as a fraction of its width. */
+const portAlong = (at: number, count: number): number => (2 * at + 1) / (2 * Math.max(count, 1));
 
 /**
  * Tidy up: columns by distance from the answer, rows by arrival.
@@ -297,15 +341,27 @@ const tidied = (flow: Flow): Flow => {
     }
   }
 
+  /* Depth is the row — the call reads down the page — and the steps a call can reach at
+     the same depth sit side by side in it, centred under the row above, so a branch reads
+     as a fork and not a staircase. Anything the walk never reaches goes in a row of its own
+     below the end, which is also the clearest way to see that a step is unreachable. */
   const unreached = Math.max(0, ...[...depth.values()].map((value) => value + 1));
+  const perRow = new Map<number, number>();
+  for (const node of flow.nodes) {
+    const row = depth.get(node.id) ?? unreached;
+    perRow.set(row, (perRow.get(row) ?? 0) + 1);
+  }
+  const widest = Math.max(1, ...perRow.values());
   const filled = new Map<number, number>();
   return {
     ...flow,
     nodes: flow.nodes.map((node) => {
-      const column = depth.get(node.id) ?? unreached;
-      const row = filled.get(column) ?? 0;
-      filled.set(column, row + 1);
-      return { ...node, x: 40 + column * COLUMN, y: 40 + row * ROW };
+      const row = depth.get(node.id) ?? unreached;
+      const across = filled.get(row) ?? 0;
+      filled.set(row, across + 1);
+      const inRow = perRow.get(row) ?? 1;
+      const x = 40 + ((widest - inRow) / 2 + across) * COLUMN;
+      return { ...node, x, y: TOP + row * ROW };
     }),
   };
 };
@@ -544,9 +600,11 @@ export const FlowCanvas = ({ flow, publishForm, authoringMode, onBlockingProblem
 
   const outPoint = (node: FlowNode, key: string, at: number): Point => {
     const dot = portRefs.current.get(`${node.id}:${key}`);
-    return dot ? { x: node.x + NODE_W, y: node.y + dot.offsetTop + 5.5 } : { x: node.x + NODE_W, y: node.y + HEAD + at * 20 };
+    if (dot) return { x: node.x + dot.offsetLeft + 5.5, y: node.y + dot.offsetTop + 5.5 };
+    const count = portsFor(node).length;
+    return { x: node.x + NODE_W * portAlong(at, count), y: node.y + BODY_H };
   };
-  const inPoint = (node: FlowNode): Point => ({ x: node.x, y: node.y + HEAD });
+  const inPoint = (node: FlowNode): Point => ({ x: node.x + NODE_W / 2, y: node.y });
 
   // Read fresh on every render — `tick` exists purely to force one after visibility flips.
   void tick;
@@ -748,7 +806,7 @@ export const FlowCanvas = ({ flow, publishForm, authoringMode, onBlockingProblem
   const fit = () => {
     const first = nodes[0];
     if (first === undefined) return setPan({ x: 0, y: 0 });
-    setPan({ x: 24 - Math.min(...nodes.map((n) => n.x)), y: 24 - Math.min(...nodes.map((n) => n.y)) });
+    setPan({ x: 24 - Math.min(...nodes.map((n) => n.x)), y: TOP - Math.min(...nodes.map((n) => n.y)) });
   };
 
   const tidyUp = () => {
@@ -836,7 +894,7 @@ export const FlowCanvas = ({ flow, publishForm, authoringMode, onBlockingProblem
                   onClick={() => addNode(kind)}
                   className="flex w-full cursor-grab items-center gap-2 rounded-lg px-2.5 py-[7px] text-left text-[12.5px] text-[var(--ink-2)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--ink)]"
                 >
-                  <span className="size-2 flex-none rounded-[3px]" style={{ background: NODE_KINDS[kind].colour }} />
+                  <KindIcon kind={kind} />
                   {NODE_KINDS[kind].title}
                 </button>
               ))}
@@ -847,14 +905,29 @@ export const FlowCanvas = ({ flow, publishForm, authoringMode, onBlockingProblem
         {/* One grid cell for the drawing and what is said about it, so the palette, this and
             the inspector stay three columns. Mounted as siblings, the status line took the
             inspector's column and the inspector wrapped under the palette. */}
-        <div className="flex min-w-0 flex-col gap-2.5">
-          {/* The toolbar. Canvas actions only — Save and Publish belong to the page header,
-              where they act on the whole agent. A row above the drawing rather than a
-              floating bar in its corner, so it is found where every toolbar is found, does
-              not cover the bottom of a tall graph, and its buttons are buttons. */}
+        <div className="flex min-w-0 flex-col gap-3.5">
+        <div
+          ref={canvasRef}
+          className={cn(
+            /* As tall as the page allows, and never less than a working height. It was a
+               fixed 560 pixels for a tab; on a page of its own the drawing gets the screen. */
+            "relative h-[max(560px,calc(100vh-240px))] touch-none overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--surface-2)] shadow-[var(--spec)]",
+            panRef.current ? "cursor-grabbing" : "cursor-grab",
+          )}
+          style={{ backgroundImage: "radial-gradient(circle, var(--hairline) 1px, transparent 1px)", backgroundSize: "20px 20px" }}
+          onPointerDown={onCanvasPointerDown}
+          onPointerMove={onCanvasPointerMove}
+          onPointerUp={onCanvasPointerUp}
+        >
+          {/* The toolbar, inside the drawing along its top edge. Canvas actions only — Save
+              and Publish belong to the page header, where they act on the whole agent. On
+              the canvas rather than above it so the actions travel with the thing they act
+              on; along the top rather than in a corner so they are found where every toolbar
+              is found, and its buttons are buttons. `data-canvas-bar` keeps a press on it
+              from starting a pan. */}
           <div
             data-canvas-bar
-            className="flex items-center gap-1.5 rounded-lg border border-[var(--hairline)] bg-[var(--surface-2)] px-2 py-1.5"
+            className="glass absolute top-3 right-3 left-3 z-[5] flex items-center gap-1.5 rounded-lg border border-[var(--hairline)] px-2 py-1.5"
           >
             <span className="px-1.5 font-mono text-[11px] text-[var(--ink-3)]">
               {nodes.length} {nodes.length === 1 ? "step" : "steps"} · {edges.length} {edges.length === 1 ? "link" : "links"}
@@ -896,19 +969,6 @@ export const FlowCanvas = ({ flow, publishForm, authoringMode, onBlockingProblem
               Redo
             </Button>
           </div>
-        <div
-          ref={canvasRef}
-          className={cn(
-            /* As tall as the page allows, and never less than a working height. It was a
-               fixed 560 pixels for a tab; on a page of its own the drawing gets the screen. */
-            "relative h-[max(560px,calc(100vh-240px))] touch-none overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--surface-2)] shadow-[var(--spec)]",
-            panRef.current ? "cursor-grabbing" : "cursor-grab",
-          )}
-          style={{ backgroundImage: "radial-gradient(circle, var(--hairline) 1px, transparent 1px)", backgroundSize: "20px 20px" }}
-          onPointerDown={onCanvasPointerDown}
-          onPointerMove={onCanvasPointerMove}
-          onPointerUp={onCanvasPointerUp}
-        >
           <div className="absolute inset-0" style={{ transform: `translate(${pan.x}px,${pan.y}px)`, transformOrigin: "0 0" }}>
             <svg className="pointer-events-none absolute inset-0 overflow-visible">
               {edgePaths.map((p) =>
@@ -975,7 +1035,7 @@ export const FlowCanvas = ({ flow, publishForm, authoringMode, onBlockingProblem
                     onPointerMove={onHeaderPointerMove}
                     onPointerUp={onHeaderPointerUp}
                   >
-                    <span className="size-2 flex-none rounded-[3px]" style={{ background: kind.colour }} />
+                    <KindIcon kind={n.kind} />
                     <b className="flex-1 truncate text-[12px] font-[620]">{kind.title}</b>
                     {/* The problems panel below names it; this is the mark that says which card
                         it is naming, so a step at the far end of a wide canvas is not found by
@@ -1010,16 +1070,19 @@ export const FlowCanvas = ({ flow, publishForm, authoringMode, onBlockingProblem
                   </div>
                   <div className="px-2.5 py-[9px] text-[12px] leading-[1.45] text-[var(--ink-2)]">{kind.body(n)}</div>
                   {ports.length > 0 && (
-                    <div className="flex flex-col gap-1.5 px-2.5 pb-[9px]">
+                    <div
+                      className="grid px-1.5 pb-[9px]"
+                      style={{ gridTemplateColumns: `repeat(${ports.length}, minmax(0, 1fr))` }}
+                    >
                       {ports.map((port) => (
-                        <div key={port.key} className="flex h-3.5 items-center justify-end truncate font-mono text-[10.5px] text-[var(--ink-3)]">
+                        <div key={port.key} className="truncate text-center font-mono text-[10.5px] text-[var(--ink-3)]">
                           {port.label}
                         </div>
                       ))}
                     </div>
                   )}
                   {n.kind !== "start" && (
-                    <span className="absolute top-[15px] left-[-6px] size-[11px] rounded-full border-2 border-[var(--ink-3)] bg-[var(--surface-solid)]" />
+                    <span className="absolute top-[-6px] left-[calc(50%-5.5px)] size-[11px] rounded-full border-2 border-[var(--ink-3)] bg-[var(--surface-solid)]" />
                   )}
                   {ports.map((port, at) => (
                     <span
@@ -1029,8 +1092,8 @@ export const FlowCanvas = ({ flow, publishForm, authoringMode, onBlockingProblem
                         if (el) portRefs.current.set(key, el);
                         else portRefs.current.delete(key);
                       }}
-                      className="absolute right-[-6px] size-[11px] cursor-crosshair rounded-full border-2 border-[var(--ink-3)] bg-[var(--surface-solid)] transition-transform hover:scale-125 hover:border-[var(--accent)]"
-                      style={{ top: HEAD + at * 20 }}
+                      className="absolute bottom-[-6px] size-[11px] cursor-crosshair rounded-full border-2 border-[var(--ink-3)] bg-[var(--surface-solid)] transition-transform hover:scale-125 hover:border-[var(--accent)]"
+                      style={{ left: `calc(${portAlong(at, ports.length) * 100}% - 5.5px)` }}
                       onPointerDown={(e) => onOutPortPointerDown(e, n, port)}
                       onPointerMove={onOutPortPointerMove}
                       onPointerUp={onOutPortPointerUp}
@@ -1056,9 +1119,14 @@ export const FlowCanvas = ({ flow, publishForm, authoringMode, onBlockingProblem
             </p>
           ) : (
             <div className="flex flex-col gap-3">
-              <div>
-                <p className="mb-1 font-mono text-[10px] tracking-[0.15em] text-[var(--ink-3)] uppercase">{selectedNode.kind}</p>
-                <h3 className="text-[16px] font-[640] tracking-[-0.018em]">{NODE_KINDS[selectedNode.kind].title}</h3>
+              <div className="flex items-start gap-2.5">
+                <span className="mt-0.5 grid size-8 flex-none place-items-center rounded-lg bg-[var(--surface-2)]">
+                  <KindIcon kind={selectedNode.kind} size={16} />
+                </span>
+                <div>
+                  <p className="mb-0.5 font-mono text-[10px] tracking-[0.15em] text-[var(--ink-3)] uppercase">{selectedNode.kind}</p>
+                  <h3 className="text-[16px] font-[640] tracking-[-0.018em]">{NODE_KINDS[selectedNode.kind].title}</h3>
+                </div>
               </div>
 
               {/* Every way out of this step, and where it goes. The dots on the card do this
