@@ -3908,6 +3908,22 @@ notice says what is left. `tool-templates.test.ts` puts every one through the fo
 `problemsWith`, checks every URL hole has a parameter and every readback hole is an argument,
 and that the destructive ones are behind a person.
 
+**The canvas stops asking you to arrange it (2026-09-04).** Three changes, after arguing the
+flowchart down and losing the argument: most of the case against it was about this canvas's
+rough edges, not about flowcharts. So — the layout is *derived*. `flow-layout.ts` holds
+`tidied` (moved out of the component, and now longest-path rather than breadth-first, which
+was drawing a shared closing line level with the arm that took the long way round instead of
+below it), `sameShape` to decide when to run it, and the folding maths. Every edit that
+changes the shape re-lays the drawing; an edit that changes only the words does not, because a
+card that jumps while you type in it is worse than an untidy one. Dragging, arrow-key nudging
+and the Tidy up button are gone — with positions derived, moving a card by hand would be
+undone by the next edit. `say` text and a `collect` prompt are edited in the card itself, which
+was the most common edit and the slowest. And every branch out of a `decide` has a chip that
+folds it away — head included — so six services fit a laptop; `foldedAway` works the collapsed
+branches out together rather than one at a time, because two arms sharing a closing line only
+release it once both are folded. Twelve tests in `flow-layout.test.ts`, two of which caught
+real bugs before they shipped.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and

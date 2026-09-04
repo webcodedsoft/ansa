@@ -5,7 +5,6 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 import {
   CheckCircle2,
   GitBranch,
-  LayoutGrid,
   Maximize2,
   MessageSquareText,
   PhoneForwarded,
@@ -29,6 +28,8 @@ import { cn } from "@/lib/cn";
    phone, the publish gate runs exactly this function, and a second opinion about that in the
    console would eventually tell somebody their graph was fine while the API refused it. */
 import { validateFlow } from "@ansa/shared/flow-validate";
+
+import { branchHeads, foldedAway, foldedCount, sameShape, tidied, TOP } from "../flow-layout";
 
 import {
   FLOW_FIELD_TYPES,
@@ -292,10 +293,6 @@ const stepForward = (history: History): History => {
 const NODE_W = 208;
 /** A card's height before its port row, for the fallback when a dot has not been measured. */
 const BODY_H = 88;
-const COLUMN = 260;
-const ROW = 170;
-/** Where the first row sits: under the toolbar that lies along the top edge of the drawing. */
-const TOP = 90;
 
 interface Point {
   readonly x: number;
@@ -314,57 +311,6 @@ const bezier = (p1: Point, p2: Point): string => {
 
 /** Where the `at`-th of `count` ports sits along a card's bottom edge, as a fraction of its width. */
 const portAlong = (at: number, count: number): number => (2 * at + 1) / (2 * Math.max(count, 1));
-
-/**
- * Tidy up: columns by distance from the answer, rows by arrival.
- *
- * A grid in id order — what this used to do — reads as a shuffle, because the one thing a
- * flow has that a list does not is a direction. Breadth-first from the `start` node puts the
- * conversation left to right in the order a call meets it. Anything the walk never reaches
- * goes in a column of its own past the end, which is also the clearest way to see that a step
- * is unreachable without drawing a validation report for it.
- */
-const tidied = (flow: Flow): Flow => {
-  const first = flow.nodes.find((node) => node.kind === "start") ?? flow.nodes[0];
-  const depth = new Map<string, number>();
-  const queue: string[] = first === undefined ? [] : [first.id];
-  if (first !== undefined) depth.set(first.id, 0);
-
-  while (queue.length > 0) {
-    const id = queue.shift();
-    if (id === undefined) continue;
-    const here = depth.get(id) ?? 0;
-    for (const edge of flow.edges) {
-      if (edge.from !== id || depth.has(edge.to)) continue;
-      depth.set(edge.to, here + 1);
-      queue.push(edge.to);
-    }
-  }
-
-  /* Depth is the row — the call reads down the page — and the steps a call can reach at
-     the same depth sit side by side in it, centred under the row above, so a branch reads
-     as a fork and not a staircase. Anything the walk never reaches goes in a row of its own
-     below the end, which is also the clearest way to see that a step is unreachable. */
-  const unreached = Math.max(0, ...[...depth.values()].map((value) => value + 1));
-  const perRow = new Map<number, number>();
-  for (const node of flow.nodes) {
-    const row = depth.get(node.id) ?? unreached;
-    perRow.set(row, (perRow.get(row) ?? 0) + 1);
-  }
-  const widest = Math.max(1, ...perRow.values());
-  const filled = new Map<number, number>();
-  return {
-    ...flow,
-    nodes: flow.nodes.map((node) => {
-      const row = depth.get(node.id) ?? unreached;
-      const across = filled.get(row) ?? 0;
-      filled.set(row, across + 1);
-      const inRow = perRow.get(row) ?? 1;
-      const x = 40 + ((widest - inRow) / 2 + across) * COLUMN;
-      return { ...node, x, y: TOP + row * ROW };
-    }),
-  };
-};
 
 /* ------------------------------------------------------------------- new nodes */
 
@@ -552,11 +498,12 @@ export const FlowCanvas = ({
   // Bumped whenever the canvas needs its port positions re-read from the DOM — after a tab
   // that was hidden becomes visible, chiefly, since `offsetTop` is 0 until then.
   const [tick, setTick] = useState(0);
+  /** Branch heads the reader has folded away, so six services fit a laptop. */
+  const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
 
   const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const portRefs = useRef(new Map<string, HTMLSpanElement>());
-  const dragRef = useRef<{ id: string; dx: number; dy: number; from: Flow } | null>(null);
   const wireRef = useRef<{ from: string; port: Port } | null>(null);
   const panRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
   const coalescing = useRef<string | null>(null);
@@ -598,6 +545,23 @@ export const FlowCanvas = ({
 
   const { nodes, edges } = history.present;
 
+  /* Folded branches, and the steps that vanish with them. Computed from the graph rather
+     than remembered, so a branch deleted while folded takes its chip with it.
+
+     Declared here, above `edgePaths`, because it is read there — function expressions do not
+     hoist and neither do consts, so the order in this file is the dependency order. */
+  const hidden = foldedAway(history.present, folded);
+
+  const toggleFold = (head: string) => {
+    setFolded((current) => {
+      const next = new Set(current);
+      if (next.has(head)) next.delete(head);
+      else next.add(head);
+      return next;
+    });
+  };
+
+
   /**
    * One graph edit, and where undo gets its entries.
    *
@@ -605,17 +569,44 @@ export const FlowCanvas = ({
    * is a single action to the person doing it, and a stack with an entry per keystroke is a
    * stack nobody can use. Anything else starts a new entry.
    */
+  /**
+   * Every change goes through here, and every change that alters the *shape* of the call is
+   * laid out again before it lands.
+   *
+   * This is what removed dragging, nudging and the Tidy up button in one go: positions are
+   * derived from the graph, so there is nothing to arrange and nothing that can be untidy.
+   * A change to the words in a step is deliberately not a change of shape — `sameShape`
+   * decides — because a card that jumps while somebody is typing in it is worse than an
+   * untidy one.
+   */
   const edit = (change: (current: Flow) => Flow, coalesce?: string) => {
     const merge = coalesce !== undefined && coalesce === coalescing.current;
     coalescing.current = coalesce ?? null;
     setHistory((current) => {
-      const next = change(current.present);
-      if (next === current.present) return current;
+      const changed = change(current.present);
+      if (changed === current.present) return current;
+      const next = sameShape(current.present, changed) ? changed : tidied(changed);
       return merge ? { ...current, present: next, future: [] } : remember(current, next);
     });
   };
 
   const byId = (id: string): FlowNode | undefined => nodes.find((n) => n.id === id);
+
+  /**
+   * Change one step's words, named rather than selected.
+   *
+   * The inspector edits whatever is selected; a card edits itself. Coalescing on the node
+   * and field means a sentence typed into a card is one undo entry, not forty.
+   */
+  const updateNode = (id: string, patch: Partial<FlowNode>, what: string) => {
+    edit((f) => ({ ...f, nodes: f.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)) }), `${id}:${what}`);
+  };
+  const updateNodeField = (id: string, patch: Partial<FlowField>, what: string) => {
+    edit(
+      (f) => ({ ...f, nodes: f.nodes.map((n) => (n.id === id ? { ...n, field: { ...(n.field ?? blankField()), ...patch } } : n)) }),
+      `${id}:field:${what}`,
+    );
+  };
   const portsFor = (node: FlowNode): readonly Port[] => portsOf(node, edges, pending[node.id] ?? []);
 
   const outPoint = (node: FlowNode, key: string, at: number): Point => {
@@ -632,6 +623,8 @@ export const FlowCanvas = ({
     const from = byId(edge.from);
     const to = byId(edge.to);
     if (!from || !to) return null;
+    // A link to a step that has been folded away has nothing to point at.
+    if (hidden.has(edge.from) || hidden.has(edge.to)) return null;
     const ports = portsFor(from);
     const index = ports.findIndex((port) => port.holds(edge));
     const p1 = outPoint(from, ports[index]?.key ?? "", Math.max(index, 0));
@@ -645,31 +638,9 @@ export const FlowCanvas = ({
     return { x: e.clientX - (box?.left ?? 0) - pan.x, y: e.clientY - (box?.top ?? 0) - pan.y };
   };
 
-  const onHeaderPointerDown = (e: ReactPointerEvent<HTMLDivElement>, node: FlowNode) => {
-    setSelected(node.id);
-    dragRef.current = { id: node.id, dx: e.clientX - node.x, dy: e.clientY - node.y, from: history.present };
-    e.currentTarget.setPointerCapture(e.pointerId);
-    e.preventDefault();
-  };
-  const onHeaderPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
-    if (!drag) return;
-    const x = Math.round(e.clientX - drag.dx);
-    const y = Math.round(e.clientY - drag.dy);
-    /* Moves the present without recording it. The whole gesture becomes one history entry on
-       pointer up, so undo puts the node back where it was picked up rather than a pixel back. */
-    setHistory((current) => ({
-      ...current,
-      present: { ...current.present, nodes: current.present.nodes.map((n) => (n.id === drag.id ? { ...n, x, y } : n)) },
-    }));
-  };
-  const onHeaderPointerUp = () => {
-    const drag = dragRef.current;
-    dragRef.current = null;
-    if (drag === null) return;
-    coalescing.current = null;
-    setHistory((current) => (current.present === drag.from ? current : remember({ ...current, present: drag.from }, current.present)));
-  };
+  /* Dragging a card used to live here. It is gone on purpose: with the layout derived from
+     the graph, moving a card by hand would be undone by the next edit, which is a worse
+     experience than not being able to move it at all. Clicking a header still selects. */
 
   const onOutPortPointerDown = (e: ReactPointerEvent<HTMLSpanElement>, node: FlowNode, port: Port) => {
     wireRef.current = { from: node.id, port };
@@ -764,10 +735,6 @@ export const FlowCanvas = ({
    */
   const onNodeKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>, n: FlowNode) => {
     if ((e.target as HTMLElement) !== e.currentTarget) return;
-    const step = e.shiftKey ? 40 : 10;
-    const nudge = (dx: number, dy: number) => {
-      edit((f) => ({ ...f, nodes: f.nodes.map((m) => (m.id === n.id ? { ...m, x: m.x + dx, y: m.y + dy } : m)) }));
-    };
     switch (e.key) {
       case "Enter":
       case " ":
@@ -780,10 +747,6 @@ export const FlowCanvas = ({
       case "Backspace":
         if (n.kind !== "start") removeNode(n.id);
         break;
-      case "ArrowLeft": nudge(-step, 0); break;
-      case "ArrowRight": nudge(step, 0); break;
-      case "ArrowUp": nudge(0, -step); break;
-      case "ArrowDown": nudge(0, step); break;
       default:
         return;
     }
@@ -827,11 +790,6 @@ export const FlowCanvas = ({
     const first = nodes[0];
     if (first === undefined) return setPan({ x: 0, y: 0 });
     setPan({ x: 24 - Math.min(...nodes.map((n) => n.x)), y: TOP - Math.min(...nodes.map((n) => n.y)) });
-  };
-
-  const tidyUp = () => {
-    edit((f) => tidied(f));
-    setPan({ x: 0, y: 0 });
   };
 
   const updateSelected = (patch: Partial<FlowNode>, what: string) => {
@@ -959,10 +917,6 @@ export const FlowCanvas = ({
               <Maximize2 className="size-3.5" />
               Fit
             </Button>
-            <Button size="sm" variant="ghost" onClick={tidyUp} title="Lay the steps out in the order a call meets them">
-              <LayoutGrid className="size-3.5" />
-              Tidy up
-            </Button>
             <span aria-hidden className="mx-1 h-4 w-px bg-[var(--hairline)]" />
             <Button
               size="sm"
@@ -1025,7 +979,7 @@ export const FlowCanvas = ({
               )}
             </svg>
 
-            {inGraphOrder.map((n) => {
+            {inGraphOrder.filter((n) => !hidden.has(n.id)).map((n) => {
               const kind = NODE_KINDS[n.kind];
               const ports = portsFor(n);
               return (
@@ -1035,7 +989,7 @@ export const FlowCanvas = ({
                   tabIndex={0}
                   role="button"
                   aria-pressed={n.id === selected}
-                  aria-label={`${kind.title}${marked.has(n.id) ? ", has a problem" : ""}. Enter selects, Delete removes, arrows move.`}
+                  aria-label={`${kind.title}${marked.has(n.id) ? ", has a problem" : ""}. Enter selects, Delete removes.`}
                   onKeyDown={(e) => onNodeKeyDown(e, n)}
                   onFocus={() => setSelected(n.id)}
                   className={cn(
@@ -1052,10 +1006,11 @@ export const FlowCanvas = ({
                   style={{ left: n.x, top: n.y }}
                 >
                   <div
-                    className="flex cursor-grab items-center gap-[7px] border-b border-[var(--hairline)] px-2.5 py-2"
-                    onPointerDown={(e) => onHeaderPointerDown(e, n)}
-                    onPointerMove={onHeaderPointerMove}
-                    onPointerUp={onHeaderPointerUp}
+                    className="flex cursor-pointer items-center gap-[7px] border-b border-[var(--hairline)] px-2.5 py-2"
+                    onPointerDown={(e) => {
+                      setSelected(n.id);
+                      e.stopPropagation();
+                    }}
                   >
                     <KindIcon kind={n.kind} />
                     <b className="flex-1 truncate text-[12px] font-[620]">{kind.title}</b>
@@ -1090,7 +1045,64 @@ export const FlowCanvas = ({
                       </IconButton>
                     )}
                   </div>
-                  <div className="px-2.5 py-[9px] text-[12px] leading-[1.45] text-[var(--ink-2)]">{kind.body(n)}</div>
+                  {/* The words, edited where they are read. Changing a prompt was the most
+                      common edit on this canvas and the slowest — select the card, find the
+                      field in the inspector, type — so the two kinds that are mostly words
+                      take their text here. Everything else about a step stays in the
+                      inspector, which is where the settings belong. */}
+                  {n.kind === "say" ? (
+                    <textarea
+                      value={n.text ?? ""}
+                      onChange={(e) => updateNode(n.id, { text: e.target.value }, "text")}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      placeholder="What to cover here, in your own words"
+                      aria-label="What this step covers"
+                      rows={2}
+                      className="w-full resize-none border-0 bg-transparent px-2.5 py-[9px] text-[12px] leading-[1.45] text-[var(--ink-2)] placeholder:text-[var(--ink-3)] focus:bg-[var(--surface-2)] focus:text-[var(--ink)] focus:outline-none"
+                    />
+                  ) : n.kind === "collect" ? (
+                    <div className="px-2.5 py-[9px]">
+                      <textarea
+                        value={n.field?.prompt ?? ""}
+                        onChange={(e) => updateNodeField(n.id, { prompt: e.target.value }, "prompt")}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        placeholder="What the agent asks"
+                        aria-label="What the agent asks"
+                        rows={2}
+                        className="w-full resize-none border-0 bg-transparent p-0 text-[12px] leading-[1.45] text-[var(--ink-2)] placeholder:text-[var(--ink-3)] focus:text-[var(--ink)] focus:outline-none"
+                      />
+                      <p className="mt-1 truncate font-mono text-[10px] text-[var(--ink-3)]">
+                        {n.field?.key === "" || n.field === undefined ? "unnamed" : n.field.key} · {n.field?.capture ?? "either"} · {n.field?.confirm ?? "none"}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="px-2.5 py-[9px] text-[12px] leading-[1.45] text-[var(--ink-2)]">{kind.body(n)}</div>
+                  )}
+
+                  {/* Folding a branch away. On the `decide` that owns it, because that is the
+                      step a reader is looking at when six services stop fitting the screen. */}
+                  {n.kind === "decide" && branchHeads(history.present, n).length > 0 && (
+                    <div className="flex flex-wrap gap-1 px-2.5 pb-2">
+                      {branchHeads(history.present, n).map((branch) => (
+                        <button
+                          key={branch.to}
+                          type="button"
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={() => toggleFold(branch.to)}
+                          aria-pressed={folded.has(branch.to)}
+                          title={folded.has(branch.to) ? `Show the ${branch.label} branch` : `Fold the ${branch.label} branch away`}
+                          className={cn(
+                            "max-w-full truncate rounded-full border px-1.5 py-px font-mono text-[9.5px] transition-colors",
+                            folded.has(branch.to)
+                              ? "border-transparent bg-[var(--accent)] text-[var(--accent-on)]"
+                              : "border-[var(--hairline)] text-[var(--ink-3)] hover:border-[var(--ink-3)]",
+                          )}
+                        >
+                          {folded.has(branch.to) ? `${branch.label} · ${foldedCount(history.present, branch.to)} folded` : branch.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   {ports.length > 0 && (
                     <div
                       className="grid px-1.5 pb-[9px]"
