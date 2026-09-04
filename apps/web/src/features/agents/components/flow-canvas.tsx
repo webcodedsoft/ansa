@@ -15,6 +15,8 @@ import {
   Undo2,
   Wrench,
   X,
+  ZoomIn,
+  ZoomOut,
   type LucideIcon,
 } from "lucide-react";
 
@@ -388,6 +390,20 @@ const NODE_W = 208;
 /** A card's height, for the fallback before it has been measured. One line: icon, title, subtitle. */
 const BODY_H = 44;
 
+/** Where the drawing sits under the viewport, and how large. */
+interface View {
+  readonly x: number;
+  readonly y: number;
+  readonly scale: number;
+}
+/** How far in and out the drawing goes. Below half, the words on a card are not words. */
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 1.6;
+const ZOOM_STEP = 1.15;
+const clampScale = (scale: number): number => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, scale));
+/** The toolbar's height along the top of the viewport, which the drawing must stay under. */
+const TOOLBAR_CLEAR = 60;
+
 interface Point {
   readonly x: number;
   readonly y: number;
@@ -434,8 +450,20 @@ const elbow = (p1: Point, p2: Point, busY: number): string => {
 const branchLabel = (edge: FlowEdge): string =>
   edge.otherwise === true ? "anything else" : edge.when !== undefined && "equals" in edge.when ? edge.when.equals : (edge.port ?? "next");
 
-/** Where the `at`-th of `count` ports sits along a card's bottom edge, as a fraction of its width. */
-const portAlong = (at: number, count: number): number => (2 * at + 1) / (2 * Math.max(count, 1));
+/**
+ * Where the `at`-th of `count` ports sits along a card's bottom edge, as a fraction of its
+ * width.
+ *
+ * The way out a step takes by default — "got it", "yes", "ok" — sits at the centre, so the
+ * link down a column leaves from the middle of the card and stays straight; the other ways
+ * out sit to its right. A fork has no default, and its branches are spread evenly so the
+ * fan reads as a fan.
+ */
+const portAlong = (at: number, count: number, kind: FlowNodeKind): number => {
+  const n = Math.max(count, 1);
+  if (kind === "decide") return (2 * at + 1) / (2 * n);
+  return at === 0 ? 0.5 : 0.5 + at / (2 * n);
+};
 
 /* ------------------------------------------------------------------- new nodes */
 
@@ -640,7 +668,7 @@ export const FlowCanvas = ({
      open a flow at yesterday's spacing until the first edit. */
   const [history, setHistory] = useState<History>(() => ({ past: [], present: tidied(loaded ?? emptyFlow()), future: [] }));
   const [pending, setPending] = useState<Readonly<Record<string, readonly FlowCondition[]>>>({});
-  const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
+  const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1 });
   const [selected, setSelected] = useState<string | null>(null);
   const [temp, setTemp] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   // Bumped whenever the canvas needs its port positions re-read from the DOM — after a tab
@@ -661,9 +689,9 @@ export const FlowCanvas = ({
   const canvasRef = useRef<HTMLDivElement>(null);
   /** The layer the drawing is on — panned by writing its transform, see `applyPan`. */
   const layerRef = useRef<HTMLDivElement>(null);
-  /** The pan as the screen has it, ahead of `pan`, which follows at the end of a gesture. */
-  const panLive = useRef<Point>({ x: 0, y: 0 });
-  const panCommit = useRef<number | null>(null);
+  /** The view as the screen has it, ahead of `view`, which follows at the end of a gesture. */
+  const viewLive = useRef<View>({ x: 0, y: 0, scale: 1 });
+  const viewCommit = useRef<number | null>(null);
   const ghostRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<LiveDrag | null>(null);
   /** Set by a drag that began on a palette button, so the click that follows it adds nothing. */
@@ -796,12 +824,11 @@ export const FlowCanvas = ({
   };
   const portsFor = (node: FlowNode): readonly Port[] => portsOf(node, edges, pending[node.id] ?? []);
 
-  /* A link leaves from the middle of the card's bottom edge whichever port it belongs to,
-     so a link down a column is a vertical line and a fork is a fan from one point — the
-     shape the drawing has. The port dots along the edge are where a link is *dragged* from;
-     where a drawn link appears to start is a separate question, and this is its answer. */
-  const outPoint = (node: FlowNode, _key: string, _at: number): Point => ({
-    x: node.x + NODE_W / 2,
+  /* A link leaves from the dot of the port it belongs to and lands on the dot at the top of
+     the next card, so the drawing shows where a link attaches — the dot is the joint. The
+     default port sits at the centre (`portAlong`), which keeps a link down a column straight. */
+  const outPoint = (node: FlowNode, _key: string, at: number): Point => ({
+    x: node.x + NODE_W * portAlong(at, portsFor(node).length, node.kind),
     y: node.y + (cardRefs.current.get(node.id)?.offsetHeight ?? BODY_H),
   });
   const inPoint = (node: FlowNode): Point => ({ x: node.x + NODE_W / 2, y: node.y });
@@ -852,7 +879,8 @@ export const FlowCanvas = ({
 
   const localPoint = (e: ReactPointerEvent): Point => {
     const box = canvasRef.current?.getBoundingClientRect();
-    return { x: e.clientX - (box?.left ?? 0) - panLive.current.x, y: e.clientY - (box?.top ?? 0) - panLive.current.y };
+    const { x, y, scale } = viewLive.current;
+    return { x: (e.clientX - (box?.left ?? 0) - x) / scale, y: (e.clientY - (box?.top ?? 0) - y) / scale };
   };
 
   const onOutPortPointerDown = (e: ReactPointerEvent<HTMLSpanElement>, node: FlowNode, port: Port) => {
@@ -906,47 +934,76 @@ export const FlowCanvas = ({
     return { right, bottom };
   };
 
-  /** A pan that keeps some of the drawing on screen, whichever way it was asked for. */
-  const clampPan = (next: Point): Point => {
-    const view = canvasRef.current;
-    if (view === null) return next;
+  /**
+   * A view that keeps some of the drawing on screen, whichever way it was asked for.
+   *
+   * A drawing larger than the viewport can be scrolled until its far edge is in view and no
+   * further; one smaller than the viewport can sit anywhere inside it. The top of the
+   * drawing is kept below the toolbar: at 100% the layout's own margin clears it, and when
+   * zoomed out that margin shrinks with everything else, so the room is made up here.
+   */
+  const clampView = (next: View): View => {
+    const port = canvasRef.current;
+    const scale = clampScale(next.scale);
+    if (port === null) return { ...next, scale };
     const { right, bottom } = extent();
+    const topClear = Math.max(0, TOOLBAR_CLEAR - (TOP - LANE_HEAD) * scale);
+    const between = (low: number, high: number, value: number): number => Math.min(Math.max(low, high), Math.max(Math.min(low, high), value));
     return {
-      x: Math.min(0, Math.max(Math.min(0, view.clientWidth - right), next.x)),
-      y: Math.min(0, Math.max(Math.min(0, view.clientHeight - bottom), next.y)),
+      x: between(0, port.clientWidth - right * scale, next.x),
+      y: between(topClear, port.clientHeight - bottom * scale, next.y),
+      scale,
     };
   };
-  const clampRef = useRef(clampPan);
-  clampRef.current = clampPan;
+  const clampRef = useRef(clampView);
+  clampRef.current = clampView;
 
   /**
-   * Move the drawing now, and tell React later.
+   * Move or scale the drawing now, and tell React later.
    *
    * A pan that went through state re-rendered every card, every link and the validator on
    * every pointer move, and on a laptop that is a drawing that lags the hand. So the layer's
-   * transform is written directly, at pointer rate, and the `pan` state — which nothing
+   * transform is written directly, at pointer rate, and the `view` state — which nothing
    * needs until the gesture is over — catches up once per frame. React leaves a style it
    * did not change alone, so the two never fight.
    */
-  const applyPan = (next: Point) => {
+  const applyView = (next: View) => {
     const clamped = clampRef.current(next);
-    panLive.current = clamped;
+    viewLive.current = clamped;
     const layer = layerRef.current;
-    if (layer !== null) layer.style.transform = `translate(${clamped.x}px,${clamped.y}px)`;
-    if (panCommit.current === null) {
-      panCommit.current = requestAnimationFrame(() => {
-        panCommit.current = null;
-        setPan(panLive.current);
+    if (layer !== null) layer.style.transform = `translate(${clamped.x}px,${clamped.y}px) scale(${clamped.scale})`;
+    if (viewCommit.current === null) {
+      viewCommit.current = requestAnimationFrame(() => {
+        viewCommit.current = null;
+        setView(viewLive.current);
       });
     }
   };
+  const applyPan = (next: Point) => applyView({ ...viewLive.current, ...next });
   useEffect(() => () => {
-    if (panCommit.current !== null) cancelAnimationFrame(panCommit.current);
+    if (viewCommit.current !== null) cancelAnimationFrame(viewCommit.current);
   }, []);
+
+  /**
+   * Scale the drawing about a point on the viewport, so what is under that point stays put.
+   * The buttons zoom about the middle of the viewport; the wheel about the pointer.
+   */
+  const zoomTo = (scale: number, about?: Point) => {
+    const port = canvasRef.current;
+    const current = viewLive.current;
+    const next = clampScale(scale);
+    const cx = about?.x ?? (port?.clientWidth ?? 0) / 2;
+    const cy = about?.y ?? (port?.clientHeight ?? 0) / 2;
+    applyView({
+      x: cx - ((cx - current.x) / current.scale) * next,
+      y: cy - ((cy - current.y) / current.scale) * next,
+      scale: next,
+    });
+  };
 
   const onCanvasPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement).closest("[data-flow-node], [data-canvas-bar], [data-lane-head], [data-add-service]")) return;
-    panRef.current = { startX: e.clientX, startY: e.clientY, panX: panLive.current.x, panY: panLive.current.y };
+    panRef.current = { startX: e.clientX, startY: e.clientY, panX: viewLive.current.x, panY: viewLive.current.y };
     e.currentTarget.setPointerCapture(e.pointerId);
     setSelected(null);
   };
@@ -959,22 +1016,31 @@ export const FlowCanvas = ({
     panRef.current = null;
   };
 
-  /* The wheel pans the drawing while the pointer is over it, and scrolls the page otherwise.
-     Attached by hand rather than as `onWheel`: React registers wheel listeners as passive,
-     and a passive listener cannot stop the page from scrolling underneath — which is the one
-     thing this has to do. The drawing takes the wheel whether or not it can move further,
-     the way any canvas does; the page is a mouse-width away. */
-  const applyPanRef = useRef(applyPan);
-  applyPanRef.current = applyPan;
+  /* The wheel pans the drawing while the pointer is over it, and scrolls the page otherwise;
+     with Ctrl or ⌘ held — which is also what a trackpad pinch arrives as — it zooms about the
+     pointer. Attached by hand rather than as `onWheel`: React registers wheel listeners as
+     passive, and a passive listener cannot stop the page from scrolling underneath — which is
+     the one thing this has to do. The drawing takes the wheel whether or not it can move
+     further, the way any canvas does; the page is a mouse-width away. */
+  const wheelRef = useRef({ applyPan, zoomTo });
+  wheelRef.current = { applyPan, zoomTo };
   useEffect(() => {
-    const view = canvasRef.current;
-    if (view === null) return;
+    const port = canvasRef.current;
+    if (port === null) return;
     const onWheel = (e: WheelEvent): void => {
       e.preventDefault();
-      applyPanRef.current({ x: panLive.current.x - e.deltaX, y: panLive.current.y - e.deltaY });
+      if (e.ctrlKey || e.metaKey) {
+        const box = port.getBoundingClientRect();
+        /* A mouse tick is ~120 and a pinch step ~2, so the factor is per unit and bounded:
+           a tick is a quarter step, a pinch is smooth, and neither can jump the range. */
+        const factor = Math.min(1.3, Math.max(0.77, Math.exp(-e.deltaY * 0.0025)));
+        wheelRef.current.zoomTo(viewLive.current.scale * factor, { x: e.clientX - box.left, y: e.clientY - box.top });
+        return;
+      }
+      wheelRef.current.applyPan({ x: viewLive.current.x - e.deltaX, y: viewLive.current.y - e.deltaY });
     };
-    view.addEventListener("wheel", onWheel, { passive: false });
-    return () => view.removeEventListener("wheel", onWheel);
+    port.addEventListener("wheel", onWheel, { passive: false });
+    return () => port.removeEventListener("wheel", onWheel);
   }, []);
 
   /**
@@ -1224,10 +1290,14 @@ export const FlowCanvas = ({
     applyPan({ x: 120 - node.x, y: 90 - node.y });
   };
 
+  /* Fit: the whole drawing under the viewport, scaled down when it is too big and never
+     scaled up — a small flow at 160% is a small flow with enormous cards. */
   const fit = () => {
-    const first = nodes[0];
-    if (first === undefined) return applyPan({ x: 0, y: 0 });
-    applyPan({ x: 24 - Math.min(...nodes.map((n) => n.x)), y: TOP - Math.min(...nodes.map((n) => n.y)) });
+    const port = canvasRef.current;
+    if (port === null || nodes.length === 0) return applyView({ x: 0, y: 0, scale: 1 });
+    const { right, bottom } = extent();
+    const scale = clampScale(Math.min(1, (port.clientWidth - 16) / right, (port.clientHeight - TOOLBAR_CLEAR) / bottom));
+    applyView({ x: (port.clientWidth - right * scale) / 2, y: 0, scale });
   };
 
   const updateSelected = (patch: Partial<FlowNode>, what: string) => {
@@ -1454,7 +1524,21 @@ export const FlowCanvas = ({
               {nodes.length} {nodes.length === 1 ? "step" : "steps"} · {edges.length} {edges.length === 1 ? "link" : "links"}
             </span>
             <span className="flex-1" />
-            <Button size="sm" variant="ghost" onClick={fit} title="Bring the drawing back under the viewport">
+            <Button size="sm" variant="ghost" onClick={() => zoomTo(viewLive.current.scale / ZOOM_STEP)} disabled={view.scale <= ZOOM_MIN + 0.001} title="Zoom out (⌘ + scroll)" aria-label="Zoom out">
+              <ZoomOut className="size-3.5" />
+            </Button>
+            <button
+              type="button"
+              onClick={() => zoomTo(1)}
+              title="Back to 100%"
+              className="min-w-[38px] rounded px-1 font-mono text-[10.5px] tabular-nums text-[var(--ink-3)] hover:text-[var(--ink)]"
+            >
+              {Math.round(view.scale * 100)}%
+            </button>
+            <Button size="sm" variant="ghost" onClick={() => zoomTo(viewLive.current.scale * ZOOM_STEP)} disabled={view.scale >= ZOOM_MAX - 0.001} title="Zoom in (⌘ + scroll)" aria-label="Zoom in">
+              <ZoomIn className="size-3.5" />
+            </Button>
+            <Button size="sm" variant="ghost" onClick={fit} title="Fit the whole drawing under the viewport">
               <Maximize2 className="size-3.5" />
               Fit
             </Button>
@@ -1486,7 +1570,7 @@ export const FlowCanvas = ({
               Redo
             </Button>
           </div>
-          <div ref={layerRef} className="absolute inset-0" style={{ transform: `translate(${pan.x}px,${pan.y}px)`, transformOrigin: "0 0" }}>
+          <div ref={layerRef} className="absolute inset-0" style={{ transform: `translate(${view.x}px,${view.y}px) scale(${view.scale})`, transformOrigin: "0 0" }}>
             {/* The lanes, behind everything and clickable through: a label saying which part
                 of the business a column of cards belongs to. `pointer-events-none` because a
                 box is a caption, not a target — clicking inside one should reach the card. */}
@@ -1759,6 +1843,17 @@ export const FlowCanvas = ({
                   {dropAfter === n.id && (
                     <span aria-hidden className="absolute right-2 -bottom-[13px] left-2 h-[2px] rounded bg-[var(--accent)]" />
                   )}
+                  {/* The dot a link lands on. Shown while something does land there, so every
+                      drawn link visibly begins at one dot and ends at another. */}
+                  {n.kind !== "start" && (
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "absolute top-[-5px] left-[calc(50%-4.5px)] size-[9px] rounded-full border-[1.5px] border-[var(--ink-3)] bg-[var(--surface-solid)] transition-opacity",
+                        n.id === selected || edges.some((edge) => edge.to === n.id) ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                      )}
+                    />
+                  )}
                   {/* The dots a link is dragged from. Quiet until the card is hovered or chosen,
                       because on a drawing of forty cards eighty dots are the drawing. */}
                   {ports.map((port, at) => (
@@ -1776,7 +1871,7 @@ export const FlowCanvas = ({
                           ? "border-[var(--ink-3)] opacity-100"
                           : "border-[var(--ink-3)] opacity-0 group-hover:opacity-100",
                       )}
-                      style={{ left: `calc(${portAlong(at, ports.length) * 100}% - 4.5px)` }}
+                      style={{ left: `calc(${portAlong(at, ports.length, n.kind) * 100}% - 4.5px)` }}
                       onPointerDown={(e) => onOutPortPointerDown(e, n, port)}
                       onPointerMove={onOutPortPointerMove}
                       onPointerUp={onOutPortPointerUp}
@@ -1796,6 +1891,7 @@ export const FlowCanvas = ({
               className="pointer-events-none fixed top-0 left-0 z-50 will-change-transform"
               style={{ transform: `translate(${(dragRef.current?.lastX ?? -9999) - (dragRef.current?.offsetX ?? 0)}px,${(dragRef.current?.lastY ?? -9999) - (dragRef.current?.offsetY ?? 0)}px)` }}
             >
+             <div style={{ transform: `scale(${view.scale})`, transformOrigin: "0 0" }}>
               {"kind" in drag.source && (
                 <div className="flex items-center gap-2 rounded-[7px] border border-[var(--accent)] bg-[var(--surface-solid)] px-2.5 py-[7px] text-[11px] font-semibold text-[var(--ink)] shadow-lg">
                   <KindIcon kind={drag.source.kind} size={10} />
@@ -1823,6 +1919,7 @@ export const FlowCanvas = ({
                   {drag.source.lane.label} · {drag.source.lane.ids.length}
                 </div>
               )}
+             </div>
             </div>
           )}
         </div>

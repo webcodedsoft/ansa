@@ -4019,6 +4019,16 @@ drops an earlier `border-*` when a later one is in the same `cn()`, and a guarde
 layout tests added; verified in the browser: every drop path, reorder, rename, empty lane,
 undo.
 
+**Zoom, and links that meet at dots (2026-09-04, late).** The toolbar gains zoom out · % ·
+zoom in, ⌘/Ctrl + wheel (a trackpad pinch arrives as one) zooms about the pointer, and Fit is
+now a real fit — scaled down to the viewport and never up. The view is `{x, y, scale}` written
+to the layer's transform at pointer rate as before; the clamp lets a drawing smaller than the
+viewport sit anywhere inside it and keeps its top clear of the toolbar, which the layout's own
+margin no longer does once scaled. Links now leave from the dot of the port they belong to
+and land on a dot at the top of the next card, so the joint is drawn; the default port moved
+to the card's centre (`portAlong`) so a link down a column stays a straight line, the other
+ways out sit to its right, and a fork's branches spread evenly so the fan reads as a fan.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and
