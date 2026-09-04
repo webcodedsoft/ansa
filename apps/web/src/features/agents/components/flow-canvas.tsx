@@ -36,7 +36,7 @@ import { validateFlow } from "@ansa/shared/flow-validate";
 
 import {
   addService, appendToLane, foldedAway, freshServiceName, insertAfter, LANE_HEAD, laneFrames, laneGroups, LEFT, movable, moveAfter,
-  moveToLane, moveToNewService, renameService, reorderService, sameShape, tidied, TOP, type Lane,
+  moveToLane, moveToNewService, removeService, renameService, reorderService, sameShape, tidied, TOP, type Lane,
 } from "../flow-layout";
 
 import {
@@ -155,7 +155,7 @@ const cardLineOf = (
     case "collect": {
       const field = node.field;
       const parts: string[] = [field?.type ?? "text"];
-      if (field?.type === "choice") parts.push(`${field.options.length} answers`);
+      if (field?.type === "choice") parts.push(`${field.options.length} ${field.options.length === 1 ? "answer" : "answers"}`);
       else if (field !== undefined && (CONFIRM_WORD[field.confirm] ?? "") !== "") parts.push(CONFIRM_WORD[field.confirm] ?? "");
       else if (field?.capture === "keypad") parts.push("keypad");
       return {
@@ -860,8 +860,8 @@ export const FlowCanvas = ({
       const boxTop = { x, y: frame.top - LANE_HEAD };
       const boxBottom = { x, y: frame.top + BODY_H + 8 };
       return [
-        { key: `${at}`, edge: at, d: elbow(p1, boxTop, boxTop.y - 12), label: "", mid: boxTop },
-        { key: `${at}b`, edge: at, d: elbow(boxBottom, p2, p2.y - 16), label: "", mid: p2 },
+        { key: `${at}`, d: elbow(p1, boxTop, boxTop.y - 12), label: "", mid: boxTop },
+        { key: `${at}b`, d: elbow(boxBottom, p2, p2.y - 16), label: "", mid: p2 },
       ];
     }
     const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 - 5 };
@@ -876,7 +876,7 @@ export const FlowCanvas = ({
     const fansOut = from.id === laneFork && (intoLane || lanes.some((lane) => lane.head === to.id));
     const rejoins = inService.has(from.id) && !inService.has(to.id);
     const d = fansOut ? elbow(p1, p2, p2.y - LANE_HEAD - 12) : rejoins ? elbow(p1, p2, p2.y - 16) : bezier(p1, p2);
-    return [{ key: `${at}`, edge: at, d, label: splits && !intoLane ? (ports[index]?.label ?? "") : "", mid }];
+    return [{ key: `${at}`, d, label: splits && !intoLane ? (ports[index]?.label ?? "") : "", mid }];
   });
 
   const localPoint = (e: ReactPointerEvent): Point => {
@@ -1041,7 +1041,7 @@ export const FlowCanvas = ({
   };
 
   const onCanvasPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if ((e.target as HTMLElement).closest("[data-flow-node], [data-canvas-bar], [data-lane-head], [data-add-service]")) return;
+    if ((e.target as HTMLElement).closest("[data-flow-node], [data-canvas-bar], [data-lane], [data-add-service]")) return;
     panRef.current = { startX: e.clientX, startY: e.clientY, panX: viewLive.current.x, panY: viewLive.current.y };
     e.currentTarget.setPointerCapture(e.pointerId);
     setSelected(null);
@@ -1188,11 +1188,18 @@ export const FlowCanvas = ({
     if (under === null) return null;
     if ("lane" in source) {
       if (under.closest("[data-add-service]")) return { beforeLane: null };
-      const box = under.closest("[data-lane]");
+      /* By geometry rather than by what is under the pointer: the cards sit on top of the
+         boxes as siblings, so over a card the pointer is "in" no box at all — and a lane is
+         mostly cards. The box whose rectangle holds the pointer is the lane meant. */
+      const boxes = [...document.querySelectorAll<HTMLElement>("[data-lane]")];
+      const box = boxes.find((one) => {
+        const rect = one.getBoundingClientRect();
+        return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+      });
       const id = box?.getAttribute("data-lane");
       const services = lanes.filter((one) => one.id !== "opening");
       const at = services.findIndex((one) => one.id === id);
-      if (box === null || box === undefined || at < 0 || id === source.lane.id) return null;
+      if (box === undefined || at < 0 || id === source.lane.id) return null;
       const rect = box.getBoundingClientRect();
       const leftHalf = clientX < rect.left + rect.width / 2;
       const before = leftHalf ? services[at] : services[at + 1];
@@ -1306,10 +1313,6 @@ export const FlowCanvas = ({
     edit((f) => ({ ...f, nodes: f.nodes.filter((n) => n.id !== id), edges: f.edges.filter((x) => x.from !== id && x.to !== id) }));
     setPending((all) => ({ ...all, [id]: [] }));
     setSelected((s) => (s === id ? null : s));
-  };
-
-  const removeEdge = (index: number) => {
-    edit((f) => ({ ...f, edges: f.edges.filter((_, i) => i !== index) }));
   };
 
   /* No zoom on this canvas, so fitting means bringing the drawing back under the viewport
@@ -1622,11 +1625,15 @@ export const FlowCanvas = ({
                 key={lane.id}
                 data-lane={lane.id}
                 aria-hidden={lane.id === "opening"}
+                {...(isService && !lane.folded && renaming !== lane.id ? draggable({ lane: group }) : {})}
                 className={cn(
                   "absolute rounded-[7px] border bg-[var(--surface)] transition-colors",
-                  /* Inert until something is being dragged, so a click inside a lane reaches
-                     the card underneath; while one is, the lane is the thing being aimed at. */
-                  drag === null ? "pointer-events-none" : "pointer-events-auto",
+                  /* A service is picked up by any part of its box — the cards on top take
+                     their own presses first. The opening is not a thing that moves, and a
+                     press on it pans the canvas; while something is being dragged it is a
+                     target like the rest. */
+                  lane.id === "opening" && drag === null ? "pointer-events-none" : "pointer-events-auto",
+                  isService && !lane.folded && "cursor-grab touch-none active:cursor-grabbing",
                   draggedLane === lane.id && "opacity-50",
                   dropLane === lane.id
                     ? "border-[var(--accent)] bg-[var(--accent-soft)]"
@@ -1646,10 +1653,8 @@ export const FlowCanvas = ({
                 )}
                 <div
                   data-lane-head
-                  {...(isService && !lane.folded && renaming !== lane.id ? draggable({ lane: group }) : {})}
                   className={cn(
                     "pointer-events-auto mx-2 flex items-center gap-2 font-mono text-[9.5px] tracking-[0.06em] select-none",
-                    isService && !lane.folded && "cursor-grab touch-none active:cursor-grabbing",
                     lane.folded ? "" : "border-b border-dashed border-[var(--hairline)]",
                     lane.broken > 0 ? "text-[var(--bad)]" : lane.folded ? "text-[var(--accent)]" : "text-[var(--ink-2)]",
                   )}
@@ -1706,6 +1711,24 @@ export const FlowCanvas = ({
                       {lane.folded ? "+" : "−"}
                     </button>
                   )}
+                  {/* Remove the service: its branch, its option and its own steps go together,
+                      the way they arrived. Undo brings them back. The catch-all stays — a fork
+                      without one cannot publish. */}
+                  {isService && !catchAll && (
+                    <button
+                      type="button"
+                      title={lane.steps === 0 ? "Remove this service" : `Remove this service and its ${lane.steps} step${lane.steps === 1 ? "" : "s"}`}
+                      aria-label={`Remove the ${lane.label} service`}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={() => {
+                        edit((f) => removeService(f, group));
+                        setSelected((s) => (s !== null && group.ids.includes(s) ? null : s));
+                      }}
+                      className="pointer-events-auto grid size-4 flex-none place-items-center rounded-[3px] border border-[var(--hairline)] text-[10px] leading-none text-[var(--ink-3)] hover:border-[var(--bad)] hover:text-[var(--bad)]"
+                    >
+                      ×
+                    </button>
+                  )}
                 </div>
                 {lane.empty && (
                   <p className="grid place-items-center px-3 text-center font-mono text-[9.5px] text-[var(--ink-3)]" style={{ height: BODY_H + 4 }}>
@@ -1747,15 +1770,11 @@ export const FlowCanvas = ({
             <svg className="pointer-events-none absolute inset-0 overflow-visible">
               {edgePaths.map((p) => (
                   <g key={p.key}>
-                    <path
-                      d={p.d}
-                      fill="none"
-                      stroke="color-mix(in srgb, var(--ink-3) 60%, transparent)"
-                      strokeWidth={1.5}
-                      style={{ pointerEvents: "stroke" }}
-                      className="cursor-pointer hover:stroke-[var(--bad)]"
-                      onClick={() => removeEdge(p.edge)}
-                    />
+                    {/* Inert. A click on the link used to remove it, and a hairline that
+                        deletes on contact is a trap on a drawing that is mostly hairlines:
+                        it took the press meant for the lane behind it, and a slip left a dead
+                        end. A link is changed by moving the step, or from the inspector. */}
+                    <path d={p.d} fill="none" stroke="color-mix(in srgb, var(--ink-3) 60%, transparent)" strokeWidth={1.5} />
                     {p.label !== "" && (
                       <text x={p.mid.x} y={p.mid.y} textAnchor="middle" className="pointer-events-none fill-[var(--ink-3)] font-mono text-[9.5px]">
                         {p.label}

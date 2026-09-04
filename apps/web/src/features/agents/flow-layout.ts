@@ -540,6 +540,28 @@ export const reorderService = (flow: Flow, lane: Lane, before: Lane | null): Flo
 };
 
 /**
+ * Remove a service: its branch, its option on the choice the fork reads, and every step only
+ * it reaches — the three things `addService` added. Not the catch-all: a fork without one
+ * cannot publish, and "anything else" is not something a business is without.
+ */
+export const removeService = (flow: Flow, lane: Lane): Flow => {
+  const branch = branchEdgeOf(flow, lane);
+  if (branch === undefined || branch.otherwise === true) return flow;
+  const fork = flow.nodes.find((n) => n.id === lane.fork);
+  const gone = new Set(lane.ids);
+  return {
+    ...flow,
+    nodes: flow.nodes
+      .filter((node) => !gone.has(node.id))
+      .map((node) => {
+        if (fork === undefined || node.kind !== "collect" || node.field === undefined || node.field.key !== fork.on || node.field.type !== "choice") return node;
+        return { ...node, field: { ...node.field, options: node.field.options.filter((option) => option !== lane.label) } };
+      }),
+    edges: flow.edges.filter((edge) => edge !== branch && !gone.has(edge.from) && !gone.has(edge.to)),
+  };
+};
+
+/**
  * Rename a service: the answer on the branch, and the option on the choice the fork reads,
  * together — they are the same word in two places, and the validator refuses them apart.
  * The catch-all has no name to change, and a name another service has is not available.

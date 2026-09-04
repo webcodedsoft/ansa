@@ -4035,6 +4035,16 @@ service added, folded, removed or reordered — and whenever the viewport is res
 only: the call reads from the top, so the top stays put. `extent` now counts an empty lane's
 box and the add-a-service box, and pads the right by `LEFT` so the margins match.
 
+**Services: removed, and dragged by the box (2026-09-04, late).** A × on a service's header
+removes it — branch, option and its own steps together (`removeService`), never the
+catch-all; Undo brings it back. "User can not drag service" had two causes. The handle was
+only the header, so the box is now the handle — any part of it not covered by a card. And a
+drop was only recognised over a lane's *background*: the cards on top are siblings of the box,
+so over a card the pointer was in no box at all, and a lane is mostly cards. Lane drags now
+find the lane by geometry. Found underneath: the wire between two cards took the press —
+`pointer-events: stroke`, with a click that deleted the link. Wires are inert now; a link is
+changed by moving the step or from the inspector, not by a hairline that deletes on contact.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and

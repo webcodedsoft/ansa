@@ -5,7 +5,7 @@ import { validateFlow } from "@ansa/shared/flow-validate";
 
 import {
   addService, appendToLane, branchHeads, detach, foldedAway, foldedCount, freshServiceName, insertAfter, laneFrames,
-  laneGroups, moveAfter, moveToLane, moveToNewService, onlyReachableThrough, rejoinPoint, renameService, reorderService,
+  laneGroups, moveAfter, moveToLane, moveToNewService, onlyReachableThrough, rejoinPoint, removeService, renameService, reorderService,
   ROW, sameShape, tidied, TOP,
 } from "./flow-layout";
 
@@ -434,6 +434,23 @@ describe("moving steps and services", () => {
     expect(laneGroups(last).map((lane) => lane.label)).toEqual(["everyone gets this", "book a viewing", "anything else", "rent"]);
     // Same links, only in a different order.
     expect(new Set(last.edges.map((e) => JSON.stringify(e)))).toEqual(new Set(three.edges.map((e) => JSON.stringify(e))));
+  });
+
+  it("removes a service with its branch, its option and its own steps, and never the catch-all", () => {
+    const base = withChoice();
+    const rent = laneGroups(base).find((lane) => lane.label === "rent");
+    if (rent === undefined) throw new Error("no rent lane");
+
+    const gone = removeService(base, rent);
+    expect(gone.nodes.map((n) => n.id)).toEqual(["start", "ask", "fork", "buy1", "close", "end"]);
+    expect(gone.edges.some((e) => e.to === "rent1" || e.from === "rent2")).toBe(false);
+    expect(gone.nodes.find((n) => n.id === "ask")?.field?.options).toEqual([]);
+    expect(laneGroups(gone).map((lane) => lane.label)).toEqual(["everyone gets this", "anything else"]);
+    // The shared close survives: it was never only rent's.
+    expect(shapeProblems(gone)).toEqual([]);
+
+    const catchAll = laneGroups(base).find((lane) => lane.label === "anything else");
+    expect(removeService(base, catchAll ?? rent)).toBe(base);
   });
 
   it("renames a service on the branch and on the choice together, and refuses a taken name", () => {
