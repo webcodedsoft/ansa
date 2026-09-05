@@ -1,13 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { EmptyState, PageHeader, Pagination, Panel, Table, Tag, Td, Th, Tr } from "@/components/ui";
+import { buttonClass, EmptyState, PageHeader, Pagination, Panel } from "@/components/ui";
 import { currentPrincipal } from "@/features/auth/auth.service";
 import { listAgents } from "@/features/agents/agents.service";
-import { NewCampaignButton } from "@/features/campaigns/components/new-campaign-button";
-import { campaignTone } from "@/features/campaigns/campaigns.display";
+import { CampaignCard } from "@/features/campaigns/components/campaign-card";
 import { listCampaigns } from "@/features/campaigns/campaigns.service";
-import { when } from "@/lib/format";
 import { readPaging } from "@/lib/paging";
 
 export const metadata: Metadata = { title: "Outbound · Ansa" };
@@ -18,12 +16,14 @@ type CampaignsSearch = { readonly page?: string; readonly perPage?: string };
 /**
  * The organisation's outbound campaigns.
  *
- * A campaign is an agent placing a list of calls within a set of hours. Each row carries
- * where it has got to — how many are still pending and how many have been answered — counted
- * by the API across the scheduled calls under it, not derived from this page's rows.
+ * A campaign is an agent placing a list of calls within a set of hours. Cards rather than a
+ * table, because the question people bring here is "which of these is running, and how far
+ * has it got" — a progress bar answers that at a glance and a row of six equal columns does
+ * not. The counts behind it are the API's, taken across the scheduled calls under each
+ * campaign rather than derived from anything on this page.
  *
- * Creating one needs an agent, so the agents are loaded here and handed to the button: an
- * organisation with none is told it must build one first rather than shown a form that fails.
+ * The agents are still loaded, but only to name the one behind each campaign. Choosing an
+ * agent moved to `/campaigns/new` when creating stopped being a dialog.
  */
 const CampaignsPage = async ({
   searchParams,
@@ -39,9 +39,6 @@ const CampaignsPage = async ({
 
   const canWrite = principal.capabilities.includes("campaigns:write");
   const agentName = new Map(agentList.items.map((agent) => [agent.agentId, agent.name]));
-  const liveAgents = agentList.items
-    .filter((agent) => agent.deletedAt === null)
-    .map((agent) => ({ agentId: agent.agentId, name: agent.name }));
 
   return (
     <>
@@ -49,7 +46,13 @@ const CampaignsPage = async ({
         eyebrow="Operate"
         title="Outbound"
         meta="Campaigns that place calls: an agent, a list of people, and the hours it may ring them. Consent and do-not-call are enforced on every call, not configured away here."
-        actions={canWrite ? <NewCampaignButton agents={liveAgents} /> : undefined}
+        actions={
+          canWrite ? (
+            <Link href="/campaigns/new" className={buttonClass("primary")}>
+              New campaign
+            </Link>
+          ) : undefined
+        }
       />
 
       {items.length === 0 ? (
@@ -62,48 +65,19 @@ const CampaignsPage = async ({
         </Panel>
       ) : (
         <>
-          <div className="surface overflow-hidden rounded-xl">
-            <Table>
-              <thead>
-                <Tr>
-                  <Th>Campaign</Th>
-                  <Th>Status</Th>
-                  <Th className="text-right">Pending</Th>
-                  <Th className="text-right">Answered</Th>
-                  <Th className="text-right">Total</Th>
-                  <Th className="text-right">Created</Th>
-                </Tr>
-              </thead>
-              <tbody>
-                {items.map((campaign) => (
-                  <Tr key={campaign.id}>
-                    <Td>
-                      <Link href={`/campaigns/${campaign.id}`} className="block">
-                        <span className="block text-[13.5px] font-medium">{campaign.name}</span>
-                        <span className="block text-[11.5px] text-[var(--ink-3)]">
-                          {agentName.get(campaign.agentId) ?? "Unknown agent"}
-                        </span>
-                      </Link>
-                    </Td>
-                    <Td>
-                      <Tag tone={campaignTone[campaign.status]}>{campaign.status}</Tag>
-                    </Td>
-                    <Td className="text-right tabular-nums text-[var(--ink-2)]">
-                      {campaign.pending}
-                    </Td>
-                    <Td className="text-right tabular-nums text-[var(--ink-2)]">
-                      {campaign.answered}
-                    </Td>
-                    <Td className="text-right tabular-nums text-[var(--ink-3)]">
-                      {campaign.total}
-                    </Td>
-                    <Td className="text-right text-[12.5px] whitespace-nowrap text-[var(--ink-3)]">
-                      {when(campaign.createdAt)}
-                    </Td>
-                  </Tr>
-                ))}
-              </tbody>
-            </Table>
+          {/* Two up from a tablet, three only on a genuinely wide screen. A campaign card is a
+              short paragraph rather than a row — a name, a progress bar and a sentence about
+              its calling hours — and it stops reading as one below about 300px, where the
+              window summary starts breaking mid-phrase. Three across earns its place only when
+              the grid is wide enough to keep each column above that. */}
+          <div className="grid gap-3.5 md:grid-cols-2 2xl:grid-cols-3">
+            {items.map((campaign) => (
+              <CampaignCard
+                key={campaign.id}
+                campaign={campaign}
+                agentName={agentName.get(campaign.agentId) ?? "Unknown agent"}
+              />
+            ))}
           </div>
 
           <Pagination

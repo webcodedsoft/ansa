@@ -4780,6 +4780,38 @@ rather than landed as inventory — the wave that needs them adds them wired.
       to draw a step they route nowhere. An ordinary `transfer` step does not satisfy it: that
       names `transfer_to_human`, which keeps office hours.
 
+- [x] **The outbound screens, redesigned** (this session)
+
+      **Creating a campaign is a page now, not a dialog.** The calling window is the decision
+      operators get wrong, and the modal gave it a checkbox, two selects and seven tick boxes
+      with nowhere to show what the combination meant. `/campaigns/new` has room for the
+      answer: a summary beside the form that names the campaign, the agent and the window as
+      you build it. It renders through the same `windowSummary` the campaign's own page uses,
+      so the promise made here and the description shown afterwards cannot drift apart.
+
+      The checkbox became two cards, because "only call within set hours" reads as though
+      leaving it off means *no* limit — the opposite of true. Both cards state their hours, so
+      the real choice is visible: keep the 08:00–20:00 WAT bound, or narrow it. Days are pills
+      rather than tick boxes, posting hidden `weekdays` inputs so `windowFromForm` reads exactly
+      what it always did. Verified in the browser without creating a test campaign: the payload
+      is `name, agentId, windowEnabled=on, startHour, endHour` plus one `weekdays` per day, and
+      the default branch posts no `windowEnabled` at all. There is no DELETE for campaigns, so
+      submitting a throwaway would have left junk in a real organisation's list.
+
+      **The list is cards.** The table gave six columns equal weight, which answers "what are
+      the numbers"; the question people actually bring is "which of these is running, and how
+      far has it got". Each card leads with the name and state, gives progress its own bar, and
+      demotes the counts to a footer. Progress is total minus *pending*, not answered — a call
+      that rang out or hit voicemail is finished with, and counting only answers would leave a
+      campaign that has dialled everybody stuck at 40%. A campaign with nobody on it draws no
+      bar: zero of zero is not 0% or 100%.
+
+      **One real bug, found by looking rather than by tests.** The progress track was
+      `--surface-2`, which resolves to white at 60% in light mode — an invisible track on a
+      white card, which reads as a bar permanently at 100%. It is `--hairline` now, checked in
+      both themes. Worth keeping: the first grid comment claimed a measurement taken off a
+      downscaled screenshot and was wrong by 50%; the computed width was 326px, not 210px.
+
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The queue drains, the consent gate is in the path, and a call can now offer and take a time,
 but every one of those is green tests and database round trips. By Rule 1 both slices are open
