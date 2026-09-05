@@ -697,6 +697,35 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       }>(options, "POST", `/api/v1/appointments/bookings/${encodeURIComponent(input.path.bookingId)}/confirm`, input),
 
     /**
+     * Find appointments by name
+     * Matches the title and the note, across every calendar the organisation keeps, ignoring the dates on screen — the point is to find an appointment whose week you do not know. Cancelled appointments are excluded. Newest first.
+     */
+    search: (input: {
+        readonly query: {
+          readonly q: string;
+          readonly limit?: number;
+        };
+      }) =>
+      send<{
+        readonly items: readonly ({
+        readonly id: string;
+        readonly calendarId: string;
+        readonly contactId: string | null;
+        readonly startsAt: string;
+        readonly endsAt: string;
+        readonly status: "held" | "booked" | "cancelled";
+        readonly holdExpiresAt: string | null;
+        readonly source: "call" | "manual" | "connector";
+        readonly callId: string | null;
+        readonly externalRef: string | null;
+        readonly title: string | null;
+        readonly notes: string | null;
+        readonly createdAt: string;
+        readonly updatedAt: string;
+      })[];
+      }>(options, "GET", `/api/v1/appointments/bookings/search`, input),
+
+    /**
      * List this organisation's calendars
      * Every calendar the organisation holds, oldest first, with its timezone and slot length.
      */
@@ -901,7 +930,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
 
     /**
      * The free slots in a range
-     * The recurring hours expanded over the range in the calendar's timezone, minus the buffer, minus every live booking and unexpired hold. Lapsed holds are released first, so a slot a dropped call never let go of is offered again. Each slot's start and end carry the calendar's own offset.
+     * The recurring hours expanded over the range in the calendar's timezone, minus the buffer, minus every live booking and unexpired hold, minus every day the organisation is shut. Lapsed holds are released first, so a slot a dropped call never let go of is offered again. A public holiday yields nothing at all — an appointment already written on one is still listed by the bookings endpoint, because withholding the offer is not the same as forbidding the booking. Each slot's start and end carry the calendar's own offset.
      */
     slots: (input: {
         readonly path: {
@@ -918,6 +947,55 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly end: string;
       })[];
       }>(options, "GET", `/api/v1/appointments/calendars/${encodeURIComponent(input.path.calendarId)}/slots`, input),
+
+    /**
+     * The days this organisation is shut
+     * Every date the organisation keeps closed, earliest first, with the name it gave each one. Organisation-wide: every calendar it holds is shut on these days. `from` and `to` are calendar dates, `YYYY-MM-DD`, and both ends are included; send neither for the whole list.
+     */
+    listHolidays: (input: {
+        readonly query?: {
+          readonly from?: string;
+          readonly to?: string;
+        };
+      }) =>
+      send<{
+        readonly items: readonly ({
+        readonly id: string;
+        readonly onDate: string;
+        readonly name: string;
+        readonly createdAt: string;
+        readonly updatedAt: string;
+      })[];
+      }>(options, "GET", `/api/v1/appointments/holidays`, input),
+
+    /**
+     * Mark a date shut
+     * `onDate` is a calendar date, `YYYY-MM-DD`, with no time on it — a holiday is a square on a calendar and it begins at midnight wherever the calendar is kept. From then on no calendar in this organisation offers a slot on that day. Existing appointments on it are left alone and a person may still write a new one, which is how an office that opens specially records it. A date already marked shut answers 409; there is no recurrence rule, so next year's Christmas is next year's row.
+     */
+    addHoliday: (input: {
+        readonly body: {
+          readonly onDate: string;
+          readonly name: string;
+        };
+      }) =>
+      send<{
+        readonly id: string;
+        readonly onDate: string;
+        readonly name: string;
+        readonly createdAt: string;
+        readonly updatedAt: string;
+      }>(options, "POST", `/api/v1/appointments/holidays`, input),
+
+    /**
+     * The office is open that day after all
+     * Removes the date outright rather than hiding it — a holiday is a statement about the future, and one that still suppressed slots after being deleted would be worse than none. Slots on that day are offered again from the next request.
+     */
+    removeHoliday: (input: {
+        readonly path: {
+          readonly holidayId: string;
+        };
+      }) =>
+      send<void>(options, "DELETE", `/api/v1/appointments/holidays/${encodeURIComponent(input.path.holidayId)}`, input),
   },
 
   auth: {

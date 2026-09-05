@@ -43,19 +43,29 @@ let owner: Db;
 let app: INestApplication;
 let baseUrl: string;
 let token: string;
+/* A second organisation with its own session, for one question a single-organisation test
+   cannot ask: whether one organisation's closures reach another's slots. */
+let otherToken: string;
 const organizationId = randomUUID();
 const userId = randomUUID();
+const otherOrganizationId = randomUUID();
+const otherUserId = randomUUID();
 
 interface Reply {
   readonly status: number;
   readonly body: Record<string, unknown>;
 }
 
-const send = async (method: string, path: string, body?: unknown): Promise<Reply> => {
+const send = async (
+  method: string,
+  path: string,
+  body?: unknown,
+  as?: string,
+): Promise<Reply> => {
   const response = await fetch(`${baseUrl}${path}`, {
     method,
     headers: {
-      authorization: `Bearer ${token}`,
+      authorization: `Bearer ${as ?? token}`,
       ...(body === undefined ? {} : { "content-type": "application/json" }),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -96,16 +106,44 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("the appointment
       body: JSON.stringify({ email, password, organisationId: organizationId }),
     });
     token = String(((await signIn.json()) as Record<string, unknown>)["token"]);
+
+    const otherEmail = `appointments-${otherOrganizationId}@invalid.test`;
+    const otherPassword = `${randomUUID()}-${randomUUID()}`;
+    await owner.query("insert into organizations (id, name) values ($1, $2)", [
+      otherOrganizationId,
+      "Appointments endpoints, the other organisation",
+    ]);
+    await owner.query(
+      "insert into users (id, email, password_hash, display_name) values ($1, $2, $3, $4)",
+      [otherUserId, otherEmail, await hashPassword(otherPassword), "Owner"],
+    );
+    await owner.query(
+      "insert into memberships (organization_id, user_id, role) values ($1, $2, 'owner')",
+      [otherOrganizationId, otherUserId],
+    );
+    const otherSignIn = await fetch(`${baseUrl}/api/v1/auth/sessions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: otherEmail,
+        password: otherPassword,
+        organisationId: otherOrganizationId,
+      }),
+    });
+    otherToken = String(((await otherSignIn.json()) as Record<string, unknown>)["token"]);
   });
 
   afterAll(async () => {
     await app?.close();
     // Rows first — the FK from every appointment table is to this organisation.
-    await owner?.query("delete from appointment_bookings where organization_id = $1", [organizationId]);
-    await owner?.query("delete from appointment_availability where organization_id = $1", [organizationId]);
-    await owner?.query("delete from appointment_calendars where organization_id = $1", [organizationId]);
-    await owner?.query("delete from organizations where id = $1", [organizationId]);
-    await owner?.query("delete from users where id = $1", [userId]);
+    for (const organization of [organizationId, otherOrganizationId]) {
+      await owner?.query("delete from appointment_bookings where organization_id = $1", [organization]);
+      await owner?.query("delete from appointment_availability where organization_id = $1", [organization]);
+      await owner?.query("delete from appointment_calendars where organization_id = $1", [organization]);
+      await owner?.query("delete from holidays where organization_id = $1", [organization]);
+      await owner?.query("delete from organizations where id = $1", [organization]);
+    }
+    await owner?.query("delete from users where id = any($1)", [[userId, otherUserId]]);
     await owner?.destroy();
   });
 
@@ -403,11 +441,263 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("the appointment
     expect(afterCancel.body["items"]).toEqual([]);
   });
 
+  /* ---------------------------------------------------------------------------------------
+     Days the office is shut (0064).
+
+     The point of the table is one sentence: the agent must never offer a caller a time on a
+     day the office is closed. Everything below is that sentence and its edges — the days
+     either side are ordinary, the judgement is made in the calendar's zone, an appointment
+     somebody deliberately wrote on the holiday survives and is still writable, and another
+     organisation's closures are none of this organisation's business.
+     --------------------------------------------------------------------------------------- */
+
+  /** Monday, Tuesday and Wednesday, 09:00-10:00 Lagos: two slots a day, easy to count. */
+  const midweekCalendar = async (): Promise<string> => {
+    const id = await createCalendar();
+    const put = await send("PUT", `/api/v1/appointments/calendars/${id}/availability`, {
+      windows: [1, 2, 3].map((weekday) => ({
+        weekday,
+        startMinute: 9 * 60,
+        endMinute: 10 * 60,
+      })),
+    });
+    expect(put.status, JSON.stringify(put.body)).toBe(200);
+    return id;
+  };
+
+  const startsBetween = async (
+    calendarId: string,
+    from: string,
+    to: string,
+    as?: string,
+  ): Promise<unknown[]> => {
+    const reply = await send(
+      "GET",
+      `/api/v1/appointments/calendars/${calendarId}/slots?from=${from}&to=${to}`,
+      undefined,
+      as,
+    );
+    expect(reply.status, JSON.stringify(reply.body)).toBe(200);
+    return (reply.body["slots"] as Record<string, unknown>[]).map((slot) => slot["start"]);
+  };
+
+  it("lists, adds and removes the days the organisation is shut", async () => {
+    const added = await send("POST", "/api/v1/appointments/holidays", {
+      onDate: "2026-10-01",
+      name: "Independence Day",
+    });
+    expect(added.status, JSON.stringify(added.body)).toBe(201);
+    expect(added.body).toMatchObject({ onDate: "2026-10-01", name: "Independence Day" });
+
+    const listed = await send("GET", "/api/v1/appointments/holidays?from=2026-10-01&to=2026-10-31");
+    expect(listed.status).toBe(200);
+    expect((listed.body["items"] as Record<string, unknown>[]).map((day) => day["onDate"])).toEqual([
+      "2026-10-01",
+    ]);
+
+    // One day is shut once; a second name for it is a typo, not a second closure.
+    const again = await send("POST", "/api/v1/appointments/holidays", {
+      onDate: "2026-10-01",
+      name: "Independence",
+    });
+    expect(again.status).toBe(409);
+
+    const removed = await send(
+      "DELETE",
+      `/api/v1/appointments/holidays/${String(added.body["id"])}`,
+    );
+    expect(removed.status).toBe(204);
+    const empty = await send("GET", "/api/v1/appointments/holidays?from=2026-10-01&to=2026-10-31");
+    expect(empty.body["items"]).toEqual([]);
+  });
+
+  it("refuses a date that is not a date, and half a range", async () => {
+    // The pattern accepts this; the calendar does not.
+    const impossible = await send("POST", "/api/v1/appointments/holidays", {
+      onDate: "2026-02-31",
+      name: "No",
+    });
+    expect(impossible.status).toBe(422);
+    const wrongShape = await send("POST", "/api/v1/appointments/holidays", {
+      onDate: "01/10/2026",
+      name: "No",
+    });
+    expect(wrongShape.status).toBe(422);
+    expect((await send("GET", "/api/v1/appointments/holidays?from=2026-10-01")).status).toBe(422);
+    expect(
+      (await send("GET", "/api/v1/appointments/holidays?from=2026-10-31&to=2026-10-01")).status,
+    ).toBe(422);
+    expect((await send("DELETE", `/api/v1/appointments/holidays/${randomUUID()}`)).status).toBe(404);
+  });
+
+  it("offers nothing on a holiday and leaves the days either side alone", async () => {
+    const id = await midweekCalendar();
+    // 2026-03-02 Mon, 2026-03-03 Tue, 2026-03-04 Wed.
+    const week = ["2026-03-02T00:00:00Z", "2026-03-05T00:00:00Z"] as const;
+
+    expect(await startsBetween(id, week[0], week[1])).toHaveLength(6);
+
+    const shut = await send("POST", "/api/v1/appointments/holidays", {
+      onDate: "2026-03-03",
+      name: "A day the office is shut",
+    });
+    expect(shut.status, JSON.stringify(shut.body)).toBe(201);
+
+    expect(await startsBetween(id, week[0], week[1])).toEqual([
+      "2026-03-02T09:00:00+01:00",
+      "2026-03-02T09:30:00+01:00",
+      "2026-03-04T09:00:00+01:00",
+      "2026-03-04T09:30:00+01:00",
+    ]);
+
+    // And it comes back when the office turns out to be open after all.
+    const reopened = await send(
+      "DELETE",
+      `/api/v1/appointments/holidays/${String(shut.body["id"])}`,
+    );
+    expect(reopened.status).toBe(204);
+    expect(await startsBetween(id, week[0], week[1])).toHaveLength(6);
+  });
+
+  it("judges the holiday in the calendar's timezone, not in UTC", async () => {
+    /* A calendar fourteen hours ahead of UTC, open Tuesday morning. Nine on Tuesday the tenth
+       in Kiritimati is 19:00Z on *Monday the ninth*, so a holiday compared against the UTC
+       date of the instant would suppress the wrong day — twice over, because it would also
+       leave open the day the caller is actually offered. Both halves are asserted. */
+    const linked = await send("POST", "/api/v1/appointments/calendars", {
+      name: "Far side of the dateline",
+      timezone: "Pacific/Kiritimati",
+      slotMinutes: 30,
+    });
+    expect(linked.status, JSON.stringify(linked.body)).toBe(201);
+    const id = String(linked.body["id"]);
+    await send("PUT", `/api/v1/appointments/calendars/${id}/availability`, {
+      windows: [{ weekday: 2, startMinute: 9 * 60, endMinute: 10 * 60 }],
+    });
+    const range = ["2026-03-09T00:00:00Z", "2026-03-11T00:00:00Z"] as const;
+
+    // The UTC date of those instants. Not the calendar's date, so nothing is withheld.
+    const utcDate = await send("POST", "/api/v1/appointments/holidays", {
+      onDate: "2026-03-09",
+      name: "The UTC date, which is the wrong one",
+    });
+    expect(utcDate.status, JSON.stringify(utcDate.body)).toBe(201);
+    expect(await startsBetween(id, range[0], range[1])).toEqual([
+      "2026-03-10T09:00:00+14:00",
+      "2026-03-10T09:30:00+14:00",
+    ]);
+    await send("DELETE", `/api/v1/appointments/holidays/${String(utcDate.body["id"])}`);
+
+    // The calendar's own date, which is the day the caller would be told about.
+    const zoneDate = await send("POST", "/api/v1/appointments/holidays", {
+      onDate: "2026-03-10",
+      name: "The calendar's date, which is the right one",
+    });
+    expect(zoneDate.status, JSON.stringify(zoneDate.body)).toBe(201);
+    expect(await startsBetween(id, range[0], range[1])).toEqual([]);
+    await send("DELETE", `/api/v1/appointments/holidays/${String(zoneDate.body["id"])}`);
+  });
+
+  it("still lists and still takes an appointment written on a holiday", async () => {
+    /* Withholding the offer and forbidding the booking are different things. An office that
+       opens specially on a public holiday puts an appointment in the diary on purpose, and
+       neither the grid nor the desk may pretend it is not there. */
+    const id = await midweekCalendar();
+    const shut = await send("POST", "/api/v1/appointments/holidays", {
+      onDate: "2026-03-10",
+      name: "Shut, except for this one",
+    });
+    expect(shut.status, JSON.stringify(shut.body)).toBe(201);
+
+    const day = ["2026-03-10T00:00:00Z", "2026-03-11T00:00:00Z"] as const;
+    expect(await startsBetween(id, day[0], day[1])).toEqual([]);
+
+    // A person at the desk writes one anyway, and is not refused.
+    const written = await send("POST", `/api/v1/appointments/calendars/${id}/bookings`, {
+      startsAt: "2026-03-10T08:00:00Z",
+      endsAt: "2026-03-10T09:00:00Z",
+      title: "Opening specially",
+      source: "manual",
+    });
+    expect(written.status, JSON.stringify(written.body)).toBe(201);
+
+    const listed = await send(
+      "GET",
+      `/api/v1/appointments/calendars/${id}/bookings?from=${day[0]}&to=${day[1]}`,
+    );
+    expect(listed.status).toBe(200);
+    expect((listed.body["items"] as Record<string, unknown>[]).map((row) => row["title"])).toEqual([
+      "Opening specially",
+    ]);
+
+    // And the day is still not offered to a caller.
+    expect(await startsBetween(id, day[0], day[1])).toEqual([]);
+
+    await send("DELETE", `/api/v1/appointments/holidays/${String(shut.body["id"])}`);
+  });
+
+  it("keeps one organisation's closures out of another organisation's slots", async () => {
+    const mine = await midweekCalendar();
+
+    const theirs = await send(
+      "POST",
+      "/api/v1/appointments/calendars",
+      { name: "Their consulting room", timezone: "Africa/Lagos", slotMinutes: 30 },
+      otherToken,
+    );
+    expect(theirs.status, JSON.stringify(theirs.body)).toBe(201);
+    const theirId = String(theirs.body["id"]);
+    await send(
+      "PUT",
+      `/api/v1/appointments/calendars/${theirId}/availability`,
+      { windows: [{ weekday: 2, startMinute: 9 * 60, endMinute: 10 * 60 }] },
+      otherToken,
+    );
+
+    const shut = await send("POST", "/api/v1/appointments/holidays", {
+      onDate: "2026-03-17",
+      name: "Our stocktake, not theirs",
+    });
+    expect(shut.status, JSON.stringify(shut.body)).toBe(201);
+
+    const day = ["2026-03-17T00:00:00Z", "2026-03-18T00:00:00Z"] as const;
+    // Ours is shut.
+    expect(await startsBetween(mine, day[0], day[1])).toEqual([]);
+    // Theirs is not, and it is the same Tuesday.
+    expect(await startsBetween(theirId, day[0], day[1], otherToken)).toEqual([
+      "2026-03-17T09:00:00+01:00",
+      "2026-03-17T09:30:00+01:00",
+    ]);
+
+    /* They cannot see the closure, and cannot remove it. 404 rather than 403 — under RLS the
+       id simply is not there, and a 403 would confirm that it is. */
+    const theirList = await send(
+      "GET",
+      "/api/v1/appointments/holidays?from=2026-03-01&to=2026-03-31",
+      undefined,
+      otherToken,
+    );
+    expect(theirList.status).toBe(200);
+    expect(theirList.body["items"]).toEqual([]);
+    const theirDelete = await send(
+      "DELETE",
+      `/api/v1/appointments/holidays/${String(shut.body["id"])}`,
+      undefined,
+      otherToken,
+    );
+    expect(theirDelete.status).toBe(404);
+    // Still shut for us afterwards: nothing they did reached our list.
+    expect(await startsBetween(mine, day[0], day[1])).toEqual([]);
+
+    await send("DELETE", `/api/v1/appointments/holidays/${String(shut.body["id"])}`);
+  });
+
   it("refuses every route without a session", async () => {
     for (const path of [
       "/api/v1/appointments/calendars",
       `/api/v1/appointments/calendars/${randomUUID()}/slots?from=2026-03-02T00:00:00Z&to=2026-03-03T00:00:00Z`,
       "/api/v1/appointments/bookings/search?q=adeola",
+      "/api/v1/appointments/holidays",
     ]) {
       const response = await fetch(`${baseUrl}${path}`);
       expect(response.status, path).toBe(401);

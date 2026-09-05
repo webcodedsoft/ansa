@@ -21,19 +21,30 @@ import {
 
 const LAGOS = "Africa/Lagos"; // WAT, +01:00 all year — no DST.
 const NEW_YORK = "America/New_York"; // EST/EDT — DST twice a year.
+// +14 all year: the zone furthest ahead of UTC, so its local date is a day ahead for ten
+// hours out of every twenty-four. A holiday judged in UTC lands on the wrong day here.
+const KIRITIMATI = "Pacific/Kiritimati";
 
 /** A Monday, 09:00–11:00 local. Weekday 1 as the stored column has it. */
 const MONDAY_MORNING: SlotWindow = { weekday: 1, startMinute: 9 * 60, endMinute: 11 * 60 };
 
 const at = (iso: string): Date => new Date(iso);
 
-const startsOf = (timeZone: string, windows: SlotWindow[], bookings: SlotBooking[], from: string, to: string): string[] =>
+const startsOf = (
+  timeZone: string,
+  windows: SlotWindow[],
+  bookings: SlotBooking[],
+  from: string,
+  to: string,
+  holidays: string[] = [],
+): string[] =>
   computeFreeSlots({
     timeZone,
     slotMinutes: 30,
     bufferMinutes: 0,
     windows,
     bookings,
+    holidays,
     from: at(from),
     to: at(to),
   }).map((slot) => toOffsetIso(slot.start, timeZone));
@@ -68,6 +79,7 @@ describe("computeFreeSlots", () => {
       bufferMinutes: 15,
       windows: [MONDAY_MORNING],
       bookings: [booking],
+      holidays: [],
       from: at("2026-03-02T00:00:00Z"),
       to: at("2026-03-03T00:00:00Z"),
     });
@@ -100,6 +112,7 @@ describe("computeFreeSlots", () => {
       bufferMinutes: 0,
       windows: [MONDAY_MORNING],
       bookings: [],
+      holidays: [],
       from: at("2026-03-02T00:00:00Z"),
       to: at("2026-03-03T00:00:00Z"),
     });
@@ -128,6 +141,110 @@ describe("computeFreeSlots", () => {
     ]);
   });
 
+  describe("on a day the office is shut", () => {
+    /* The whole point of the holidays table: the week says Monday is open, the calendar says
+       this particular Monday is Independence Day, and the agent must not offer it. Every case
+       here is about the *date*, because that is the only thing a holiday is. */
+
+    it("offers nothing at all on a holiday", () => {
+      const starts = startsOf(
+        LAGOS,
+        [MONDAY_MORNING],
+        [],
+        "2026-03-02T00:00:00Z",
+        "2026-03-03T00:00:00Z",
+        ["2026-03-02"],
+      );
+      expect(starts).toEqual([]);
+    });
+
+    it("leaves the day before and the day after untouched", () => {
+      // Open Monday, Tuesday and Wednesday 09:00–10:00; Tuesday the third is shut.
+      const week: SlotWindow[] = [1, 2, 3].map((weekday) => ({
+        weekday,
+        startMinute: 9 * 60,
+        endMinute: 10 * 60,
+      }));
+      const starts = startsOf(LAGOS, week, [], "2026-03-02T00:00:00Z", "2026-03-05T00:00:00Z", [
+        "2026-03-03",
+      ]);
+      expect(starts).toEqual([
+        "2026-03-02T09:00:00+01:00",
+        "2026-03-02T09:30:00+01:00",
+        "2026-03-04T09:00:00+01:00",
+        "2026-03-04T09:30:00+01:00",
+      ]);
+    });
+
+    it("ignores a date the organisation does not keep", () => {
+      const starts = startsOf(
+        LAGOS,
+        [MONDAY_MORNING],
+        [],
+        "2026-03-02T00:00:00Z",
+        "2026-03-03T00:00:00Z",
+        ["2026-10-01", "2026-12-25"],
+      );
+      expect(starts).toHaveLength(4);
+    });
+
+    /* The two cases that separate "judged in the calendar's zone" from "judged in UTC". Both
+       use a window whose slots fall on a *different* UTC date from the local one, so a
+       generator that compared the holiday against the instant's UTC date gets them backwards. */
+
+    it("judges the date in the calendar's zone when the zone runs ahead of UTC", () => {
+      // Midnight to one in Lagos on Monday the second is 23:00–00:00Z on Sunday the first.
+      const justAfterMidnight: SlotWindow = { weekday: 1, startMinute: 0, endMinute: 60 };
+      const range = ["2026-03-01T00:00:00Z", "2026-03-03T00:00:00Z"] as const;
+
+      // The UTC date of those instants. It is not the Lagos date, so nothing is suppressed.
+      expect(
+        startsOf(LAGOS, [justAfterMidnight], [], range[0], range[1], ["2026-03-01"]),
+      ).toEqual(["2026-03-02T00:00:00+01:00", "2026-03-02T00:30:00+01:00"]);
+
+      // The Lagos date, which is the day the caller would be told about.
+      expect(startsOf(LAGOS, [justAfterMidnight], [], range[0], range[1], ["2026-03-02"])).toEqual(
+        [],
+      );
+    });
+
+    it("judges the date in the calendar's zone when the zone runs a day ahead of UTC", () => {
+      // Kiritimati is +14 all year, so nine in the morning on Monday the second is 19:00Z on
+      // Sunday the first — a whole calendar day apart from the local date.
+      const range = ["2026-03-01T00:00:00Z", "2026-03-03T00:00:00Z"] as const;
+      const nine: SlotWindow = { weekday: 1, startMinute: 9 * 60, endMinute: 10 * 60 };
+
+      expect(startsOf(KIRITIMATI, [nine], [], range[0], range[1], ["2026-03-01"])).toEqual([
+        "2026-03-02T09:00:00+14:00",
+        "2026-03-02T09:30:00+14:00",
+      ]);
+      expect(startsOf(KIRITIMATI, [nine], [], range[0], range[1], ["2026-03-02"])).toEqual([]);
+    });
+
+    it("still subtracts bookings on the days around a holiday", () => {
+      // A holiday suppresses its own day and changes nothing about any other, including the
+      // ordinary business of a booking taking its slot.
+      const week: SlotWindow[] = [1, 2].map((weekday) => ({
+        weekday,
+        startMinute: 9 * 60,
+        endMinute: 10 * 60,
+      }));
+      const onTuesday: SlotBooking = {
+        startsAt: at("2026-03-03T08:00:00Z"), // 09:00 Lagos
+        endsAt: at("2026-03-03T08:30:00Z"),
+      };
+      const starts = startsOf(
+        LAGOS,
+        week,
+        [onTuesday],
+        "2026-03-02T00:00:00Z",
+        "2026-03-04T00:00:00Z",
+        ["2026-03-02"],
+      );
+      expect(starts).toEqual(["2026-03-03T09:30:00+01:00"]);
+    });
+  });
+
   describe("across a daylight-saving boundary", () => {
     // A window from midnight to 06:00 on the Sunday the clocks change, hourly slots.
     const overnight: SlotWindow = { weekday: 0, startMinute: 0, endMinute: 6 * 60 };
@@ -138,6 +255,7 @@ describe("computeFreeSlots", () => {
         bufferMinutes: 0,
         windows: [overnight],
         bookings: [],
+        holidays: [],
         from: at(from),
         to: at(to),
       }).length;
@@ -162,6 +280,7 @@ describe("computeFreeSlots", () => {
         bufferMinutes: 0,
         windows: [nineToTen],
         bookings: [],
+        holidays: [],
         from: at("2026-03-01T00:00:00Z"), // covers Sun 2026-03-01 (EST) and Sun 2026-03-08 (EDT)
         to: at("2026-03-09T00:00:00Z"),
       });

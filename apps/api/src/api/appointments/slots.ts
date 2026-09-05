@@ -12,6 +12,12 @@
  * not the clocks have gone forward — and the UTC instant that nine o'clock maps to moves by an
  * hour across a DST boundary. Stepping through slots in UTC would drift by that hour; every
  * boundary here is computed from wall-clock components in the zone instead, so it does not.
+ *
+ * The same timezone reasoning is why the holidays (0064) are subtracted here rather than in
+ * SQL. A holiday is a calendar square, `2026-10-01`; whether a given slot falls on it is a
+ * question about the *calendar's* zone, and the UTC date of a Lagos morning is not always the
+ * Lagos date. `holidays` is a required field of `SlotRequest` and not an optional one, so a
+ * caller cannot forget to pass the list and quietly get the old behaviour back.
  */
 
 /** True when `Intl` recognises the zone. A made-up zone throws `RangeError` on construction. */
@@ -110,6 +116,15 @@ export interface SlotRequest {
   readonly bufferMinutes: number;
   readonly windows: readonly SlotWindow[];
   readonly bookings: readonly SlotBooking[];
+  /**
+   * Dates the office is shut, each `YYYY-MM-DD`, read in `timeZone`. A day in this list
+   * yields no slots at all, whatever the week's hours say.
+   *
+   * Required rather than optional: an optional list is one a caller forgets, and the way it
+   * fails is the agent offering a caller Christmas morning — silently, and only in
+   * production. Pass `[]` to mean "nothing is shut".
+   */
+  readonly holidays: readonly string[];
   readonly from: Date;
   readonly to: Date;
 }
@@ -160,6 +175,23 @@ const localDate = (instant: Date, timeZone: string): { year: number; month: numb
   return { year: field("year"), month: field("month"), day: field("day") };
 };
 
+/** A calendar date as `YYYY-MM-DD`, the shape `holidays.on_date` is stored and compared in. */
+const dateKey = (year: number, month: number, day: number): string =>
+  `${year}-${pad(month)}-${pad(day)}`;
+
+/**
+ * The calendar date an instant falls on *in the zone*, as `YYYY-MM-DD`.
+ *
+ * The one function that turns a range's ends into the days a holiday list must cover. Half
+ * past eleven at night in Lagos on the first of October is the *second* of October in UTC, so
+ * asking the database for holidays between the UTC dates of `from` and `to` would miss the
+ * day the caller is actually being offered. Ask in the calendar's zone or do not ask.
+ */
+export const localDateKey = (instant: Date, timeZone: string): string => {
+  const { year, month, day } = localDate(instant, timeZone);
+  return dateKey(year, month, day);
+};
+
 /**
  * The bookable slots in `[from, to)`.
  *
@@ -168,9 +200,17 @@ const localDate = (instant: Date, timeZone: string): { year: number; month: numb
  * falls outside the range, or if it touches any booking once that booking is grown by the
  * buffer on both sides — the buffer is dead time around an appointment, so a slot inside it is
  * not free even though nothing is booked in the slot itself.
+ *
+ * A day in `holidays` contributes nothing: the whole date is skipped before its windows are
+ * even looked at, because "shut" is a property of the day and not of any hour in it. Note
+ * what this does *not* do — it does not touch `bookings`. An appointment somebody deliberately
+ * wrote on a public holiday because the office is opening specially is still an appointment,
+ * still returned by the bookings listing, still drawn on the grid, and still bookable through
+ * `POST bookings`. Withholding the *offer* and forbidding the *booking* are different things,
+ * and only the first is what a holiday means.
  */
 export const computeFreeSlots = (request: SlotRequest): readonly Slot[] => {
-  const { timeZone, slotMinutes, bufferMinutes, windows, bookings, from, to } = request;
+  const { timeZone, slotMinutes, bufferMinutes, windows, bookings, holidays, from, to } = request;
   if (from.getTime() >= to.getTime() || slotMinutes <= 0 || windows.length === 0) return [];
 
   const slotMs = slotMinutes * 60000;
@@ -189,6 +229,8 @@ export const computeFreeSlots = (request: SlotRequest): readonly Slot[] => {
   const end = localDate(to, timeZone);
   const lastDayMs = Date.UTC(end.year, end.month - 1, end.day);
 
+  const shut = new Set(holidays);
+
   const slots: Slot[] = [];
   // A pure calendar cursor at UTC midnight — UTC has no DST, so stepping a day is exactly 24h
   // and the weekday it reports is the weekday of that calendar date in every zone.
@@ -198,6 +240,10 @@ export const computeFreeSlots = (request: SlotRequest): readonly Slot[] => {
     cursor += 24 * 60 * 60 * 1000
   ) {
     const day = new Date(cursor);
+    /* The cursor is a calendar date, not an instant, so its components *are* the date in the
+       calendar's zone — which is the date a holiday names. Reading them off `from` in UTC
+       instead is the bug this loop's own comment already avoids for weekdays. */
+    if (shut.has(dateKey(day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate()))) continue;
     const weekday = day.getUTCDay();
     for (const window of windows) {
       if (window.weekday !== weekday) continue;
