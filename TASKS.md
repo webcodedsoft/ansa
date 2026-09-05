@@ -4504,6 +4504,57 @@ this slice: forty new lines across all layers, net of what is removed.
       for how often a clarifying question was asked. This is the only proof that matters
       and it needs a phone.
 
+## Slice 13 — Outbound campaigns, contacts you can add, and a diary (2026-09-05)
+
+Built with agents in waves, each wave reviewed and merged by hand before the next opened.
+Two product decisions were the user's: outbound goes the whole way down to the database
+rather than stopping at a mocked UI, and appointments are both Ansa-hosted **and**
+connector-backed.
+
+- [x] **Templates for the new builder** (`0e4e4e8`). `flowFromTemplate` names every step for
+      its service at source — a nested fork keeps the enclosing arm's name, the shared opening
+      and close carry none — so a template opens in the canvas already grouped instead of being
+      inferred by `withServiceTags` and re-inferred after every edit. The catalogue test now
+      demands *zero* problems including warnings, and proves the source tags match what the
+      canvas would have guessed. All 71 templates were already sound; no catalogue file changed.
+- [x] **The tables** (`41fd0b6`). `0061_a_list_of_people_to_ring` makes contacts first-class
+      (`source`, `notes`, `import_id`) beside the call-derived ones, and adds `contact_imports`,
+      `campaigns`, `scheduled_calls`. `0062_a_place_in_the_diary` adds `appointment_calendars`,
+      `appointment_availability`, `appointment_bookings` — with `hold_expires_at`, so a dropped
+      call cannot hold a slot for ever, and a partial unique index that stops two live bookings
+      in one slot. RLS `organization_isolation` + force on every table. `do_not_call` already
+      existed (0006) and was **not** duplicated: `mayCall` in `apps/api/src/outbound/consent.ts`
+      stays the one gate, and a campaign's calling window may only narrow it.
+- [x] **The API** (`97f0916`). Campaigns (list/create/read/edit/status/enqueue/calls) with a
+      legal-transition table answering 409 on an illegal move and a 422 when the agent is not
+      this organisation's; contacts gained a manual add and a batch import that normalises,
+      folds duplicates and *skips* unreadable rows rather than failing the upload; appointments
+      gained calendars, replace-the-week availability, free-slot computation, and bookings with
+      hold/confirm/cancel. New capability pairs `campaigns:*` and `appointments:*` rather than
+      widening `config:write`. OpenAPI and the typed client regenerated centrally, once.
+- [x] **The screens** (`61fb884`, `f605fcc`). Outbound: campaign list, create with an agent
+      picker and calling window, detail with the status control, a contact picker that reports
+      `enqueued` vs `requested`, and the scheduled-call table explaining that `suppressed`
+      means consent or do-not-call refused it. Contacts: add one by hand, or paste/upload a CSV
+      parsed client-side (17 parser cases) with a preview and honest added/known/skipped counts.
+      Appointments: calendars, a weekly hours editor, and a real week grid of free slots and
+      bookings in the calendar's own timezone (26 date tests, DST both ways).
+- [x] **The seam the parallel agents left** (`c12420d`). The API agent decided a manual add
+      should demand full `+234…`; the web agent's form promised "however you have it". Adding a
+      contact by hand now normalises exactly as the import does — one rule for both write paths
+      — and only a string that is no number at all is a 422.
+
+Two gates earned their keep on agent output: `check:wiring` caught three exported accessors
+nothing called (`setContactNotes`, `readContactImports`, `setBookingExternalRef`), all removed
+rather than landed as inventory — the wave that needs them adds them wired.
+
+**Not done, and it is the part that matters.** Nothing dials yet. `scheduled_calls` fills up
+and sits there: no runtime drains the queue through `mayCall`, the calling window and
+answering-machine detection, and no built-in booking tool lets a call take an appointment while
+the caller is on the line. By Rule 1 this slice is open until a scheduled call rings a handset
+and an agent books a slot mid-call.
+
+
 ## Session discipline
 
 - Update this file before you stop working. Check boxes, note what broke.
