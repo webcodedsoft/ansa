@@ -12,6 +12,8 @@ export * from "./onboarding";
 export * from "./call-log";
 export * from "./call-captures";
 export * from "./contacts";
+export * from "./campaigns";
+export * from "./appointments";
 export * from "./call-records";
 export * from "./event-deliveries";
 export * from "./corrections";

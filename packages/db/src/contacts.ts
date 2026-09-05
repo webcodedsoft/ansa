@@ -24,11 +24,23 @@ export interface ContactValue {
   readonly updatedAt: Date;
 }
 
+/**
+ * How a contact came into being (0061). `contacts_source_check` is the enforcement; this
+ * union exists so a caller cannot reach the constraint by accident.
+ */
+export type ContactSource = "call" | "manual" | "import";
+
 export interface Contact {
   readonly id: string;
   readonly phone: string;
   /** An operator's correction, or null when nobody has made one. */
   readonly displayName: string | null;
+  /** The origin of the row. Does not change when the same number later arrives another way. */
+  readonly source: ContactSource;
+  /** Free text an operator keeps. Never spoken and never read by a call. */
+  readonly notes: string | null;
+  /** The `contact_imports` batch this came in on, or null for anyone who was not imported. */
+  readonly importId: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -45,6 +57,9 @@ const asContact = (row: Record<string, unknown>): Contact => ({
   id: String(row["id"]),
   phone: String(row["phone"]),
   displayName: row["display_name"] === null ? null : String(row["display_name"]),
+  source: String(row["source"]) as ContactSource,
+  notes: row["notes"] === null ? null : String(row["notes"]),
+  importId: row["import_id"] === null ? null : String(row["import_id"]),
   createdAt: new Date(String(row["created_at"])),
   updatedAt: new Date(String(row["updated_at"])),
 });
@@ -133,7 +148,8 @@ export const readContacts = async (
      GROUP BY — so the total is the number of people matching, which is what the pager needs,
      and not the number of their calls. */
   const rows = await scope.query<Record<string, unknown> & WithTotal>(
-    `select ct.id, ct.phone, ct.display_name, ct.created_at, ct.updated_at,
+    `select ct.id, ct.phone, ct.display_name, ct.source, ct.notes, ct.import_id,
+            ct.created_at, ct.updated_at,
             count(c.id)::int          as call_count,
             min(c.created_at)         as first_call_at,
             max(c.created_at)         as last_call_at,
@@ -219,7 +235,8 @@ export const readContact = async (
   contactId: string,
 ): Promise<ContactSummary | null> => {
   const rows = await scope.query<Record<string, unknown>>(
-    `select ct.id, ct.phone, ct.display_name, ct.created_at, ct.updated_at,
+    `select ct.id, ct.phone, ct.display_name, ct.source, ct.notes, ct.import_id,
+            ct.created_at, ct.updated_at,
             count(c.id)::int  as call_count,
             min(c.created_at) as first_call_at,
             max(c.created_at) as last_call_at
@@ -317,6 +334,68 @@ export const renameContact = async (
     [contactId, trimmed === "" ? null : trimmed],
   );
   return rows.length > 0;
+};
+
+
+export interface NewContact {
+  /** E.164, as it will be dialled. The API normalises; this stores what it is given. */
+  readonly phone: string;
+  readonly displayName?: string | null;
+  readonly notes?: string | null;
+}
+
+export interface AddedContact {
+  readonly id: string;
+  readonly phone: string;
+  /** False when the number was already known and the existing row was kept. */
+  readonly created: boolean;
+}
+
+/**
+ * Put people on the list who did not ring us first.
+ *
+ * An upsert on the number, which is what keeps one person one row: an imported number that
+ * has already called is the caller's existing record, not a second one. On that existing
+ * row the origin stays what it was, a name fills in only where nobody had one — an
+ * operator's correction outranks a spreadsheet — and notes fill in the same way.
+ *
+ * Returns every row, new or not, because what the caller does next — enqueue them on a
+ * campaign — needs all the ids and not only the fresh ones.
+ *
+ * A number listed twice in one batch is folded to one row before the insert. Postgres
+ * refuses to update the same row twice in one `on conflict`, and a spreadsheet with a
+ * duplicate line is the normal case rather than the error.
+ */
+export const addContacts = async (
+  scope: OrganizationScope,
+  contacts: readonly NewContact[],
+  source: Exclude<ContactSource, "call">,
+  importId: string | null = null,
+): Promise<readonly AddedContact[]> => {
+  if (contacts.length === 0) return [];
+  const rows = await scope.query<Record<string, unknown>>(
+    `insert into contacts (organization_id, phone, display_name, notes, source, import_id)
+     select app.current_organization(), p.phone, p.display_name, p.notes, $3, $4::uuid
+       from (select distinct on (phone) phone, display_name, notes
+               from unnest($1::text[], $2::text[], $5::text[]) as u(phone, display_name, notes)
+              order by phone, display_name nulls last) as p
+     on conflict (organization_id, phone) do update
+       set display_name = coalesce(contacts.display_name, excluded.display_name),
+           notes        = coalesce(contacts.notes, excluded.notes)
+     returning id, phone, (xmax = 0) as created`,
+    [
+      contacts.map((c) => c.phone),
+      contacts.map((c) => c.displayName?.trim() || null),
+      source,
+      importId,
+      contacts.map((c) => c.notes?.trim() || null),
+    ],
+  );
+  return rows.map((row) => ({
+    id: String(row["id"]),
+    phone: String(row["phone"]),
+    created: row["created"] === true,
+  }));
 };
 
 /**
