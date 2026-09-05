@@ -176,6 +176,13 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("the campaign en
     expect(legal.status).toBe(200);
     expect(legal.body["status"]).toBe("scheduled");
 
+    /* A campaign about to dial has to know why it is ringing, so this one is given a purpose
+       before it starts. Without it the move is refused — asserted in its own case below. */
+    const briefed = await call("PATCH", `/api/v1/campaigns/${campaignId}/brief`, {
+      purpose: "to ask how the viewing went",
+    });
+    expect(briefed.status, JSON.stringify(briefed.body)).toBe(200);
+
     const running = await call("POST", `/api/v1/campaigns/${campaignId}/status`, {
       status: "running",
     });
@@ -222,4 +229,80 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("the campaign en
       expect(reply.status, `${method} ${path}`).toBe(401);
     }
   });
+  it("says what a campaign is about, refuses to start one that does not, and freezes it once running", async () => {
+    const made = await call("POST", "/api/v1/campaigns", {
+      name: "Viewing reminders",
+      agentId: organizationId,
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const own = String(made.body["id"]);
+    expect(made.body["purpose"]).toBeNull();
+    expect(made.body["maxAttempts"]).toBe(3);
+    expect(made.body["briefEditable"]).toBe(true);
+
+    /* A campaign with nothing to say cannot start. The refusal is here rather than on the
+       brief, because a half-written brief should save. */
+    const aimless = await call("POST", `/api/v1/campaigns/${own}/status`, {
+      status: "scheduled",
+    });
+    expect(aimless.status).toBe(200);
+    const noPurpose = await call("POST", `/api/v1/campaigns/${own}/status`, {
+      status: "running",
+    });
+    expect(noPurpose.status, JSON.stringify(noPurpose.body)).toBe(409);
+
+    const briefed = await call("PATCH", `/api/v1/campaigns/${own}/brief`, {
+      purpose: "to confirm your viewing",
+      outcomes: ["confirmed", "rescheduled", "declined"],
+      voicemail: { mode: "hang_up" },
+      maxAttempts: 2,
+      retryAfterMinutes: 60,
+    });
+    expect(briefed.status, JSON.stringify(briefed.body)).toBe(200);
+    expect(briefed.body["purpose"]).toBe("to confirm your viewing");
+    expect(briefed.body["outcomes"]).toEqual(["confirmed", "rescheduled", "declined"]);
+
+    // Leaving a message without writing one is a promise to say nothing, at length.
+    const mute = await call("PATCH", `/api/v1/campaigns/${own}/brief`, {
+      voicemail: { mode: "leave_message" },
+    });
+    expect(mute.status, JSON.stringify(mute.body)).toBe(422);
+
+    /* A half-drawn flow saves, exactly as a half-written brief does and as an agent's draft
+       does — `publication.ts` lets a draft hold a broken graph and refuses at publish. A
+       campaign has no publish, so Start is where it is caught. */
+    const broken = await call("PATCH", `/api/v1/campaigns/${own}/brief`, {
+      flow: {
+        version: 1,
+        nodes: [{ id: "a", kind: "say", x: 0, y: 0 }],
+        edges: [{ from: "a", to: "ghost" }],
+      },
+    });
+    expect(broken.status, JSON.stringify(broken.body)).toBe(200);
+
+    const unsound = await call("POST", `/api/v1/campaigns/${own}/status`, { status: "scheduled" });
+    expect(unsound.status).toBe(200);
+    const refused = await call("POST", `/api/v1/campaigns/${own}/status`, { status: "running" });
+    expect(refused.status, JSON.stringify(refused.body)).toBe(409);
+
+    // Clearing the flow leaves a campaign that is only its purpose, which is allowed.
+    const cleared = await call("PATCH", `/api/v1/campaigns/${own}/brief`, { flow: null });
+    expect(cleared.status, JSON.stringify(cleared.body)).toBe(200);
+
+    // With a purpose and a sound script it starts, and from then on the brief is fixed.
+    const started = await call("POST", `/api/v1/campaigns/${own}/status`, {
+      status: "running",
+    });
+    expect(started.status, JSON.stringify(started.body)).toBe(200);
+    expect(started.body["briefEditable"]).toBe(false);
+
+    const frozen = await call("PATCH", `/api/v1/campaigns/${own}/brief`, {
+      purpose: "something else entirely",
+    });
+    expect(frozen.status, JSON.stringify(frozen.body)).toBe(409);
+
+    const after = await call("GET", `/api/v1/campaigns/${own}`);
+    expect(after.body["purpose"]).toBe("to confirm your viewing");
+  });
+
 });

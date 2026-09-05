@@ -1419,6 +1419,52 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly endHour: number;
         readonly weekdays: readonly (number)[];
       } | null;
+        readonly purpose: string | null;
+        readonly opening: string | null;
+        readonly flow: {
+        readonly version: number;
+        readonly nodes: readonly ({
+        readonly id: string;
+        readonly kind: "start" | "say" | "collect" | "confirm" | "decide" | "tool" | "transfer" | "hangup";
+        readonly x: number;
+        readonly y: number;
+        readonly field?: {
+        readonly key: string;
+        readonly type: "name" | "reference" | "phone" | "email" | "address" | "date" | "time" | "amount" | "nin" | "bvn" | "otp" | "quantity" | "choice" | "text";
+        readonly prompt: string;
+        readonly capture: "speech" | "keypad" | "either";
+        readonly confirm: "none" | "readback" | "spellback";
+        readonly pattern: string;
+        readonly attempts: number;
+        readonly required: boolean;
+        readonly options: readonly (string)[];
+      };
+        readonly text?: string;
+        readonly tool?: string;
+        readonly on?: string;
+        readonly service?: string;
+      })[];
+        readonly edges: readonly ({
+        readonly from: string;
+        readonly to: string;
+        readonly port?: string;
+        readonly when?: {
+        readonly equals?: string;
+        readonly oneOf?: readonly (string)[];
+        readonly isEmpty?: boolean;
+        readonly greaterThan?: number;
+      };
+        readonly otherwise?: boolean;
+      })[];
+      } | null;
+        readonly outcomes: readonly (string)[] | null;
+        readonly voicemail: {
+        readonly mode: "hang_up" | "leave_message";
+        readonly message?: string;
+      } | null;
+        readonly maxAttempts: number;
+        readonly retryAfterMinutes: number;
+        readonly briefEditable: boolean;
         readonly createdBy: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;
@@ -1457,6 +1503,52 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly endHour: number;
         readonly weekdays: readonly (number)[];
       } | null;
+        readonly purpose: string | null;
+        readonly opening: string | null;
+        readonly flow: {
+        readonly version: number;
+        readonly nodes: readonly ({
+        readonly id: string;
+        readonly kind: "start" | "say" | "collect" | "confirm" | "decide" | "tool" | "transfer" | "hangup";
+        readonly x: number;
+        readonly y: number;
+        readonly field?: {
+        readonly key: string;
+        readonly type: "name" | "reference" | "phone" | "email" | "address" | "date" | "time" | "amount" | "nin" | "bvn" | "otp" | "quantity" | "choice" | "text";
+        readonly prompt: string;
+        readonly capture: "speech" | "keypad" | "either";
+        readonly confirm: "none" | "readback" | "spellback";
+        readonly pattern: string;
+        readonly attempts: number;
+        readonly required: boolean;
+        readonly options: readonly (string)[];
+      };
+        readonly text?: string;
+        readonly tool?: string;
+        readonly on?: string;
+        readonly service?: string;
+      })[];
+        readonly edges: readonly ({
+        readonly from: string;
+        readonly to: string;
+        readonly port?: string;
+        readonly when?: {
+        readonly equals?: string;
+        readonly oneOf?: readonly (string)[];
+        readonly isEmpty?: boolean;
+        readonly greaterThan?: number;
+      };
+        readonly otherwise?: boolean;
+      })[];
+      } | null;
+        readonly outcomes: readonly (string)[] | null;
+        readonly voicemail: {
+        readonly mode: "hang_up" | "leave_message";
+        readonly message?: string;
+      } | null;
+        readonly maxAttempts: number;
+        readonly retryAfterMinutes: number;
+        readonly briefEditable: boolean;
         readonly createdBy: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;
@@ -1483,6 +1575,52 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly endHour: number;
         readonly weekdays: readonly (number)[];
       } | null;
+        readonly purpose: string | null;
+        readonly opening: string | null;
+        readonly flow: {
+        readonly version: number;
+        readonly nodes: readonly ({
+        readonly id: string;
+        readonly kind: "start" | "say" | "collect" | "confirm" | "decide" | "tool" | "transfer" | "hangup";
+        readonly x: number;
+        readonly y: number;
+        readonly field?: {
+        readonly key: string;
+        readonly type: "name" | "reference" | "phone" | "email" | "address" | "date" | "time" | "amount" | "nin" | "bvn" | "otp" | "quantity" | "choice" | "text";
+        readonly prompt: string;
+        readonly capture: "speech" | "keypad" | "either";
+        readonly confirm: "none" | "readback" | "spellback";
+        readonly pattern: string;
+        readonly attempts: number;
+        readonly required: boolean;
+        readonly options: readonly (string)[];
+      };
+        readonly text?: string;
+        readonly tool?: string;
+        readonly on?: string;
+        readonly service?: string;
+      })[];
+        readonly edges: readonly ({
+        readonly from: string;
+        readonly to: string;
+        readonly port?: string;
+        readonly when?: {
+        readonly equals?: string;
+        readonly oneOf?: readonly (string)[];
+        readonly isEmpty?: boolean;
+        readonly greaterThan?: number;
+      };
+        readonly otherwise?: boolean;
+      })[];
+      } | null;
+        readonly outcomes: readonly (string)[] | null;
+        readonly voicemail: {
+        readonly mode: "hang_up" | "leave_message";
+        readonly message?: string;
+      } | null;
+        readonly maxAttempts: number;
+        readonly retryAfterMinutes: number;
+        readonly briefEditable: boolean;
         readonly createdBy: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;
@@ -1518,6 +1656,52 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly endHour: number;
         readonly weekdays: readonly (number)[];
       } | null;
+        readonly purpose: string | null;
+        readonly opening: string | null;
+        readonly flow: {
+        readonly version: number;
+        readonly nodes: readonly ({
+        readonly id: string;
+        readonly kind: "start" | "say" | "collect" | "confirm" | "decide" | "tool" | "transfer" | "hangup";
+        readonly x: number;
+        readonly y: number;
+        readonly field?: {
+        readonly key: string;
+        readonly type: "name" | "reference" | "phone" | "email" | "address" | "date" | "time" | "amount" | "nin" | "bvn" | "otp" | "quantity" | "choice" | "text";
+        readonly prompt: string;
+        readonly capture: "speech" | "keypad" | "either";
+        readonly confirm: "none" | "readback" | "spellback";
+        readonly pattern: string;
+        readonly attempts: number;
+        readonly required: boolean;
+        readonly options: readonly (string)[];
+      };
+        readonly text?: string;
+        readonly tool?: string;
+        readonly on?: string;
+        readonly service?: string;
+      })[];
+        readonly edges: readonly ({
+        readonly from: string;
+        readonly to: string;
+        readonly port?: string;
+        readonly when?: {
+        readonly equals?: string;
+        readonly oneOf?: readonly (string)[];
+        readonly isEmpty?: boolean;
+        readonly greaterThan?: number;
+      };
+        readonly otherwise?: boolean;
+      })[];
+      } | null;
+        readonly outcomes: readonly (string)[] | null;
+        readonly voicemail: {
+        readonly mode: "hang_up" | "leave_message";
+        readonly message?: string;
+      } | null;
+        readonly maxAttempts: number;
+        readonly retryAfterMinutes: number;
+        readonly briefEditable: boolean;
         readonly createdBy: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;
@@ -1525,6 +1709,126 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly pending: number;
         readonly answered: number;
       }>(options, "PATCH", `/api/v1/campaigns/${encodeURIComponent(input.path.campaignId)}`, input),
+
+    /**
+     * Say what this campaign is about
+     * The purpose, the opening, the conversation as a graph, what counts as done, what to do when a machine answers, and how many times one person may be rung. Absent fields are left alone; null clears one. Refused with 409 once the campaign is running, paused or done — a call in flight must not have its purpose changed underneath it. A flow is validated exactly as an agent's is.
+     */
+    setBrief: (input: {
+        readonly path: {
+          readonly campaignId: string;
+        };
+        readonly body: {
+          readonly purpose?: string | null;
+          readonly opening?: string | null;
+          readonly flow?: {
+          readonly version: number;
+          readonly nodes: readonly ({
+          readonly id: string;
+          readonly kind: "start" | "say" | "collect" | "confirm" | "decide" | "tool" | "transfer" | "hangup";
+          readonly x: number;
+          readonly y: number;
+          readonly field?: {
+          readonly key: string;
+          readonly type: "name" | "reference" | "phone" | "email" | "address" | "date" | "time" | "amount" | "nin" | "bvn" | "otp" | "quantity" | "choice" | "text";
+          readonly prompt: string;
+          readonly capture: "speech" | "keypad" | "either";
+          readonly confirm: "none" | "readback" | "spellback";
+          readonly pattern: string;
+          readonly attempts: number;
+          readonly required: boolean;
+          readonly options: readonly (string)[];
+        };
+          readonly text?: string;
+          readonly tool?: string;
+          readonly on?: string;
+          readonly service?: string;
+        })[];
+          readonly edges: readonly ({
+          readonly from: string;
+          readonly to: string;
+          readonly port?: string;
+          readonly when?: {
+          readonly equals?: string;
+          readonly oneOf?: readonly (string)[];
+          readonly isEmpty?: boolean;
+          readonly greaterThan?: number;
+        };
+          readonly otherwise?: boolean;
+        })[];
+        } | null;
+          readonly outcomes?: readonly (string)[] | null;
+          readonly voicemail?: {
+          readonly mode: "hang_up" | "leave_message";
+          readonly message?: string;
+        } | null;
+          readonly maxAttempts?: number;
+          readonly retryAfterMinutes?: number;
+        };
+      }) =>
+      send<{
+        readonly id: string;
+        readonly agentId: string;
+        readonly name: string;
+        readonly status: "draft" | "scheduled" | "running" | "paused" | "done";
+        readonly callingWindow: {
+        readonly startHour: number;
+        readonly endHour: number;
+        readonly weekdays: readonly (number)[];
+      } | null;
+        readonly purpose: string | null;
+        readonly opening: string | null;
+        readonly flow: {
+        readonly version: number;
+        readonly nodes: readonly ({
+        readonly id: string;
+        readonly kind: "start" | "say" | "collect" | "confirm" | "decide" | "tool" | "transfer" | "hangup";
+        readonly x: number;
+        readonly y: number;
+        readonly field?: {
+        readonly key: string;
+        readonly type: "name" | "reference" | "phone" | "email" | "address" | "date" | "time" | "amount" | "nin" | "bvn" | "otp" | "quantity" | "choice" | "text";
+        readonly prompt: string;
+        readonly capture: "speech" | "keypad" | "either";
+        readonly confirm: "none" | "readback" | "spellback";
+        readonly pattern: string;
+        readonly attempts: number;
+        readonly required: boolean;
+        readonly options: readonly (string)[];
+      };
+        readonly text?: string;
+        readonly tool?: string;
+        readonly on?: string;
+        readonly service?: string;
+      })[];
+        readonly edges: readonly ({
+        readonly from: string;
+        readonly to: string;
+        readonly port?: string;
+        readonly when?: {
+        readonly equals?: string;
+        readonly oneOf?: readonly (string)[];
+        readonly isEmpty?: boolean;
+        readonly greaterThan?: number;
+      };
+        readonly otherwise?: boolean;
+      })[];
+      } | null;
+        readonly outcomes: readonly (string)[] | null;
+        readonly voicemail: {
+        readonly mode: "hang_up" | "leave_message";
+        readonly message?: string;
+      } | null;
+        readonly maxAttempts: number;
+        readonly retryAfterMinutes: number;
+        readonly briefEditable: boolean;
+        readonly createdBy: string | null;
+        readonly createdAt: string;
+        readonly updatedAt: string;
+        readonly total: number;
+        readonly pending: number;
+        readonly answered: number;
+      }>(options, "PATCH", `/api/v1/campaigns/${encodeURIComponent(input.path.campaignId)}/brief`, input),
 
     /**
      * The calls scheduled under a campaign
@@ -1571,6 +1875,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         };
         readonly body: {
           readonly contactIds: readonly (string)[];
+          readonly facts?: Readonly<Record<string, Readonly<Record<string, string>>>>;
         };
       }) =>
       send<{
@@ -1600,6 +1905,52 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly endHour: number;
         readonly weekdays: readonly (number)[];
       } | null;
+        readonly purpose: string | null;
+        readonly opening: string | null;
+        readonly flow: {
+        readonly version: number;
+        readonly nodes: readonly ({
+        readonly id: string;
+        readonly kind: "start" | "say" | "collect" | "confirm" | "decide" | "tool" | "transfer" | "hangup";
+        readonly x: number;
+        readonly y: number;
+        readonly field?: {
+        readonly key: string;
+        readonly type: "name" | "reference" | "phone" | "email" | "address" | "date" | "time" | "amount" | "nin" | "bvn" | "otp" | "quantity" | "choice" | "text";
+        readonly prompt: string;
+        readonly capture: "speech" | "keypad" | "either";
+        readonly confirm: "none" | "readback" | "spellback";
+        readonly pattern: string;
+        readonly attempts: number;
+        readonly required: boolean;
+        readonly options: readonly (string)[];
+      };
+        readonly text?: string;
+        readonly tool?: string;
+        readonly on?: string;
+        readonly service?: string;
+      })[];
+        readonly edges: readonly ({
+        readonly from: string;
+        readonly to: string;
+        readonly port?: string;
+        readonly when?: {
+        readonly equals?: string;
+        readonly oneOf?: readonly (string)[];
+        readonly isEmpty?: boolean;
+        readonly greaterThan?: number;
+      };
+        readonly otherwise?: boolean;
+      })[];
+      } | null;
+        readonly outcomes: readonly (string)[] | null;
+        readonly voicemail: {
+        readonly mode: "hang_up" | "leave_message";
+        readonly message?: string;
+      } | null;
+        readonly maxAttempts: number;
+        readonly retryAfterMinutes: number;
+        readonly briefEditable: boolean;
         readonly createdBy: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;

@@ -7,11 +7,19 @@ import {
   readScheduledCalls,
   setCampaignStatus,
   updateCampaign,
+  updateCampaignBrief,
   type CampaignStatus,
   type CampaignSummary,
   type ScheduledCall,
   type ScheduledCallStatus,
 } from "@ansa/db";
+import {
+  CAMPAIGN_LIMITS,
+  VOICEMAIL_MODES,
+  briefIsEditable,
+  validateFlow,
+  type Flow,
+} from "@ansa/shared";
 import {
   ConflictException,
   Controller,
@@ -34,7 +42,9 @@ import { ValidationFailed } from "../http/problem";
 import { apiRoute, FromBody, FromPath, FromQuery } from "../http/request";
 import {
   choice,
+  flag,
   integer,
+  map,
   list,
   nullable,
   object,
@@ -43,6 +53,7 @@ import {
   type FieldError,
   type Infer,
 } from "../http/schema";
+import { asFlow, flow, flowProblems } from "../agents/flow.schema";
 import { timestamp, uuid } from "../schemas";
 import { OrganizationContext } from "../tenancy/organization-context";
 
@@ -116,6 +127,60 @@ const callingWindow = object({
   weekdays: list(integer({ minimum: 0, maximum: 6 }), { maxItems: 7 }),
 });
 
+/**
+ * What to do when a machine answers.
+ *
+ * `hang_up` is the default because a message left by mistake cannot be taken back, and
+ * CLAUDE.md is plain that an agent holding a conversation with a greeting is both useless and
+ * billed. A message is read verbatim rather than improvised: a model talking to a beep has no
+ * one to correct it.
+ */
+const voicemail = object({
+  mode: choice(VOICEMAIL_MODES),
+  message: optional(text({ maxLength: CAMPAIGN_LIMITS.voicemailLength })),
+});
+
+const asVoicemail = (raw: Record<string, unknown> | null): Infer<typeof voicemail> | null => {
+  if (raw === null) return null;
+  const mode = String(raw["mode"]);
+  if (mode !== "hang_up" && mode !== "leave_message") return null;
+  const message = raw["message"];
+  return {
+    mode,
+    ...(typeof message === "string" && message !== "" ? { message } : {}),
+  };
+};
+
+/**
+ * What may be written to a campaign's brief.
+ *
+ * Every field optional: a brief is written over several sittings and half of one should save.
+ * What is *not* optional is that a running campaign has a purpose — checked when it starts
+ * rather than when it is typed, so the refusal lands at the moment it means something.
+ */
+const campaignBrief = object({
+  purpose: optional(nullable(text({ maxLength: CAMPAIGN_LIMITS.purposeLength }))),
+  opening: optional(nullable(text({ maxLength: CAMPAIGN_LIMITS.openingLength }))),
+  flow: optional(nullable(flow)),
+  outcomes: optional(
+    nullable(
+      list(text({ minLength: 1, maxLength: CAMPAIGN_LIMITS.outcomeLength }), {
+        maxItems: CAMPAIGN_LIMITS.outcomes,
+      }),
+    ),
+  ),
+  voicemail: optional(nullable(voicemail)),
+  maxAttempts: optional(
+    integer({ minimum: CAMPAIGN_LIMITS.attempts.min, maximum: CAMPAIGN_LIMITS.attempts.max }),
+  ),
+  retryAfterMinutes: optional(
+    integer({
+      minimum: CAMPAIGN_LIMITS.retryMinutes.min,
+      maximum: CAMPAIGN_LIMITS.retryMinutes.max,
+    }),
+  ),
+});
+
 const campaign = object({
   id: uuid(),
   agentId: uuid(),
@@ -123,6 +188,22 @@ const campaign = object({
   status: choice(CAMPAIGN_STATUSES),
   /** Null is the default window `mayCall` applies anyway. */
   callingWindow: nullable(callingWindow),
+  /** Why this campaign rings. The agent says it in the opening; null means it has nothing to say. */
+  purpose: nullable(text({ maxLength: CAMPAIGN_LIMITS.purposeLength })),
+  /** The exact first line, or null to let the agent compose one from the purpose. */
+  opening: nullable(text({ maxLength: CAMPAIGN_LIMITS.openingLength })),
+  /** The conversation as a graph. Null means there is no script beyond the purpose. */
+  flow: nullable(flow),
+  /** What counts as done, as names the agent picks from at the end. */
+  outcomes: nullable(list(text({ maxLength: CAMPAIGN_LIMITS.outcomeLength }))),
+  voicemail: nullable(voicemail),
+  maxAttempts: integer({ minimum: CAMPAIGN_LIMITS.attempts.min, maximum: CAMPAIGN_LIMITS.attempts.max }),
+  retryAfterMinutes: integer({
+    minimum: CAMPAIGN_LIMITS.retryMinutes.min,
+    maximum: CAMPAIGN_LIMITS.retryMinutes.max,
+  }),
+  /** Whether the brief may still be changed. False once calls can be in flight. */
+  briefEditable: flag(),
   createdBy: nullable(uuid()),
   createdAt: timestamp(),
   updatedAt: timestamp(),
@@ -174,7 +255,25 @@ const statusBody = object({ status: choice(CAMPAIGN_STATUSES) });
  */
 const MAX_ENQUEUE = 5000;
 
-const enqueueBody = object({ contactIds: list(uuid(), { maxItems: MAX_ENQUEUE }) });
+/**
+ * Who to ring, and what differs about each of them.
+ *
+ * `facts` is keyed by contact id rather than positional, so a caller cannot line the wrong
+ * detail up against the wrong person — which is the failure that would put somebody else's
+ * appointment in a stranger's ear. Anybody not named there simply has no facts, and the
+ * campaign says only what it says to everyone.
+ */
+const enqueueBody = object({
+  contactIds: list(uuid(), { maxItems: MAX_ENQUEUE }),
+  facts: optional(
+    map(
+      map(text({ maxLength: CAMPAIGN_LIMITS.factValueLength }), {
+        maxProperties: CAMPAIGN_LIMITS.facts,
+      }),
+      { maxProperties: MAX_ENQUEUE },
+    ),
+  ),
+});
 
 const enqueueResult = object({
   /** How many ids were sent. */
@@ -208,6 +307,14 @@ const asCampaignBody = (summary: CampaignSummary): Infer<typeof campaign> => ({
   name: summary.name,
   status: summary.status,
   callingWindow: asCallingWindow(summary.callingWindow),
+  purpose: summary.purpose,
+  opening: summary.opening,
+  flow: (summary.flow ?? null) as Infer<typeof flow> | null,
+  outcomes: summary.outcomes === null ? null : [...summary.outcomes],
+  voicemail: asVoicemail(summary.voicemail),
+  maxAttempts: summary.maxAttempts,
+  retryAfterMinutes: summary.retryAfterMinutes,
+  briefEditable: briefIsEditable(summary.status),
   createdBy: summary.createdBy,
   createdAt: summary.createdAt.toISOString(),
   updatedAt: summary.updatedAt.toISOString(),
@@ -347,6 +454,78 @@ export class CampaignsController {
     return asCampaignBody(updated);
   }
 
+  @Patch(":campaignId/brief")
+  @Endpoint({
+    summary: "Say what this campaign is about",
+    description:
+      "The purpose, the opening, the conversation as a graph, what counts as done, what to do when a machine answers, and how many times one person may be rung. Absent fields are left alone; null clears one. Refused with 409 once the campaign is running, paused or done — a call in flight must not have its purpose changed underneath it. A flow is validated exactly as an agent's is.",
+    capability: "campaigns:write",
+    params: campaignPath,
+    body: campaignBrief,
+    response: campaign,
+  })
+  async setBrief(
+    @FromPath() path: Infer<typeof campaignPath>,
+    @FromBody() body: Infer<typeof campaignBrief>,
+  ): Promise<Infer<typeof campaign>> {
+    /* The same validator an agent's flow goes through. A campaign that draws an unreachable
+       step, or a branch with nothing to branch on, is the same defect wherever it was drawn
+       and should be refused in the same words. */
+    if (body.flow !== undefined && body.flow !== null) {
+      const problems = flowProblems(body.flow);
+      if (problems.length > 0) throw new ValidationFailed(problems);
+    }
+    /* A message is what makes `leave_message` mean anything. Without one the mode is a promise
+       to say nothing to an answering machine, at length. */
+    if (
+      body.voicemail !== undefined &&
+      body.voicemail !== null &&
+      body.voicemail.mode === "leave_message" &&
+      (body.voicemail.message === undefined || body.voicemail.message.trim() === "")
+    ) {
+      throw new ValidationFailed([
+        { path: "voicemail.message", message: "Write the message to leave, or choose to hang up." },
+      ]);
+    }
+
+    const outcome = await this.db.tx(async (scope) => {
+      const found = await readCampaign(scope, path.campaignId);
+      if (found === null) return null;
+      const saved = await updateCampaignBrief(scope, path.campaignId, {
+        ...(body.purpose === undefined ? {} : { purpose: body.purpose }),
+        ...(body.opening === undefined ? {} : { opening: body.opening }),
+        ...(body.flow === undefined
+          ? {}
+          : {
+              flow:
+                body.flow === null
+                  ? null
+                  : (asFlow(body.flow) as unknown as Record<string, unknown>),
+            }),
+        ...(body.outcomes === undefined ? {} : { outcomes: body.outcomes }),
+        ...(body.voicemail === undefined
+          ? {}
+          : { voicemail: body.voicemail === null ? null : { ...body.voicemail } }),
+        ...(body.maxAttempts === undefined ? {} : { maxAttempts: body.maxAttempts }),
+        ...(body.retryAfterMinutes === undefined
+          ? {}
+          : { retryAfterMinutes: body.retryAfterMinutes }),
+      });
+      /* Null from the writer means the row exists but its status refused the write. The status
+         is read again rather than trusted from the pre-check: between the two, somebody may
+         have pressed Start. */
+      return saved === null ? { frozen: found.status } : { saved };
+    });
+
+    if (outcome === null) throw new NotFoundException();
+    if ("frozen" in outcome) {
+      throw new ConflictException(
+        `a ${outcome.frozen} campaign's brief cannot be changed, because calls may already be in flight`,
+      );
+    }
+    return asCampaignBody(outcome.saved);
+  }
+
   @Post(":campaignId/status")
   @Endpoint({
     summary: "Move a campaign between states",
@@ -369,6 +548,31 @@ export class CampaignsController {
       if (from !== to && !LEGAL_TRANSITIONS[from].includes(to)) {
         return { kind: "illegal" as const, from, to };
       }
+      /* A campaign that is about to dial must know why it is ringing.
+       *
+       * Checked here rather than when the brief is typed, because a half-written brief should
+       * save — the refusal belongs at the moment it means something, which is the moment
+       * somebody presses Start. `prompts/outbound.ts` requires the agent to open by saying why
+       * it is calling; without a purpose the model would compose one, and an invented reason
+       * for an unexpected call is exactly what a scam sounds like. */
+      if (to === "running" && (current.purpose === null || current.purpose.trim() === "")) {
+        return { kind: "aimless" as const };
+      }
+      /* And a script that holds together.
+       *
+       * Checked at Start rather than at save, which is where the agent path checks its own:
+       * `publication.ts` runs `validateFlow` when a configuration is published and lets a
+       * draft hold a half-drawn graph. A campaign has no publish, so Start is the moment —
+       * a flow whose edge points at a step that does not exist is a call that stops mid
+       * sentence, and there is no later gate to catch it. */
+      if (to === "running" && current.flow !== null) {
+        const blocking = validateFlow(current.flow as unknown as Flow).filter(
+          (problem) => problem.blocking,
+        );
+        if (blocking.length > 0) {
+          return { kind: "unsound" as const, why: blocking[0]?.message ?? "the flow is not valid" };
+        }
+      }
       if (from !== to) await setCampaignStatus(scope, path.campaignId, to);
       const after = await readCampaign(scope, path.campaignId);
       return { kind: "ok" as const, campaign: after };
@@ -377,6 +581,14 @@ export class CampaignsController {
     if (outcome.kind === "missing") throw new NotFoundException();
     if (outcome.kind === "illegal") {
       throw new ConflictException(`a ${outcome.from} campaign cannot move to ${outcome.to}`);
+    }
+    if (outcome.kind === "unsound") {
+      throw new ConflictException(`this campaign's conversation cannot be run: ${outcome.why}`);
+    }
+    if (outcome.kind === "aimless") {
+      throw new ConflictException(
+        "this campaign has no purpose, so the agent would have nothing to say it was calling about — write one before starting it",
+      );
     }
     // Read back inside the same transaction; a null here would mean it was deleted mid-flight.
     if (outcome.campaign === null) throw new NotFoundException();
@@ -413,6 +625,7 @@ export class CampaignsController {
         path.campaignId,
         body.contactIds,
         new Date(),
+        body.facts ?? {},
       );
       return { enqueued };
     });

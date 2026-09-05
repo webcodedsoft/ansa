@@ -13235,6 +13235,278 @@
                             ],
                             "additionalProperties": false
                           },
+                          "purpose": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 300
+                          },
+                          "opening": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 300
+                          },
+                          "flow": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "version": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 1
+                              },
+                              "nodes": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 64
+                                    },
+                                    "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "start",
+                                        "say",
+                                        "collect",
+                                        "confirm",
+                                        "decide",
+                                        "tool",
+                                        "transfer",
+                                        "hangup"
+                                      ]
+                                    },
+                                    "x": {
+                                      "type": "number"
+                                    },
+                                    "y": {
+                                      "type": "number"
+                                    },
+                                    "field": {
+                                      "type": "object",
+                                      "properties": {
+                                        "key": {
+                                          "type": "string",
+                                          "maxLength": 64,
+                                          "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+                                        },
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "name",
+                                            "reference",
+                                            "phone",
+                                            "email",
+                                            "address",
+                                            "date",
+                                            "time",
+                                            "amount",
+                                            "nin",
+                                            "bvn",
+                                            "otp",
+                                            "quantity",
+                                            "choice",
+                                            "text"
+                                          ]
+                                        },
+                                        "prompt": {
+                                          "type": "string",
+                                          "maxLength": 300
+                                        },
+                                        "capture": {
+                                          "type": "string",
+                                          "enum": [
+                                            "speech",
+                                            "keypad",
+                                            "either"
+                                          ]
+                                        },
+                                        "confirm": {
+                                          "type": "string",
+                                          "enum": [
+                                            "none",
+                                            "readback",
+                                            "spellback"
+                                          ]
+                                        },
+                                        "pattern": {
+                                          "type": "string",
+                                          "maxLength": 200
+                                        },
+                                        "attempts": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 10
+                                        },
+                                        "required": {
+                                          "type": "boolean"
+                                        },
+                                        "options": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string",
+                                            "maxLength": 120
+                                          },
+                                          "maxItems": 24
+                                        }
+                                      },
+                                      "required": [
+                                        "key",
+                                        "type",
+                                        "prompt",
+                                        "capture",
+                                        "confirm",
+                                        "pattern",
+                                        "attempts",
+                                        "required",
+                                        "options"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "text": {
+                                      "type": "string",
+                                      "maxLength": 600
+                                    },
+                                    "tool": {
+                                      "type": "string",
+                                      "maxLength": 128
+                                    },
+                                    "on": {
+                                      "type": "string",
+                                      "maxLength": 64
+                                    },
+                                    "service": {
+                                      "type": "string",
+                                      "maxLength": 120
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "kind",
+                                    "x",
+                                    "y"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "maxItems": 120
+                              },
+                              "edges": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "from": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 64
+                                    },
+                                    "to": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 64
+                                    },
+                                    "port": {
+                                      "type": "string",
+                                      "maxLength": 32
+                                    },
+                                    "when": {
+                                      "type": "object",
+                                      "properties": {
+                                        "equals": {
+                                          "type": "string",
+                                          "maxLength": 120
+                                        },
+                                        "oneOf": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string",
+                                            "maxLength": 120
+                                          },
+                                          "maxItems": 24
+                                        },
+                                        "isEmpty": {
+                                          "type": "boolean"
+                                        },
+                                        "greaterThan": {
+                                          "type": "number"
+                                        }
+                                      },
+                                      "required": [],
+                                      "additionalProperties": false
+                                    },
+                                    "otherwise": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "from",
+                                    "to"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "maxItems": 240
+                              }
+                            },
+                            "required": [
+                              "version",
+                              "nodes",
+                              "edges"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "outcomes": {
+                            "type": [
+                              "array",
+                              "null"
+                            ],
+                            "items": {
+                              "type": "string",
+                              "maxLength": 60
+                            }
+                          },
+                          "voicemail": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "mode": {
+                                "type": "string",
+                                "enum": [
+                                  "hang_up",
+                                  "leave_message"
+                                ]
+                              },
+                              "message": {
+                                "type": "string",
+                                "maxLength": 600
+                              }
+                            },
+                            "required": [
+                              "mode"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxAttempts": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 10
+                          },
+                          "retryAfterMinutes": {
+                            "type": "integer",
+                            "minimum": 15,
+                            "maximum": 10080
+                          },
+                          "briefEditable": {
+                            "type": "boolean"
+                          },
                           "createdBy": {
                             "type": [
                               "string",
@@ -13270,6 +13542,14 @@
                           "name",
                           "status",
                           "callingWindow",
+                          "purpose",
+                          "opening",
+                          "flow",
+                          "outcomes",
+                          "voicemail",
+                          "maxAttempts",
+                          "retryAfterMinutes",
+                          "briefEditable",
                           "createdBy",
                           "createdAt",
                           "updatedAt",
@@ -13491,6 +13771,278 @@
                       ],
                       "additionalProperties": false
                     },
+                    "purpose": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 300
+                    },
+                    "opening": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 300
+                    },
+                    "flow": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "version": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 1
+                        },
+                        "nodes": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                              },
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "start",
+                                  "say",
+                                  "collect",
+                                  "confirm",
+                                  "decide",
+                                  "tool",
+                                  "transfer",
+                                  "hangup"
+                                ]
+                              },
+                              "x": {
+                                "type": "number"
+                              },
+                              "y": {
+                                "type": "number"
+                              },
+                              "field": {
+                                "type": "object",
+                                "properties": {
+                                  "key": {
+                                    "type": "string",
+                                    "maxLength": 64,
+                                    "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+                                  },
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "name",
+                                      "reference",
+                                      "phone",
+                                      "email",
+                                      "address",
+                                      "date",
+                                      "time",
+                                      "amount",
+                                      "nin",
+                                      "bvn",
+                                      "otp",
+                                      "quantity",
+                                      "choice",
+                                      "text"
+                                    ]
+                                  },
+                                  "prompt": {
+                                    "type": "string",
+                                    "maxLength": 300
+                                  },
+                                  "capture": {
+                                    "type": "string",
+                                    "enum": [
+                                      "speech",
+                                      "keypad",
+                                      "either"
+                                    ]
+                                  },
+                                  "confirm": {
+                                    "type": "string",
+                                    "enum": [
+                                      "none",
+                                      "readback",
+                                      "spellback"
+                                    ]
+                                  },
+                                  "pattern": {
+                                    "type": "string",
+                                    "maxLength": 200
+                                  },
+                                  "attempts": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 10
+                                  },
+                                  "required": {
+                                    "type": "boolean"
+                                  },
+                                  "options": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "maxLength": 120
+                                    },
+                                    "maxItems": 24
+                                  }
+                                },
+                                "required": [
+                                  "key",
+                                  "type",
+                                  "prompt",
+                                  "capture",
+                                  "confirm",
+                                  "pattern",
+                                  "attempts",
+                                  "required",
+                                  "options"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "text": {
+                                "type": "string",
+                                "maxLength": 600
+                              },
+                              "tool": {
+                                "type": "string",
+                                "maxLength": 128
+                              },
+                              "on": {
+                                "type": "string",
+                                "maxLength": 64
+                              },
+                              "service": {
+                                "type": "string",
+                                "maxLength": 120
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "kind",
+                              "x",
+                              "y"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 120
+                        },
+                        "edges": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "from": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                              },
+                              "to": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                              },
+                              "port": {
+                                "type": "string",
+                                "maxLength": 32
+                              },
+                              "when": {
+                                "type": "object",
+                                "properties": {
+                                  "equals": {
+                                    "type": "string",
+                                    "maxLength": 120
+                                  },
+                                  "oneOf": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "maxLength": 120
+                                    },
+                                    "maxItems": 24
+                                  },
+                                  "isEmpty": {
+                                    "type": "boolean"
+                                  },
+                                  "greaterThan": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [],
+                                "additionalProperties": false
+                              },
+                              "otherwise": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "from",
+                              "to"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 240
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "nodes",
+                        "edges"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "outcomes": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "string",
+                        "maxLength": 60
+                      }
+                    },
+                    "voicemail": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "hang_up",
+                            "leave_message"
+                          ]
+                        },
+                        "message": {
+                          "type": "string",
+                          "maxLength": 600
+                        }
+                      },
+                      "required": [
+                        "mode"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxAttempts": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 10
+                    },
+                    "retryAfterMinutes": {
+                      "type": "integer",
+                      "minimum": 15,
+                      "maximum": 10080
+                    },
+                    "briefEditable": {
+                      "type": "boolean"
+                    },
                     "createdBy": {
                       "type": [
                         "string",
@@ -13526,6 +14078,14 @@
                     "name",
                     "status",
                     "callingWindow",
+                    "purpose",
+                    "opening",
+                    "flow",
+                    "outcomes",
+                    "voicemail",
+                    "maxAttempts",
+                    "retryAfterMinutes",
+                    "briefEditable",
                     "createdBy",
                     "createdAt",
                     "updatedAt",
@@ -13676,6 +14236,278 @@
                       ],
                       "additionalProperties": false
                     },
+                    "purpose": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 300
+                    },
+                    "opening": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 300
+                    },
+                    "flow": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "version": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 1
+                        },
+                        "nodes": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                              },
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "start",
+                                  "say",
+                                  "collect",
+                                  "confirm",
+                                  "decide",
+                                  "tool",
+                                  "transfer",
+                                  "hangup"
+                                ]
+                              },
+                              "x": {
+                                "type": "number"
+                              },
+                              "y": {
+                                "type": "number"
+                              },
+                              "field": {
+                                "type": "object",
+                                "properties": {
+                                  "key": {
+                                    "type": "string",
+                                    "maxLength": 64,
+                                    "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+                                  },
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "name",
+                                      "reference",
+                                      "phone",
+                                      "email",
+                                      "address",
+                                      "date",
+                                      "time",
+                                      "amount",
+                                      "nin",
+                                      "bvn",
+                                      "otp",
+                                      "quantity",
+                                      "choice",
+                                      "text"
+                                    ]
+                                  },
+                                  "prompt": {
+                                    "type": "string",
+                                    "maxLength": 300
+                                  },
+                                  "capture": {
+                                    "type": "string",
+                                    "enum": [
+                                      "speech",
+                                      "keypad",
+                                      "either"
+                                    ]
+                                  },
+                                  "confirm": {
+                                    "type": "string",
+                                    "enum": [
+                                      "none",
+                                      "readback",
+                                      "spellback"
+                                    ]
+                                  },
+                                  "pattern": {
+                                    "type": "string",
+                                    "maxLength": 200
+                                  },
+                                  "attempts": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 10
+                                  },
+                                  "required": {
+                                    "type": "boolean"
+                                  },
+                                  "options": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "maxLength": 120
+                                    },
+                                    "maxItems": 24
+                                  }
+                                },
+                                "required": [
+                                  "key",
+                                  "type",
+                                  "prompt",
+                                  "capture",
+                                  "confirm",
+                                  "pattern",
+                                  "attempts",
+                                  "required",
+                                  "options"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "text": {
+                                "type": "string",
+                                "maxLength": 600
+                              },
+                              "tool": {
+                                "type": "string",
+                                "maxLength": 128
+                              },
+                              "on": {
+                                "type": "string",
+                                "maxLength": 64
+                              },
+                              "service": {
+                                "type": "string",
+                                "maxLength": 120
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "kind",
+                              "x",
+                              "y"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 120
+                        },
+                        "edges": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "from": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                              },
+                              "to": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                              },
+                              "port": {
+                                "type": "string",
+                                "maxLength": 32
+                              },
+                              "when": {
+                                "type": "object",
+                                "properties": {
+                                  "equals": {
+                                    "type": "string",
+                                    "maxLength": 120
+                                  },
+                                  "oneOf": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "maxLength": 120
+                                    },
+                                    "maxItems": 24
+                                  },
+                                  "isEmpty": {
+                                    "type": "boolean"
+                                  },
+                                  "greaterThan": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [],
+                                "additionalProperties": false
+                              },
+                              "otherwise": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "from",
+                              "to"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 240
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "nodes",
+                        "edges"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "outcomes": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "string",
+                        "maxLength": 60
+                      }
+                    },
+                    "voicemail": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "hang_up",
+                            "leave_message"
+                          ]
+                        },
+                        "message": {
+                          "type": "string",
+                          "maxLength": 600
+                        }
+                      },
+                      "required": [
+                        "mode"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxAttempts": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 10
+                    },
+                    "retryAfterMinutes": {
+                      "type": "integer",
+                      "minimum": 15,
+                      "maximum": 10080
+                    },
+                    "briefEditable": {
+                      "type": "boolean"
+                    },
                     "createdBy": {
                       "type": [
                         "string",
@@ -13711,6 +14543,14 @@
                     "name",
                     "status",
                     "callingWindow",
+                    "purpose",
+                    "opening",
+                    "flow",
+                    "outcomes",
+                    "voicemail",
+                    "maxAttempts",
+                    "retryAfterMinutes",
+                    "briefEditable",
                     "createdBy",
                     "createdAt",
                     "updatedAt",
@@ -13922,6 +14762,278 @@
                       ],
                       "additionalProperties": false
                     },
+                    "purpose": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 300
+                    },
+                    "opening": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 300
+                    },
+                    "flow": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "version": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 1
+                        },
+                        "nodes": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                              },
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "start",
+                                  "say",
+                                  "collect",
+                                  "confirm",
+                                  "decide",
+                                  "tool",
+                                  "transfer",
+                                  "hangup"
+                                ]
+                              },
+                              "x": {
+                                "type": "number"
+                              },
+                              "y": {
+                                "type": "number"
+                              },
+                              "field": {
+                                "type": "object",
+                                "properties": {
+                                  "key": {
+                                    "type": "string",
+                                    "maxLength": 64,
+                                    "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+                                  },
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "name",
+                                      "reference",
+                                      "phone",
+                                      "email",
+                                      "address",
+                                      "date",
+                                      "time",
+                                      "amount",
+                                      "nin",
+                                      "bvn",
+                                      "otp",
+                                      "quantity",
+                                      "choice",
+                                      "text"
+                                    ]
+                                  },
+                                  "prompt": {
+                                    "type": "string",
+                                    "maxLength": 300
+                                  },
+                                  "capture": {
+                                    "type": "string",
+                                    "enum": [
+                                      "speech",
+                                      "keypad",
+                                      "either"
+                                    ]
+                                  },
+                                  "confirm": {
+                                    "type": "string",
+                                    "enum": [
+                                      "none",
+                                      "readback",
+                                      "spellback"
+                                    ]
+                                  },
+                                  "pattern": {
+                                    "type": "string",
+                                    "maxLength": 200
+                                  },
+                                  "attempts": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 10
+                                  },
+                                  "required": {
+                                    "type": "boolean"
+                                  },
+                                  "options": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "maxLength": 120
+                                    },
+                                    "maxItems": 24
+                                  }
+                                },
+                                "required": [
+                                  "key",
+                                  "type",
+                                  "prompt",
+                                  "capture",
+                                  "confirm",
+                                  "pattern",
+                                  "attempts",
+                                  "required",
+                                  "options"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "text": {
+                                "type": "string",
+                                "maxLength": 600
+                              },
+                              "tool": {
+                                "type": "string",
+                                "maxLength": 128
+                              },
+                              "on": {
+                                "type": "string",
+                                "maxLength": 64
+                              },
+                              "service": {
+                                "type": "string",
+                                "maxLength": 120
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "kind",
+                              "x",
+                              "y"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 120
+                        },
+                        "edges": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "from": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                              },
+                              "to": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                              },
+                              "port": {
+                                "type": "string",
+                                "maxLength": 32
+                              },
+                              "when": {
+                                "type": "object",
+                                "properties": {
+                                  "equals": {
+                                    "type": "string",
+                                    "maxLength": 120
+                                  },
+                                  "oneOf": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "maxLength": 120
+                                    },
+                                    "maxItems": 24
+                                  },
+                                  "isEmpty": {
+                                    "type": "boolean"
+                                  },
+                                  "greaterThan": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [],
+                                "additionalProperties": false
+                              },
+                              "otherwise": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "from",
+                              "to"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 240
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "nodes",
+                        "edges"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "outcomes": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "string",
+                        "maxLength": 60
+                      }
+                    },
+                    "voicemail": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "hang_up",
+                            "leave_message"
+                          ]
+                        },
+                        "message": {
+                          "type": "string",
+                          "maxLength": 600
+                        }
+                      },
+                      "required": [
+                        "mode"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxAttempts": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 10
+                    },
+                    "retryAfterMinutes": {
+                      "type": "integer",
+                      "minimum": 15,
+                      "maximum": 10080
+                    },
+                    "briefEditable": {
+                      "type": "boolean"
+                    },
                     "createdBy": {
                       "type": [
                         "string",
@@ -13957,6 +15069,775 @@
                     "name",
                     "status",
                     "callingWindow",
+                    "purpose",
+                    "opening",
+                    "flow",
+                    "outcomes",
+                    "voicemail",
+                    "maxAttempts",
+                    "retryAfterMinutes",
+                    "briefEditable",
+                    "createdBy",
+                    "createdAt",
+                    "updatedAt",
+                    "total",
+                    "pending",
+                    "answered"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold campaigns:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/campaigns/{campaignId}/brief": {
+      "patch": {
+        "operationId": "campaigns.setBrief",
+        "tags": [
+          "campaigns"
+        ],
+        "summary": "Say what this campaign is about",
+        "description": "The purpose, the opening, the conversation as a graph, what counts as done, what to do when a machine answers, and how many times one person may be rung. Absent fields are left alone; null clears one. Refused with 409 once the campaign is running, paused or done — a call in flight must not have its purpose changed underneath it. A flow is validated exactly as an agent's is.",
+        "x-ansa-capability": "campaigns:write",
+        "parameters": [
+          {
+            "name": "campaignId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "purpose": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 300
+                  },
+                  "opening": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 300
+                  },
+                  "flow": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "version": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 1
+                      },
+                      "nodes": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "start",
+                                "say",
+                                "collect",
+                                "confirm",
+                                "decide",
+                                "tool",
+                                "transfer",
+                                "hangup"
+                              ]
+                            },
+                            "x": {
+                              "type": "number"
+                            },
+                            "y": {
+                              "type": "number"
+                            },
+                            "field": {
+                              "type": "object",
+                              "properties": {
+                                "key": {
+                                  "type": "string",
+                                  "maxLength": 64,
+                                  "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "enum": [
+                                    "name",
+                                    "reference",
+                                    "phone",
+                                    "email",
+                                    "address",
+                                    "date",
+                                    "time",
+                                    "amount",
+                                    "nin",
+                                    "bvn",
+                                    "otp",
+                                    "quantity",
+                                    "choice",
+                                    "text"
+                                  ]
+                                },
+                                "prompt": {
+                                  "type": "string",
+                                  "maxLength": 300
+                                },
+                                "capture": {
+                                  "type": "string",
+                                  "enum": [
+                                    "speech",
+                                    "keypad",
+                                    "either"
+                                  ]
+                                },
+                                "confirm": {
+                                  "type": "string",
+                                  "enum": [
+                                    "none",
+                                    "readback",
+                                    "spellback"
+                                  ]
+                                },
+                                "pattern": {
+                                  "type": "string",
+                                  "maxLength": 200
+                                },
+                                "attempts": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 10
+                                },
+                                "required": {
+                                  "type": "boolean"
+                                },
+                                "options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "maxLength": 120
+                                  },
+                                  "maxItems": 24
+                                }
+                              },
+                              "required": [
+                                "key",
+                                "type",
+                                "prompt",
+                                "capture",
+                                "confirm",
+                                "pattern",
+                                "attempts",
+                                "required",
+                                "options"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "text": {
+                              "type": "string",
+                              "maxLength": 600
+                            },
+                            "tool": {
+                              "type": "string",
+                              "maxLength": 128
+                            },
+                            "on": {
+                              "type": "string",
+                              "maxLength": 64
+                            },
+                            "service": {
+                              "type": "string",
+                              "maxLength": 120
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind",
+                            "x",
+                            "y"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "maxItems": 120
+                      },
+                      "edges": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "from": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64
+                            },
+                            "to": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64
+                            },
+                            "port": {
+                              "type": "string",
+                              "maxLength": 32
+                            },
+                            "when": {
+                              "type": "object",
+                              "properties": {
+                                "equals": {
+                                  "type": "string",
+                                  "maxLength": 120
+                                },
+                                "oneOf": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "maxLength": 120
+                                  },
+                                  "maxItems": 24
+                                },
+                                "isEmpty": {
+                                  "type": "boolean"
+                                },
+                                "greaterThan": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [],
+                              "additionalProperties": false
+                            },
+                            "otherwise": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "from",
+                            "to"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "maxItems": 240
+                      }
+                    },
+                    "required": [
+                      "version",
+                      "nodes",
+                      "edges"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "outcomes": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 60
+                    },
+                    "maxItems": 12
+                  },
+                  "voicemail": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "hang_up",
+                          "leave_message"
+                        ]
+                      },
+                      "message": {
+                        "type": "string",
+                        "maxLength": 600
+                      }
+                    },
+                    "required": [
+                      "mode"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxAttempts": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10
+                  },
+                  "retryAfterMinutes": {
+                    "type": "integer",
+                    "minimum": 15,
+                    "maximum": 10080
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "agentId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "draft",
+                        "scheduled",
+                        "running",
+                        "paused",
+                        "done"
+                      ]
+                    },
+                    "callingWindow": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "startHour": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 23
+                        },
+                        "endHour": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 24
+                        },
+                        "weekdays": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 6
+                          },
+                          "maxItems": 7
+                        }
+                      },
+                      "required": [
+                        "startHour",
+                        "endHour",
+                        "weekdays"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "purpose": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 300
+                    },
+                    "opening": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 300
+                    },
+                    "flow": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "version": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 1
+                        },
+                        "nodes": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                              },
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "start",
+                                  "say",
+                                  "collect",
+                                  "confirm",
+                                  "decide",
+                                  "tool",
+                                  "transfer",
+                                  "hangup"
+                                ]
+                              },
+                              "x": {
+                                "type": "number"
+                              },
+                              "y": {
+                                "type": "number"
+                              },
+                              "field": {
+                                "type": "object",
+                                "properties": {
+                                  "key": {
+                                    "type": "string",
+                                    "maxLength": 64,
+                                    "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+                                  },
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "name",
+                                      "reference",
+                                      "phone",
+                                      "email",
+                                      "address",
+                                      "date",
+                                      "time",
+                                      "amount",
+                                      "nin",
+                                      "bvn",
+                                      "otp",
+                                      "quantity",
+                                      "choice",
+                                      "text"
+                                    ]
+                                  },
+                                  "prompt": {
+                                    "type": "string",
+                                    "maxLength": 300
+                                  },
+                                  "capture": {
+                                    "type": "string",
+                                    "enum": [
+                                      "speech",
+                                      "keypad",
+                                      "either"
+                                    ]
+                                  },
+                                  "confirm": {
+                                    "type": "string",
+                                    "enum": [
+                                      "none",
+                                      "readback",
+                                      "spellback"
+                                    ]
+                                  },
+                                  "pattern": {
+                                    "type": "string",
+                                    "maxLength": 200
+                                  },
+                                  "attempts": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 10
+                                  },
+                                  "required": {
+                                    "type": "boolean"
+                                  },
+                                  "options": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "maxLength": 120
+                                    },
+                                    "maxItems": 24
+                                  }
+                                },
+                                "required": [
+                                  "key",
+                                  "type",
+                                  "prompt",
+                                  "capture",
+                                  "confirm",
+                                  "pattern",
+                                  "attempts",
+                                  "required",
+                                  "options"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "text": {
+                                "type": "string",
+                                "maxLength": 600
+                              },
+                              "tool": {
+                                "type": "string",
+                                "maxLength": 128
+                              },
+                              "on": {
+                                "type": "string",
+                                "maxLength": 64
+                              },
+                              "service": {
+                                "type": "string",
+                                "maxLength": 120
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "kind",
+                              "x",
+                              "y"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 120
+                        },
+                        "edges": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "from": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                              },
+                              "to": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                              },
+                              "port": {
+                                "type": "string",
+                                "maxLength": 32
+                              },
+                              "when": {
+                                "type": "object",
+                                "properties": {
+                                  "equals": {
+                                    "type": "string",
+                                    "maxLength": 120
+                                  },
+                                  "oneOf": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "maxLength": 120
+                                    },
+                                    "maxItems": 24
+                                  },
+                                  "isEmpty": {
+                                    "type": "boolean"
+                                  },
+                                  "greaterThan": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [],
+                                "additionalProperties": false
+                              },
+                              "otherwise": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "from",
+                              "to"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 240
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "nodes",
+                        "edges"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "outcomes": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "string",
+                        "maxLength": 60
+                      }
+                    },
+                    "voicemail": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "hang_up",
+                            "leave_message"
+                          ]
+                        },
+                        "message": {
+                          "type": "string",
+                          "maxLength": 600
+                        }
+                      },
+                      "required": [
+                        "mode"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxAttempts": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 10
+                    },
+                    "retryAfterMinutes": {
+                      "type": "integer",
+                      "minimum": 15,
+                      "maximum": 10080
+                    },
+                    "briefEditable": {
+                      "type": "boolean"
+                    },
+                    "createdBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "pending": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "answered": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "agentId",
+                    "name",
+                    "status",
+                    "callingWindow",
+                    "purpose",
+                    "opening",
+                    "flow",
+                    "outcomes",
+                    "voicemail",
+                    "maxAttempts",
+                    "retryAfterMinutes",
+                    "briefEditable",
                     "createdBy",
                     "createdAt",
                     "updatedAt",
@@ -14312,6 +16193,18 @@
                       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
                     },
                     "maxItems": 5000
+                  },
+                  "facts": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      "maxProperties": 20
+                    },
+                    "maxProperties": 5000
                   }
                 },
                 "required": [
@@ -14523,6 +16416,278 @@
                       ],
                       "additionalProperties": false
                     },
+                    "purpose": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 300
+                    },
+                    "opening": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 300
+                    },
+                    "flow": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "version": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 1
+                        },
+                        "nodes": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                              },
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "start",
+                                  "say",
+                                  "collect",
+                                  "confirm",
+                                  "decide",
+                                  "tool",
+                                  "transfer",
+                                  "hangup"
+                                ]
+                              },
+                              "x": {
+                                "type": "number"
+                              },
+                              "y": {
+                                "type": "number"
+                              },
+                              "field": {
+                                "type": "object",
+                                "properties": {
+                                  "key": {
+                                    "type": "string",
+                                    "maxLength": 64,
+                                    "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+                                  },
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "name",
+                                      "reference",
+                                      "phone",
+                                      "email",
+                                      "address",
+                                      "date",
+                                      "time",
+                                      "amount",
+                                      "nin",
+                                      "bvn",
+                                      "otp",
+                                      "quantity",
+                                      "choice",
+                                      "text"
+                                    ]
+                                  },
+                                  "prompt": {
+                                    "type": "string",
+                                    "maxLength": 300
+                                  },
+                                  "capture": {
+                                    "type": "string",
+                                    "enum": [
+                                      "speech",
+                                      "keypad",
+                                      "either"
+                                    ]
+                                  },
+                                  "confirm": {
+                                    "type": "string",
+                                    "enum": [
+                                      "none",
+                                      "readback",
+                                      "spellback"
+                                    ]
+                                  },
+                                  "pattern": {
+                                    "type": "string",
+                                    "maxLength": 200
+                                  },
+                                  "attempts": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 10
+                                  },
+                                  "required": {
+                                    "type": "boolean"
+                                  },
+                                  "options": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "maxLength": 120
+                                    },
+                                    "maxItems": 24
+                                  }
+                                },
+                                "required": [
+                                  "key",
+                                  "type",
+                                  "prompt",
+                                  "capture",
+                                  "confirm",
+                                  "pattern",
+                                  "attempts",
+                                  "required",
+                                  "options"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "text": {
+                                "type": "string",
+                                "maxLength": 600
+                              },
+                              "tool": {
+                                "type": "string",
+                                "maxLength": 128
+                              },
+                              "on": {
+                                "type": "string",
+                                "maxLength": 64
+                              },
+                              "service": {
+                                "type": "string",
+                                "maxLength": 120
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "kind",
+                              "x",
+                              "y"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 120
+                        },
+                        "edges": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "from": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                              },
+                              "to": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                              },
+                              "port": {
+                                "type": "string",
+                                "maxLength": 32
+                              },
+                              "when": {
+                                "type": "object",
+                                "properties": {
+                                  "equals": {
+                                    "type": "string",
+                                    "maxLength": 120
+                                  },
+                                  "oneOf": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "maxLength": 120
+                                    },
+                                    "maxItems": 24
+                                  },
+                                  "isEmpty": {
+                                    "type": "boolean"
+                                  },
+                                  "greaterThan": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [],
+                                "additionalProperties": false
+                              },
+                              "otherwise": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "from",
+                              "to"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 240
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "nodes",
+                        "edges"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "outcomes": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "string",
+                        "maxLength": 60
+                      }
+                    },
+                    "voicemail": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "hang_up",
+                            "leave_message"
+                          ]
+                        },
+                        "message": {
+                          "type": "string",
+                          "maxLength": 600
+                        }
+                      },
+                      "required": [
+                        "mode"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxAttempts": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 10
+                    },
+                    "retryAfterMinutes": {
+                      "type": "integer",
+                      "minimum": 15,
+                      "maximum": 10080
+                    },
+                    "briefEditable": {
+                      "type": "boolean"
+                    },
                     "createdBy": {
                       "type": [
                         "string",
@@ -14558,6 +16723,14 @@
                     "name",
                     "status",
                     "callingWindow",
+                    "purpose",
+                    "opening",
+                    "flow",
+                    "outcomes",
+                    "voicemail",
+                    "maxAttempts",
+                    "retryAfterMinutes",
+                    "briefEditable",
                     "createdBy",
                     "createdAt",
                     "updatedAt",

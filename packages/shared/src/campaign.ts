@@ -75,19 +75,3 @@ export interface CampaignBrief {
  */
 export const briefIsEditable = (status: string): boolean =>
   status === "draft" || status === "scheduled";
-
-/**
- * Fill `{placeholders}` from a contact's own facts.
- *
- * A campaign is about one thing and still has to be specific to each person: "your viewing at
- * {property} on {when}". Unknown placeholders are left standing rather than blanked, because a
- * sentence with `{when}` still in it is a visible mistake, while a sentence that silently reads
- * "your viewing at on" is one nobody catches until a caller hears it.
- */
-export const mergeFacts = (
-  text: string,
-  facts: Readonly<Record<string, string>> | null | undefined,
-): string => {
-  if (facts === null || facts === undefined) return text;
-  return text.replace(/\{([a-zA-Z][a-zA-Z0-9_]*)\}/g, (whole, key: string) => facts[key] ?? whole);
-};
