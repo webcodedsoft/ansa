@@ -149,6 +149,13 @@ export const publish = async (_previous: PublishState, form: FormData): Promise<
  */
 export interface Saved {
   readonly updatedAt: string;
+  /**
+   * Saved in the background, without the page being asked to reload itself. An auto-save
+   * must not revalidate: the panels are keyed on the configuration so a reload resets their
+   * fields, and resetting a field somebody is typing in is the one thing a background save
+   * must never do. The page keeps its own account of what it has saved instead.
+   */
+  readonly quiet: boolean;
 }
 
 export type SaveDraftState = FormState<Saved>;
@@ -176,14 +183,15 @@ export const saveDraftAction = async (
     return failedForm("The flow on this page could not be read, so nothing was saved.");
   }
 
+  const quiet = form.get("autosave") === "1";
   try {
     const result = await saveDraft(agentId, parsed.data);
     /* After the configuration, not beside it: if the graph write fails, the failure is
        reported rather than hidden behind a save that half happened. Both land on the same
        draft row, so ordering costs nothing. */
     if (graph !== undefined) await setAgentFlow(agentId, { flow: graph });
-    revalidatePath("/agents", "layout");
-    return succeededForm({ updatedAt: result.updatedAt });
+    if (!quiet) revalidatePath("/agents", "layout");
+    return succeededForm({ updatedAt: result.updatedAt, quiet });
   } catch (error) {
     return failedForm(failureMessage(error));
   }

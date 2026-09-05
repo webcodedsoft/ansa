@@ -4185,6 +4185,23 @@ is by its positions alone (`samePlaces` against `tidied`), so nothing new is sto
 that predates named services is always derived. Found on the way: any drag was swallowing the
 next palette click, when only a drag that began on the palette has a click of its own.
 
+**Auto-save (2026-09-05).** A moment (1.5s) after the last change — any field on any tab, or
+any edit to the drawing (`FlowCanvas.onEdited`) — the publish form is submitted quietly:
+`autosave=1` tells `saveDraftAction` to write the draft as ever but not to revalidate, since a
+revalidation re-keys the panels and would reset the field being typed in; no toast either. The
+page keeps its own account: a header word saying saving… / unsaved changes / saved, the draft
+badge and Discard aware of quiet saves (`autosavedAt`), and the browser's leave-page prompt
+while anything is unsaved or saving. Nothing is submitted while a save, publish or discard is
+in flight, or when nothing changed; edits made mid-save dirty the page again for the save
+after; a failed save says so on the page and waits for the next change. Save stays as it was —
+an explicit save that reloads the page's view of the draft. `useFormToast` announces by result
+identity now, so a save after a save is announced, and a quiet one returns null to say
+nothing. Found on the way: a "first run" ref guard on the edit signal saw StrictMode's second
+mount as an edit and saved an unchanged draft on every load; the signal compares against the
+graph the canvas opened with instead. Proved: typed into a card, status went unsaved →
+saving… → saved with focus never leaving the field, reload showed the draft, fresh load saved
+nothing, Discard cleared it.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and

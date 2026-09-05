@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 
 import Link from "next/link";
 
@@ -244,8 +244,65 @@ export const AgentWorkspace = ({
   const liveBranches = drawn === null ? 0 : branchCount(drawn);
 
   useFormToast(state, (data) => `Published version ${data.version}.`);
-  useFormToast(saveState, () => "Saved. Nothing is live until you publish.");
+  useFormToast(saveState, (data) => (data.quiet ? null : "Saved. Nothing is live until you publish."));
   useFormToast(discardState, () => "Unpublished changes discarded.");
+
+  /*
+   * Auto-save.
+   *
+   * Every field on every tab writes into the one form, and the canvas carries its graph in a
+   * hidden field of it, so saving is submitting that form — which is what the Save button
+   * does. This does the same, quietly, a moment after the last change: `autosave=1` tells
+   * the action not to revalidate, since a revalidation re-keys the panels and would reset
+   * the field being typed in. The page keeps its own account of the save instead.
+   *
+   * A change is anything the form hears (`onInput`/`onChange` bubble up from every field)
+   * or the canvas reports (`onEdited`). Nothing is submitted while a save, publish or
+   * discard is in flight — the pending one wins and the change waits — and nothing is
+   * submitted when nothing changed. Edits made while a save is in flight dirty the page
+   * again, so they are picked up by the save after.
+   */
+  const publishForm = useRef<HTMLFormElement>(null);
+  const autosaveFlag = useRef<HTMLInputElement>(null);
+  const [dirty, setDirty] = useState(false);
+  const markDirty = () => setDirty(true);
+  const busy = saving || pending || discarding;
+  useEffect(() => {
+    if (!dirty || busy) return;
+    const timer = setTimeout(() => {
+      const form = publishForm.current;
+      const flag = autosaveFlag.current;
+      if (form === null || flag === null) return;
+      setDirty(false);
+      flag.value = "1";
+      form.requestSubmit();
+      flag.value = "";
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [dirty, busy]);
+  /* When the last quiet save landed. The server's own account of the draft (`draft`) is only
+     as fresh as the last reload, which a quiet save does not ask for. */
+  const [autosavedAt, setAutosavedAt] = useState<string | null>(null);
+  useEffect(() => {
+    if (saveState.status === "succeeded" && saveState.data !== null) setAutosavedAt(saveState.data.updatedAt);
+  }, [saveState]);
+  /* A save that failed leaves the work unsaved, and the page must say so and try again on
+     the next change rather than pretend. Validation failures show on their fields as well. */
+  useEffect(() => {
+    if (saveState.status === "failed") setDirty(false);
+  }, [saveState]);
+  /* Leaving with work unsaved is asked about. The browser's own dialog, since a custom one
+     cannot stop a navigation. */
+  useEffect(() => {
+    if (!dirty && !saving) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty, saving]);
+  const savedAt = autosavedAt ?? draft?.updatedAt ?? null;
+  const hasDraft = draft !== null || autosavedAt !== null;
 
   const problemTabs = new Set(
     Object.keys(errors)
@@ -398,9 +455,12 @@ export const AgentWorkspace = ({
             {/* The whole point of the slice, said on the page: there is work here that is
                 not answering the phone. Without this line a saved draft is invisible, and
                 "why is the agent still saying the old thing" has no answer on screen. */}
-            {draft !== null && (
-              <Tag tone="warn">unpublished changes · saved {when(draft.updatedAt)}</Tag>
-            )}
+            {hasDraft && savedAt !== null && <Tag tone="warn">unpublished changes · saved {when(savedAt)}</Tag>}
+            {/* What auto-save is doing, in three words. "Unsaved changes" is the state that
+                matters: it means closing the tab now loses something. */}
+            <span className="font-mono text-[10.5px] tracking-[0.06em] text-[var(--ink-3)]" aria-live="polite">
+              {saving ? "saving…" : dirty ? "unsaved changes" : saveState.status === "failed" ? "not saved — see the message on the form" : autosavedAt !== null ? "saved" : ""}
+            </span>
           </div>
         </div>
         <div className="flex flex-none flex-wrap items-center gap-2">
@@ -433,13 +493,14 @@ export const AgentWorkspace = ({
           {/* Discard first, and only when there is something to discard. A button offering to
               throw away work that does not exist is furniture, and one sitting there
               permanently beside Publish invites the click it should not get. */}
-          {draft !== null && (
+          {hasDraft && (
             <Button
               onClick={() => {
                 /* The action is called by the button, not by the page, so it has no route to
                    read the agent from. Same reason the publish form carries a hidden field. */
                 const form = new FormData();
                 form.set("agentId", agent.agentId);
+                setAutosavedAt(null);
                 discard(form);
               }}
               disabled={discarding || saving || pending}
@@ -484,7 +545,10 @@ export const AgentWorkspace = ({
       )}
 
       {/* No key on the form. Each panel carries its own — see `shownAs`. */}
-      <form id={PUBLISH_FORM} action={save} className="mt-3.5">
+      <form id={PUBLISH_FORM} ref={publishForm} action={save} className="mt-3.5" onInput={markDirty} onChange={markDirty}>
+        {/* Set to "1" for the instant of a background submit and cleared again — see the
+            auto-save effect. The Save button submits with it empty. */}
+        <input ref={autosaveFlag} type="hidden" name="autosave" value="" />
         {/* Which agent every button on this form writes to.
             A server action is called by the form, not by the page, so it cannot read the id
             out of the route the way a loader can. Nothing in the type system connects this
@@ -524,6 +588,7 @@ export const AgentWorkspace = ({
               onOpenSettings={() => setOpenSetting("routing")}
               openSetting={openSetting}
               onChooseStep={() => setOpenSetting(null)}
+              onEdited={markDirty}
               /* Every panel, all of them mounted: they carry the fields Save and Publish
                  submit, so one that unmounted would take its edits with it. Only the chosen
                  one is shown, which is what the strip is for. */

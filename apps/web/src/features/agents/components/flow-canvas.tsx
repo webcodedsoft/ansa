@@ -719,6 +719,8 @@ interface FlowCanvasProps {
    * and the pane goes on showing the voice. Selecting a step is a request to see that step.
    */
   readonly onChooseStep?: () => void;
+  /** The drawing changed — an edit, an undo, a redo — so whatever saves it knows there is something to save. */
+  readonly onEdited?: () => void;
 }
 
 export const FlowCanvas = ({
@@ -732,6 +734,7 @@ export const FlowCanvas = ({
   settingsPane,
   openSetting = null,
   onChooseStep,
+  onEdited,
 }: FlowCanvasProps) => {
   /* Read once, on mount. Later renders keep the operator's work in front of them; the
      workspace remounts this panel with a `key` when the document underneath it changes. */
@@ -746,6 +749,18 @@ export const FlowCanvas = ({
     const named = withServiceTags(loaded ?? emptyFlow());
     return { past: [], present: arrangedByHand(named) ? named : tidied(named), future: [] };
   });
+  /* Every change to the drawing, reported once it has landed: the graph in state is what the
+     hidden field carries, so this fires when that is current and not a render early. Not on
+     mount — opening a flow is not editing it — which is told by the graph being the one the
+     canvas opened with, not by a "first run" flag: in development React runs effects twice
+     on mount, and a flag saw the second run as an edit and saved an unchanged draft. */
+  const editedRef = useRef(onEdited);
+  editedRef.current = onEdited;
+  const openedWith = useRef(history.present);
+  useEffect(() => {
+    if (history.present !== openedWith.current) editedRef.current?.();
+  }, [history.present]);
+
   /**
    * Whether the drawing is arranged by hand or derived from the graph.
    *

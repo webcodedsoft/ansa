@@ -61,18 +61,22 @@ export const useToastStore = create<ToastStore>((set) => ({
  */
 export const useFormToast = <TData>(
   state: FormState<TData>,
-  message: (data: TData) => string,
+  /** What to say — or null to say nothing, for a success that asked not to be announced. */
+  message: (data: TData) => string | null,
 ): void => {
   const show = useToastStore((store) => store.show);
-  const previousStatus = useRef<FormState<TData>["status"]>("idle");
+  /* Each result is its own object, so identity is what tells a new success from the last
+     one still sitting in state. Watching the status alone missed a second success following
+     a first — a save after a save — because the status never changed. */
+  const announced = useRef<FormState<TData> | null>(null);
   // Read through a ref so the effect does not depend on a closure that is new every render.
   const describe = useRef(message);
   describe.current = message;
 
   useEffect(() => {
-    const alreadyAnnounced = previousStatus.current === "succeeded";
-    previousStatus.current = state.status;
-    if (state.status !== "succeeded" || alreadyAnnounced || state.data === null) return;
-    show("ok", describe.current(state.data));
-  }, [state.status, state.data, show]);
+    if (state.status !== "succeeded" || announced.current === state || state.data === null) return;
+    announced.current = state;
+    const said = describe.current(state.data);
+    if (said !== null) show("ok", said);
+  }, [state, show]);
 };
