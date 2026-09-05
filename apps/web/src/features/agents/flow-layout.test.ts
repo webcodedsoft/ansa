@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { validateFlow } from "@ansa/shared/flow-validate";
 
 import {
-  addService, appendToLane, branchHeads, detach, foldedAway, foldedCount, freshServiceName, insertAfter, laneFrames,
+  addService, appendToLane, branchHeads, detach, foldedAway, foldedCount, freshServiceName, insertAfter, jumpEdges, laneFrames,
   laneGroups, moveAfter, moveBefore, moveToLane, moveToNewService, onlyReachableThrough, rejoinPoint, removeService, renameService, reorderService,
   ROW, sameShape, tidied, TOP,
 } from "./flow-layout";
@@ -508,5 +508,64 @@ describe("moving steps and services", () => {
     expect(clash).toBe(grown);
     const catchAll = laneGroups(base).find((lane) => lane.label === "anything else");
     expect(renameService(base, catchAll ?? rent, "other")).toBe(base);
+  });
+});
+
+describe("a branch that jumps to another service", () => {
+  /* start → ask → fork ⟨rent | buy⟩, and inside rent a branch whose named arm sends the
+     caller to the buying questions instead. The jump is real and must be drawn; it must not
+     decide which steps belong to which service, or how far down the page they sit. */
+  const jumped = (): Flow => ({
+    ...forked(),
+    nodes: [...forked().nodes, node("inner", "decide"), node("buy2")],
+    edges: [
+      ...forked().edges.filter((e) => !(e.from === "rent1" && e.to === "rent2") && !(e.from === "buy1" && e.to === "close")),
+      { from: "rent1", to: "inner" },
+      { from: "inner", to: "rent2", otherwise: true },
+      { from: "inner", to: "buy1", when: { equals: "buying instead" } },
+      { from: "buy1", to: "buy2" },
+      { from: "buy2", to: "close" },
+    ],
+  });
+
+  it("keeps the service it points at, rather than emptying it", () => {
+    const lanes = laneGroups(jumped());
+    expect(lanes.map((lane) => lane.label)).toEqual(["everyone gets this", "rent", "anything else"]);
+    expect(lanes.find((lane) => lane.label === "rent")?.ids).toEqual(expect.arrayContaining(["rent1", "inner", "rent2"]));
+    expect(lanes.find((lane) => lane.label === "anything else")?.ids).toEqual(["buy1", "buy2"]);
+  });
+
+  it("names the jump and nothing else", () => {
+    const jumps = [...jumpEdges(jumped())];
+    expect(jumps).toHaveLength(1);
+    expect(jumps[0]).toMatchObject({ from: "inner", to: "buy1" });
+  });
+
+  it("draws the step it points at where the service puts it, not below the jump", () => {
+    const laid = tidied(jumped());
+    const at = (id: string) => laid.nodes.find((n) => n.id === id);
+    // Both services still start on the row under the fork, side by side.
+    expect(at("buy1")?.y).toBe(at("rent1")?.y);
+    expect(at("buy1")?.x).not.toBe(at("rent1")?.x);
+    // And nothing is drawn on top of anything else.
+    const places = laid.nodes.map((n) => `${n.x},${n.y}`);
+    expect(new Set(places).size).toBe(places.length);
+  });
+
+  it("treats a link into the middle of a service as a step the two share, not as a jump", () => {
+    /* Landing past a service's first question is not entering that service, and the drawing
+       says so: the step two services reach is drawn between them, where shared steps go. */
+    const flow = jumped();
+    const middle: Flow = { ...flow, edges: flow.edges.map((e) => (e.from === "inner" && e.to === "buy1" ? { ...e, to: "buy2" } : e)) };
+    expect([...jumpEdges(middle)]).toEqual([]);
+    expect(laneGroups(middle).find((lane) => lane.label === "anything else")?.ids).toEqual(["buy1"]);
+    expect(laneGroups(middle).flatMap((lane) => lane.ids)).not.toContain("buy2");
+  });
+
+  it("folds the service it points at without leaving its steps behind", () => {
+    const flow = jumped();
+    const gone = foldedAway(flow, ["buy1"]);
+    expect([...gone].sort()).toEqual(["buy1", "buy2"]);
+    expect(foldedCount(flow, "buy1")).toBe(2);
   });
 });

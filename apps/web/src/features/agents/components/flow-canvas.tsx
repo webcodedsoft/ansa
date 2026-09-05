@@ -36,7 +36,7 @@ import { cn } from "@/lib/cn";
 import { validateFlow } from "@ansa/shared/flow-validate";
 
 import {
-  addService, appendToLane, branchEdgeOf, foldedAway, freshServiceName, insertAfter, insertBefore, LANE_HEAD, laneFrames, laneGroups, LEFT, movable, moveAfter,
+  addService, appendToLane, branchEdgeOf, foldedAway, freshServiceName, insertAfter, insertBefore, jumpEdges, LANE_HEAD, laneFrames, laneGroups, LEFT, movable, moveAfter,
   moveBefore, moveToLane, moveToNewService, removeService, renameService, reorderService, sameShape, tidied, TOP, type Lane,
 } from "../flow-layout";
 
@@ -457,6 +457,39 @@ const elbow = (p1: Point, p2: Point, busY: number): string => {
   ].join(" ");
 };
 
+/** A path through the given corners, each turn rounded. Every segment is horizontal or vertical. */
+const orthogonal = (points: readonly Point[], r: number): string => {
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (first === undefined || last === undefined) return "";
+  const parts = [`M${first.x} ${first.y}`];
+  for (let at = 1; at < points.length - 1; at += 1) {
+    const before = points[at - 1];
+    const here = points[at];
+    const next = points[at + 1];
+    if (before === undefined || here === undefined || next === undefined) continue;
+    const back = Math.min(r, (Math.abs(here.x - before.x) + Math.abs(here.y - before.y)) / 2);
+    const on = Math.min(r, (Math.abs(next.x - here.x) + Math.abs(next.y - here.y)) / 2);
+    parts.push(`L${here.x - Math.sign(here.x - before.x) * back} ${here.y - Math.sign(here.y - before.y) * back}`);
+    parts.push(`Q${here.x} ${here.y} ${here.x + Math.sign(next.x - here.x) * on} ${here.y + Math.sign(next.y - here.y) * on}`);
+  }
+  parts.push(`L${last.x} ${last.y}`);
+  return parts.join(" ");
+};
+
+/**
+ * A link to another service: down out of the card, along the gap beside its column, then into
+ * the top of the step it lands on.
+ *
+ * Out to the side rather than straight across, because the straight line between two services
+ * runs through whatever is drawn between them, and a line over somebody else's cards reads as
+ * a line to them. The gap beside the column belongs to nothing, and the target may be above
+ * the source — a jump goes backwards as often as forwards — which a curve down the page
+ * cannot say at all.
+ */
+const jumpPath = (p1: Point, p2: Point, sideX: number): string =>
+  orthogonal([p1, { x: p1.x, y: p1.y + 16 }, { x: sideX, y: p1.y + 16 }, { x: sideX, y: p2.y - 16 }, { x: p2.x, y: p2.y - 16 }, p2], 7);
+
 /**
  * Where the `at`-th of `count` ports sits along a card's bottom edge, as a fraction of its
  * width.
@@ -841,6 +874,9 @@ export const FlowCanvas = ({
   // Read fresh on every render — `tick` exists purely to force one after visibility flips.
   void tick;
   const frames = laneFrames(history.present);
+  /* The links that leave one service for another. Drawn, but not part of the drawing's
+     structure — see `jumpEdges`, which is also why the lanes survive one. */
+  const jumping = jumpEdges(history.present);
   const edgePaths = edges.flatMap((edge, at) => {
     const from = byId(edge.from);
     const to = byId(edge.to);
@@ -863,8 +899,23 @@ export const FlowCanvas = ({
       const boxTop = { x, y: frame.top - LANE_HEAD };
       const boxBottom = { x, y: frame.top + BODY_H + 8 };
       return [
-        { key: `${at}`, d: elbow(p1, boxTop, boxTop.y - 12), label: "", mid: boxTop },
-        { key: `${at}b`, d: elbow(boxBottom, p2, p2.y - 16), label: "", mid: p2 },
+        { key: `${at}`, d: elbow(p1, boxTop, boxTop.y - 12), jump: false, label: "", mid: boxTop },
+        { key: `${at}b`, d: elbow(boxBottom, p2, p2.y - 16), jump: false, label: "", mid: p2 },
+      ];
+    }
+
+    /* A jump keeps its label whatever it lands on: "which answer leaves this service" is the
+       whole of what it says, and the lane header it lands on is naming a different thing. */
+    if (jumping.has(edge)) {
+      const side = p2.x > p1.x ? from.x + NODE_W + 14 : from.x - 14;
+      return [
+        {
+          key: `${at}`,
+          d: jumpPath(p1, { x: p2.x, y: p2.y - 5 }, side),
+          jump: true,
+          label: ports[index]?.label ?? "",
+          mid: { x: p1.x, y: p1.y + 12 },
+        },
       ];
     }
     const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 - 5 };
@@ -879,7 +930,7 @@ export const FlowCanvas = ({
     const fansOut = from.id === laneFork && (intoLane || lanes.some((lane) => lane.head === to.id));
     const rejoins = inService.has(from.id) && !inService.has(to.id);
     const d = fansOut ? elbow(p1, p2, p2.y - LANE_HEAD - 12) : rejoins ? elbow(p1, p2, p2.y - 16) : bezier(p1, p2);
-    return [{ key: `${at}`, d, label: splits && !intoLane ? (ports[index]?.label ?? "") : "", mid }];
+    return [{ key: `${at}`, d, jump: false, label: splits && !intoLane ? (ports[index]?.label ?? "") : "", mid }];
   });
 
   const localPoint = (e: ReactPointerEvent): Point => {
@@ -1298,6 +1349,8 @@ export const FlowCanvas = ({
         if (Math.hypot(e.clientX - live.startX, e.clientY - live.startY) < 5) return;
         live.began = true;
         if (document.activeElement instanceof HTMLElement && e.currentTarget.contains(document.activeElement)) document.activeElement.blur();
+        // The press may have started a text selection in a name field; the drag is not that.
+        window.getSelection()?.removeAllRanges();
         setDrag({ source: live.source, target: null });
       }
       const ghost = ghostRef.current;
@@ -1811,15 +1864,34 @@ export const FlowCanvas = ({
               );
             })()}
             <svg className="pointer-events-none absolute inset-0 overflow-visible">
+              <defs>
+                {/* The head on a jump. A link down the page is read downwards without one;
+                    a link that leaves for another service has to say which end it arrives at. */}
+                <marker id="ansa-jump-head" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto">
+                  <path d="M0 0 L8 4 L0 8 Z" fill="color-mix(in srgb, var(--accent) 70%, transparent)" />
+                </marker>
+              </defs>
               {edgePaths.map((p) => (
                   <g key={p.key}>
                     {/* Inert. A click on the link used to remove it, and a hairline that
                         deletes on contact is a trap on a drawing that is mostly hairlines:
                         it took the press meant for the lane behind it, and a slip left a dead
                         end. A link is changed by moving the step, or from the inspector. */}
-                    <path d={p.d} fill="none" stroke="color-mix(in srgb, var(--ink-3) 60%, transparent)" strokeWidth={1.5} />
+                    <path
+                      d={p.d}
+                      fill="none"
+                      stroke={p.jump ? "color-mix(in srgb, var(--accent) 70%, transparent)" : "color-mix(in srgb, var(--ink-3) 60%, transparent)"}
+                      strokeWidth={1.5}
+                      strokeDasharray={p.jump ? "4 3" : undefined}
+                      markerEnd={p.jump ? "url(#ansa-jump-head)" : undefined}
+                    />
                     {p.label !== "" && (
-                      <text x={p.mid.x} y={p.mid.y} textAnchor="middle" className="pointer-events-none fill-[var(--ink-3)] font-mono text-[9.5px]">
+                      <text
+                        x={p.mid.x}
+                        y={p.mid.y}
+                        textAnchor="middle"
+                        className={cn("pointer-events-none font-mono text-[9.5px]", p.jump ? "fill-[var(--accent)]" : "fill-[var(--ink-3)]")}
+                      >
                         {p.label}
                       </text>
                     )}

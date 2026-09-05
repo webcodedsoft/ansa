@@ -71,6 +71,90 @@ export const depths = (flow: Flow): ReadonlyMap<string, number> => {
  * Anything the walk never reaches goes in a row of its own below the end — which is also the
  * clearest way to see that a step is unreachable, without drawing a report about it.
  */
+/* ------------------------------------------------------------------ jumps */
+
+/**
+ * The links that jump from one service to another.
+ *
+ * A branch inside a service can send the caller to a different service — "if they'd rather
+ * buy, go to the buying questions" — and that link is real, but it is not how the drawing is
+ * organised. Left in, it wrecks the thing it points at: a service's first step is "owned" by
+ * that service because nothing else reaches it, and a jump makes something else reach it, so
+ * the lane empties and its steps fall out into the shared column. Rows go the same way, since
+ * a step's row is the longest path to it and a jump is a longer path.
+ *
+ * So the drawing is laid out on the *spine* — the graph without its jumps — and the jumps are
+ * drawn over it as what they are: a line from here to somewhere else in the call.
+ *
+ * A jump is a link into a service's *first step* that does not come from the fork. Telling a
+ * first step from the closing line the services converge on cannot be done by reachability —
+ * the two are the same shape, a step the fork points at that another service also reaches —
+ * so it is done by how the call gets there: services converge along each step's default way
+ * out ("got it", "yes", "ok"), which is the call continuing, while a jump leaves a branch by
+ * one of its named arms. A branch target every other service walks to along its defaults is
+ * the convergence, and points at nothing of its own; anything else is a service's first step.
+ *
+ * A link into the *middle* of another service is left alone: a step two services reach is
+ * shared between them, and the drawing already has a place for shared steps — the column
+ * between the lanes. That is honest about what it is, and it is not a service being emptied.
+ */
+const jumpCache = new WeakMap<Flow, ReadonlySet<FlowEdge>>();
+const spineCache = new WeakMap<Flow, Flow>();
+const NO_JUMPS: ReadonlySet<FlowEdge> = new Set<FlowEdge>();
+
+export const jumpEdges = (flow: Flow): ReadonlySet<FlowEdge> => {
+  const cached = jumpCache.get(flow);
+  if (cached !== undefined) return cached;
+
+  const found = new Set<FlowEdge>();
+  const fork = firstFork(flow, depths(flow));
+  if (fork !== undefined) {
+    const targets = flow.edges.filter((edge) => edge.from === fork.id).map((edge) => edge.to);
+    const heads = new Set(targets.filter((target) => !converges(flow, target, targets)));
+    for (const edge of flow.edges) if (edge.from !== fork.id && heads.has(edge.to)) found.add(edge);
+  }
+
+  jumpCache.set(flow, found);
+  return found;
+};
+
+/**
+ * Whether a branch points straight at the step the services converge on rather than at a
+ * service of its own — which is what a service emptied of its steps looks like.
+ *
+ * True when every other branch walks to it along their default ways out. A service that ends
+ * the call itself never reaches it, and then the step really is only reachable through this
+ * branch, which is the same as saying it belongs to it.
+ */
+const converges = (flow: Flow, target: string, targets: readonly string[]): boolean => {
+  const others = targets.filter((other) => other !== target);
+  return others.length > 0 && others.every((other) => alongDefaults(flow, other).has(target));
+};
+
+/** Every step reached from here by following each step's default way out, and no branch arms. */
+const alongDefaults = (flow: Flow, start: string): ReadonlySet<string> => {
+  const seen = new Set<string>([start]);
+  let at: string | undefined = defaultEdgeFrom(flow, start)?.to;
+  while (at !== undefined && !seen.has(at)) {
+    seen.add(at);
+    at = defaultEdgeFrom(flow, at)?.to;
+  }
+  seen.delete(start);
+  return seen;
+};
+
+/** The graph the layout reads: every link except the jumps. A spine is its own spine. */
+const spineOf = (flow: Flow): Flow => {
+  const cached = spineCache.get(flow);
+  if (cached !== undefined) return cached;
+  const jumps = jumpEdges(flow);
+  const spine = jumps.size === 0 ? flow : { ...flow, edges: flow.edges.filter((edge) => !jumps.has(edge)) };
+  spineCache.set(flow, spine);
+  spineCache.set(spine, spine);
+  jumpCache.set(spine, NO_JUMPS);
+  return spine;
+};
+
 /**
  * The columns: which lane each step is in, how wide each lane is, and where each lane starts.
  *
@@ -83,13 +167,14 @@ export const depths = (flow: Flow): ReadonlyMap<string, number> => {
  * to be drawn and something to drop a step onto.
  */
 const columns = (flow: Flow) => {
-  const depth = depths(flow);
-  const fork = firstFork(flow, depth);
+  const spine = spineOf(flow);
+  const depth = depths(spine);
+  const fork = firstFork(spine, depth);
   const forkDepth = fork === undefined ? Infinity : (depth.get(fork.id) ?? Infinity);
   const unreached = Math.max(0, ...[...depth.values()].map((value) => value + 1));
   const rowOf = (id: string): number => depth.get(id) ?? unreached;
 
-  const lanes = fork === undefined ? [] : laneGroups(flow);
+  const lanes = fork === undefined ? [] : laneGroupsOn(spine);
   const laneOf = new Map<string, number>();
   lanes.forEach((lane, at) => {
     if (lane.id === "opening") return;
@@ -210,14 +295,17 @@ export const onlyReachableThrough = (flow: Flow, head: string): ReadonlySet<stri
  * question that has the right answer.
  */
 export const foldedAway = (flow: Flow, collapsed: Iterable<string>): ReadonlySet<string> => {
+  /* On the spine: folding a service hides that service, whether or not another one jumps
+     into it. A jump to a step that is now hidden is simply not drawn. */
+  const spine = spineOf(flow);
   const heads = new Set<string>();
-  for (const head of collapsed) if (flow.nodes.some((node) => node.id === head)) heads.add(head);
+  for (const head of collapsed) if (spine.nodes.some((node) => node.id === head)) heads.add(head);
   if (heads.size === 0) return new Set<string>();
   /* The head goes too. Leaving it on screen while its own steps vanish is the worst of both
      — a chip that says "3 folded" beside one of the three still sitting there. Folding a
      branch away means the branch is away, and the chip on the fork is what stands in for it. */
   const gone = new Set(heads);
-  for (const id of reachableOnlyVia(flow, heads)) gone.add(id);
+  for (const id of reachableOnlyVia(spine, heads)) gone.add(id);
   return gone;
 };
 
@@ -231,7 +319,7 @@ const reachableOnlyVia = (flow: Flow, heads: ReadonlySet<string>): ReadonlySet<s
 };
 
 /** How many steps a folded branch stands in for, counting its own head. */
-export const foldedCount = (flow: Flow, head: string): number => onlyReachableThrough(flow, head).size + 1;
+export const foldedCount = (flow: Flow, head: string): number => onlyReachableThrough(spineOf(flow), head).size + 1;
 
 /**
  * One labelled group of steps on the canvas — the shared opening, then a lane per service.
@@ -278,7 +366,10 @@ const firstFork = (flow: Flow, depth: ReadonlyMap<string, number>): FlowNode | u
     .filter((node) => node.kind === "decide" && depth.has(node.id))
     .sort((a, b) => (depth.get(a.id) ?? 0) - (depth.get(b.id) ?? 0))[0];
 
-export const laneGroups = (flow: Flow): readonly Lane[] => {
+export const laneGroups = (flow: Flow): readonly Lane[] => laneGroupsOn(spineOf(flow));
+
+/** The lanes of a graph taken as given — the spine, everywhere but inside `jumpEdges`. */
+const laneGroupsOn = (flow: Flow): readonly Lane[] => {
   const depth = depths(flow);
   const fork = firstFork(flow, depth);
   if (fork === undefined) return [];

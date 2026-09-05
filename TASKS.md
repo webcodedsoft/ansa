@@ -4071,6 +4071,24 @@ lane drag. A press on the name now belongs to the box: it drags the service, and
 never moved focuses the field on release, so the click it looked like is the edit it was. A
 grip on the header says the box moves.
 
+**A branch that jumps to another service (2026-09-05).** "Branch inside service can not be
+link to another service." It could — the port drag and the inspector both made the link —
+and the link then wrecked the service it pointed at: a service's first step is "owned" by that
+service because nothing else reaches it, and the jump made something else reach it, so the
+lane emptied and its three steps fell out into the shared column. The drawing is laid out on
+the *spine* now — the graph without its jumps (`jumpEdges`, `spineOf`) — and a jump is drawn
+over it as what it is: a dashed accent line with a head, out of the card, along the gap beside
+its column, into the top of the step it lands on, labelled by the answer that takes it. What
+is a jump: a link into a service's first step that does not come from the fork. Telling a
+first step from the closing line the services converge on cannot be done by reachability, so
+it is done by how the call gets there: services converge along each step's default way out,
+a jump leaves a branch by a named arm (`converges`, `alongDefaults`). A link into the middle
+of another service is left as a shared step between the lanes, which is what it is. Folding
+reads the spine too, so a service folds whole whether or not another jumps into it. Five
+tests; verified in the browser with the Oakhaven flow — and the validator then said the only
+thing worth saying about the jump: rent had already asked "area" before jumping into buy,
+which asks it again.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and
