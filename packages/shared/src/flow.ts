@@ -74,6 +74,13 @@ export interface FlowNode {
   readonly tool?: string;
   /** `decide` and `confirm` only — the field key this step reads. */
   readonly on?: string;
+  /**
+   * The service this step is part of, by name — "rent", "book a viewing". A drawing thing:
+   * the console groups a service's steps into one lane and draws links between services as
+   * links, and a service can exist before anything leads to it. The director never reads it.
+   * Absent on steps everyone gets and on flows saved before services were named.
+   */
+  readonly service?: string;
 }
 
 /**

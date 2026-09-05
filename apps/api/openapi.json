@@ -372,6 +372,10 @@
                                     "on": {
                                       "type": "string",
                                       "maxLength": 64
+                                    },
+                                    "service": {
+                                      "type": "string",
+                                      "maxLength": 120
                                     }
                                   },
                                   "required": [
@@ -907,6 +911,10 @@
                               "on": {
                                 "type": "string",
                                 "maxLength": 64
+                              },
+                              "service": {
+                                "type": "string",
+                                "maxLength": 120
                               }
                             },
                             "required": [
@@ -1402,6 +1410,10 @@
                               "on": {
                                 "type": "string",
                                 "maxLength": 64
+                              },
+                              "service": {
+                                "type": "string",
+                                "maxLength": 120
                               }
                             },
                             "required": [
@@ -1928,6 +1940,10 @@
                               "on": {
                                 "type": "string",
                                 "maxLength": 64
+                              },
+                              "service": {
+                                "type": "string",
+                                "maxLength": 120
                               }
                             },
                             "required": [
@@ -6377,6 +6393,10 @@
                               "on": {
                                 "type": "string",
                                 "maxLength": 64
+                              },
+                              "service": {
+                                "type": "string",
+                                "maxLength": 120
                               }
                             },
                             "required": [
@@ -6602,6 +6622,10 @@
                                   "on": {
                                     "type": "string",
                                     "maxLength": 64
+                                  },
+                                  "service": {
+                                    "type": "string",
+                                    "maxLength": 120
                                   }
                                 },
                                 "required": [
@@ -6930,6 +6954,10 @@
                             "on": {
                               "type": "string",
                               "maxLength": 64
+                            },
+                            "service": {
+                              "type": "string",
+                              "maxLength": 120
                             }
                           },
                           "required": [

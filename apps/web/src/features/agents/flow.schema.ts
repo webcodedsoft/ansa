@@ -122,6 +122,8 @@ export const flowNodeSchema = z.object({
   tool: z.string().max(FLOW_LIMITS.toolNameLength).optional(),
   /** `decide` and `confirm` only — the field key this step reads. */
   on: z.string().max(FLOW_LIMITS.keyLength).optional(),
+  /** The service this step belongs to, for the drawing. As long as a choice's option, since it usually is one. */
+  service: z.string().max(FLOW_LIMITS.options.valueLength).optional(),
 });
 
 export type FlowNode = z.infer<typeof flowNodeSchema>;

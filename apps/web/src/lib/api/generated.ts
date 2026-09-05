@@ -128,6 +128,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly text?: string;
         readonly tool?: string;
         readonly on?: string;
+        readonly service?: string;
       })[];
         readonly edges: readonly ({
         readonly from: string;
@@ -208,6 +209,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly text?: string;
         readonly tool?: string;
         readonly on?: string;
+        readonly service?: string;
       })[];
         readonly edges: readonly ({
         readonly from: string;
@@ -281,6 +283,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly text?: string;
         readonly tool?: string;
         readonly on?: string;
+        readonly service?: string;
       })[];
         readonly edges: readonly ({
         readonly from: string;
@@ -358,6 +361,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly text?: string;
         readonly tool?: string;
         readonly on?: string;
+        readonly service?: string;
       })[];
         readonly edges: readonly ({
         readonly from: string;
@@ -462,6 +466,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly text?: string;
         readonly tool?: string;
         readonly on?: string;
+        readonly service?: string;
       })[];
         readonly edges: readonly ({
         readonly from: string;
@@ -500,6 +505,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly text?: string;
         readonly tool?: string;
         readonly on?: string;
+        readonly service?: string;
       })[];
         readonly edges: readonly ({
         readonly from: string;
@@ -549,6 +555,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
           readonly text?: string;
           readonly tool?: string;
           readonly on?: string;
+          readonly service?: string;
         })[];
           readonly edges: readonly ({
           readonly from: string;

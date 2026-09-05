@@ -100,6 +100,8 @@ const flowNode: Schema<FlowNode> = object({
   text: optional(text({ maxLength: FLOW_LIMITS.sayLength })),
   tool: optional(text({ maxLength: FLOW_LIMITS.toolNameLength })),
   on: optional(text({ maxLength: FLOW_LIMITS.keyLength })),
+  /** The service the console draws this step in. Stored and returned; nothing on a call reads it. */
+  service: optional(text({ maxLength: FLOW_LIMITS.options.valueLength })),
 });
 
 /**

@@ -1,13 +1,24 @@
 import type { Flow, FlowEdge, FlowNode } from "./flow.schema";
 
 /**
- * Where the steps sit, and which of them are folded away.
+ * Where the steps sit, which service each belongs to, and which of them are folded away.
  *
- * Both are derived, and that is the point. Positions used to be authored — you dragged a
+ * All of it is derived, and that is the point. Positions used to be authored — you dragged a
  * card and the coordinates were saved — which meant every graph carried a layout somebody
  * had to maintain, a "Tidy up" button to repair it, and the standing possibility of a flow
  * that was correct and unreadable. Deriving the layout from the graph removes all three:
  * there is nothing to arrange, so nothing can be untidy.
+ *
+ * A *service* is a named group of steps — "rent", "book a viewing" — and it is the one thing
+ * here that is not derived, because it cannot be. It used to be: a service was whatever one
+ * branch of the first fork reached and nothing else did. That made two things impossible
+ * that a business needs. A service could not exist until something led to it, so adding one
+ * meant wiring it to the fork whether or not that was wanted; and a branch inside one service
+ * could not lead to another without the drawing deciding the second service was now part of
+ * the first. So each step carries the name of its service (`FlowNode.service`), the lanes are
+ * those names, and a link between two services is drawn as a link and changes nothing about
+ * where anything sits. Flows saved before services were named are read the old way once, on
+ * the way in (`withServiceTags`), and carry names from then on.
  *
  * Kept out of the canvas component so both can be tested without a DOM, because the layout
  * stopped being cosmetic the moment it became the only layout there is.
@@ -30,6 +41,29 @@ export const LANE_GAP = 46;
 export const LANE_HEAD = 30;
 /** Extra room below the lanes before the shared close, for the links that rejoin to run along. */
 export const REJOIN_GAP = 22;
+
+/* ------------------------------------------------------------------ the graph */
+
+const byId = (flow: Flow, id: string): FlowNode | undefined => flow.nodes.find((node) => node.id === id);
+
+/** Every step reachable from the answer, pretending the named steps are not there. */
+const reachableWithout = (flow: Flow, absent: ReadonlySet<string>): ReadonlySet<string> => {
+  const start = flow.nodes.find((node) => node.kind === "start") ?? flow.nodes[0];
+  const seen = new Set<string>();
+  if (start === undefined || absent.has(start.id)) return seen;
+  const queue = [start.id];
+  seen.add(start.id);
+  while (queue.length > 0) {
+    const id = queue.shift();
+    if (id === undefined) continue;
+    for (const edge of flow.edges) {
+      if (edge.from !== id || absent.has(edge.to) || seen.has(edge.to)) continue;
+      seen.add(edge.to);
+      queue.push(edge.to);
+    }
+  }
+  return seen;
+};
 
 /**
  * How far down the page each step sits: the longest path from the answer, not the shortest.
@@ -64,58 +98,35 @@ export const depths = (flow: Flow): ReadonlyMap<string, number> => {
   return depth;
 };
 
-/**
- * Rows by distance from the answer, columns by arrival within the row.
- *
- * A fork reads as a fork rather than a staircase because the steps it leads to share a row.
- * Anything the walk never reaches goes in a row of its own below the end — which is also the
- * clearest way to see that a step is unreachable, without drawing a report about it.
- */
-/* ------------------------------------------------------------------ jumps */
+/** The shallowest reachable `decide`: where the call first splits into services. */
+const firstFork = (flow: Flow, depth: ReadonlyMap<string, number>): FlowNode | undefined =>
+  flow.nodes
+    .filter((node) => node.kind === "decide" && depth.has(node.id))
+    .sort((a, b) => (depth.get(a.id) ?? 0) - (depth.get(b.id) ?? 0))[0];
+
+/** The name of each kind's first port, where it has one. Mirrors `portsOf` on the canvas. */
+const FIRST_PORT: Partial<Record<FlowNode["kind"], string>> = { collect: "got", confirm: "yes", tool: "ok" };
 
 /**
- * The links that jump from one service to another.
- *
- * A branch inside a service can send the caller to a different service — "if they'd rather
- * buy, go to the buying questions" — and that link is real, but it is not how the drawing is
- * organised. Left in, it wrecks the thing it points at: a service's first step is "owned" by
- * that service because nothing else reaches it, and a jump makes something else reach it, so
- * the lane empties and its steps fall out into the shared column. Rows go the same way, since
- * a step's row is the longest path to it and a jump is a longer path.
- *
- * So the drawing is laid out on the *spine* — the graph without its jumps — and the jumps are
- * drawn over it as what they are: a line from here to somewhere else in the call.
- *
- * A jump is a link into a service's *first step* that does not come from the fork. Telling a
- * first step from the closing line the services converge on cannot be done by reachability —
- * the two are the same shape, a step the fork points at that another service also reaches —
- * so it is done by how the call gets there: services converge along each step's default way
- * out ("got it", "yes", "ok"), which is the call continuing, while a jump leaves a branch by
- * one of its named arms. A branch target every other service walks to along its defaults is
- * the convergence, and points at nothing of its own; anything else is a service's first step.
- *
- * A link into the *middle* of another service is left alone: a step two services reach is
- * shared between them, and the drawing already has a place for shared steps — the column
- * between the lanes. That is honest about what it is, and it is not a service being emptied.
+ * The edge a step leaves by when nothing else is said: the first port's, which is the one
+ * a link with no port name belongs to. A `decide` has no default; every way out is named.
  */
-const jumpCache = new WeakMap<Flow, ReadonlySet<FlowEdge>>();
-const spineCache = new WeakMap<Flow, Flow>();
-const NO_JUMPS: ReadonlySet<FlowEdge> = new Set<FlowEdge>();
+const defaultEdgeFrom = (flow: Flow, id: string): FlowEdge | undefined => {
+  const node = byId(flow, id);
+  if (node === undefined || node.kind === "decide") return undefined;
+  return flow.edges.find((edge) => edge.from === id && edge.when === undefined && edge.otherwise === undefined && (edge.port === undefined || edge.port === FIRST_PORT[node.kind]));
+};
 
-export const jumpEdges = (flow: Flow): ReadonlySet<FlowEdge> => {
-  const cached = jumpCache.get(flow);
-  if (cached !== undefined) return cached;
-
-  const found = new Set<FlowEdge>();
-  const fork = firstFork(flow, depths(flow));
-  if (fork !== undefined) {
-    const targets = flow.edges.filter((edge) => edge.from === fork.id).map((edge) => edge.to);
-    const heads = new Set(targets.filter((target) => !converges(flow, target, targets)));
-    for (const edge of flow.edges) if (edge.from !== fork.id && heads.has(edge.to)) found.add(edge);
+/** Every step reached from here by following each step's default way out, and no branch arms. */
+const alongDefaults = (flow: Flow, start: string): ReadonlySet<string> => {
+  const seen = new Set<string>([start]);
+  let at: string | undefined = defaultEdgeFrom(flow, start)?.to;
+  while (at !== undefined && !seen.has(at)) {
+    seen.add(at);
+    at = defaultEdgeFrom(flow, at)?.to;
   }
-
-  jumpCache.set(flow, found);
-  return found;
+  seen.delete(start);
+  return seen;
 };
 
 /**
@@ -131,29 +142,292 @@ const converges = (flow: Flow, target: string, targets: readonly string[]): bool
   return others.length > 0 && others.every((other) => alongDefaults(flow, other).has(target));
 };
 
-/** Every step reached from here by following each step's default way out, and no branch arms. */
-const alongDefaults = (flow: Flow, start: string): ReadonlySet<string> => {
-  const seen = new Set<string>([start]);
-  let at: string | undefined = defaultEdgeFrom(flow, start)?.to;
-  while (at !== undefined && !seen.has(at)) {
+/** The choice a fork reads, when it is one: the `collect` step whose field the fork is on. */
+const choiceOf = (flow: Flow, fork: FlowNode) => {
+  const field = flow.nodes.find((n) => n.kind === "collect" && n.field !== undefined && n.field.key === fork.on)?.field;
+  return field !== undefined && field.type === "choice" ? field : undefined;
+};
+
+/** The answer a fork's edge carries, worded the way the lanes are. */
+const answerOf = (edge: FlowEdge): string =>
+  edge.otherwise === true ? "anything else" : edge.when !== undefined && "equals" in edge.when ? edge.when.equals : (edge.port ?? "next");
+
+/**
+ * What the catch-all is called. Named by the one option the named branches leave uncovered
+ * when there is exactly one — a template's "rent or buy" draws buy as the catch-all so the
+ * fork can publish, and the lane should still say buy — and "anything else" otherwise.
+ */
+const catchAllName = (flow: Flow, fork: FlowNode): string => {
+  const named = new Set(flow.edges.filter((edge) => edge.from === fork.id && edge.when !== undefined && "equals" in edge.when).map((edge) => (edge.when as { equals: string }).equals));
+  const uncovered = (choiceOf(flow, fork)?.options ?? []).filter((option) => !named.has(option));
+  return uncovered.length === 1 ? (uncovered[0] ?? "anything else") : "anything else";
+};
+
+/* ------------------------------------------------------------------ services */
+
+/** The service a step says it is in, or nothing. An empty name is nothing. */
+export const serviceOf = (node: FlowNode): string | undefined => {
+  const name = node.service?.trim();
+  return name === undefined || name === "" ? undefined : name;
+};
+
+const tagged = (node: FlowNode, service: string | undefined): FlowNode => {
+  const { service: _was, ...rest } = node;
+  return service === undefined ? rest : { ...rest, service };
+};
+
+/**
+ * The services a flow had before it could name them, read off its shape.
+ *
+ * The old rule, kept for the flows that were saved under it: a service is what one branch of
+ * the first fork reaches and nothing else does, labelled by the answer that gets there. A
+ * link into a service's first step from anywhere but the fork is a jump and is set aside
+ * first, or it would make the service look like part of whatever jumped.
+ */
+const derivedServices = (flow: Flow): readonly { readonly label: string; readonly ids: readonly string[] }[] => {
+  const fork = firstFork(flow, depths(flow));
+  if (fork === undefined) return [];
+  const branches = flow.edges.filter((edge) => edge.from === fork.id);
+  const targets = branches.map((edge) => edge.to);
+  const heads = new Set(targets.filter((target) => !converges(flow, target, targets)));
+  const spine: Flow = { ...flow, edges: flow.edges.filter((edge) => edge.from === fork.id || !heads.has(edge.to)) };
+  const catchAll = catchAllName(flow, fork);
+  return branches.flatMap((branch) => {
+    const owned = !reachableWithout({ ...spine, edges: spine.edges.filter((edge) => edge !== branch) }, new Set()).has(branch.to);
+    if (!owned) return [];
+    return [{ label: branch.otherwise === true ? catchAll : answerOf(branch), ids: [branch.to, ...onlyReachableThrough(spine, branch.to)] }];
+  });
+};
+
+/**
+ * Every step named for its service, for a flow that was saved before steps had names.
+ *
+ * Only steps with no name are touched, and only where the old rule puts them in a service:
+ * the opening and the close belong to everybody and stay unnamed. The same flow object comes
+ * back when there is nothing to do, so a caller can tell.
+ */
+export const withServiceTags = (flow: Flow): Flow => {
+  if (flow.nodes.every((node) => serviceOf(node) !== undefined)) return flow;
+  const derived = new Map<string, string>();
+  for (const service of derivedServices(flow)) for (const id of service.ids) derived.set(id, service.label);
+  if (!flow.nodes.some((node) => serviceOf(node) === undefined && derived.has(node.id))) return flow;
+  return { ...flow, nodes: flow.nodes.map((node) => (serviceOf(node) === undefined && derived.has(node.id) ? tagged(node, derived.get(node.id)) : node)) };
+};
+
+/* ------------------------------------------------------------------ lanes */
+
+/**
+ * One labelled group of steps on the canvas — the shared opening, then a lane per service.
+ *
+ * A six-service front desk drawn as twenty-four cards is a wall, and the only way to tell
+ * which service you are looking at is to trace links upward with your eyes. Naming those
+ * groups on the drawing costs nothing and is the difference between a diagram and a business.
+ */
+export interface Lane {
+  /**
+   * `"opening"` for the shared questions; `svc:<name>` for a service; `via:<answer>` for a
+   * branch of the fork that leads to no service of its own — every step it had has been moved
+   * away and it points at the shared close — which is drawn empty so it can be filled again.
+   */
+  readonly id: string;
+  readonly label: string;
+  /** The steps in this lane, the first one first. Empty for a `via:` lane. */
+  readonly ids: readonly string[];
+  /** The fork the lanes hang off. Absent when the call never forks. */
+  readonly fork?: string;
+  /** The lane's first step — or, for a `via:` lane, the shared step its branch points at. */
+  readonly head?: string;
+  /** The branch the call takes when the answer is none of the named ones. */
+  readonly catchAll?: true;
+}
+
+interface Analysis {
+  readonly flow: Flow;
+  readonly lanes: readonly Lane[];
+  readonly laneOf: ReadonlyMap<string, Lane>;
+  readonly fork: FlowNode | undefined;
+  readonly jumps: ReadonlySet<FlowEdge>;
+  readonly spine: Flow;
+  /** Every step's row. Reachable steps by longest path; the rest seeded per lane. */
+  readonly rows: ReadonlyMap<string, number>;
+  readonly forkDepth: number;
+  /** The row the lanes' first cards sit on. */
+  readonly laneTop: number;
+  /** The deepest row any lane reaches; everything shared below it drops by the rejoin gap. */
+  readonly laneFloor: number;
+}
+
+const analysed = new WeakMap<Flow, Analysis>();
+
+/** The first step of a group: one no other step in the group leads to, or the first listed. */
+const headOf = (flow: Flow, ids: readonly string[]): string | undefined => {
+  const inside = new Set(ids);
+  return ids.find((id) => !flow.edges.some((edge) => edge.to === id && inside.has(edge.from))) ?? ids[0];
+};
+
+/** A group's steps with the first one first, then along each step's default way out, then the rest. */
+const inOrder = (flow: Flow, ids: readonly string[]): readonly string[] => {
+  const head = headOf(flow, ids);
+  if (head === undefined) return [];
+  const inside = new Set(ids);
+  const ordered: string[] = [head];
+  const seen = new Set(ordered);
+  let at: string | undefined = defaultEdgeFrom(flow, head)?.to;
+  while (at !== undefined && inside.has(at) && !seen.has(at)) {
+    ordered.push(at);
     seen.add(at);
     at = defaultEdgeFrom(flow, at)?.to;
   }
-  seen.delete(start);
-  return seen;
+  for (const id of ids) if (!seen.has(id)) ordered.push(id);
+  return ordered;
 };
 
-/** The graph the layout reads: every link except the jumps. A spine is its own spine. */
-const spineOf = (flow: Flow): Flow => {
-  const cached = spineCache.get(flow);
+/**
+ * Everything the drawing needs to know about a flow, worked out once per flow object.
+ *
+ * The services come from the steps' names; the fork's branches say which of them are
+ * attached and which branch is the catch-all; the links between services are the jumps; the
+ * spine is the flow without them; the rows come from the spine — reachable steps by longest
+ * path, and the steps of a service nothing leads to yet from the top of the lanes down.
+ */
+const analyse = (input: Flow): Analysis => {
+  const cached = analysed.get(input);
   if (cached !== undefined) return cached;
-  const jumps = jumpEdges(flow);
-  const spine = jumps.size === 0 ? flow : { ...flow, edges: flow.edges.filter((edge) => !jumps.has(edge)) };
-  spineCache.set(flow, spine);
-  spineCache.set(spine, spine);
-  jumpCache.set(spine, NO_JUMPS);
-  return spine;
+
+  const flow = withServiceTags(input);
+  const fullDepth = depths(flow);
+  const fork = firstFork(flow, fullDepth);
+
+  /* Service lanes, in the order their names first appear among the steps — which is the
+     order they were added in, and the order a reorder writes. */
+  const names: string[] = [];
+  const members = new Map<string, string[]>();
+  for (const node of flow.nodes) {
+    const name = serviceOf(node);
+    if (name === undefined) continue;
+    if (!members.has(name)) {
+      names.push(name);
+      members.set(name, []);
+    }
+    members.get(name)?.push(node.id);
+  }
+  const services: Lane[] = names.map((label) => {
+    const ids = inOrder(flow, members.get(label) ?? []);
+    return { id: `svc:${label}`, label, ids, ...(fork === undefined ? {} : { fork: fork.id }), ...(ids[0] === undefined ? {} : { head: ids[0] }) };
+  });
+  const laneOf = new Map<string, Lane>();
+  for (const lane of services) for (const id of lane.ids) laneOf.set(id, lane);
+
+  /* The fork's branches: one into a service marks it attached (and the catch-all); one that
+     leads to no service — every step it had moved away, so it points past where they were at
+     the shared close — is a service with nothing in it, drawn empty so a step can be dropped
+     back into it. */
+  const lanes: Lane[] = [...services];
+  if (fork !== undefined) {
+    const branches = flow.edges.filter((edge) => edge.from === fork.id);
+    const catchAll = catchAllName(flow, fork);
+    for (const branch of branches) {
+      const into = laneOf.get(branch.to);
+      if (into !== undefined) {
+        if (branch.otherwise === true) {
+          const at = lanes.indexOf(into);
+          const marked: Lane = { ...into, catchAll: true };
+          lanes[at] = marked;
+          for (const id of marked.ids) laneOf.set(id, marked);
+        }
+        continue;
+      }
+      const label = branch.otherwise === true ? catchAll : answerOf(branch);
+      lanes.push({ id: `via:${label}`, label, ids: [], fork: fork.id, head: branch.to, ...(branch.otherwise === true ? { catchAll: true as const } : {}) });
+    }
+  }
+
+  /* A jump: a link into a service from anywhere but the fork and the service itself. The
+     services stay where their names put them; the jump is drawn over the drawing. */
+  const jumps = new Set<FlowEdge>();
+  for (const edge of flow.edges) {
+    if (fork !== undefined && edge.from === fork.id) continue;
+    const to = laneOf.get(edge.to);
+    if (to === undefined) continue;
+    if (laneOf.get(edge.from) !== to) jumps.add(edge);
+  }
+  const spine: Flow = jumps.size === 0 ? flow : { ...flow, edges: flow.edges.filter((edge) => !jumps.has(edge)) };
+
+  const depth = depths(spine);
+  const forkDepth = fork === undefined ? Infinity : (depth.get(fork.id) ?? Infinity);
+  const unreached = Math.max(0, ...[...depth.values()].map((value) => value + 1));
+  const laneTop = fork === undefined ? 1 : forkDepth + 1;
+
+  /* Rows for what the spine never reaches: a service nothing leads to yet starts at the top
+     of the lanes like every other; anything else goes below the end, where it reads as the
+     unreachable thing it is. Longest path from those seeds, the same way as from the start. */
+  const rows = new Map(depth);
+  const loose = flow.nodes.filter((node) => !rows.has(node.id));
+  const looseIds = new Set(loose.map((node) => node.id));
+  for (const node of loose) {
+    const root = !spine.edges.some((edge) => edge.to === node.id && looseIds.has(edge.from));
+    if (root) rows.set(node.id, laneOf.has(node.id) ? laneTop : unreached);
+  }
+  for (let pass = 0; pass < loose.length + 1; pass += 1) {
+    let moved = false;
+    for (const edge of spine.edges) {
+      if (!looseIds.has(edge.to)) continue;
+      const from = rows.get(edge.from);
+      if (from === undefined) continue;
+      if ((rows.get(edge.to) ?? -1) < from + 1) {
+        rows.set(edge.to, from + 1);
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+  for (const node of loose) if (!rows.has(node.id)) rows.set(node.id, laneOf.has(node.id) ? laneTop : unreached);
+
+  const laneFloor = Math.max(forkDepth === Infinity ? 0 : forkDepth, ...flow.nodes.filter((node) => laneOf.has(node.id)).map((node) => rows.get(node.id) ?? 0));
+
+  const opening: Lane = {
+    id: "opening",
+    label: "everyone gets this",
+    ids: flow.nodes.filter((node) => !laneOf.has(node.id) && (depth.get(node.id) ?? Infinity) <= forkDepth).map((node) => node.id),
+  };
+  const all = lanes.length === 0 && fork === undefined ? [] : [opening, ...lanes];
+
+  const analysis: Analysis = { flow, lanes: all, laneOf, fork, jumps, spine, rows, forkDepth, laneTop, laneFloor };
+  analysed.set(input, analysis);
+  analysed.set(flow, analysis);
+  return analysis;
 };
+
+/**
+ * The lanes, or none at all.
+ *
+ * None when the call never forks and no service is named: a straight line has one lane, and
+ * drawing a box round the whole drawing to say so is a label that tells nobody anything.
+ */
+export const laneGroups = (flow: Flow): readonly Lane[] => analyse(flow).lanes;
+
+/** The links that leave one service for another: drawn, but not part of the drawing's structure. */
+export const jumpEdges = (flow: Flow): ReadonlySet<FlowEdge> => analyse(flow).jumps;
+
+/** The branch heads: every step a `decide` leads to, labelled by the answer that gets there. */
+export const branchHeads = (
+  flow: Flow,
+  decide: FlowNode,
+): readonly { readonly to: string; readonly label: string; readonly edge: FlowEdge }[] =>
+  flow.edges.filter((edge) => edge.from === decide.id).map((edge) => ({ to: edge.to, edge, label: answerOf(edge) }));
+
+/** The edge from the fork that this lane is: the branch that leads into it. */
+export const branchEdgeOf = (flow: Flow, lane: Lane): FlowEdge | undefined => {
+  if (lane.fork === undefined) return undefined;
+  const inside = new Set(lane.ids);
+  return flow.edges.find((edge) => {
+    if (edge.from !== lane.fork) return false;
+    if (inside.size > 0) return inside.has(edge.to);
+    return edge.to === lane.head && (lane.catchAll === true ? edge.otherwise === true : answerOf(edge) === lane.label);
+  });
+};
+
+/* ------------------------------------------------------------------ layout */
 
 /**
  * The columns: which lane each step is in, how wide each lane is, and where each lane starts.
@@ -164,65 +438,66 @@ const spineOf = (flow: Flow): Flow => {
  * service owns a run of columns as wide as its widest row, the lanes sit side by side, and
  * everything outside a lane — the opening, the rejoin, the unreachable — is centred across
  * all of them. A service with no steps in it yet still owns a column, so it has somewhere
- * to be drawn and something to drop a step onto.
+ * to be drawn and something to drop a step onto. A flow with services but no fork puts the
+ * shared column first and the services beside it, since there is nothing for them to hang from.
  */
-const columns = (flow: Flow) => {
-  const spine = spineOf(flow);
-  const depth = depths(spine);
-  const fork = firstFork(spine, depth);
-  const forkDepth = fork === undefined ? Infinity : (depth.get(fork.id) ?? Infinity);
-  const unreached = Math.max(0, ...[...depth.values()].map((value) => value + 1));
-  const rowOf = (id: string): number => depth.get(id) ?? unreached;
-
-  const lanes = fork === undefined ? [] : laneGroupsOn(spine);
-  const laneOf = new Map<string, number>();
+const columns = (input: Flow) => {
+  const a = analyse(input);
+  const { flow, lanes, rows, forkDepth, laneFloor } = a;
+  const rowOf = (id: string): number => rows.get(id) ?? 0;
+  const laneIndex = new Map<string, number>();
   lanes.forEach((lane, at) => {
     if (lane.id === "opening") return;
-    for (const id of lane.ids) laneOf.set(id, at);
+    for (const id of lane.ids) laneIndex.set(id, at);
   });
 
   /** Rows inside one lane (or the shared area, keyed -1): how many steps share each row. */
-  const rows = new Map<number, Map<number, number>>();
+  const perLane = new Map<number, Map<number, number>>();
   const count = (lane: number, row: number): number => {
-    const inLane = rows.get(lane) ?? new Map<number, number>();
+    const inLane = perLane.get(lane) ?? new Map<number, number>();
     const seen = (inLane.get(row) ?? 0) + 1;
     inLane.set(row, seen);
-    rows.set(lane, inLane);
+    perLane.set(lane, inLane);
     return seen - 1;
   };
-  const perRow = new Map<string, number>();
-  for (const node of flow.nodes) perRow.set(node.id, count(laneOf.get(node.id) ?? -1, rowOf(node.id)));
+  const across = new Map<string, number>();
+  for (const node of flow.nodes) across.set(node.id, count(laneIndex.get(node.id) ?? -1, rowOf(node.id)));
 
-  const widthOf = (lane: number): number => Math.max(1, ...(rows.get(lane)?.values() ?? [1]));
+  const widthOf = (lane: number): number => Math.max(1, ...(perLane.get(lane)?.values() ?? [1]));
+  const sharedWidest = widthOf(-1);
+  const hangs = a.fork !== undefined;
   const laneLeft: number[] = [];
-  let total = 0;
+  let total = hangs ? 0 : sharedWidest;
   lanes.forEach((lane, at) => {
     laneLeft[at] = total;
     if (lane.id !== "opening") total += widthOf(at);
   });
-  const totalCols = Math.max(total, widthOf(-1));
-  /** The deepest row any lane reaches; everything shared below it drops by the rejoin gap. */
-  const laneFloor = Math.max(forkDepth, ...flow.nodes.filter((node) => laneOf.has(node.id)).map((node) => rowOf(node.id)));
+  const totalCols = hangs ? Math.max(total, sharedWidest) : total;
+  const sharedCol = (inRow: number, at: number): number => (hangs ? (totalCols - inRow) / 2 + at : at);
 
-  return { lanes, laneOf, rows, perRow, widthOf, laneLeft, totalCols, rowOf, forkDepth, laneFloor };
+  return { flow, lanes, laneIndex, perLane, across, widthOf, laneLeft, sharedCol, rowOf, forkDepth, laneFloor, laneTop: a.laneTop, hangs };
 };
 
-export const tidied = (flow: Flow): Flow => {
-  const { laneOf, rows, perRow, widthOf, laneLeft, totalCols, rowOf, forkDepth, laneFloor } = columns(flow);
+/**
+ * Rows by distance from the answer, columns by lane.
+ *
+ * A fork reads as a fork rather than a staircase because the steps it leads to share a row.
+ * Anything the walk never reaches goes in a row of its own below the end — which is also the
+ * clearest way to see that a step is unreachable, without drawing a report about it.
+ */
+export const tidied = (input: Flow): Flow => {
+  const c = columns(input);
   return {
-    ...flow,
-    nodes: flow.nodes.map((node) => {
-      const row = rowOf(node.id);
-      const across = perRow.get(node.id) ?? 0;
-      const lane = laneOf.get(node.id);
-      const inRow = rows.get(lane ?? -1)?.get(row) ?? 1;
-      const col =
-        lane === undefined
-          ? (totalCols - inRow) / 2 + across
-          : (laneLeft[lane] ?? 0) + (widthOf(lane) - inRow) / 2 + across;
+    ...input,
+    nodes: input.nodes.map((node) => {
+      const row = c.rowOf(node.id);
+      const at = c.across.get(node.id) ?? 0;
+      const lane = c.laneIndex.get(node.id);
+      const inRow = c.perLane.get(lane ?? -1)?.get(row) ?? 1;
+      const col = lane === undefined ? c.sharedCol(inRow, at) : (c.laneLeft[lane] ?? 0) + (c.widthOf(lane) - inRow) / 2 + at;
       // Everything below the fork drops by the lane gap, so the fan and the lane headers fit;
-      // everything below the lanes drops again, so the links that rejoin have a gap to run in.
-      const y = TOP + row * ROW + (row > forkDepth ? LANE_GAP : 0) + (row > laneFloor && !laneOf.has(node.id) ? REJOIN_GAP : 0);
+      // everything shared below the lanes drops again, so the links that rejoin have a gap to run in.
+      const y = TOP + row * ROW + (row > c.forkDepth ? LANE_GAP : 0) + (row > c.laneFloor && lane === undefined ? REJOIN_GAP : 0);
       return { ...node, x: LEFT + col * COLUMN, y };
     }),
   };
@@ -231,83 +506,39 @@ export const tidied = (flow: Flow): Flow => {
 /**
  * Where each service's column starts and how wide it is, in pixels, with the row its first
  * step sits on. What the canvas draws a lane from when the lane has no cards to measure —
- * a service just added, or one whose only step was dragged elsewhere.
+ * a branch whose steps were all dragged elsewhere.
  */
-export const laneFrames = (flow: Flow): readonly { readonly id: string; readonly left: number; readonly width: number; readonly top: number }[] => {
-  const { lanes, widthOf, laneLeft, forkDepth } = columns(flow);
-  const top = TOP + (forkDepth + 1) * ROW + LANE_GAP;
-  return lanes
-    .map((lane, at) => ({ id: lane.id, left: LEFT + (laneLeft[at] ?? 0) * COLUMN, width: widthOf(at) * COLUMN, top }))
+export const laneFrames = (input: Flow): readonly { readonly id: string; readonly left: number; readonly width: number; readonly top: number }[] => {
+  const c = columns(input);
+  const top = TOP + c.laneTop * ROW + (c.hangs ? LANE_GAP : 0);
+  return c.lanes
+    .map((lane, at) => ({ id: lane.id, left: LEFT + (c.laneLeft[at] ?? 0) * COLUMN, width: c.widthOf(at) * COLUMN, top }))
     .filter((frame) => frame.id !== "opening");
 };
 
 /**
- * Whether two graphs have the same steps and the same links.
+ * Whether two graphs have the same steps, the same links and the same services.
  *
  * The test for "re-lay this out". Editing the words in a step must not move anything — a
  * card that jumps while you are typing in it is worse than an untidy one — so the layout
- * runs when the shape changes and not when the content does.
+ * runs when the shape changes and not when the content does. Which service a step is in is
+ * shape: it decides the column.
  */
 export const sameShape = (a: Flow, b: Flow): boolean => {
   if (a.nodes.length !== b.nodes.length || a.edges.length !== b.edges.length) return false;
-  const ids = new Set(a.nodes.map((node) => node.id));
-  if (b.nodes.some((node) => !ids.has(node.id))) return false;
+  const services = new Map(a.nodes.map((node) => [node.id, serviceOf(node)]));
+  if (b.nodes.some((node) => !services.has(node.id) || services.get(node.id) !== serviceOf(node))) return false;
   const links = new Set(a.edges.map((edge) => `${edge.from} ${edge.to} ${edge.port ?? ""}`));
   return b.edges.every((edge) => links.has(`${edge.from} ${edge.to} ${edge.port ?? ""}`));
 };
 
-/** Every step reachable from the answer, pretending the named steps are not there. */
-const reachableWithout = (flow: Flow, absent: ReadonlySet<string>): ReadonlySet<string> => {
-  const start = flow.nodes.find((node) => node.kind === "start") ?? flow.nodes[0];
-  const seen = new Set<string>();
-  if (start === undefined || absent.has(start.id)) return seen;
-  const queue = [start.id];
-  seen.add(start.id);
-  while (queue.length > 0) {
-    const id = queue.shift();
-    if (id === undefined) continue;
-    for (const edge of flow.edges) {
-      if (edge.from !== id || absent.has(edge.to) || seen.has(edge.to)) continue;
-      seen.add(edge.to);
-      queue.push(edge.to);
-    }
-  }
-  return seen;
-};
+/* ------------------------------------------------------------------ folding */
 
 /**
  * The steps that exist only because of `head` — the ones a call can reach no other way.
- *
- * Folding a branch away has to fold that branch and nothing else. A shared closing line two
- * other branches also reach is not part of this one, and hiding it because it happens to sit
- * below would make the rest of the call vanish. So: walk the graph with `head` removed, and
- * whatever can no longer be reached belonged to it.
+ * Walk the graph with `head` removed, and whatever can no longer be reached belonged to it.
  */
-export const onlyReachableThrough = (flow: Flow, head: string): ReadonlySet<string> =>
-  reachableOnlyVia(flow, new Set([head]));
-
-/**
- * Everything folded away by the collapsed branches — worked out together, not one at a time.
- *
- * Folding two arms that share a closing line has to take the closing line with them, and no
- * union of the arms taken separately ever will: while either arm is still open the close is
- * reachable, so neither considers it its own. Removing all the heads at once is the only
- * question that has the right answer.
- */
-export const foldedAway = (flow: Flow, collapsed: Iterable<string>): ReadonlySet<string> => {
-  /* On the spine: folding a service hides that service, whether or not another one jumps
-     into it. A jump to a step that is now hidden is simply not drawn. */
-  const spine = spineOf(flow);
-  const heads = new Set<string>();
-  for (const head of collapsed) if (spine.nodes.some((node) => node.id === head)) heads.add(head);
-  if (heads.size === 0) return new Set<string>();
-  /* The head goes too. Leaving it on screen while its own steps vanish is the worst of both
-     — a chip that says "3 folded" beside one of the three still sitting there. Folding a
-     branch away means the branch is away, and the chip on the fork is what stands in for it. */
-  const gone = new Set(heads);
-  for (const id of reachableOnlyVia(spine, heads)) gone.add(id);
-  return gone;
-};
+export const onlyReachableThrough = (flow: Flow, head: string): ReadonlySet<string> => reachableOnlyVia(flow, new Set([head]));
 
 /** What becomes unreachable once every one of `heads` is taken out, the heads excluded. */
 const reachableOnlyVia = (flow: Flow, heads: ReadonlySet<string>): ReadonlySet<string> => {
@@ -318,131 +549,34 @@ const reachableOnlyVia = (flow: Flow, heads: ReadonlySet<string>): ReadonlySet<s
   return only;
 };
 
-/** How many steps a folded branch stands in for, counting its own head. */
-export const foldedCount = (flow: Flow, head: string): number => onlyReachableThrough(spineOf(flow), head).size + 1;
+/** The lane a fold key names: a lane id, or the id of any step in the lane. */
+const laneFor = (a: Analysis, key: string): Lane | undefined => a.lanes.find((lane) => lane.id === key) ?? a.laneOf.get(key);
 
 /**
- * One labelled group of steps on the canvas — the shared opening, then a lane per service.
+ * Everything folded away by the collapsed services — worked out together, not one at a time.
  *
- * A six-service front desk drawn as twenty-four cards is a wall, and the only way to tell
- * which service you are looking at is to trace links upward with your eyes. The graph already
- * knows the answer: everything before the first fork is asked of everybody, and everything
- * only one branch can reach belongs to that branch. Naming those groups on the drawing costs
- * nothing and is the difference between a diagram and a business.
+ * A folded service hides its own steps. A shared closing line that only folded services led
+ * to goes with them, and no union of the services taken separately ever finds it: while any
+ * one is open the close is reachable, so none considers it its own. Removing every folded
+ * service at once is the only question with the right answer. On the spine, so a service
+ * folds whole whether or not another jumps into it.
  */
-export interface Lane {
-  /**
-   * The branch head this lane belongs to, or `"opening"` for the shared questions. A lane
-   * whose branch points straight at a shared step — every step it had has been moved away —
-   * owns no head, and is keyed by the answer that reaches it instead.
-   */
-  readonly id: string;
-  readonly label: string;
-  /** The steps only this lane reaches. Empty for a service with nothing in it yet. */
-  readonly ids: readonly string[];
-  /** The fork this lane is a branch of, and the step the branch points at. Absent on the opening. */
-  readonly fork?: string;
-  readonly head?: string;
-  /**
-   * The branch the call takes when the answer is none of the named ones. Labelled by the one
-   * option the named branches leave uncovered when there is exactly one — a template's
-   * "rent or buy" draws buy as the catch-all, and the lane should still say buy — and
-   * "anything else" otherwise.
-   */
-  readonly catchAll?: true;
-}
-
-/**
- * The lanes, or none at all.
- *
- * None when the call never forks: a straight line has one lane, and drawing a box round the
- * whole drawing to say so is a label that tells nobody anything. Only the *first* fork makes
- * lanes — a fork inside a service is drawn inside that service's lane, which is where it
- * belongs, rather than splitting the top level into something the business does not have.
- */
-/** The shallowest reachable `decide`: where the call first splits into services. */
-const firstFork = (flow: Flow, depth: ReadonlyMap<string, number>): FlowNode | undefined =>
-  flow.nodes
-    .filter((node) => node.kind === "decide" && depth.has(node.id))
-    .sort((a, b) => (depth.get(a.id) ?? 0) - (depth.get(b.id) ?? 0))[0];
-
-export const laneGroups = (flow: Flow): readonly Lane[] => laneGroupsOn(spineOf(flow));
-
-/** The lanes of a graph taken as given — the spine, everywhere but inside `jumpEdges`. */
-const laneGroupsOn = (flow: Flow): readonly Lane[] => {
-  const depth = depths(flow);
-  const fork = firstFork(flow, depth);
-  if (fork === undefined) return [];
-
-  const forkDepth = depth.get(fork.id) ?? 0;
-  const opening = flow.nodes
-    .filter((node) => (depth.get(node.id) ?? Infinity) <= forkDepth)
-    .map((node) => node.id);
-
-  const lanes: Lane[] = [{ id: "opening", label: "everyone gets this", ids: opening }];
-  const named = new Set(flow.edges.filter((edge) => edge.from === fork.id && edge.when !== undefined && "equals" in edge.when).map((edge) => (edge.when as { equals: string }).equals));
-  const uncovered = (choiceOf(flow, fork)?.options ?? []).filter((option) => !named.has(option));
-  for (const branch of branchHeads(flow, fork)) {
-    /* A branch that leads straight to a step other branches also reach — the close, say —
-       has no steps of its own. The lane still exists, because the service does: the option
-       is on the choice and the fork takes it. It is drawn empty, and keyed by its answer
-       since its head is somebody else's. */
-    const owned = !reachableWithout({ ...flow, edges: flow.edges.filter((edge) => edge !== branch.edge) }, new Set()).has(branch.to);
-    const catchAll = branch.edge.otherwise === true;
-    const label = catchAll && uncovered.length === 1 ? (uncovered[0] ?? branch.label) : branch.label;
-    lanes.push({
-      id: owned ? branch.to : `via:${label}`,
-      label,
-      ids: owned ? [branch.to, ...onlyReachableThrough(flow, branch.to)] : [],
-      fork: fork.id,
-      head: branch.to,
-      ...(catchAll ? { catchAll: true as const } : {}),
-    });
-  }
-  return lanes;
+export const foldedAway = (flow: Flow, collapsed: Iterable<string>): ReadonlySet<string> => {
+  const a = analyse(flow);
+  const gone = new Set<string>();
+  for (const key of collapsed) for (const id of laneFor(a, key)?.ids ?? []) gone.add(id);
+  if (gone.size === 0) return gone;
+  for (const id of reachableOnlyVia(a.spine, gone)) if (!a.laneOf.has(id)) gone.add(id);
+  return gone;
 };
 
-/** The choice a fork reads, when it is one: the `collect` step whose field the fork is on. */
-const choiceOf = (flow: Flow, fork: FlowNode) => {
-  const field = flow.nodes.find((n) => n.kind === "collect" && n.field !== undefined && n.field.key === fork.on)?.field;
-  return field !== undefined && field.type === "choice" ? field : undefined;
-};
-
-/** The branch heads: every step a `decide` leads to, labelled by the answer that gets there. */
-export const branchHeads = (
-  flow: Flow,
-  decide: FlowNode,
-): readonly { readonly to: string; readonly label: string; readonly edge: FlowEdge }[] =>
-  flow.edges
-    .filter((edge) => edge.from === decide.id)
-    .map((edge) => ({
-      to: edge.to,
-      edge,
-      label:
-        edge.otherwise === true
-          ? "anything else"
-          : edge.when !== undefined && "equals" in edge.when
-            ? edge.when.equals
-            : (edge.port ?? "next"),
-    }));
+/** How many steps a folded service stands in for. */
+export const foldedCount = (flow: Flow, head: string): number => laneFor(analyse(flow), head)?.ids.length ?? 0;
 
 /* ------------------------------------------------------------------ growing it */
 
 /**
- * The edge a step leaves by when nothing else is said: the first port's, which is the one
- * a link with no port name belongs to. A `decide` has no default; every way out is named.
- */
-const defaultEdgeFrom = (flow: Flow, id: string): FlowEdge | undefined => {
-  const node = flow.nodes.find((n) => n.id === id);
-  if (node === undefined || node.kind === "decide") return undefined;
-  return flow.edges.find((edge) => edge.from === id && edge.when === undefined && edge.otherwise === undefined && (edge.port === undefined || edge.port === FIRST_PORT[node.kind]));
-};
-
-/** The name of each kind's first port, where it has one. Mirrors `portsOf` on the canvas. */
-const FIRST_PORT: Partial<Record<FlowNode["kind"], string>> = { collect: "got", confirm: "yes", tool: "ok" };
-
-/**
- * Put a new step on the path right after `anchor`.
+ * Put a new step on the path right after `anchor`, in the anchor's service.
  *
  * Whatever the anchor led to, the new step now leads to instead — so a question dropped
  * between two others is asked between them, not left floating for somebody to wire. A step
@@ -462,28 +596,30 @@ export const insertAfter = (flow: Flow, anchor: string, fresh: FlowNode): Flow =
       : fresh.kind === "decide"
         ? [{ from: fresh.id, to: out.to, otherwise: true }]
         : [{ from: fresh.id, to: out.to }];
-  return { ...flow, nodes: [...flow.nodes, fresh], edges: [...edges, toAnchor, ...onward] };
+  const placed = tagged(fresh, serviceOf(byId(flow, anchor) ?? fresh));
+  return { ...flow, nodes: [...flow.nodes, placed], edges: [...edges, toAnchor, ...onward] };
 };
 
 /**
- * Put a new step on the path right before `anchor`: everything that led to the anchor now
- * leads to the new step, and the new step leads to the anchor. Used for the opening lane,
- * whose last step is the fork — a question dropped there is asked before the call splits.
+ * Put a new step on the path right before `anchor`, in the anchor's service: everything that
+ * led to the anchor now leads to the new step, and the new step leads to the anchor. Used for
+ * the top of a service and for the opening lane, whose last step is the fork — a question
+ * dropped there is asked before the call splits. Nothing goes before the answer.
  */
 export const insertBefore = (flow: Flow, anchor: string, fresh: FlowNode): Flow => {
   if (fresh.kind === "transfer" || fresh.kind === "hangup") return insertAfter(flow, anchor, fresh);
-  // Nothing goes before the answer; "before the start" is the first thing after it.
-  if (flow.nodes.find((n) => n.id === anchor)?.kind === "start") return insertAfter(flow, anchor, fresh);
+  const at = byId(flow, anchor);
+  if (at?.kind === "start") return insertAfter(flow, anchor, fresh);
   const edges = flow.edges.map((edge) => (edge.to === anchor ? { ...edge, to: fresh.id } : edge));
   const onward: FlowEdge = fresh.kind === "decide" ? { from: fresh.id, to: anchor, otherwise: true } : { from: fresh.id, to: anchor };
-  return { ...flow, nodes: [...flow.nodes, fresh], edges: [...edges, onward] };
+  return { ...flow, nodes: [...flow.nodes, tagged(fresh, at === undefined ? serviceOf(fresh) : serviceOf(at))], edges: [...edges, onward] };
 };
 
 /** The last step of a lane, following each step's default way out while it stays in the lane. */
 export const laneTail = (flow: Flow, lane: Lane): string | undefined => {
+  if (lane.id === "opening" || lane.head === undefined || lane.ids.length === 0) return undefined;
   const inLane = new Set(lane.ids);
-  if (lane.id === "opening") return undefined;
-  let at: string = lane.id;
+  let at: string = lane.head;
   for (let steps = 0; steps < lane.ids.length; steps += 1) {
     const next: string | undefined = defaultEdgeFrom(flow, at)?.to;
     if (next === undefined || !inLane.has(next)) return at;
@@ -495,34 +631,26 @@ export const laneTail = (flow: Flow, lane: Lane): string | undefined => {
 /**
  * Add a step to a lane. On the opening lane that means before the fork, since the fork is
  * the lane's last step and a question dropped there belongs to everybody; on a service it
- * means after the service's last step, before the path rejoins.
+ * means after the service's last step. A service with nothing in it yet gets its first step,
+ * and if a branch of the fork leads to the service's place, the step goes on the branch.
  */
 export const appendToLane = (flow: Flow, lane: Lane, fresh: FlowNode): Flow => {
   if (lane.id === "opening") {
-    const fork = lane.ids.find((id) => flow.nodes.find((n) => n.id === id)?.kind === "decide");
-    return fork === undefined ? { ...flow, nodes: [...flow.nodes, fresh] } : insertBefore(flow, fork, fresh);
+    const fork = lane.ids.find((id) => byId(flow, id)?.kind === "decide");
+    const loose = tagged(fresh, undefined);
+    return fork === undefined ? { ...flow, nodes: [...flow.nodes, loose] } : insertBefore(flow, fork, loose);
   }
-  /* An empty service: its branch points past it at a shared step. The new step goes on the
-     branch — the fork leads to it, and it leads on to where the branch was going. */
+  const named = tagged(fresh, lane.label);
   if (lane.ids.length === 0) {
     const branch = branchEdgeOf(flow, lane);
-    if (branch === undefined) return { ...flow, nodes: [...flow.nodes, fresh] };
+    if (branch === undefined) return { ...flow, nodes: [...flow.nodes, named] };
     const ends = fresh.kind === "transfer" || fresh.kind === "hangup";
-    const onward: FlowEdge[] = ends ? [] : fresh.kind === "decide" ? [{ from: fresh.id, to: branch.to, otherwise: true }] : [{ from: fresh.id, to: branch.to }];
-    return { ...flow, nodes: [...flow.nodes, fresh], edges: [...flow.edges.map((edge) => (edge === branch ? { ...edge, to: fresh.id } : edge)), ...onward] };
+    const onward: FlowEdge[] = ends ? [] : fresh.kind === "decide" ? [{ from: named.id, to: branch.to, otherwise: true }] : [{ from: named.id, to: branch.to }];
+    return { ...flow, nodes: [...flow.nodes, named], edges: [...flow.edges.map((edge) => (edge === branch ? { ...edge, to: named.id } : edge)), ...onward] };
   }
   const tail = laneTail(flow, lane);
-  return tail === undefined ? { ...flow, nodes: [...flow.nodes, fresh] } : insertAfter(flow, tail, fresh);
+  return tail === undefined ? { ...flow, nodes: [...flow.nodes, named] } : insertAfter(flow, tail, named);
 };
-
-/** The edge from the fork that this lane is: the one carrying the lane's answer. */
-export const branchEdgeOf = (flow: Flow, lane: Lane): FlowEdge | undefined =>
-  flow.edges.find(
-    (edge) =>
-      edge.from === lane.fork &&
-      edge.to === lane.head &&
-      (lane.catchAll === true ? edge.otherwise === true : edge.when !== undefined && "equals" in edge.when && edge.when.equals === lane.label),
-  );
 
 /**
  * Where the services meet again: the first step outside every lane that a lane's last step
@@ -540,32 +668,43 @@ export const rejoinPoint = (flow: Flow, lanes: readonly Lane[]): string | undefi
 };
 
 /**
- * A new service: another answer to the question the call splits on, with a first step of
- * its own that rejoins where the others do.
- *
- * Three things change together, because a service is three things at once. The choice the
- * fork reads gains an option, so the model may record the answer; the fork gains a branch
- * for that option, so the director takes it; and a first step is drawn on the branch and
- * wired to the rejoin, so the lane exists on the canvas and the call has somewhere to go.
- * Any one of those without the others is a service the validator refuses.
+ * A new service: a name, and a first step to fill in. Nothing leads to it yet — that is a
+ * link, and links are drawn from a branch's dot onto the service, from the fork or from a
+ * branch inside another service, when the business knows which answer takes a caller there.
  */
-export const addService = (flow: Flow, lanes: readonly Lane[], head: FlowNode, name: string): Flow => {
-  const opening = lanes.find((lane) => lane.id === "opening");
-  const fork = opening?.ids.map((id) => flow.nodes.find((n) => n.id === id)).find((n) => n?.kind === "decide");
-  if (fork === undefined) return flow;
+export const addService = (flow: Flow, head: FlowNode, name: string): Flow => ({ ...flow, nodes: [...flow.nodes, tagged(head, name)] });
 
-  const nodes = flow.nodes.map((node) => {
-    if (node.kind !== "collect" || node.field === undefined || node.field.key !== fork.on) return node;
-    if (node.field.type !== "choice" || node.field.options.includes(name)) return node;
-    return { ...node, field: { ...node.field, options: [...node.field.options, name] } };
-  });
-  const rejoin = rejoinPoint(flow, lanes);
-  /* The new branch goes last, so the new lane appears where the "add a service" box was and
-     the box moves along. The order of a fork's branches is only the order they are drawn in:
-     the director tries every named answer before the catch-all whichever comes first. */
-  const edges: FlowEdge[] = [...flow.edges, { from: fork.id, to: head.id, when: { equals: name } }];
-  if (rejoin !== undefined) edges.push({ from: head.id, to: rejoin });
-  return { ...flow, nodes: [...nodes, head], edges };
+/** A service name nothing is using yet: "new service", then "new service 2"… */
+export const freshServiceName = (flow: Flow): string => {
+  const a = analyse(flow);
+  const taken = new Set(a.lanes.map((lane) => lane.label));
+  if (a.fork !== undefined) for (const option of choiceOf(a.flow, a.fork)?.options ?? []) taken.add(option);
+  if (!taken.has("new service")) return "new service";
+  let at = 2;
+  while (taken.has(`new service ${at}`)) at += 1;
+  return `new service ${at}`;
+};
+
+/**
+ * Lead a branch's arm into a service: the link, and — when the branch is the fork and the
+ * arm has no answer yet — the service's name as the answer, added to the choice the fork
+ * reads so the model may record it. From a branch inside a service the name is only a
+ * starting guess at the answer, and is there to be edited.
+ */
+export const linkToService = (flow: Flow, edge: FlowEdge, lane: Lane): Flow => {
+  if (lane.head === undefined || lane.ids.length === 0) return flow;
+  const a = analyse(flow);
+  const unnamed = edge.when !== undefined && "equals" in edge.when && edge.when.equals === "";
+  const link: FlowEdge = unnamed ? { ...edge, to: lane.head, when: { equals: lane.label } } : { ...edge, to: lane.head };
+  const nodes =
+    unnamed && a.fork !== undefined && edge.from === a.fork.id
+      ? flow.nodes.map((node) => {
+          if (node.kind !== "collect" || node.field === undefined || node.field.key !== a.fork?.on) return node;
+          if (node.field.type !== "choice" || node.field.options.includes(lane.label)) return node;
+          return { ...node, field: { ...node.field, options: [...node.field.options, lane.label] } };
+        })
+      : flow.nodes;
+  return { ...flow, nodes, edges: [...flow.edges, link] };
 };
 
 /* ------------------------------------------------------------------ moving things */
@@ -599,17 +738,17 @@ export const detach = (flow: Flow, id: string): Flow => {
 
 /** The graph without one step in it, for putting the step back somewhere else. */
 const lifted = (flow: Flow, id: string): { readonly node: FlowNode; readonly rest: Flow } | undefined => {
-  const node = flow.nodes.find((n) => n.id === id);
+  const node = byId(flow, id);
   if (node === undefined || !movable(node)) return undefined;
   const rest = detach(flow, id);
   return { node, rest: { ...rest, nodes: rest.nodes.filter((n) => n.id !== id) } };
 };
 
-/** Put a step that is already on the drawing right after another, the way a new one goes. */
+/** Put a step that is already on the drawing right after another, in that step's service. */
 export const moveAfter = (flow: Flow, id: string, anchor: string): Flow => {
   if (id === anchor) return flow;
   const moved = lifted(flow, id);
-  if (moved === undefined || !flow.nodes.some((n) => n.id === anchor)) return flow;
+  if (moved === undefined || byId(flow, anchor) === undefined) return flow;
   return insertAfter(moved.rest, anchor, moved.node);
 };
 
@@ -617,21 +756,25 @@ export const moveAfter = (flow: Flow, id: string, anchor: string): Flow => {
 export const moveBefore = (flow: Flow, id: string, anchor: string): Flow => {
   if (id === anchor) return flow;
   const moved = lifted(flow, id);
-  if (moved === undefined || !flow.nodes.some((n) => n.id === anchor)) return flow;
+  if (moved === undefined || byId(flow, anchor) === undefined) return flow;
   return insertBefore(moved.rest, anchor, moved.node);
 };
 
 /**
  * Put a step that is already on the drawing at the end of a lane.
  *
- * The lane is looked up again once the step is out, because taking a lane's first step away
- * gives the lane a new head and so a new id — the label is what survives.
+ * The lane is looked up again once the step is out, because taking a lane's only step away
+ * leaves the lane with nothing — the label is what survives, and a lane a branch still leads
+ * to is drawn empty and takes the step back onto the branch.
  */
 export const moveToLane = (flow: Flow, id: string, lane: Lane): Flow => {
   const moved = lifted(flow, id);
   if (moved === undefined) return flow;
   const after = laneGroups(moved.rest);
-  const target = after.find((one) => one.id === lane.id) ?? after.find((one) => one.label === lane.label);
+  const target =
+    after.find((one) => one.id === lane.id) ??
+    after.find((one) => one.label === lane.label) ??
+    (lane.id === "opening" ? undefined : { id: `svc:${lane.label}`, label: lane.label, ids: [] });
   if (target === undefined) return flow;
   return appendToLane(moved.rest, target, moved.node);
 };
@@ -640,33 +783,34 @@ export const moveToLane = (flow: Flow, id: string, lane: Lane): Flow => {
 export const moveToNewService = (flow: Flow, id: string, name: string): Flow => {
   const moved = lifted(flow, id);
   if (moved === undefined) return flow;
-  return addService(moved.rest, laneGroups(moved.rest), moved.node, name);
+  return addService(moved.rest, moved.node, name);
 };
 
 /**
  * Draw one service before another, or last when `before` is null.
  *
- * The lanes are drawn in the order of the fork's branches, so this is a reordering of edges
- * and changes nothing about the call: the director matches on the answer, not the position.
+ * The lanes are drawn in the order their names first appear among the steps, so this moves
+ * the service's steps in the list and changes nothing about the call.
  */
 export const reorderService = (flow: Flow, lane: Lane, before: Lane | null): Flow => {
-  const moving = branchEdgeOf(flow, lane);
-  if (moving === undefined) return flow;
-  const rest = flow.edges.filter((edge) => edge !== moving);
-  const target = before === null ? undefined : branchEdgeOf(flow, before);
-  const at = target === undefined ? rest.findLastIndex((edge) => edge.from === lane.fork) + 1 : rest.indexOf(target);
-  return { ...flow, edges: [...rest.slice(0, at), moving, ...rest.slice(at)] };
+  if (lane.ids.length === 0) return flow;
+  const moving = new Set(lane.ids);
+  const rest = flow.nodes.filter((node) => !moving.has(node.id));
+  const taken = flow.nodes.filter((node) => moving.has(node.id));
+  const firstOf = before === null ? -1 : rest.findIndex((node) => before.ids.includes(node.id));
+  const at = firstOf < 0 ? rest.length : firstOf;
+  return { ...flow, nodes: [...rest.slice(0, at), ...taken, ...rest.slice(at)] };
 };
 
 /**
- * Remove a service: its branch, its option on the choice the fork reads, and every step only
- * it reaches — the three things `addService` added. Not the catch-all: a fork without one
- * cannot publish, and "anything else" is not something a business is without.
+ * Remove a service: every step in it, the links to and from them, its branch from the fork
+ * and its option on the choice the fork reads. Not the catch-all: a fork without one cannot
+ * publish, and "anything else" is not something a business is without.
  */
 export const removeService = (flow: Flow, lane: Lane): Flow => {
+  if (lane.id === "opening" || lane.catchAll === true) return flow;
   const branch = branchEdgeOf(flow, lane);
-  if (branch === undefined || branch.otherwise === true) return flow;
-  const fork = flow.nodes.find((n) => n.id === lane.fork);
+  const fork = lane.fork === undefined ? undefined : byId(flow, lane.fork);
   const gone = new Set(lane.ids);
   return {
     ...flow,
@@ -681,44 +825,30 @@ export const removeService = (flow: Flow, lane: Lane): Flow => {
 };
 
 /**
- * Rename a service: the answer on the branch, and the option on the choice the fork reads,
- * together — they are the same word in two places, and the validator refuses them apart.
- * The catch-all has no name to change, and a name another service has is not available.
+ * Rename a service: the name on its steps, the answer on its branch, and the option on the
+ * choice the fork reads, together — they are the same word in three places. The catch-all's
+ * name is the one option left uncovered and renaming it renames that option; with no such
+ * option it has no name to change. A name another service has is not available.
  */
 export const renameService = (flow: Flow, lane: Lane, name: string): Flow => {
   const trimmed = name.trim();
-  const branch = branchEdgeOf(flow, lane);
-  if (branch === undefined || trimmed === "" || trimmed === lane.label) return flow;
-  const fork = flow.nodes.find((n) => n.id === lane.fork);
-  if (fork === undefined) return flow;
-  const field = choiceOf(flow, fork);
+  if (lane.id === "opening" || trimmed === "" || trimmed === lane.label) return flow;
+  const a = analyse(flow);
+  const field = a.fork === undefined ? undefined : choiceOf(flow, a.fork);
   const taken =
-    flow.edges.some((edge) => edge.from === lane.fork && edge.when !== undefined && "equals" in edge.when && edge.when.equals === trimmed) ||
+    a.lanes.some((other) => other.label === trimmed) ||
+    (a.fork !== undefined && flow.edges.some((edge) => edge.from === a.fork?.id && edge.when !== undefined && "equals" in edge.when && edge.when.equals === trimmed)) ||
     (field?.options ?? []).includes(trimmed);
   if (taken) return flow;
-  /* The catch-all has a name only when one option is left uncovered and it stands in for it;
-     renaming it renames that option, and the branch — which matches nothing by name — is
-     untouched. With no such option there is nothing to rename. */
   if (lane.catchAll === true && (field === undefined || !field.options.includes(lane.label))) return flow;
+  const branch = branchEdgeOf(flow, lane);
   return {
     ...flow,
     nodes: flow.nodes.map((node) => {
-      if (node.kind !== "collect" || node.field === undefined || node.field.key !== fork.on || node.field.type !== "choice") return node;
-      return { ...node, field: { ...node.field, options: node.field.options.map((option) => (option === lane.label ? trimmed : option)) } };
+      const renamed = serviceOf(node) === lane.label ? tagged(node, trimmed) : node;
+      if (a.fork === undefined || renamed.kind !== "collect" || renamed.field === undefined || renamed.field.key !== a.fork.on || renamed.field.type !== "choice") return renamed;
+      return { ...renamed, field: { ...renamed.field, options: renamed.field.options.map((option) => (option === lane.label ? trimmed : option)) } };
     }),
-    edges: lane.catchAll === true ? flow.edges : flow.edges.map((edge) => (edge === branch ? { ...edge, when: { equals: trimmed } } : edge)),
+    edges: flow.edges.map((edge) => (edge === branch && lane.catchAll !== true ? { ...edge, when: { equals: trimmed } } : edge)),
   };
-};
-
-/** A service name nothing at this fork is using yet: "new service", then "new service 2"… */
-export const freshServiceName = (flow: Flow, lanes: readonly Lane[]): string => {
-  const taken = new Set(lanes.map((lane) => lane.label));
-  const opening = lanes.find((lane) => lane.id === "opening");
-  const fork = opening?.ids.map((id) => flow.nodes.find((n) => n.id === id)).find((n) => n?.kind === "decide");
-  const field = flow.nodes.find((n) => n.kind === "collect" && n.field?.key === fork?.on)?.field;
-  for (const option of field?.options ?? []) taken.add(option);
-  if (!taken.has("new service")) return "new service";
-  let at = 2;
-  while (taken.has(`new service ${at}`)) at += 1;
-  return `new service ${at}`;
 };

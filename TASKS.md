@@ -4089,6 +4089,27 @@ tests; verified in the browser with the Oakhaven flow — and the validator then
 thing worth saying about the jump: rent had already asked "area" before jumping into buy,
 which asks it again.
 
+**Services are named, not inferred (2026-09-05).** "Adding service should not be automatically
+attached to any branch even main branch" — and it had to be, because a service *was* a branch:
+whatever one arm of the first fork reached and nothing else did. Nothing else could exist, and a
+branch inside one service leading into another kept collapsing the drawing, however carefully
+the spine was cut. So the contract grows one optional property, `FlowNode.service` — the name
+of the service a step is in, in `packages/shared/src/flow.ts`, the web zod schema and the API
+schema (≤120, a choice option's length, since it usually is one); `openapi.json` and the
+generated client regenerated. The director never reads it. `flow-layout.ts` is rewritten
+around it: lanes are the names, in the order they first appear among the steps (a reorder
+moves the steps in the list); a link into a service from anywhere but the fork is a jump,
+drawn dashed and kept out of the spine that decides rows; a service nothing leads to yet is
+drawn at the top of the lanes like every other; a fork branch that leads to no service is an
+empty lane to drop a step back into. Flows saved before steps had names are read the old way
+once (`withServiceTags`, which keeps `converges`/`alongDefaults` for exactly that) and carry
+names from the next save. On the canvas: "+ add a service" makes a name and a first step and
+attaches nothing; every Branch card has a dashed "+" dot, and dragging it — or any arm — onto
+a service's box links to the service's first step (`linkToService`), with the service's name
+as the answer and, from the fork, as an option on the choice. 44 layout tests. Verified on
+Oakhaven: load names rent/buy; add a service → unattached lane; "+" dot onto it → `new service
+→ n14`, option added, fork "3 ways".
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and

@@ -36,8 +36,8 @@ import { cn } from "@/lib/cn";
 import { validateFlow } from "@ansa/shared/flow-validate";
 
 import {
-  addService, appendToLane, branchEdgeOf, foldedAway, freshServiceName, insertAfter, insertBefore, jumpEdges, LANE_HEAD, laneFrames, laneGroups, LEFT, movable, moveAfter,
-  moveBefore, moveToLane, moveToNewService, removeService, renameService, reorderService, sameShape, tidied, TOP, type Lane,
+  addService, appendToLane, branchEdgeOf, foldedAway, freshServiceName, insertAfter, insertBefore, jumpEdges, LANE_HEAD, laneFrames, laneGroups, LEFT, linkToService,
+  movable, moveAfter, moveBefore, moveToLane, moveToNewService, removeService, renameService, reorderService, sameShape, tidied, TOP, withServiceTags, type Lane,
 } from "../flow-layout";
 
 import {
@@ -282,6 +282,18 @@ const conditional =
     edge.from === from && edge.when !== undefined;
 
 /**
+ * The dot a new arm is dragged from. Dropped on a step or a service it becomes a branch with
+ * that destination and an answer to fill in — or, dropped on a service from the fork, the
+ * service's name as the answer. It holds no edge: it is the one that is not there yet.
+ */
+const anotherArm = (from: string): Port => ({
+  key: "add",
+  label: "+ another answer",
+  holds: () => false,
+  wire: (to: string) => ({ from, to, when: { equals: "" } }),
+});
+
+/**
  * A decide node's ports: its branches, then the one it cannot be without.
  *
  * `otherwise` is last and has no delete: callers say unlisted things, and a branch node with
@@ -327,7 +339,7 @@ const portsOf = (node: FlowNode, edges: readonly FlowEdge[], pending: readonly F
     case "tool":
       return [namedPort(node.id, "ok", "ok", true), namedPort(node.id, "failed", "failed")];
     case "decide":
-      return branchPorts(node.id, edges, pending);
+      return [...branchPorts(node.id, edges, pending), anotherArm(node.id)];
     case "transfer":
     case "hangup":
       return [];
@@ -706,7 +718,10 @@ export const FlowCanvas = ({
   /* Laid out on the way in. Positions are derived from the graph now, so the ones in the
      stored document are whatever the previous layout left there, and honouring them would
      open a flow at yesterday's spacing until the first edit. */
-  const [history, setHistory] = useState<History>(() => ({ past: [], present: tidied(loaded ?? emptyFlow()), future: [] }));
+  /* Services named on the way in: a flow saved before steps carried their service is read
+     the old way once — a service was whatever one branch of the fork reached — and carries
+     names from here on, so the next save writes them. */
+  const [history, setHistory] = useState<History>(() => ({ past: [], present: tidied(withServiceTags(loaded ?? emptyFlow())), future: [] }));
   const [pending, setPending] = useState<Readonly<Record<string, readonly FlowCondition[]>>>({});
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1 });
   const [selected, setSelected] = useState<string | null>(null);
@@ -788,7 +803,13 @@ export const FlowCanvas = ({
      lane's first step is drawn without a word on it — the lane header says which answer it
      is — and the links are built before the lane boxes are measured. */
   const lanes = laneGroups(history.present);
-  const laneHeads = new Set(lanes.filter((lane) => lane.id !== "opening").map((lane) => lane.id));
+  const laneHeads = new Set(lanes.flatMap((lane) => (lane.id !== "opening" && lane.head !== undefined && lane.ids.length > 0 ? [lane.head] : [])));
+  /** The lane a step is in, and whether its lane is folded away. */
+  const laneOfStep = new Map(lanes.flatMap((lane) => (lane.id === "opening" ? [] : lane.ids.map((id) => [id, lane] as const))));
+  const inFoldedLane = (id: string): boolean => {
+    const lane = laneOfStep.get(id);
+    return lane !== undefined && folded.has(lane.id);
+  };
   /** The fork the lanes hang off, and every step that is inside some service's lane. */
   const laneFork = lanes.find((lane) => lane.id === "opening")?.ids.find((id) => nodes.find((n) => n.id === id)?.kind === "decide");
   const inService = new Set(lanes.filter((lane) => lane.id !== "opening").flatMap((lane) => lane.ids));
@@ -884,11 +905,11 @@ export const FlowCanvas = ({
     // A link to a step that has been folded away has nothing to point at — unless the step
     // heads a lane, in which case the lane's header is standing in and the link lands on it.
     if (hidden.has(edge.from)) return [];
-    if (hidden.has(edge.to) && !(laneHeads.has(edge.to) && folded.has(edge.to))) return [];
+    if (hidden.has(edge.to) && !(laneHeads.has(edge.to) && inFoldedLane(edge.to))) return [];
     const ports = portsFor(from);
     const index = ports.findIndex((port) => port.holds(edge));
     const p1 = outPoint(from, ports[index]?.key ?? "", Math.max(index, 0));
-    const p2 = folded.has(to.id) ? { x: to.x + NODE_W / 2, y: to.y - LANE_HEAD } : inPoint(to);
+    const p2 = inFoldedLane(to.id) ? { x: to.x + NODE_W / 2, y: to.y - LANE_HEAD } : inPoint(to);
     /* The branch of a service with nothing in it points past the service at the shared
        close. Drawn that way the empty lane would hang off nothing, so the link is drawn in
        two: into the top of the empty box, and on from its bottom to where it was going. */
@@ -964,8 +985,17 @@ export const FlowCanvas = ({
     const target = document.elementFromPoint(e.clientX, e.clientY);
     const dropNode = target?.closest("[data-flow-node]");
     const to = dropNode?.getAttribute("data-flow-node");
-    if (to === null || to === undefined || to === wire.from) return;
-    edit((f) => ({ ...f, edges: [...f.edges.filter((x) => !wire.port.holds(x)), wire.port.wire(to)] }));
+    /* Dropped on a service rather than on a step: the link goes to the service's first
+       step, and — from the fork, for an arm with no answer yet — the service's name becomes
+       the answer and an option on the choice, so the fork can publish as it stands. */
+    const onLane = lanes.find((lane) => lane.id === target?.closest("[data-lane]")?.getAttribute("data-lane"));
+    if ((to === null || to === undefined) && onLane !== undefined && onLane.id !== "opening" && onLane.ids.length > 0 && onLane.head !== wire.from) {
+      const link = wire.port.wire(onLane.head ?? "");
+      edit((f) => linkToService({ ...f, edges: f.edges.filter((x) => !wire.port.holds(x)) }, link, onLane));
+    } else {
+      if (to === null || to === undefined || to === wire.from) return;
+      edit((f) => ({ ...f, edges: [...f.edges.filter((x) => !wire.port.holds(x)), wire.port.wire(to)] }));
+    }
     /* A branch that was waiting for somewhere to go now has one, so it is an edge and stops
        being pending. Leaving it would show the same branch twice. */
     if (wire.port.key.startsWith("pending:")) {
@@ -1218,14 +1248,11 @@ export const FlowCanvas = ({
     chooseStep(id);
   };
 
-  /** Another answer to the question the call splits on, with a first step to fill in. */
+  /** A new service with a first step to fill in. Nothing leads to it until a branch is dragged onto it. */
   const addNewService = () => {
     const id = freshId(new Set(nodes.map((n) => n.id)));
     const head = blankNode(id, "collect", 0, 0);
-    edit((f) => {
-      const current = laneGroups(f);
-      return addService(f, current, head, freshServiceName(f, current));
-    });
+    edit((f) => addService(f, head, freshServiceName(f)));
     chooseStep(id);
   };
 
@@ -1290,10 +1317,7 @@ export const FlowCanvas = ({
       if ("newService" in target) {
         const id = freshId(new Set(nodes.map((n) => n.id)));
         const head = blankNode(id, source.kind, 0, 0);
-        edit((f) => {
-          const current = laneGroups(f);
-          return addService(f, current, head, freshServiceName(f, current));
-        });
+        edit((f) => addService(f, head, freshServiceName(f)));
         chooseStep(id);
       } else if ("after" in target) addNode(source.kind, { after: target.after });
       else if ("before" in target) addNode(source.kind, { before: target.before });
@@ -1305,7 +1329,7 @@ export const FlowCanvas = ({
       if ("after" in target) edit((f) => moveAfter(f, id, target.after));
       else if ("before" in target) edit((f) => moveBefore(f, id, target.before));
       else if ("lane" in target) edit((f) => moveToLane(f, id, target.lane));
-      else if ("newService" in target) edit((f) => moveToNewService(f, id, freshServiceName(f, laneGroups(f))));
+      else if ("newService" in target) edit((f) => moveToNewService(f, id, freshServiceName(f)));
       chooseStep(id);
       return;
     }
@@ -1469,7 +1493,7 @@ export const FlowCanvas = ({
    */
   const laneBoxes = lanes
     .map((lane) => {
-      const head = lane.id === "opening" ? undefined : byId(lane.id);
+      const head = lane.id === "opening" || lane.head === undefined || lane.ids.length === 0 ? undefined : byId(lane.head);
       /* A folded lane is its header and nothing else, sitting where its first card would be:
          the name, how many steps are behind it, and the button that brings them back. The
          cards are hidden; the header is what stands in for them. */
@@ -2040,9 +2064,10 @@ export const FlowCanvas = ({
                         if (el) portRefs.current.set(key, el);
                         else portRefs.current.delete(key);
                       }}
-                      title={port.label === "" ? "Drag to the next step" : `${port.label} — drag to the next step`}
+                      title={port.key === "add" ? "Drag onto a step or a service to add a way out" : port.label === "" ? "Drag to the next step" : `${port.label} — drag to the next step`}
                       className={cn(
                         "absolute bottom-[-5px] size-[9px] cursor-crosshair rounded-full border-[1.5px] bg-[var(--surface-solid)] transition-[transform,opacity] hover:scale-125 hover:border-[var(--accent)]",
+                        port.key === "add" && "border-dashed",
                         n.id === selected || edges.some((edge) => port.holds(edge))
                           ? "border-[var(--ink-3)] opacity-100"
                           : "border-[var(--ink-3)] opacity-0 group-hover:opacity-100",
@@ -2134,10 +2159,10 @@ export const FlowCanvas = ({
 
               {/* Every way out of this step, and where it goes. The dots on the card do this
                   with a drag; this does it with a select, so a keyboard can wire a graph. */}
-              {portsFor(selectedNode).length > 0 && (
+              {portsFor(selectedNode).some((port) => port.key !== "add") && (
                 <div className="flex flex-col gap-1.5">
                   <p className="text-[11px] font-medium text-[var(--ink-3)]">Where each way out leads</p>
-                  {portsFor(selectedNode).map((port) => {
+                  {portsFor(selectedNode).filter((port) => port.key !== "add").map((port) => {
                     const current = edges.find((x) => port.holds(x))?.to ?? "";
                     return (
                       <label key={port.key} className="flex items-center gap-2 text-[12.5px]">
