@@ -4615,11 +4615,56 @@ Two gates earned their keep on agent output: `check:wiring` caught three exporte
 nothing called (`setContactNotes`, `readContactImports`, `setBookingExternalRef`), all removed
 rather than landed as inventory — the wave that needs them adds them wired.
 
-**Not done, and it is the part that matters.** Nothing dials yet. `scheduled_calls` fills up
-and sits there: no runtime drains the queue through `mayCall`, the calling window and
-answering-machine detection, and no built-in booking tool lets a call take an appointment while
-the caller is on the line. By Rule 1 this slice is open until a scheduled call rings a handset
-and an agent books a slot mid-call.
+- [x] **What an outbound call is about** (`dc5e6ad` … `3834348`). A campaign said who rings and
+      when, and never why — while `prompts/outbound.ts` instructs the agent to open by saying
+      "who you are, which company, and why you are calling", and the agent it points at is
+      configured for inbound, opening "are you calling about a property to rent, to buy?" to
+      somebody *we* rang.
+
+      A campaign now carries a brief: the purpose, an optional opening, the conversation as a
+      graph in the same builder an agent's flow uses, what counts as done, whether to speak to
+      an answerphone, and how many times one person may be rung. `scheduled_calls` carries
+      per-contact facts; `calls` carries `campaign_id`, without which the orchestrator cannot
+      know why it is on the phone. `campaignLayer` puts the reason in the prompt straight after
+      the safety layer, inside the cacheable prefix, and `record_call_outcome` is the sixth
+      platform tool.
+
+      **The brief freezes at Start**, and the predicate is in the statement rather than a check
+      above it — two operators, one pressing Save and one pressing Start, cannot both win. Two
+      gates land there rather than at save, matching where `publication.ts` puts the agent's: a
+      campaign with no purpose cannot start, because an invented reason for an unexpected call
+      is what a scam sounds like; and a campaign whose flow has an edge pointing nowhere cannot
+      start, because that is a call that stops mid sentence.
+
+      **The dialler exists.** `readDueScheduledCalls`, `claimScheduledCall` and `recordAttempt`
+      each had one caller and it was a test, so every consent guarantee was untested in
+      practice for want of a path from a row to a dial. It goes through the one door with the
+      gate on it. A refusal is never retried — "try again in four hours" applied to a
+      suppression is the behaviour the suppression exists to prevent. A campaign that is not
+      running is not dialled, and that is in the query. A campaign whose agent has no number is
+      refused: a call from a number you cannot ring back is a nuisance call whatever is said.
+
+      **Three things were saved and never read, and all three are now wired.** The campaign
+      flow was drawn, validated, stored and ignored — the gateway passed the agent's on every
+      call. Per-contact facts could not be set from the console at all, so every `{placeholder}`
+      would have reached a caller with its braces on; enqueue now seeds each row from what a
+      previous call already captured about that person, plus their corrected name as `{name}`.
+      And the voicemail choice was stored, shown and consulted by nothing.
+
+      **One thing I built and then removed.** The brief had a free-text voicemail message. The
+      voicemail this system leaves is composed from two fields — who rang, the number to ring
+      back — and never the reason, because an answerphone plays out loud in a room. The field
+      was a way straight past that rule, so what survives is the decision a campaign genuinely
+      owns: the standard message, or silence.
+
+      Not done: **no handset has rung.** All of the above is green tests and database round
+      trips. By Rule 1 this slice is open until a scheduled call rings a real phone and the
+      agent says why it called.
+
+**Still not done, and it is the part that matters.** No handset has rung. The queue drains and
+the gate is in the path, but nothing has proved it on a phone — and no built-in booking tool
+lets a call take an appointment while the caller is on the line. By Rule 1 both slices are open
+until a scheduled call rings a real handset and an agent books a slot mid-call.
 
 
 ## Session discipline
