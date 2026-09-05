@@ -35,6 +35,7 @@ export const DESTINATIONS: readonly Destination[] = [
   { href: "/data", label: "Collected data", group: "Operate", capability: "calls:read" },
   { href: "/contacts", label: "Contacts", group: "Operate", capability: "contacts:read" },
   { href: "/campaigns", label: "Outbound", group: "Operate", capability: "campaigns:read" },
+  { href: "/appointments", label: "Appointments", group: "Operate", capability: "appointments:read" },
   { href: "/metrics", label: "Metrics", group: "Operate", capability: "calls:read" },
 
   { href: "/agents", label: "All agents", group: "Agents", capability: "config:read" },
