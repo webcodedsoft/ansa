@@ -9,6 +9,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./campaign": {
+      "types": "./dist/campaign.d.ts",
+      "default": "./dist/campaign.js"
+    },
     "./flow": {
       "types": "./dist/flow.d.ts",
       "default": "./dist/flow.js"

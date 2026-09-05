@@ -82,6 +82,18 @@ export interface Campaign {
   readonly status: CampaignStatus;
   /** As the API layer shapes it. Null is the default window `mayCall` applies anyway. */
   readonly callingWindow: Record<string, unknown> | null;
+  /** Why this campaign rings. Said in the opening; without it there is nothing to say. */
+  readonly purpose: string | null;
+  /** The exact first line, or null to let the agent compose one from the purpose. */
+  readonly opening: string | null;
+  /** The conversation as a graph, in the same shape an agent's flow uses. */
+  readonly flow: Record<string, unknown> | null;
+  /** What counts as done, as names the agent picks from at the end. */
+  readonly outcomes: readonly string[] | null;
+  /** What to do when a machine answers. Null means hang up. */
+  readonly voicemail: Record<string, unknown> | null;
+  readonly maxAttempts: number;
+  readonly retryAfterMinutes: number;
   readonly createdBy: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
@@ -96,6 +108,8 @@ export interface CampaignSummary extends Campaign {
 
 const CAMPAIGN_COLUMNS = `
   cp.id, cp.agent_id, cp.name, cp.status, cp.calling_window, cp.created_by,
+  cp.purpose, cp.opening, cp.flow, cp.outcomes, cp.voicemail,
+  cp.max_attempts, cp.retry_after_minutes,
   cp.created_at, cp.updated_at,
   (select count(*) from scheduled_calls s where s.campaign_id = cp.id)::int as total,
   (select count(*) from scheduled_calls s
@@ -110,6 +124,15 @@ const asCampaign = (row: Record<string, unknown>): CampaignSummary => ({
   status: String(row["status"]) as CampaignStatus,
   callingWindow:
     row["calling_window"] === null ? null : (row["calling_window"] as Record<string, unknown>),
+  purpose: row["purpose"] === null || row["purpose"] === undefined ? null : String(row["purpose"]),
+  opening: row["opening"] === null || row["opening"] === undefined ? null : String(row["opening"]),
+  flow: (row["flow"] ?? null) as Record<string, unknown> | null,
+  outcomes: Array.isArray(row["outcomes"]) ? (row["outcomes"] as string[]).map(String) : null,
+  voicemail: (row["voicemail"] ?? null) as Record<string, unknown> | null,
+  /* Defaulted in the column, so a row written before 0065 still answers with the working
+     figures rather than with NaN. */
+  maxAttempts: Number(row["max_attempts"] ?? 3),
+  retryAfterMinutes: Number(row["retry_after_minutes"] ?? 240),
   createdBy: row["created_by"] === null ? null : String(row["created_by"]),
   createdAt: new Date(String(row["created_at"])),
   updatedAt: new Date(String(row["updated_at"])),
@@ -117,6 +140,73 @@ const asCampaign = (row: Record<string, unknown>): CampaignSummary => ({
   pending: Number(row["pending"]),
   answered: Number(row["answered"]),
 });
+
+/**
+ * The parts of a campaign that say what it is about.
+ *
+ * Separate from `CampaignEdit` because they are refused at different times: a name may be
+ * corrected whenever, while the brief is fixed once calls can be in flight. Absent means leave
+ * alone; null clears.
+ */
+export interface CampaignBriefEdit {
+  readonly purpose?: string | null;
+  readonly opening?: string | null;
+  readonly flow?: Record<string, unknown> | null;
+  readonly outcomes?: readonly string[] | null;
+  readonly voicemail?: Record<string, unknown> | null;
+  readonly maxAttempts?: number;
+  readonly retryAfterMinutes?: number;
+}
+
+/**
+ * Write the brief, and only while the campaign is still editable.
+ *
+ * The `status in ('draft','scheduled')` predicate is in the statement rather than in a check
+ * above it, so the refusal is the database's and not a race: two operators, one pressing Start
+ * and one pressing Save, cannot both win. A zero-row result means the campaign is running,
+ * which the caller turns into a refusal that says so.
+ */
+export const updateCampaignBrief = async (
+  scope: OrganizationScope,
+  campaignId: string,
+  brief: CampaignBriefEdit,
+): Promise<CampaignSummary | null> => {
+  const rows = await scope.mutate<Record<string, unknown>>(
+    `update campaigns as cp
+        set purpose             = case when $2 then $3 else cp.purpose end,
+            opening             = case when $4 then $5 else cp.opening end,
+            flow                = case when $6 then $7::jsonb else cp.flow end,
+            outcomes            = case when $8 then $9::jsonb else cp.outcomes end,
+            voicemail           = case when $10 then $11::jsonb else cp.voicemail end,
+            max_attempts        = coalesce($12, cp.max_attempts),
+            retry_after_minutes = coalesce($13, cp.retry_after_minutes),
+            updated_at          = now()
+      where cp.id = $1
+        and cp.status in ('draft', 'scheduled')
+      returning ${CAMPAIGN_COLUMNS}`,
+    [
+      campaignId,
+      brief.purpose !== undefined,
+      brief.purpose ?? null,
+      brief.opening !== undefined,
+      brief.opening ?? null,
+      brief.flow !== undefined,
+      brief.flow === undefined || brief.flow === null ? null : JSON.stringify(brief.flow),
+      brief.outcomes !== undefined,
+      brief.outcomes === undefined || brief.outcomes === null
+        ? null
+        : JSON.stringify(brief.outcomes),
+      brief.voicemail !== undefined,
+      brief.voicemail === undefined || brief.voicemail === null
+        ? null
+        : JSON.stringify(brief.voicemail),
+      brief.maxAttempts ?? null,
+      brief.retryAfterMinutes ?? null,
+    ],
+  );
+  const row = rows[0];
+  return row === undefined ? null : asCampaign(row);
+};
 
 export interface NewCampaign {
   readonly agentId: string;
@@ -239,13 +329,16 @@ export interface ScheduledCall {
   readonly lastAttemptAt: Date | null;
   readonly outcome: string | null;
   readonly callId: string | null;
+  /** What differs about this person: {"when":"Tuesday at 2"}. Merged into what is said. */
+  readonly facts: Readonly<Record<string, string>> | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
 
 const SCHEDULED_COLUMNS = `
   s.id, s.campaign_id, s.contact_id, ct.phone, ct.display_name, s.status, s.attempts,
-  s.next_attempt_at, s.last_attempt_at, s.outcome, s.call_id, s.created_at, s.updated_at`;
+  s.next_attempt_at, s.last_attempt_at, s.outcome, s.call_id, s.facts, s.created_at,
+  s.updated_at`;
 
 const asScheduled = (row: Record<string, unknown>): ScheduledCall => ({
   id: String(row["id"]),
@@ -259,6 +352,7 @@ const asScheduled = (row: Record<string, unknown>): ScheduledCall => ({
   lastAttemptAt: row["last_attempt_at"] === null ? null : new Date(String(row["last_attempt_at"])),
   outcome: row["outcome"] === null ? null : String(row["outcome"]),
   callId: row["call_id"] === null ? null : String(row["call_id"]),
+  facts: (row["facts"] ?? null) as Readonly<Record<string, string>> | null,
   createdAt: new Date(String(row["created_at"])),
   updatedAt: new Date(String(row["updated_at"])),
 });
@@ -277,17 +371,29 @@ export const enqueueScheduledCalls = async (
   campaignId: string,
   contactIds: readonly string[],
   firstAttemptAt: Date,
+  /**
+   * What differs about each person, keyed by contact id.
+   *
+   * A campaign is about one thing and still has to be specific: "your viewing at 14 Adeola
+   * Odeku on Tuesday". Passed as a map rather than parallel arrays so a caller cannot line
+   * the wrong facts up against the wrong person, which is the failure that would put somebody
+   * else's appointment in a stranger's ear.
+   */
+  facts: Readonly<Record<string, Readonly<Record<string, string>>>> = {},
 ): Promise<number> => {
   if (contactIds.length === 0) return 0;
+  /* Sent as one json object and looked up per row, so a hundred contacts is still one
+     statement rather than a hundred. */
+  const factsJson = JSON.stringify(facts);
   const rows = await scope.query<Record<string, unknown>>(
-    `insert into scheduled_calls (organization_id, campaign_id, contact_id, next_attempt_at)
-     select cp.organization_id, cp.id, ct.id, $3
+    `insert into scheduled_calls (organization_id, campaign_id, contact_id, next_attempt_at, facts)
+     select cp.organization_id, cp.id, ct.id, $3, ($4::jsonb -> ct.id::text)
        from campaigns cp
        join contacts ct on ct.id = any($2::uuid[])
       where cp.id = $1
      on conflict (campaign_id, contact_id) do nothing
      returning id`,
-    [campaignId, contactIds, firstAttemptAt],
+    [campaignId, contactIds, firstAttemptAt, factsJson],
   );
   return rows.length;
 };

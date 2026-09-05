@@ -13,6 +13,7 @@ import {
   recordAttempt,
   recordContactImport,
   setCampaignStatus,
+  updateCampaignBrief,
 } from "./campaigns";
 import { addContacts, readContacts } from "./contacts";
 import { createDataSource } from "./data-source";
@@ -179,4 +180,95 @@ describe.skipIf(url === undefined)("a list of people to ring", () => {
       expect((await readScheduledCalls(s, campaign.id, PAGE)).items).toEqual([]);
     });
   });
+
+  it("writes a brief, and refuses to once the campaign is running", async () => {
+    /* The brief is what the agent says it is calling about. It has to be fixed by the time
+       calls can be in flight: a person hearing "your viewing on Tuesday" must not have had
+       the reason changed under them halfway down the list. `status` carries that rule. */
+    const campaignId = await withOrganization(ds, A, async (s) => {
+      const made = await createCampaign(s, {
+        agentId: agentA,
+        name: "Viewing reminders",
+        createdBy: null,
+      });
+      return made.id;
+    });
+
+    const briefed = await withOrganization(ds, A, (s) =>
+      updateCampaignBrief(s, campaignId, {
+        purpose: "to confirm your viewing",
+        outcomes: ["confirmed", "rescheduled", "declined"],
+        maxAttempts: 2,
+        retryAfterMinutes: 60,
+      }),
+    );
+    expect(briefed?.purpose).toBe("to confirm your viewing");
+    expect(briefed?.outcomes).toEqual(["confirmed", "rescheduled", "declined"]);
+    expect(briefed?.maxAttempts).toBe(2);
+    expect(briefed?.retryAfterMinutes).toBe(60);
+
+    // Scheduled is still editable — nothing has been dialled.
+    await withOrganization(ds, A, (s) => setCampaignStatus(s, campaignId, "scheduled"));
+    const stillOpen = await withOrganization(ds, A, (s) =>
+      updateCampaignBrief(s, campaignId, { purpose: "to confirm your appointment" }),
+    );
+    expect(stillOpen?.purpose).toBe("to confirm your appointment");
+
+    // Running is not.
+    await withOrganization(ds, A, (s) => setCampaignStatus(s, campaignId, "running"));
+    const frozen = await withOrganization(ds, A, (s) =>
+      updateCampaignBrief(s, campaignId, { purpose: "something else entirely" }),
+    );
+    expect(frozen).toBeNull();
+
+    const unchanged = await withOrganization(ds, A, (s) => readCampaign(s, campaignId));
+    expect(unchanged?.purpose).toBe("to confirm your appointment");
+  });
+
+  it("keeps each person's own facts against their own row", async () => {
+    const campaignId = await withOrganization(ds, A, async (s) => {
+      const made = await createCampaign(s, { agentId: agentA, name: "With facts", createdBy: null });
+      return made.id;
+    });
+    const people = await withOrganization(ds, A, (s) => readScheduledCalls(s, campaignId, PAGE));
+    expect(people.items).toHaveLength(0);
+
+    const contacts = await withOrganization(ds, A, async (s) => {
+      const rows = await s.query<{ id: string }>("select id from contacts order by phone limit 2");
+      return rows.map((row) => row.id);
+    });
+    expect(contacts.length).toBe(2);
+
+    await withOrganization(ds, A, (s) =>
+      enqueueScheduledCalls(s, campaignId, contacts, new Date(), {
+        [String(contacts[0])]: { when: "Tuesday at 2", property: "14 Adeola Odeku" },
+        [String(contacts[1])]: { when: "Thursday at 10", property: "3 Bourdillon" },
+      }),
+    );
+
+    const queued = await withOrganization(ds, A, (s) => readScheduledCalls(s, campaignId, PAGE));
+    const byContact = new Map(queued.items.map((row) => [row.contactId, row.facts]));
+    expect(byContact.get(String(contacts[0]))).toEqual({
+      when: "Tuesday at 2",
+      property: "14 Adeola Odeku",
+    });
+    expect(byContact.get(String(contacts[1]))?.["when"]).toBe("Thursday at 10");
+  });
+
+  it("leaves facts null for anybody the caller said nothing about", async () => {
+    const campaignId = await withOrganization(ds, A, async (s) => {
+      const made = await createCampaign(s, { agentId: agentA, name: "No facts", createdBy: null });
+      return made.id;
+    });
+    const contacts = await withOrganization(ds, A, async (s) => {
+      const rows = await s.query<{ id: string }>("select id from contacts order by phone limit 1");
+      return rows.map((row) => row.id);
+    });
+    await withOrganization(ds, A, (s) =>
+      enqueueScheduledCalls(s, campaignId, contacts, new Date()),
+    );
+    const queued = await withOrganization(ds, A, (s) => readScheduledCalls(s, campaignId, PAGE));
+    expect(queued.items[0]?.facts).toBeNull();
+  });
+
 });
