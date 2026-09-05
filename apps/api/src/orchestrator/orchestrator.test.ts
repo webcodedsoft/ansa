@@ -40,6 +40,8 @@ const fillerSetup = () => ({
 const setup = (
   opts: {
     bargeInGuardMs?: number;
+    /** Why an outbound call was placed. Null or absent on every inbound one. */
+    campaign?: OrchestratorDeps["campaign"];
     greetingAudio?: readonly AudioChunk[] | null;
     fillers?: ReadonlyMap<string, readonly AudioChunk[]>;
     fillerTiers?: readonly (readonly string[])[];
@@ -84,6 +86,8 @@ const setup = (
     // Inbound unless a test says otherwise, which is what every test written before the
     // outbound layer existed assumed.
     direction: "inbound",
+    // No campaign unless a test says so, which is every call not placed by one.
+    campaign: null,
     businessHours: null,
     // No history by default: every test written before this existed sees the same prompt.
     callerHistory: () => null,
