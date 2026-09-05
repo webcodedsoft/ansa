@@ -11,9 +11,11 @@ import {
   type AudioFormat,
   type CallDirection,
   type CallId,
+  type Flow,
   type HandoffDestination,
   type Logger,
   type OrganizationId,
+  validateFlow,
 } from "@ansa/shared";
 import type { CallMediaStream, TelephonyProvider } from "@ansa/telephony";
 import type { LlmProvider } from "@ansa/llm";
@@ -142,6 +144,28 @@ const overSample = (nanoseconds: number): number =>
  * has arrived — so a smaller number yields sooner and a larger one finishes sooner.
  */
 const WARM_BATCH = 8;
+
+/**
+ * A stored graph, only if it will actually run.
+ *
+ * The campaign's flow was validated when the campaign started, and this checks it again for a
+ * reason that is not distrust: this is a live call, and the cost of being wrong is a
+ * conversation that stops mid sentence with somebody on the line. A graph that does not hold
+ * together falls back to the agent's, which is the call that would have happened anyway.
+ *
+ * Outside the class because it needs nothing from it, and because a pure function is the
+ * shape a test can reach.
+ */
+const runnableFlow = (stored: Record<string, unknown> | null, log: Logger): Flow | null => {
+  if (stored === null) return null;
+  const flow = stored as unknown as Flow;
+  const blocking = validateFlow(flow).filter((problem) => problem.blocking);
+  if (blocking.length === 0) return flow;
+  log.warn("campaign flow will not run; using the agent's instead", {
+    problem: blocking[0]?.message ?? "unknown",
+  });
+  return null;
+};
 
 /**
  * Owns the media WebSocket server. It knows about sockets and nothing about the
@@ -835,6 +859,7 @@ export class MediaGateway implements OnApplicationShutdown {
       direction === "outbound" && campaignId !== null && scheduledCallId !== null && organizationId !== undefined
         ? await this.campaignBriefFor(organizationId as OrganizationId, campaignId, scheduledCallId)
         : null;
+    const campaignFlow = runnableFlow(campaignBrief?.flow ?? null, this.log);
 
     const opening =
       direction === "outbound" ? outboundOpener(settings.name) : settings.greeting;
@@ -1050,7 +1075,16 @@ export class MediaGateway implements OnApplicationShutdown {
          same document, so what the agent asks and the order it asks in cannot come from two
          different reads of the configuration. Null for every agent authored as a form, which
          is every agent that existed before the canvas did. */
-      flow: settings.flow,
+      /* The campaign's own conversation when it drew one, the agent's otherwise.
+       *
+       * A campaign that drew a graph drew it to be run; leaving `settings.flow` here made the
+       * campaign builder a drawing nobody read. Most campaigns draw nothing and fall through
+       * to the agent, which is the same call they got before this line existed.
+       *
+       * Validated again here rather than trusted. It was checked when the campaign started,
+       * but this is a live call: a graph that turns out unrunnable falls back to the agent's
+       * instead of taking the conversation down with it. */
+      flow: campaignFlow ?? settings.flow,
       listen,
       facts,
       // Off unless the deployment turned it on. See `AppConfig.backchannel`.

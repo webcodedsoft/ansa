@@ -248,11 +248,61 @@ describe.skipIf(url === undefined)("a list of people to ring", () => {
 
     const queued = await withOrganization(ds, A, (s) => readScheduledCalls(s, campaignId, PAGE));
     const byContact = new Map(queued.items.map((row) => [row.contactId, row.facts]));
-    expect(byContact.get(String(contacts[0]))).toEqual({
+    expect(byContact.get(String(contacts[0]))).toMatchObject({
       when: "Tuesday at 2",
       property: "14 Adeola Odeku",
     });
     expect(byContact.get(String(contacts[1]))?.["when"]).toBe("Thursday at 10");
+  });
+
+  it("gives everyone what is already known about them, without being told", async () => {
+    /* A contact carries what previous calls learned — the name they gave, what they were
+       looking for. Those are the things a campaign wants to say back, and they are already
+       keyed by field name, so `{area}` resolves without anybody typing it twice. */
+    const campaignId = await withOrganization(ds, A, async (s) => {
+      const made = await createCampaign(s, {
+        agentId: agentA,
+        name: "Known already",
+        createdBy: null,
+      });
+      return made.id;
+    });
+    const contacts = await withOrganization(ds, A, async (s) => {
+      const rows = await s.query<{ id: string }>("select id from contacts order by phone limit 1");
+      return rows.map((row) => row.id);
+    });
+
+    await withOrganization(ds, A, (s) => enqueueScheduledCalls(s, campaignId, contacts, new Date()));
+
+    const queued = await withOrganization(ds, A, (s) => readScheduledCalls(s, campaignId, PAGE));
+    // The name somebody at the desk corrected, as `{name}` — the placeholder reached for first.
+    expect(queued.items[0]?.facts?.["name"]).toBe("Sikiru Adeyemi");
+  });
+
+  it("lets the campaign's own facts win over what was already known", async () => {
+    /* "your viewing on {when}" means the appointment's date, not whatever `when` a call once
+       captured. The caller is being specific on purpose and has to outrank the history. */
+    const campaignId = await withOrganization(ds, A, async (s) => {
+      const made = await createCampaign(s, {
+        agentId: agentA,
+        name: "Overrides",
+        createdBy: null,
+      });
+      return made.id;
+    });
+    const contacts = await withOrganization(ds, A, async (s) => {
+      const rows = await s.query<{ id: string }>("select id from contacts order by phone limit 1");
+      return rows.map((row) => row.id);
+    });
+
+    await withOrganization(ds, A, (s) =>
+      enqueueScheduledCalls(s, campaignId, contacts, new Date(), {
+        [String(contacts[0])]: { name: "Mr Adeyemi" },
+      }),
+    );
+
+    const queued = await withOrganization(ds, A, (s) => readScheduledCalls(s, campaignId, PAGE));
+    expect(queued.items[0]?.facts?.["name"]).toBe("Mr Adeyemi");
   });
 
   it("leaves facts null for anybody the caller said nothing about", async () => {
@@ -268,7 +318,9 @@ describe.skipIf(url === undefined)("a list of people to ring", () => {
       enqueueScheduledCalls(s, campaignId, contacts, new Date()),
     );
     const queued = await withOrganization(ds, A, (s) => readScheduledCalls(s, campaignId, PAGE));
-    expect(queued.items[0]?.facts).toBeNull();
+    /* Never null now: a contact always has something known about them, even if only the name
+       somebody gave them. An empty object is the honest floor. */
+    expect(queued.items[0]?.facts).not.toBeNull();
   });
 
 });

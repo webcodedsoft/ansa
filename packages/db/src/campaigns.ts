@@ -388,9 +388,29 @@ export const enqueueScheduledCalls = async (
   /* Sent as one json object and looked up per row, so a hundred contacts is still one
      statement rather than a hundred. */
   const factsJson = JSON.stringify(facts);
+  /* Each person's own captured values, merged under whatever the caller passed.
+   *
+   * A contact already carries what previous calls learned about them — the name they gave,
+   * what they were looking for, which area. Those are exactly the things a campaign wants to
+   * say back ("about the flat in {area}"), and they are already keyed by field name, so
+   * `{area}` resolves without anybody typing it twice. The caller's own facts win where both
+   * have a key: a campaign that says "your viewing on {when}" means the appointment's date,
+   * not whatever `when` a call once captured.
+   *
+   * `display_name` arrives as `{name}`, which is the placeholder somebody reaches for first
+   * and would otherwise be the one thing missing. */
   const rows = await scope.query<Record<string, unknown>>(
     `insert into scheduled_calls (organization_id, campaign_id, contact_id, next_attempt_at, facts)
-     select cp.organization_id, cp.id, ct.id, $3, ($4::jsonb -> ct.id::text)
+     select cp.organization_id, cp.id, ct.id, $3,
+            coalesce(
+              (select jsonb_object_agg(v.field_key, v.value)
+                 from contact_values v
+                where v.contact_id = ct.id and v.value is not null and v.value <> ''),
+              '{}'::jsonb
+            )
+            || case when ct.display_name is null then '{}'::jsonb
+                    else jsonb_build_object('name', ct.display_name) end
+            || coalesce($4::jsonb -> ct.id::text, '{}'::jsonb)
        from campaigns cp
        join contacts ct on ct.id = any($2::uuid[])
       where cp.id = $1
@@ -479,6 +499,14 @@ export interface CampaignCallBrief {
   readonly opening: string | null;
   readonly outcomes: readonly string[];
   readonly facts: Readonly<Record<string, string>> | null;
+  /**
+   * The conversation this campaign drew, or null when it drew none.
+   *
+   * Read on the call rather than only saved: a campaign's graph that nothing drives is a
+   * drawing somebody made and the agent ignores. Null is the common case and a legitimate
+   * one — a campaign that only confirms something needs no script beyond its purpose.
+   */
+  readonly flow: Record<string, unknown> | null;
 }
 
 export const readCampaignCallBrief = async (
@@ -487,7 +515,7 @@ export const readCampaignCallBrief = async (
   scheduledCallId: string,
 ): Promise<CampaignCallBrief | null> => {
   const rows = await scope.query<Record<string, unknown>>(
-    `select cp.purpose, cp.opening, cp.outcomes, s.facts
+    `select cp.purpose, cp.opening, cp.outcomes, cp.flow, s.facts
        from scheduled_calls s
        join campaigns cp on cp.id = s.campaign_id
       where s.id = $1 and cp.id = $2`,
@@ -505,6 +533,7 @@ export const readCampaignCallBrief = async (
     opening: row["opening"] === null || row["opening"] === undefined ? null : String(row["opening"]),
     outcomes: Array.isArray(row["outcomes"]) ? (row["outcomes"] as string[]).map(String) : [],
     facts: (row["facts"] ?? null) as Readonly<Record<string, string>> | null,
+    flow: (row["flow"] ?? null) as Record<string, unknown> | null,
   };
 };
 

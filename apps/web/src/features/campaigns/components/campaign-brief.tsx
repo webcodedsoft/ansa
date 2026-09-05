@@ -92,7 +92,7 @@ export const CampaignBrief = ({
             required
             error={state.fieldErrors["purpose"]}
             placeholder="to confirm your viewing at {property} on {when}"
-            hint="One line, in your words — the agent says it in the first breath. Anything in {braces} is filled in from the person's own details when you add them to the list."
+            hint="One line, in your words — the agent says it in the first breath. Anything in {braces} is filled in per person from what is already known about them: {name}, and any answer a previous call captured, such as {area} or {lookingFor}."
           />
 
           <TextAreaField
