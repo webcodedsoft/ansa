@@ -14,9 +14,10 @@ import { hashPassword } from "../auth/password";
  * Adding people to the list, by hand and in bulk, over real HTTP against a real Postgres.
  *
  * The two things worth proving through the pipeline rather than at the accessor: that a
- * single manual add enforces E.164 the way every other number field does, and that an
- * import normalises Nigerian national numbers, folds a duplicate, and skips a cell that is
- * not a number rather than failing the whole batch.
+ * single manual add normalises a Nigerian national number the way the import does — one rule
+ * for both write paths, and the form's own promise — while a string that is no number at all
+ * is refused; and that an import normalises Nigerian national numbers, folds a duplicate, and
+ * skips a cell that is not a number rather than failing the whole batch.
  */
 
 const loadEnv = (): void => {
@@ -121,9 +122,16 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)(
       expect(again.body).toMatchObject({ id: first.body["id"], created: false });
     });
 
-    it("refuses a number that is not E.164 on a manual add", async () => {
-      const reply = await post("/api/v1/contacts", { phone: "08040000001" });
-      expect(reply.status).toBe(422);
+    it("normalises a Nigerian national number on a manual add, and refuses a non-number", async () => {
+      // The form promises "however you have it, tidied to +234"; create keeps that promise,
+      // the same way the import route does, rather than demanding the international form.
+      const local = await post("/api/v1/contacts", { phone: "08060000009" });
+      expect(local.status, JSON.stringify(local.body)).toBe(201);
+      expect(local.body).toMatchObject({ phone: "+2348060000009", created: true });
+
+      // A string that is no number at all is still a 422 on the field.
+      const bad = await post("/api/v1/contacts", { phone: "not a number" });
+      expect(bad.status).toBe(422);
     });
 
     it("imports a batch, normalising, folding a duplicate, and skipping a bad row", async () => {

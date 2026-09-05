@@ -9,7 +9,7 @@ import {
   setContactValue,
   type NewContact,
 } from "@ansa/db";
-import { Controller, Get, Inject, NotFoundException, Patch, Post, Put } from "@nestjs/common";
+import { Controller, Get, Inject, NotFoundException, Patch, Post, Put, UnprocessableEntityException } from "@nestjs/common";
 
 import { Endpoint } from "../http/endpoint";
 import {
@@ -22,7 +22,7 @@ import {
 } from "../http/pagination";
 import { apiRoute, FromBody, FromPath, FromQuery } from "../http/request";
 import { flag, integer, list, nullable, object, optional, text, type Infer } from "../http/schema";
-import { phoneNumber, timestamp, uuid } from "../schemas";
+import { timestamp, uuid } from "../schemas";
 import { OrganizationContext } from "../tenancy/organization-context";
 
 /**
@@ -122,12 +122,14 @@ const valueChange = object({
  * One person added by hand, for somebody who did not ring first.
  *
  * The phone is E.164 here — the same rule every other number field in this API enforces —
- * because a single deliberate add is a form the operator is filling in now, and a form can
- * say "use the full international form" before it saves. A spreadsheet cannot, which is why
- * the import route below is more forgiving.
+ * The phone is free text and normalised the same way the import route normalises it, not the
+ * strict `phoneNumber()` the rest of the API uses: the add form promises "a Nigerian number
+ * written however you have it, tidied to +234 when saved", and an operator typing `08030000000`
+ * into it must get the same person a spreadsheet of the same number would. One normalisation
+ * rule for both write paths; a number that cannot be read as one at all is a 422 on `phone`.
  */
 const newContact = object({
-  phone: phoneNumber(),
+  phone: text({ maxLength: 32 }),
   displayName: optional(text({ maxLength: 200 })),
   notes: optional(text({ maxLength: 2000 })),
 });
@@ -243,10 +245,14 @@ export class ContactsController {
     status: 201,
   })
   async add(@FromBody() body: Infer<typeof newContact>): Promise<Infer<typeof addedContact>> {
+    const phone = toE164(body.phone);
+    if (phone === null) {
+      throw new UnprocessableEntityException("that phone number could not be read — a Nigerian number, or one in full +234 form");
+    }
     const rows = await this.db.tx((scope) =>
       addContacts(
         scope,
-        [{ phone: body.phone, displayName: body.displayName ?? null, notes: body.notes ?? null }],
+        [{ phone, displayName: body.displayName ?? null, notes: body.notes ?? null }],
         "manual",
       ),
     );
