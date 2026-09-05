@@ -4544,6 +4544,24 @@ connector-backed.
       contact by hand now normalises exactly as the import does — one rule for both write paths
       — and only a string that is no number at all is a 422.
 
+- [x] **A calendar you can write in, not only book from** (`ff32467`, `14f672b`). The first pass
+      was Calendly-shaped: an appointment could only be made by clicking a pre-computed free
+      slot, so it existed only where weekly hours were set, always lasted exactly the
+      calendar's slot length, and had no name — a calendar with no hours had nothing clickable
+      on it at all. `0063_an_appointment_has_a_name` adds a nullable `title`; create takes an
+      optional `endsAt`; `PATCH /appointments/bookings/{id}` moves, resizes, renames and
+      re-attaches one, which is what dragging a block amounts to. The console gained day, week
+      and month views navigating by URL (`?view=&date=`), and drag-anywhere creation: free
+      slots are now tinted ground saying where the *agent* offers time, not a limit on what the
+      person at the desk may write down. 65 date and drag tests.
+
+      Two bugs the type checker could not have found, both caught by driving the page:
+      two `CreateCalendarDialog`s on the empty state emitted the same `<form id>`, and a
+      `form=` attribute binds to the *first* such id in the document — so the visible button
+      submitted the hidden dialog's form and "Create calendar" did nothing. And `dayWindow`
+      shrank the drawn day around its own content, so one 10am appointment left nowhere to
+      drag a second. Both fixed; the window is a canvas now, never narrower than a working day.
+
 Two gates earned their keep on agent output: `check:wiring` caught three exported accessors
 nothing called (`setContactNotes`, `readContactImports`, `setBookingExternalRef`), all removed
 rather than landed as inventory — the wave that needs them adds them wired.
