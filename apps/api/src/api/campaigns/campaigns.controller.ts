@@ -135,20 +135,13 @@ const callingWindow = object({
  * billed. A message is read verbatim rather than improvised: a model talking to a beep has no
  * one to correct it.
  */
-const voicemail = object({
-  mode: choice(VOICEMAIL_MODES),
-  message: optional(text({ maxLength: CAMPAIGN_LIMITS.voicemailLength })),
-});
+const voicemail = object({ mode: choice(VOICEMAIL_MODES) });
 
 const asVoicemail = (raw: Record<string, unknown> | null): Infer<typeof voicemail> | null => {
   if (raw === null) return null;
   const mode = String(raw["mode"]);
   if (mode !== "hang_up" && mode !== "leave_message") return null;
-  const message = raw["message"];
-  return {
-    mode,
-    ...(typeof message === "string" && message !== "" ? { message } : {}),
-  };
+  return { mode };
 };
 
 /**
@@ -458,7 +451,7 @@ export class CampaignsController {
   @Endpoint({
     summary: "Say what this campaign is about",
     description:
-      "The purpose, the opening, the conversation as a graph, what counts as done, what to do when a machine answers, and how many times one person may be rung. Absent fields are left alone; null clears one. Refused with 409 once the campaign is running, paused or done — a call in flight must not have its purpose changed underneath it. A flow is validated exactly as an agent's is.",
+      "The purpose, the opening, the conversation as a graph, what counts as done, whether to leave the standard message when a machine answers, and how many times one person may be rung. Absent fields are left alone; null clears one. Refused with 409 once the campaign is running, paused or done — a call in flight must not have its purpose changed underneath it. A flow is validated exactly as an agent's is.",
     capability: "campaigns:write",
     params: campaignPath,
     body: campaignBrief,
@@ -475,19 +468,6 @@ export class CampaignsController {
       const problems = flowProblems(body.flow);
       if (problems.length > 0) throw new ValidationFailed(problems);
     }
-    /* A message is what makes `leave_message` mean anything. Without one the mode is a promise
-       to say nothing to an answering machine, at length. */
-    if (
-      body.voicemail !== undefined &&
-      body.voicemail !== null &&
-      body.voicemail.mode === "leave_message" &&
-      (body.voicemail.message === undefined || body.voicemail.message.trim() === "")
-    ) {
-      throw new ValidationFailed([
-        { path: "voicemail.message", message: "Write the message to leave, or choose to hang up." },
-      ]);
-    }
-
     const outcome = await this.db.tx(async (scope) => {
       const found = await readCampaign(scope, path.campaignId);
       if (found === null) return null;

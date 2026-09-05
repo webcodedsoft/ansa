@@ -78,11 +78,6 @@ export const campaignBriefSchema = z.object({
     .max(CAMPAIGN_LIMITS.outcomes, "That is more outcomes than anyone chooses between.")
     .optional(),
   voicemailMode: z.enum(VOICEMAIL_MODES),
-  voicemailMessage: z
-    .string()
-    .trim()
-    .max(CAMPAIGN_LIMITS.voicemailLength, "That message is too long to leave.")
-    .optional(),
   maxAttempts: z
     .number()
     .int()

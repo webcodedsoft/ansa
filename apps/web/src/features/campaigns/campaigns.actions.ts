@@ -229,26 +229,18 @@ export const saveBriefAction = async (
       .map((line) => line.trim())
       .filter((line) => line !== ""),
     voicemailMode: String(form.get("voicemailMode") ?? "hang_up"),
-    voicemailMessage: stringOrUndefined(form.get("voicemailMessage")),
     maxAttempts: numberOrNaN(form.get("maxAttempts")),
     retryAfterMinutes: numberOrNaN(form.get("retryAfterMinutes")),
   });
   if (!parsed.success) return invalidForm(parsed.error);
 
   const brief = parsed.data;
-  if (brief.voicemailMode === "leave_message" && (brief.voicemailMessage ?? "") === "") {
-    return failedForm("Write the message to leave, or choose to hang up.");
-  }
-
   try {
     await saveBrief(campaignId, {
       purpose: brief.purpose === undefined || brief.purpose === "" ? null : brief.purpose,
       opening: brief.opening === undefined || brief.opening === "" ? null : brief.opening,
       outcomes: brief.outcomes === undefined || brief.outcomes.length === 0 ? null : brief.outcomes,
-      voicemail:
-        brief.voicemailMode === "leave_message"
-          ? { mode: "leave_message", message: brief.voicemailMessage ?? "" }
-          : { mode: "hang_up" },
+      voicemail: { mode: brief.voicemailMode },
       maxAttempts: brief.maxAttempts,
       retryAfterMinutes: brief.retryAfterMinutes,
     });

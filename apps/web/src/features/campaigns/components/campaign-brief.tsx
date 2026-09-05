@@ -24,7 +24,7 @@ export interface BriefValues {
   readonly purpose: string | null;
   readonly opening: string | null;
   readonly outcomes: readonly string[] | null;
-  readonly voicemail: { readonly mode: string; readonly message?: string } | null;
+  readonly voicemail: { readonly mode: string } | null;
   readonly maxAttempts: number;
   readonly retryAfterMinutes: number;
 }
@@ -123,24 +123,13 @@ export const CampaignBrief = ({
             disabled={disabled}
             hint={
               mode === "leave_message"
-                ? "Read exactly as written. A message left by mistake cannot be taken back."
-                : "The safest answer, and the default. An agent talking to a greeting is billed for it and achieves nothing."
+                ? "Says who rang and the number to call back, and nothing else. Never why — an answerphone plays out loud in a room, and whoever is in it did not agree to hear somebody's business."
+                : "Stays silent. The right choice when the subject alone would embarrass somebody in a room where the machine is played out loud."
             }
           >
             <option value="hang_up">Hang up</option>
-            <option value="leave_message">Leave a message</option>
+            <option value="leave_message">Leave the standard message</option>
           </SelectField>
-
-          {mode === "leave_message" && (
-            <TextAreaField
-              label="The message to leave"
-              name="voicemailMessage"
-              defaultValue={values.voicemail?.message ?? ""}
-              disabled={disabled}
-              error={state.fieldErrors["voicemailMessage"]}
-              hint="Written out rather than improvised: a model talking to a beep has nobody to correct it."
-            />
-          )}
 
           <div className="flex flex-wrap gap-3">
             <NumberField

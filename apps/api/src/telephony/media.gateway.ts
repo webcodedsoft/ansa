@@ -1004,7 +1004,16 @@ export class MediaGateway implements OnApplicationShutdown {
      * hanging up — which is what every call did before this.
      */
     const callbackNumber = stream.parameters[DIALLED_PARAM] ?? null;
-    if (settings.name !== "" && callbackNumber !== null) {
+    /* A campaign may choose silence, and that choice outranks the default.
+     *
+     * It cannot choose the *words* — those are composed below from who rang and the number to
+     * ring back, and never from why we rang. What it can do is decline to speak at all, which
+     * is the right call for a campaign whose very subject would embarrass somebody in a room
+     * where the machine is played out loud. Absent means the standard message, which is what
+     * every call did before campaigns existed. */
+    const campaignWantsSilence =
+      String(campaignBrief === null ? "" : (campaignBrief.voicemailMode ?? "")) === "hang_up";
+    if (!campaignWantsSilence && settings.name !== "" && callbackNumber !== null) {
       this.voicemail.set(
         stream.callId,
         `Hello, this is ${settings.name}. We tried to reach you. Please call us back on ${callbackNumber} when you get a chance. Thank you.`,

@@ -1460,7 +1460,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly outcomes: readonly (string)[] | null;
         readonly voicemail: {
         readonly mode: "hang_up" | "leave_message";
-        readonly message?: string;
       } | null;
         readonly maxAttempts: number;
         readonly retryAfterMinutes: number;
@@ -1544,7 +1543,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly outcomes: readonly (string)[] | null;
         readonly voicemail: {
         readonly mode: "hang_up" | "leave_message";
-        readonly message?: string;
       } | null;
         readonly maxAttempts: number;
         readonly retryAfterMinutes: number;
@@ -1616,7 +1614,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly outcomes: readonly (string)[] | null;
         readonly voicemail: {
         readonly mode: "hang_up" | "leave_message";
-        readonly message?: string;
       } | null;
         readonly maxAttempts: number;
         readonly retryAfterMinutes: number;
@@ -1697,7 +1694,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly outcomes: readonly (string)[] | null;
         readonly voicemail: {
         readonly mode: "hang_up" | "leave_message";
-        readonly message?: string;
       } | null;
         readonly maxAttempts: number;
         readonly retryAfterMinutes: number;
@@ -1712,7 +1708,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
 
     /**
      * Say what this campaign is about
-     * The purpose, the opening, the conversation as a graph, what counts as done, what to do when a machine answers, and how many times one person may be rung. Absent fields are left alone; null clears one. Refused with 409 once the campaign is running, paused or done — a call in flight must not have its purpose changed underneath it. A flow is validated exactly as an agent's is.
+     * The purpose, the opening, the conversation as a graph, what counts as done, whether to leave the standard message when a machine answers, and how many times one person may be rung. Absent fields are left alone; null clears one. Refused with 409 once the campaign is running, paused or done — a call in flight must not have its purpose changed underneath it. A flow is validated exactly as an agent's is.
      */
     setBrief: (input: {
         readonly path: {
@@ -1760,7 +1756,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
           readonly outcomes?: readonly (string)[] | null;
           readonly voicemail?: {
           readonly mode: "hang_up" | "leave_message";
-          readonly message?: string;
         } | null;
           readonly maxAttempts?: number;
           readonly retryAfterMinutes?: number;
@@ -1817,7 +1812,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly outcomes: readonly (string)[] | null;
         readonly voicemail: {
         readonly mode: "hang_up" | "leave_message";
-        readonly message?: string;
       } | null;
         readonly maxAttempts: number;
         readonly retryAfterMinutes: number;
@@ -1946,7 +1940,6 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly outcomes: readonly (string)[] | null;
         readonly voicemail: {
         readonly mode: "hang_up" | "leave_message";
-        readonly message?: string;
       } | null;
         readonly maxAttempts: number;
         readonly retryAfterMinutes: number;

@@ -507,6 +507,8 @@ export interface CampaignCallBrief {
    * one — a campaign that only confirms something needs no script beyond its purpose.
    */
   readonly flow: Record<string, unknown> | null;
+  /** `hang_up` means stay silent on an answerphone. Null or absent means the standard message. */
+  readonly voicemailMode: string | null;
 }
 
 export const readCampaignCallBrief = async (
@@ -515,7 +517,7 @@ export const readCampaignCallBrief = async (
   scheduledCallId: string,
 ): Promise<CampaignCallBrief | null> => {
   const rows = await scope.query<Record<string, unknown>>(
-    `select cp.purpose, cp.opening, cp.outcomes, cp.flow, s.facts
+    `select cp.purpose, cp.opening, cp.outcomes, cp.flow, cp.voicemail, s.facts
        from scheduled_calls s
        join campaigns cp on cp.id = s.campaign_id
       where s.id = $1 and cp.id = $2`,
@@ -534,6 +536,10 @@ export const readCampaignCallBrief = async (
     outcomes: Array.isArray(row["outcomes"]) ? (row["outcomes"] as string[]).map(String) : [],
     facts: (row["facts"] ?? null) as Readonly<Record<string, string>> | null,
     flow: (row["flow"] ?? null) as Record<string, unknown> | null,
+    voicemailMode:
+      row["voicemail"] == null
+        ? null
+        : String((row["voicemail"] as Record<string, unknown>)["mode"] ?? ""),
   };
 };
 

@@ -65,7 +65,7 @@ export const saveBrief = async (
     readonly purpose: string | null;
     readonly opening: string | null;
     readonly outcomes: readonly string[] | null;
-    readonly voicemail: { readonly mode: "hang_up" | "leave_message"; readonly message?: string } | null;
+    readonly voicemail: { readonly mode: "hang_up" | "leave_message" } | null;
     readonly maxAttempts: number;
     readonly retryAfterMinutes: number;
   },

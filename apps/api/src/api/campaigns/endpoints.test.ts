@@ -262,11 +262,14 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("the campaign en
     expect(briefed.body["purpose"]).toBe("to confirm your viewing");
     expect(briefed.body["outcomes"]).toEqual(["confirmed", "rescheduled", "declined"]);
 
-    // Leaving a message without writing one is a promise to say nothing, at length.
-    const mute = await call("PATCH", `/api/v1/campaigns/${own}/brief`, {
+    /* Choosing to leave a message needs nothing else said. The words are not the campaign's
+       to write: they are composed by the call from who rang and the number to ring back, and
+       never from why we rang, because an answerphone is played out loud in a room. */
+    const speak = await call("PATCH", `/api/v1/campaigns/${own}/brief`, {
       voicemail: { mode: "leave_message" },
     });
-    expect(mute.status, JSON.stringify(mute.body)).toBe(422);
+    expect(speak.status, JSON.stringify(speak.body)).toBe(200);
+    expect(speak.body["voicemail"]).toEqual({ mode: "leave_message" });
 
     /* A half-drawn flow saves, exactly as a half-written brief does and as an agent's draft
        does — `publication.ts` lets a draft hold a broken graph and refuses at publish. A

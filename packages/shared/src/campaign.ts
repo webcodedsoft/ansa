@@ -17,7 +17,6 @@ export const CAMPAIGN_LIMITS = {
   openingLength: 300,
   outcomeLength: 60,
   outcomes: 12,
-  voicemailLength: 600,
   factKeyLength: 40,
   factValueLength: 200,
   facts: 20,
@@ -30,18 +29,23 @@ export const CAMPAIGN_LIMITS = {
  * What to do when a machine answers.
  *
  * `hang_up` is the default and the safe one. CLAUDE.md puts it plainly: an agent that holds a
- * two-minute conversation with a voicemail greeting is both useless and billed. Leaving a
- * message is a deliberate choice with its own cost — a message left by mistake cannot be taken
- * back — so it has to be asked for, and the words have to be written down rather than improvised
- * by a model talking to a beep.
+ * two-minute conversation with a voicemail greeting is both useless and billed.
+ *
+ * **`leave_message` does not mean a message this campaign writes.** The words are composed by
+ * the call from two fields only — who rang, and the number to ring back — and never from why
+ * we rang. An answerphone is played out loud in a room and whoever is in that room did not
+ * agree to hear somebody else's business, so a campaign about an overdue payment must not be
+ * able to announce that to a kitchen. This carried a free-text message for one commit and it
+ * was a mistake: it handed an operator a way past a rule the system holds deliberately.
+ *
+ * So the choice here is narrower than it looks — stay silent, or leave the standard message —
+ * and that is the whole of it.
  */
 export const VOICEMAIL_MODES = ["hang_up", "leave_message"] as const;
 export type VoicemailMode = (typeof VOICEMAIL_MODES)[number];
 
 export interface CampaignVoicemail {
   readonly mode: VoicemailMode;
-  /** Required when the mode is `leave_message`, and read verbatim. */
-  readonly message?: string;
 }
 
 /**
