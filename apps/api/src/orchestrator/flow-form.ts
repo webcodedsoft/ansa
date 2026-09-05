@@ -150,6 +150,8 @@ type Stop =
    * and records the answer through `record_answer`, and the walk holds here until it does.
    */
   | { readonly kind: "answer"; readonly node: FlowNode; readonly key: string; readonly trace: Trace }
+  /** A value the caller gave that nothing has confirmed, at a step that asks them to. */
+  | { readonly kind: "confirm"; readonly node: FlowNode; readonly key: string; readonly value: string; readonly trace: Trace }
   /** `transfer` or `hangup` — the call has somewhere to be and nothing left to collect. */
   | { readonly kind: "terminal"; readonly which: "transfer" | "hangup"; readonly trace: Trace }
   /** No start, a dead end, an edge to nowhere, an unresolvable decide, or a cycle. */
@@ -215,6 +217,8 @@ export const createFlowForm = (flow: Flow): FormDirector => {
 
   const values = new Map<string, CapturedValue>();
   const skipped = new Set<string>();
+  /** Keys the caller said were wrong when read back at a `confirm` step, until they give a new value. */
+  const denied = new Set<string>();
   const rejections = new Map<string, number>();
   let askingKey: string | null = null;
 
@@ -243,15 +247,16 @@ export const createFlowForm = (flow: Flow): FormDirector => {
       if (key !== undefined && skipped.has(key)) return "gave-up";
       return "got";
     }
-    /* A `confirm` node asks the caller to agree to a value, and the only record of that
-       agreement the director holds is the `confirmed` flag written by the readback. A field
-       configured `confirm: "none"` is stored unconfirmed on purpose, so a confirm node
-       reading one takes its "no" branch — which is right: nothing confirmed it. With no
-       value at all there is nothing to have agreed to, so the node falls through. */
+    /* A `confirm` node leaves by "yes" once the value is confirmed — by the engine's own
+       readback, or by the model's at this step — and by "no" when the caller said the value
+       was wrong, or there is no value at all to have agreed to. A value nothing has decided
+       on yet stops the walk here (see `walk`); when a projection has to pass through, it
+       assumes agreement, the branch the operator drew as the way on. */
     if (node.kind === "confirm") {
       const held = node.on === undefined ? undefined : values.get(node.on);
-      if (held === undefined) return null;
-      return held.confirmed ? "yes" : "no";
+      if (held === undefined) return "no";
+      if (held.confirmed) return "yes";
+      return node.on !== undefined && denied.has(node.on) ? "no" : "yes";
     }
     return null;
   };
@@ -297,6 +302,16 @@ export const createFlowForm = (flow: Flow): FormDirector => {
       }
       if (node.kind === "say" && node.text !== undefined && node.text.trim() !== "") {
         trace.cover.push(node.text.trim());
+      }
+      /* A value the caller gave that nothing has confirmed or denied: the step is the
+         model reading it back, and the walk waits here for the caller's yes or no. A value
+         the engine already confirmed passes straight through — reading it back twice would
+         be the readback rule applied to the same thing twice. */
+      if (node.kind === "confirm" && node.on !== undefined) {
+        const held = values.get(node.on);
+        if (held !== undefined && !held.confirmed && !denied.has(node.on)) {
+          return { kind: "confirm", node, key: node.on, value: held.value, trace };
+        }
       }
       if (node.kind === "tool" && node.tool !== undefined && node.tool !== "") {
         trace.tools.push(node.tool);
@@ -415,7 +430,7 @@ export const createFlowForm = (flow: Flow): FormDirector => {
     forVolunteered: (kind) =>
       safely(null, () => {
         const stop = walk();
-        if (stop.kind === "collect" || stop.kind === "answer") {
+        if (stop.kind === "collect" || stop.kind === "answer" || stop.kind === "confirm") {
           const onPath = ahead(stop.node).find((question) => question.entity === kind);
           if (onPath !== undefined) return onPath;
         }
@@ -434,11 +449,24 @@ export const createFlowForm = (flow: Flow): FormDirector => {
     satisfy: (key, value, confirmed) => {
       /* Stored whether or not a node wants it. A caller who answers a question the graph was
          never going to ask has still answered it, and the alternative is throwing away a
-         value that a tool three nodes later needs. */
+         value that a tool three nodes later needs. A new value is a fresh answer: whatever
+         they said about the old one when it was read back no longer applies. */
       values.set(key, { value, confirmed });
       if (askingKey === key) askingKey = null;
       skipped.delete(key);
+      denied.delete(key);
     },
+
+    decide: (key, confirmed) =>
+      safely(false, () => {
+        const held = values.get(key);
+        if (held === undefined) return false;
+        if (confirmed) {
+          values.set(key, { ...held, confirmed: true });
+          denied.delete(key);
+        } else denied.add(key);
+        return true;
+      }),
 
     attemptsFor: (key) => (rejections.get(key) ?? 0) + 1,
 
@@ -469,6 +497,8 @@ export const createFlowForm = (flow: Flow): FormDirector => {
       safely(true, () => {
         const stop = walk();
         if (stop.kind === "terminal" || stop.kind === "stuck") return true;
+        // A readback the caller has not answered is something the call is waiting on.
+        if (stop.kind === "confirm") return false;
         // A choice the graph is waiting on is a question, and a required one holds the call
         // open exactly as an engine-heard one does.
         if (stop.kind === "answer") {
@@ -504,6 +534,7 @@ export const createFlowForm = (flow: Flow): FormDirector => {
         if (stop.kind === "stuck") return null;
         const base = { cover: stop.trace.cover, tools: stop.trace.tools };
         if (stop.kind === "collect") return { ...base, next: { kind: "ask", field: stop.field } };
+        if (stop.kind === "confirm") return { ...base, next: { kind: "confirm", key: stop.key, value: stop.value } };
         if (stop.kind === "answer") {
           const waiting = answers.get(stop.node.id);
           return {

@@ -131,6 +131,8 @@ const collectionSection = (fields: readonly CollectedField[], steered: boolean):
       "belongs to. Anything already answered leaves the path and you will not be told to ask",
       "it again; asking anyway makes them repeat themselves, which is the one thing a person",
       "on the phone will not forgive.",
+      "When the block tells you to read one of their answers back, say it back in their words",
+      "and ask if it is right, then record their yes or no with confirm_answer.",
       "If they ask a question mid-way, answer it and come back to the step you were on.",
     ];
   }

@@ -4246,6 +4246,30 @@ wording belongs to no sector — a customer, a reference, a status. Nothing reco
 organisation's sector, and inventing a field to hold one for the sake of placeholders would
 be the wrong trade.
 
+**The flow on the call, every step (2026-09-05).** Asked to wire every kind up to the call and
+prove it. The director already walked all of them; what a whole front desk exposed, driven
+through the real orchestrator with the model's tool calls (`a front desk, end to end`, five
+calls: rent through to hang-up; the caller denying a readback; the caller correcting one; buy
+with a mortgage jumping into a third service and handing over; buy with cash rejoining the
+close):
+— A free-text question was steered as a choice with no options: "The answer is one of ." and
+"use exactly one of those options", on every "which area are you looking at?". Steered as
+free text now, with a short summary recorded.
+— The `confirm` step never asked anything on a call: it only checked whether the engine had
+already confirmed the value, so for a choice or free text it was always no, and for a number
+always yes. It is a readback now: the walk stops there with the value nothing has confirmed,
+the model is steered to say it back and ask, and a sixth platform tool, `confirm_answer`
+(`packages/tools`, read tier, through the gateway's registry like the rest), records the yes
+or no — yes marks the value confirmed, no is remembered so the step takes its "no" arm until
+a new value arrives, which is the caller's correction and is read back in turn. A value the
+engine confirmed passes straight through; a key with no value takes "no".
+— A goodbye reached inside a tool turn (a recorded choice leading straight to the close)
+hung up only after the caller spoke again; the scripted carrier was at fault — one sentence
+is synthesised at a time and the second was never played — and the orchestrator was right.
+The test harness now plays every sentence out, as a carrier does.
+Still owed, by Rule 1: a phone. The Oakhaven template has no confirm step; add one on `area`
+in the builder, publish, and place the call.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and

@@ -3243,7 +3243,7 @@ describe("the platform tools on a call", () => {
       const registry = createToolRegistry();
       registerInternalTools(
         registry,
-        callControlTools({ endCall: hooks.endCall, recordAnswer: hooks.recordAnswer, businessHours }),
+        callControlTools({ endCall: hooks.endCall, recordAnswer: hooks.recordAnswer, confirmAnswer: hooks.confirmAnswer, businessHours }),
       );
       return {
         registry,
@@ -3256,13 +3256,15 @@ describe("the platform tools on a call", () => {
     h.stream.ackAll();
   };
 
-  it("offers exactly the five non-data tools", () => {
+  it("offers exactly the six non-data tools", () => {
     const h = setup({ makeTools: platform() });
     started(h);
     h.listen.final("Hello.");
 
     expect(h.llm.last().request.tools?.map((t) => t.name).sort()).toEqual([
       "business_hours",
+      // The caller's yes or no to an answer read back at a confirm step. No data behind it.
+      "confirm_answer",
       "end_call",
       // The model's answer to a choice question, into the director. No data behind it.
       "record_answer",
@@ -3662,5 +3664,270 @@ describe("the platform tools on a call", () => {
     await settle();
 
     expect(h.llm.lastMessages().at(-1)?.content).toContain("do not have the opening hours");
+  });
+
+  /**
+   * A whole front desk on one call, every kind of step doing its job in turn.
+   *
+   * The graph is the shape the console's templates draw: an opening everyone gets, a fork
+   * on a choice the model records, a service with a free-text question, a tool used on the
+   * way, an engine-heard question read back and a `confirm` step branching on whether the
+   * caller agreed; a second service whose inner branch jumps into a third; a shared close and
+   * the hang-up; and a transfer for the caller who did not agree. Each earlier test proves one
+   * step. This proves they hand the call to each other.
+   */
+  describe("a front desk, end to end", () => {
+    const frontDesk: OrchestratorDeps["flow"] = {
+      version: 1,
+      nodes: [
+        { id: "start", kind: "start", x: 0, y: 0 },
+        { id: "welcome", kind: "say", x: 0, y: 1, text: "Thank them for calling and say you can help with renting or buying" },
+        { id: "ask-intent", kind: "collect", x: 0, y: 2, field: { key: "intent", type: "choice", prompt: "Are you looking to rent, or to buy?", capture: "speech", confirm: "none", required: true, pattern: "", attempts: 3, options: ["rent", "buy"] } },
+        { id: "fork", kind: "decide", x: 0, y: 3, on: "intent" },
+        // rent
+        { id: "ask-area", kind: "collect", x: 0, y: 4, service: "rent", field: { key: "area", type: "text", prompt: "Which area are you looking at?", capture: "speech", confirm: "none", required: true, pattern: "", attempts: 3, options: [] } },
+        // The model heard the area, so the model reads it back: the confirm step made real.
+        { id: "confirm-area", kind: "confirm", x: 0, y: 5, service: "rent", on: "area" },
+        { id: "check", kind: "tool", x: 0, y: 6, service: "rent", tool: "check_availability" },
+        { id: "ask-phone", kind: "collect", x: 0, y: 7, service: "rent", field: { key: "callbackNumber", type: "phone", prompt: "What's the best number to reach you on?", capture: "speech", confirm: "readback", required: true, pattern: "", attempts: 3, options: [] } },
+        { id: "not-agreed", kind: "transfer", x: 1, y: 8, service: "rent" },
+        // buy
+        { id: "ask-financing", kind: "collect", x: 1, y: 4, service: "buy", field: { key: "financing", type: "choice", prompt: "Would that be cash, or with a mortgage?", capture: "speech", confirm: "none", required: true, pattern: "", attempts: 3, options: ["cash", "mortgage"] } },
+        { id: "inner", kind: "decide", x: 1, y: 5, service: "buy", on: "financing" },
+        // mortgage help — a service reached only by a jump from inside buy
+        { id: "explain", kind: "say", x: 2, y: 4, service: "mortgage help", text: "Explain that a mortgage adviser will call them" },
+        { id: "handover", kind: "transfer", x: 2, y: 5, service: "mortgage help" },
+        // shared close
+        { id: "close", kind: "say", x: 0, y: 9, text: "Tell them an agent will call back within the hour" },
+        { id: "end", kind: "hangup", x: 0, y: 10 },
+      ],
+      edges: [
+        { from: "start", to: "welcome" },
+        { from: "welcome", to: "ask-intent" },
+        { from: "ask-intent", to: "fork" },
+        { from: "fork", to: "ask-area", when: { equals: "rent" } },
+        { from: "fork", to: "ask-financing", otherwise: true },
+        { from: "ask-area", to: "confirm-area" },
+        { from: "confirm-area", to: "check", port: "yes" },
+        { from: "confirm-area", to: "not-agreed", port: "no" },
+        { from: "check", to: "ask-phone" },
+        { from: "ask-phone", to: "close" },
+        { from: "ask-financing", to: "inner" },
+        { from: "inner", to: "explain", when: { equals: "mortgage" } },
+        { from: "inner", to: "close", otherwise: true },
+        { from: "explain", to: "handover" },
+        { from: "close", to: "end" },
+      ],
+    };
+
+    /** The platform's own tools plus the organisation's availability check, on one registry. */
+    const desk = (ran: string[]): NonNullable<OrchestratorDeps["makeTools"]> => (hooks) => {
+      const registry = createToolRegistry();
+      registerInternalTools(registry, callControlTools({ endCall: hooks.endCall, recordAnswer: hooks.recordAnswer, confirmAnswer: hooks.confirmAnswer, businessHours: null }));
+      registerInternalTools(registry, [
+        {
+          definition: {
+            name: "check_availability",
+            description: "Checks which listings are free in an area.",
+            parameters: { type: "object", properties: { area: { type: "string" } } },
+            riskTier: "read",
+            summarise: (result) => `Available: ${String(result)}.`,
+          },
+          handler: async (call) => {
+            ran.push(`check_availability:${String(call.args["area"] ?? "")}`);
+            return "two flats in Lekki";
+          },
+        },
+      ]);
+      return { registry, dispatcher: createToolDispatcher({ registry, log: silentLog, holding: hooks.holding }) };
+    };
+
+    /* The model says its piece and the caller hears all of it — every synthesis in flight,
+       since a turn that followed a tool has the tool's holding sound queued ahead of the
+       words, and a goodbye whose synthesis never settles is a hang-up that never comes. */
+    const speaks = (h: ReturnType<typeof setup>, words: string): void => {
+      h.llm.last().emit(`${words} `);
+      h.llm.last().finish();
+      // One sentence is synthesised at a time, so the next one only appears once this is done.
+      for (let round = 0; round < 8 && h.tts.live().length > 0; round += 1) {
+        for (const synthesis of h.tts.live()) {
+          synthesis.audio(1200);
+          synthesis.done();
+        }
+      }
+      h.stream.ackAll();
+    };
+
+    it("rents: welcome, choice, free text, tool, number read back and agreed, close, hang up", async () => {
+      const ran: string[] = [];
+      const captured: { fieldKey: string; value: string }[] = [];
+      const spy = spyHandoff();
+      const h = setup({
+        flow: frontDesk,
+        makeTools: desk(ran),
+        makeHandoff: spy.make,
+        recorder: {
+          started: () => undefined, event: () => undefined, transcript: () => undefined, turn: () => undefined, latency: () => undefined,
+          capture: (c: { fieldKey: string; value: string }) => captured.push({ fieldKey: c.fieldKey, value: c.value }), ended: () => undefined,
+        } as unknown as CallRecorder,
+      });
+      started(h);
+
+      // The opening: the say step is put to the model with the choice, and the tool is not yet.
+      h.listen.final("Hello, I saw your listing online.");
+      let steering = h.llm.last().request.system;
+      expect(steering).toContain("Cover this now, in your own words: Thank them for calling");
+      expect(steering).toContain('"Are you looking to rent, or to buy?" The answer is one of "rent", "buy"');
+      expect(steering).not.toContain("check_availability tool now");
+      speaks(h, "Thanks for calling. Are you looking to rent, or to buy?");
+
+      // The choice, recorded by the model, takes the rent arm.
+      h.listen.final("To rent.");
+      h.llm.last().callTools([{ name: "record_answer", args: { field: "intent", answer: "rent" } }]);
+      await settle();
+      expect(captured).toEqual([{ fieldKey: "intent", value: "rent" }]);
+      speaks(h, "Lovely.");
+
+      // Inside rent: the free-text question is steered as free text, and nothing says "one of".
+      h.listen.final("Okay.");
+      steering = h.llm.last().request.system;
+      expect(steering).toContain('"Which area are you looking at?" Take the answer in their own words');
+      expect(steering).not.toContain("one of .");
+      expect(steering).not.toContain("Would that be cash");
+      speaks(h, "Which area are you looking at?");
+
+      h.listen.final("Somewhere around Lekki phase one.");
+      h.llm.last().callTools([{ name: "record_answer", args: { field: "area", answer: "Lekki phase one" } }]);
+      await settle();
+      expect(captured.at(-1)).toEqual({ fieldKey: "area", value: "Lekki phase one" });
+
+      // The confirm step: the model is told to read the area back, and nothing further —
+      // not the tool — until the caller has answered.
+      steering = h.llm.last().request.system;
+      expect(steering).toContain("read back their area — “Lekki phase one” — and ask whether that is right");
+      expect(steering).toContain('confirm_answer (field "area")');
+      expect(steering).not.toContain("check_availability tool now");
+      expect(h.llm.last().request.tools?.map((t) => t.name)).toContain("confirm_answer");
+      speaks(h, "Lekki phase one, is that right?");
+
+      h.listen.final("Yes, that's it.");
+      h.llm.last().callTools([{ name: "confirm_answer", args: { field: "area", confirmed: true } }]);
+      await settle();
+
+      // The tool step: owed until it has run, then run through the registry with the answer.
+      steering = h.llm.last().request.system;
+      expect(steering).toContain("Use the check_availability tool now");
+      h.llm.last().callTools([{ name: "check_availability", args: { area: "Lekki phase one" } }]);
+      await settle();
+      expect(ran).toEqual(["check_availability:Lekki phase one"]);
+      expect(h.llm.lastMessages().at(-1)?.content).toContain("two flats in Lekki");
+      speaks(h, "There are two flats free in Lekki. What's the best number to reach you on?");
+
+      // The engine hears the number and reads it back; the model waits.
+      h.listen.final("Oh eight oh two one one eight four four two nine.");
+      expect(h.tts.texts().at(-1)?.trim().endsWith("?")).toBe(true);
+      const before = h.llm.completions.length;
+      h.tts.last().done();
+      h.stream.ackAll();
+      h.listen.final("Yes, that's right.");
+      expect(h.llm.completions.length).toBeGreaterThan(before);
+
+      // The number was confirmed by the engine's own readback; the close is steered, the
+      // transfer is not, and the next turn is the goodbye the hang-up waits for.
+      steering = h.llm.last().request.system;
+      expect(steering).toContain("Tell them an agent will call back within the hour");
+      expect(steering).toContain("say goodbye");
+      expect(spy.triggers).toEqual([]);
+      speaks(h, "An agent will call you back within the hour. Thank you, goodbye.");
+      expect(h.stream.hungUp).toBe(true);
+    });
+
+    it("goes to a person when the caller says the answer read back to them was wrong", async () => {
+      const spy = spyHandoff();
+      const ran: string[] = [];
+      const h = setup({ flow: frontDesk, makeTools: desk(ran), makeHandoff: spy.make });
+      started(h);
+      h.listen.final("Hi.");
+      h.llm.last().callTools([{ name: "record_answer", args: { field: "intent", answer: "rent" } }]);
+      await settle();
+      speaks(h, "Which area?");
+      h.listen.final("Ikeja.");
+      h.llm.last().callTools([{ name: "record_answer", args: { field: "area", answer: "Ikeja" } }]);
+      await settle();
+      speaks(h, "Ikeja, is that right?");
+
+      h.listen.final("No, that's not what I said.");
+      h.llm.last().callTools([{ name: "confirm_answer", args: { field: "area", confirmed: false } }]);
+      await settle();
+
+      // The confirm step took its "no", which the operator drew as a transfer: the handoff
+      // has the call, and the tool on the "yes" arm never ran.
+      expect(spy.triggers.map((t) => t.kind)).toEqual(["needs-a-person"]);
+      expect(ran).toEqual([]);
+    });
+
+    it("asks again, not the transfer, when the caller corrects the answer instead", async () => {
+      const spy = spyHandoff();
+      const h = setup({ flow: frontDesk, makeTools: desk([]), makeHandoff: spy.make });
+      started(h);
+      h.listen.final("Hi.");
+      h.llm.last().callTools([{ name: "record_answer", args: { field: "intent", answer: "rent" } }]);
+      await settle();
+      speaks(h, "Which area?");
+      h.listen.final("Ikeja.");
+      h.llm.last().callTools([{ name: "record_answer", args: { field: "area", answer: "Ikeja" } }]);
+      await settle();
+      speaks(h, "Ikeja, is that right?");
+
+      // A correction is a new answer: recorded, it is read back in turn, and the "no" arm
+      // is not taken for the old one.
+      h.listen.final("No, Ikoyi.");
+      h.llm.last().callTools([{ name: "record_answer", args: { field: "area", answer: "Ikoyi" } }]);
+      await settle();
+      expect(h.llm.last().request.system).toContain("read back their area — “Ikoyi”");
+      expect(spy.triggers).toEqual([]);
+    });
+
+    it("buys with a mortgage: the branch inside one service jumps into another and hands over", async () => {
+      const spy = spyHandoff();
+      const h = setup({ flow: frontDesk, makeTools: desk([]), makeHandoff: spy.make });
+      started(h);
+      h.listen.final("I want to buy a flat.");
+      h.llm.last().callTools([{ name: "record_answer", args: { field: "intent", answer: "buy" } }]);
+      await settle();
+      speaks(h, "Would that be cash, or with a mortgage?");
+
+      h.listen.final("With a mortgage.");
+      h.llm.last().callTools([{ name: "record_answer", args: { field: "financing", answer: "mortgage" } }]);
+      await settle();
+
+      // Steered into the third service: its say step, and the transfer that follows.
+      speaks(h, "Understood.");
+      h.listen.final("What happens next?");
+      const steering = h.llm.last().request.system;
+      expect(steering).toContain("Explain that a mortgage adviser will call them");
+      // A configured handoff takes the call the moment the walk reaches the transfer, so
+      // the departure line is the handoff's, not the model's.
+      expect(spy.triggers.map((t) => t.kind)).toEqual(["needs-a-person"]);
+    });
+
+    it("buys with cash: the catch-all inside buy rejoins the shared close and hangs up", async () => {
+      const h = setup({ flow: frontDesk, makeTools: desk([]) });
+      started(h);
+      h.listen.final("Buying.");
+      h.llm.last().callTools([{ name: "record_answer", args: { field: "intent", answer: "buy" } }]);
+      await settle();
+      speaks(h, "Cash or mortgage?");
+      h.listen.final("Cash.");
+      h.llm.last().callTools([{ name: "record_answer", args: { field: "financing", answer: "cash" } }]);
+      await settle();
+
+      const steering = h.llm.last().request.system;
+      expect(steering).toContain("Tell them an agent will call back within the hour");
+      expect(steering).toContain("say goodbye");
+      expect(steering).not.toContain("mortgage adviser");
+      speaks(h, "An agent will call you back. Goodbye.");
+      expect(h.stream.hungUp).toBe(true);
+    });
   });
 });

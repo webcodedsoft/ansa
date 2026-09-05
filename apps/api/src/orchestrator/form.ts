@@ -119,6 +119,15 @@ export interface FormDirector {
   forVolunteered(kind: EntityKind): FormField | null;
   /** Record a value. Overwrites, because a correction is a second answer to one question. */
   satisfy(key: string, value: string, confirmed: boolean): void;
+  /**
+   * The caller's yes or no to a value read back by the model, at a `confirm` step.
+   *
+   * True when the key holds a value on this call and the decision was taken. A yes marks the
+   * value confirmed, the way the engine's own readback does; a no is remembered so the step
+   * takes its "no" branch rather than asking again — until a new value arrives for the key,
+   * which is the caller's correction and starts the question over.
+   */
+  decide(key: string, confirmed: boolean): boolean;
   /** The caller would not give it. Only meaningful for an optional field. */
   skip(key: string): void;
   /**
@@ -178,6 +187,8 @@ export interface Guidance {
     | { readonly kind: "ask"; readonly field: FormField }
     /** Ask this and record the answer with `record_answer`; the engine hears nothing. */
     | { readonly kind: "ask-choice"; readonly key: string; readonly prompt: string; readonly options: readonly string[] }
+    /** Read a value the caller gave back to them and record whether they agree, with `confirm_answer`. */
+    | { readonly kind: "confirm"; readonly key: string; readonly value: string }
     /** The graph has reached its end. */
     | { readonly kind: "end" }
     /** The graph hands the call to a person here. */
@@ -222,6 +233,18 @@ export const renderGuidance = (guidance: Guidance): string => {
       lines.push(TAKE_WHAT_THEY_GIVE);
       break;
     case "ask-choice": {
+      /* A free-text question comes through here too — the model asks it and records it, the
+         same as a choice — but with no options to be "one of". Rendered as a choice it read
+         "The answer is one of ." and told the model to use exactly one of nothing, which is
+         what every "which area are you looking at?" on every front desk was steered by. */
+      if (next.options.length === 0) {
+        lines.push(next.prompt === "" ? `- Next, find out their ${next.key}, in their own words.` : `- Next, ask: "${next.prompt}" Take the answer in their own words.`);
+        lines.push(
+          `- When they have answered, record a short summary of it with record_answer (field "${next.key}"). Do not move on until it is recorded.`,
+        );
+        lines.push(TAKE_WHAT_THEY_GIVE);
+        break;
+      }
       const options = next.options.map((option) => `"${option}"`).join(", ");
       lines.push(
         next.prompt === ""
@@ -234,6 +257,12 @@ export const renderGuidance = (guidance: Guidance): string => {
       lines.push(TAKE_WHAT_THEY_GIVE);
       break;
     }
+    case "confirm":
+      lines.push(`- Next, read back their ${next.key} — “${next.value}” — and ask whether that is right.`);
+      lines.push(
+        `- When they answer, use confirm_answer (field "${next.key}") with confirmed true if they agree, false if they say it is wrong — and if they give a different answer, record that with record_answer first. Do not move on until you have.`,
+      );
+      break;
     case "end":
       lines.push("- You have everything this call needed. Wrap up in their terms — what they asked for, what happens next — say goodbye, and use end_call.");
       break;
@@ -303,6 +332,13 @@ export const createForm = (fields: readonly CollectedField[]): FormDirector => {
 
     forVolunteered: (kind) =>
       ordered.find((field) => field.entity === kind && !settled(field)) ?? null,
+
+    decide: (key, confirmed) => {
+      const held = values.get(key);
+      if (held === undefined) return false;
+      if (confirmed) values.set(key, { ...held, confirmed: true });
+      return true;
+    },
 
     satisfy: (key, value, confirmed) => {
       values.set(key, { value, confirmed });

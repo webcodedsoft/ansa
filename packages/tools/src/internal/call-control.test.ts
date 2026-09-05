@@ -43,6 +43,7 @@ const SUNDAY = "2026-08-09";
 const setup = (options: Partial<CallControlOptions> = {}) => {
   const ended: string[] = [];
   const recorded: { field: string; answer: string }[] = [];
+  const decided: { field: string; confirmed: boolean }[] = [];
   const registry = createToolRegistry();
   registerInternalTools(
     registry,
@@ -56,6 +57,12 @@ const setup = (options: Partial<CallControlOptions> = {}) => {
         recorded.push({ field, answer: option });
         return { accepted: true, field, answer: option };
       },
+      /* A stand-in for the orchestrator's check: one answer on the call, keyed `area`. */
+      confirmAnswer: (field, confirmed) => {
+        if (field !== "area") return { accepted: false, reason: `"${field}" holds no answer on this call` };
+        decided.push({ field, confirmed });
+        return { accepted: true, field, confirmed };
+      },
       businessHours: null,
       ...options,
     }),
@@ -64,7 +71,7 @@ const setup = (options: Partial<CallControlOptions> = {}) => {
   const call = (name: string, args: Record<string, unknown> = {}) =>
     dispatcher.dispatch({ organizationId: ORGANIZATION, callId: CALL, direction: "inbound", name, args });
 
-  return { ended, recorded, registry, call };
+  return { ended, recorded, decided, registry, call };
 };
 
 describe("the platform tool set", () => {
@@ -83,6 +90,8 @@ describe("the platform tool set", () => {
     // appearing here means something is answering a caller from a fixture.
     expect(registry.listFor(ORGANIZATION).map((d) => d.name).sort()).toEqual([
       "business_hours",
+      // Non-data too: the caller's yes or no to an answer of theirs read back to them.
+      "confirm_answer",
       "end_call",
       // Also non-data: it writes the caller's own stated answer onto the call's record, and
       // the orchestrator decides whether the field and the answer are ones this agent asks.
@@ -100,9 +109,40 @@ describe("the platform tool set", () => {
       callControlTools({
         endCall: () => undefined,
         recordAnswer: () => ({ accepted: false, reason: "none here" }),
+        confirmAnswer: () => ({ accepted: false, reason: "none here" }),
         businessHours: null,
       }),
     ).not.toThrow();
+  });
+});
+
+describe("confirm_answer", () => {
+  it("marks an answer the caller agreed to, and says so", async () => {
+    const { call, decided } = setup();
+
+    const outcome = await call("confirm_answer", { field: "area", confirmed: true });
+
+    expect(outcome.kind).toBe("ok");
+    expect(decided).toEqual([{ field: "area", confirmed: true }]);
+    expect(outcome.speech).toContain("They confirmed area");
+  });
+
+  it("marks an answer the caller said was wrong", async () => {
+    const { call, decided } = setup();
+
+    const outcome = await call("confirm_answer", { field: "area", confirmed: false });
+
+    expect(decided).toEqual([{ field: "area", confirmed: false }]);
+    expect(outcome.speech).toContain("They said area was wrong");
+  });
+
+  it("refuses a field with no answer on the call, and a call with the decision missing", async () => {
+    const { call, decided } = setup();
+
+    expect((await call("confirm_answer", { field: "budget", confirmed: true })).speech).toContain("Not recorded");
+    expect((await call("confirm_answer", { field: "area" })).speech).toContain("Not recorded");
+    expect((await call("confirm_answer", { field: "area", confirmed: "yes" })).speech).toContain("Not recorded");
+    expect(decided).toEqual([]);
   });
 });
 

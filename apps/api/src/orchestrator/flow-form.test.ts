@@ -621,11 +621,31 @@ describe("nodes that are not questions", () => {
     agreed.satisfy("policyNumber", "PM8592625", true);
     expect(agreed.outstanding()?.key).toBe("callerName");
 
-    /* A field configured `confirm: "none"` is stored as heard, on purpose, and a confirm
-       node reading one takes its "no" branch. Nothing confirmed it, and the graph asked. */
+    /* A value nothing has confirmed — one the model heard, or one the operator chose not to
+       have read back at the time — stops the walk at the confirm step: the model is to read
+       it back, and the engine is armed for nothing until the caller has answered. */
     const unconfirmed = createFlowForm(confirming());
     unconfirmed.satisfy("policyNumber", "PM8592625", false);
-    expect(unconfirmed.outstanding()?.key).toBe("dateOfBirth");
+    expect(unconfirmed.outstanding()).toBeNull();
+    expect(unconfirmed.complete()).toBe(false);
+    expect(unconfirmed.guidance()?.next).toEqual({ kind: "confirm", key: "policyNumber", value: "PM8592625" });
+
+    // They agree: the step takes "yes", and the value is confirmed from here on.
+    expect(unconfirmed.decide("policyNumber", true)).toBe(true);
+    expect(unconfirmed.outstanding()?.key).toBe("callerName");
+    expect(unconfirmed.values.get("policyNumber")?.confirmed).toBe(true);
+
+    // They say it is wrong: the step takes "no" — and keeps taking it until a new value comes.
+    const denied = createFlowForm(confirming());
+    denied.satisfy("policyNumber", "PM8592625", false);
+    expect(denied.decide("policyNumber", false)).toBe(true);
+    expect(denied.outstanding()?.key).toBe("dateOfBirth");
+    denied.satisfy("policyNumber", "PM8592626", false);
+    expect(denied.guidance()?.next).toEqual({ kind: "confirm", key: "policyNumber", value: "PM8592626" });
+
+    // Nothing to have agreed to: a key with no value cannot be decided, and the step says no.
+    const empty = createFlowForm(confirming());
+    expect(empty.decide("policyNumber", true)).toBe(false);
   });
 });
 

@@ -37,6 +37,16 @@ export interface CallControlOptions {
    * that the model is told to use and that never works.
    */
   readonly recordAnswer: (field: string, answer: string) => RecordedAnswer;
+  /**
+   * The caller's yes or no to an answer read back to them.
+   *
+   * A `confirm` step in the flow reads a value the caller gave earlier back to them and
+   * branches on whether they agreed. The engine confirms the values it hears itself; this is
+   * for the ones only the model heard — a choice, a free-text answer — or a value the
+   * operator chose not to have read back at the time. The orchestrator owns the check of
+   * whether the key holds a value on this call.
+   */
+  readonly confirmAnswer: (field: string, confirmed: boolean) => ConfirmedAnswer;
   /** Null when this organization has never configured any. The tool then says so. */
   readonly businessHours: BusinessHours | null;
   /** Overridden in tests. */
@@ -287,6 +297,41 @@ const ANSWER_PARAMETERS = {
   required: ["field", "answer"],
 } as const;
 
+export type ConfirmedAnswer =
+  | { readonly accepted: true; readonly field: string; readonly confirmed: boolean }
+  | { readonly accepted: false; readonly reason: string };
+
+const CONFIRM_PARAMETERS = {
+  type: "object",
+  properties: {
+    field: { type: "string", description: "The field named in your instructions as the one to read back." },
+    confirmed: { type: "boolean", description: "True if they agreed the value was right; false if they said it was wrong." },
+  },
+  required: ["field", "confirmed"],
+} as const;
+
+/**
+ * `confirm_answer` is read tier: it marks a value the caller already gave as agreed to, or
+ * not, and nothing fires on it that would not have. It is the flow's `confirm` step made
+ * real for the values the engine never hears.
+ */
+const CONFIRM_ANSWER: ToolDefinition = {
+  name: "confirm_answer",
+  description:
+    "Record whether the caller agreed, when your instructions told you to read one of their earlier answers back to them. " +
+    "Only then: names, numbers and identifiers are read back and confirmed for you.",
+  parameters: CONFIRM_PARAMETERS,
+  riskTier: "read",
+  summarise: (result) => {
+    const confirmed = result as ConfirmedAnswer;
+    return confirmed.accepted
+      ? confirmed.confirmed
+        ? `They confirmed ${confirmed.field}.`
+        : `They said ${confirmed.field} was wrong.`
+      : `Not recorded: ${confirmed.reason}`;
+  },
+};
+
 /**
  * `record_answer` is read tier, and the value it stores is marked unconfirmed.
  *
@@ -335,6 +380,7 @@ export const CALL_CONTROL_DEFINITIONS: readonly ToolDefinition[] = [
   TRANSFER_URGENTLY,
   BUSINESS_HOURS,
   RECORD_ANSWER,
+  CONFIRM_ANSWER,
 ];
 
 const handlersFor = (options: CallControlOptions): Readonly<Record<string, InternalHandler>> => {
@@ -372,6 +418,14 @@ const handlersFor = (options: CallControlOptions): Readonly<Record<string, Inter
         return { accepted: false, reason: "both the field and the answer are needed" } satisfies RecordedAnswer;
       }
       return options.recordAnswer(field, answer);
+    },
+
+    [CONFIRM_ANSWER.name]: async ({ args }) => {
+      const field = typeof args["field"] === "string" ? args["field"].trim() : "";
+      if (field === "" || typeof args["confirmed"] !== "boolean") {
+        return { accepted: false, reason: "the field and whether they confirmed it are both needed" } satisfies ConfirmedAnswer;
+      }
+      return options.confirmAnswer(field, args["confirmed"]);
     },
   };
 };

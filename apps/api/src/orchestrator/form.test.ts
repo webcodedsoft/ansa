@@ -323,6 +323,18 @@ describe("the steering the graph writes each turn", () => {
     expect(rendered).toContain('record_answer (field "intent")');
   });
 
+  /* A free-text question travels the same road as a choice — the model asks and records
+     it — and used to be rendered as one: "The answer is one of ." and "use exactly one of
+     those options", for every "which area are you looking at?" on every front desk. */
+  it("steers a free-text question as free text, not as a choice with no options", () => {
+    const rendered = renderGuidance({ cover: [], tools: [], next: { kind: "ask-choice", key: "area", prompt: "Which area are you looking at?", options: [] } });
+
+    expect(rendered).toContain('- Next, ask: "Which area are you looking at?" Take the answer in their own words.');
+    expect(rendered).toContain('record a short summary of it with record_answer (field "area")');
+    expect(rendered).not.toContain("one of");
+    expect(rendered).not.toContain("exactly one");
+  });
+
   /* Nothing is being asked for on these turns, so the permission would be noise — and the
      end and transfer lines are the two the model must act on rather than read past. */
   it("says nothing about early answers once there is nothing left to ask", () => {

@@ -11,6 +11,7 @@ import {
   type ToolDispatcher,
   type ToolRegistry,
   type RecordedAnswer,
+  type ConfirmedAnswer,
 } from "@ansa/tools";
 
 import { ACKNOWLEDGEMENTS, createFillerPicker } from "../telephony/filler";
@@ -106,6 +107,7 @@ export interface ToolHooks {
    * the tool only carries it.
    */
   readonly recordAnswer: (field: string, answer: string) => RecordedAnswer;
+  readonly confirmAnswer: (field: string, confirmed: boolean) => ConfirmedAnswer;
 }
 
 /** This call's registry and dispatcher. Both per call — see the note in `makeTools`. */
@@ -1172,11 +1174,23 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     return { accepted: true, field, answer: stored };
   };
 
+  /** The caller's yes or no at a `confirm` step, into the director, and the walk moves on. */
+  const confirmAnswer = (field: string, confirmed: boolean): ConfirmedAnswer => {
+    if (!form.decide(field, confirmed)) {
+      return { accepted: false, reason: `"${field}" holds no answer on this call to have been read back` };
+    }
+    record.event(confirmed ? "answer_confirmed" : "answer_denied", { field });
+    log.info("the caller answered a readback", { field, confirmed });
+    armNextField();
+    followTheGraph();
+    return { accepted: true, field, confirmed };
+  };
+
   const toolOrganizationId = deps.organizationId;
   const toolset: CallTools | null =
     toolOrganizationId === null
       ? null
-      : (deps.makeTools?.({ holding: toolHolding, endCall: endCallWhenHeard, recordAnswer }) ?? null);
+      : (deps.makeTools?.({ holding: toolHolding, endCall: endCallWhenHeard, recordAnswer, confirmAnswer }) ?? null);
 
   const stageStart = new Map<string, number>();
   const mark = (stage: string): void => {

@@ -1065,6 +1065,7 @@ export class MediaGateway implements OnApplicationShutdown {
           callControlTools({
             endCall: hooks.endCall,
             recordAnswer: hooks.recordAnswer,
+            confirmAnswer: hooks.confirmAnswer,
             // Null until the organization configures hours; the tool then says it does not know
             // rather than inventing a nine to five (R6.5, migration 0012).
             businessHours: settings.businessHours,

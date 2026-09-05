@@ -263,6 +263,7 @@ const perCallRegistry = (settings: CallSettings): ToolRegistry => {
     callControlTools({
       endCall: () => undefined,
       recordAnswer: () => ({ accepted: false, reason: "no questions on this call" }),
+      confirmAnswer: () => ({ accepted: false, reason: "no questions on this call" }),
       businessHours: settings.businessHours,
     }),
   );
