@@ -104,6 +104,19 @@ export const editBooking = async (bookingId: string, input: EditBookingInput) =>
     },
   });
 
+/** Find an appointment by name across every calendar, whatever week it is in. */
+export const searchBookings = async (term: string, limit = 25) =>
+  (await api()).appointments.search({ query: { q: term, limit } });
+
+/** The dates this organisation is shut. No calendar offers a slot on one of them. */
+export const listHolidays = async () => (await api()).appointments.listHolidays({});
+
+export const addHoliday = async (onDate: string, name: string) =>
+  (await api()).appointments.addHoliday({ body: { onDate, name } });
+
+export const removeHoliday = async (holidayId: string) =>
+  (await api()).appointments.removeHoliday({ path: { holidayId } });
+
 export const confirmBooking = async (bookingId: string) =>
   (await api()).appointments.confirmBooking({ path: { bookingId } });
 
@@ -115,3 +128,4 @@ export type Calendar = Awaited<ReturnType<typeof readCalendar>>;
 export type AvailabilityWindows = Awaited<ReturnType<typeof readAvailability>>["windows"];
 export type FreeSlot = Awaited<ReturnType<typeof listSlots>>["slots"][number];
 export type Booking = Awaited<ReturnType<typeof listBookings>>["items"][number];
+export type Holiday = Awaited<ReturnType<typeof listHolidays>>["items"][number];

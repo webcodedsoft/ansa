@@ -5,16 +5,24 @@ import { currentPrincipal } from "@/features/auth/auth.service";
 import {
   listBookings,
   listCalendars,
+  listHolidays,
   listSlots,
   readAvailability,
+  searchBookings,
   type CalendarSummary,
 } from "@/features/appointments/appointments.service";
 import { CalendarSwitcher } from "@/features/appointments/components/calendar-switcher";
 import { CreateCalendarDialog } from "@/features/appointments/components/create-calendar-dialog";
 import { CalendarSettings } from "@/features/appointments/components/calendar-settings";
+import { AppointmentSearch } from "@/features/appointments/components/appointment-search";
+import {
+  SearchResults,
+  type SearchHit,
+} from "@/features/appointments/components/search-results";
 import { CalendarBoard } from "@/features/appointments/components/calendar-view";
 import { CalendarNav } from "@/features/appointments/components/calendar-nav";
 import {
+  bookingLabel,
   calendarRange,
   parseView,
   parseWeekends,
@@ -32,6 +40,8 @@ import {
   dayWindow,
   isoDate,
   parseIsoDate,
+  zonedParts,
+  bookingWhen,
   todayIn,
   type PlainDate,
 } from "@/features/appointments/appointments.time";
@@ -60,6 +70,8 @@ type AppointmentsSearch = {
   readonly weekends?: string;
   /** The old name for `date`, from when the page only had a week view. Still honoured. */
   readonly week?: string;
+  /** A search term. When present the page answers the search instead of drawing the week. */
+  readonly q?: string;
 };
 
 const AppointmentsPage = async ({
@@ -112,12 +124,13 @@ const AppointmentsPage = async ({
      schedule has no clock at all, so asking for six weeks of slots would be a large query
      thrown away on arrival. */
   const drawsSlots = view === "day" || view === "week";
-  const [availability, slots, bookings] = await Promise.all([
+  const [availability, slots, bookings, holidays] = await Promise.all([
     readAvailability(selected.id),
     drawsSlots
       ? listSlots(selected.id, range.from, range.to)
       : Promise.resolve({ slots: [] as Awaited<ReturnType<typeof listSlots>>["slots"] }),
     listBookings(selected.id, range.from, range.to),
+    listHolidays(),
   ]);
 
   const slotsByDay = groupSlotsByDay(slots.slots, range.days, selected.timezone);
@@ -245,6 +258,38 @@ const AppointmentsPage = async ({
     </div>
   );
 
+  /* A search answers a different question from the grid — "where is the Adeola viewing",
+     not "what is on this week" — so it replaces the calendar rather than filtering it. A
+     match three months out would need three months of grid drawn around it to be seen. */
+  const term = search.q?.trim() ?? "";
+  const found = term.length >= 2 ? await searchBookings(term) : null;
+  const byId = new Map(calendars.map((one) => [one.id, one]));
+  const hits: readonly SearchHit[] =
+    found === null
+      ? []
+      : found.items.flatMap((booking): SearchHit[] => {
+          const owner = byId.get(booking.calendarId);
+          if (owner === undefined) return [];
+          /* The API already excludes cancelled ones; this narrows the type the grid shares,
+             which has no `cancelled` because a cancelled appointment is never drawn. */
+          if (booking.status !== "held" && booking.status !== "booked") return [];
+          const status = booking.status;
+          const day = zonedParts(new Date(booking.startsAt), owner.timezone);
+          const iso = isoDate({ year: day.year, month: day.month, day: day.day });
+          return [
+            {
+              id: booking.id,
+              label: bookingLabel({ ...booking, status }),
+              /* Read in the owning calendar's zone, not the one on screen: two calendars may
+                 keep different zones and a time in the wrong one is worse than none. */
+              when: bookingWhen(booking.startsAt, owner.timezone),
+              calendarName: owner.name,
+              status,
+              href: `/appointments?calendar=${encodeURIComponent(owner.id)}&view=day&date=${iso}`,
+            },
+          ];
+        });
+
   return (
     <>
       <PageHeader
@@ -257,6 +302,7 @@ const AppointmentsPage = async ({
             <CalendarSettings
               calendar={selected}
               windows={availability.windows}
+              holidays={holidays.items}
               canWrite={canWrite}
             />
             {canWrite && <CreateCalendarDialog trigger="secondary" />}
@@ -264,7 +310,21 @@ const AppointmentsPage = async ({
         }
       />
 
-      {calendarBody}
+      {/* Above both, because the box must not vanish at the moment it is being used — a
+          search that hides its own input leaves nothing to correct a typo in. */}
+      <div className="mb-3.5 flex justify-end">
+        <AppointmentSearch calendarId={selected.id} query={term} />
+      </div>
+
+      {found !== null ? (
+        <SearchResults
+          query={term}
+          hits={hits}
+          clearHref={`/appointments?calendar=${encodeURIComponent(selected.id)}&view=${view}&date=${isoDate(anchor)}`}
+        />
+      ) : (
+        calendarBody
+      )}
     </>
   );
 };

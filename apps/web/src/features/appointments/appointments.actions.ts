@@ -12,6 +12,7 @@ import {
   availabilityWeekSchema,
   createBookingSchema,
   editBookingSchema,
+  holidaySchema,
   createCalendarSchema,
   editCalendarSchema,
 } from "./appointments.schema";
@@ -19,9 +20,11 @@ import {
   cancelBooking,
   confirmBooking,
   createBooking,
+  addHoliday,
   createCalendar,
   editBooking,
   editCalendar,
+  removeHoliday,
   replaceAvailability,
 } from "./appointments.service";
 import { availabilityProblem, type AvailabilityWindow } from "./appointments.time";
@@ -305,5 +308,52 @@ export const findContacts = async (search: string): Promise<ContactSearchResult>
     };
   } catch (error) {
     return { ok: false, message: failureMessage(error) };
+  }
+};
+
+export type HolidayState = FormState<{ readonly holidayId: string }>;
+
+/**
+ * Mark a date shut, or open it again.
+ *
+ * A closure is not cosmetic: from the moment it is saved, no calendar in the organisation
+ * offers a caller a slot on that day. The 409 is worth naming — a date already marked is not
+ * an error the operator caused, it is the state they asked for already being true.
+ */
+export const addHolidayAction = async (
+  _previous: HolidayState,
+  form: FormData,
+): Promise<HolidayState> => {
+  const parsed = holidaySchema.safeParse({
+    onDate: form.get("onDate") ?? "",
+    name: form.get("name") ?? "",
+  });
+  if (!parsed.success) return invalidForm(parsed.error);
+
+  try {
+    const saved = await addHoliday(parsed.data.onDate, parsed.data.name);
+    revalidatePath("/appointments");
+    return succeededForm({ holidayId: saved.id }, `${saved.name} is marked shut.`);
+  } catch (error) {
+    if (refusedWith(error, 409)) {
+      return failedForm("That date is already marked shut.");
+    }
+    return failedForm(failureMessage(error));
+  }
+};
+
+export const removeHolidayAction = async (
+  _previous: HolidayState,
+  form: FormData,
+): Promise<HolidayState> => {
+  const holidayId = String(form.get("holidayId") ?? "");
+  if (holidayId === "") return failedForm("The form could not be read.");
+
+  try {
+    await removeHoliday(holidayId);
+    revalidatePath("/appointments");
+    return succeededForm({ holidayId }, "That day is open again.");
+  } catch (error) {
+    return failedForm(failureMessage(error));
   }
 };

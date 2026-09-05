@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Clock, Settings2 } from "lucide-react";
+import { CalendarOff, Clock, Settings2 } from "lucide-react";
 
 import { Button, Modal } from "@/components/ui";
 
-import type { AvailabilityWindows, CalendarSummary } from "../appointments.service";
+import type { AvailabilityWindows, CalendarSummary, Holiday } from "../appointments.service";
 import { AvailabilityEditor } from "./availability-editor";
 import { EditCalendarPanel } from "./edit-calendar-panel";
+import { HolidaysEditor } from "./holidays-editor";
 
 /**
  * The two things you set up once, kept out of the way of the thing you do every day.
@@ -20,19 +21,25 @@ import { EditCalendarPanel } from "./edit-calendar-panel";
 export const CalendarSettings = ({
   calendar,
   windows,
+  holidays,
   canWrite,
 }: {
   readonly calendar: CalendarSummary;
   readonly windows: AvailabilityWindows;
+  readonly holidays: readonly Holiday[];
   readonly canWrite: boolean;
 }) => {
-  const [open, setOpen] = useState<"hours" | "settings" | null>(null);
+  const [open, setOpen] = useState<"hours" | "closures" | "settings" | null>(null);
 
   return (
     <>
       <Button size="sm" onClick={() => setOpen("hours")}>
         <Clock aria-hidden className="size-3.5" />
         Weekly hours
+      </Button>
+      <Button size="sm" onClick={() => setOpen("closures")}>
+        <CalendarOff aria-hidden className="size-3.5" />
+        Closures
       </Button>
       <Button size="sm" onClick={() => setOpen("settings")}>
         <Settings2 aria-hidden className="size-3.5" />
@@ -51,6 +58,15 @@ export const CalendarSettings = ({
           windows={windows}
           canWrite={canWrite}
         />
+      </Modal>
+
+      <Modal
+        open={open === "closures"}
+        onClose={() => setOpen(null)}
+        title="Days the office is shut"
+        description="Organisation-wide. No calendar offers a caller a slot on one of these days."
+      >
+        <HolidaysEditor holidays={holidays} canWrite={canWrite} />
       </Modal>
 
       <Modal

@@ -158,3 +158,22 @@ export const editBookingSchema = z
     }
   });
 export type EditBookingInput = z.infer<typeof editBookingSchema>;
+
+/**
+ * Marking a date shut.
+ *
+ * `onDate` is a calendar square, not an instant — the API stores `YYYY-MM-DD` because a
+ * holiday begins at midnight wherever the calendar is kept, and attaching a time to it would
+ * make "1 October" start at the wrong hour for a calendar in another zone.
+ */
+export const holidaySchema = z.object({
+  onDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a date."),
+  name: z
+    .string()
+    .trim()
+    .min(1, "Give the day a name, so the reason it is shut is on the record.")
+    .max(200, "That name is too long."),
+});
+export type HolidayInput = z.infer<typeof holidaySchema>;
