@@ -3,6 +3,8 @@ import type { Metadata } from "next";
 
 import { Button, PageHeader, Pagination, Stat } from "@/components/ui";
 import { CONTROL } from "@/components/ui";
+import { currentPrincipal } from "@/features/auth/auth.service";
+import { ContactsActions } from "@/features/contacts/components/contacts-actions";
 import { ContactsDirectory } from "@/features/contacts/components/contacts-directory";
 import { listContacts } from "@/features/contacts/contacts.service";
 import { cn } from "@/lib/cn";
@@ -39,13 +41,18 @@ const ContactsPage = async ({
 }) => {
   const search = await searchParams;
   const requested = readPaging(search);
-  const { page, stats } = await listContacts(search.q, requested);
+  const [principal, { page, stats }] = await Promise.all([
+    currentPrincipal(),
+    listContacts(search.q, requested),
+  ]);
+  const canWrite = principal.capabilities.includes("contacts:write");
 
   return (
     <>
       <PageHeader
         eyebrow="Operate"
         title="Contacts"
+        actions={canWrite ? <ContactsActions /> : undefined}
         meta="Everyone who has called, and every call they have made. A caller becomes a contact the first time they confirm something."
       />
 
