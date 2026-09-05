@@ -263,6 +263,13 @@ const ROW = 170;
  * one: each arm reports how many columns it took and the arms to its right start after
  * them. The last option of every fork is the catch-all, since a caller whose answer matched
  * nothing is still on the call and has to go somewhere.
+ *
+ * Every step under the fork is named for its service — the answer that leads there — and
+ * a fork inside a service names its steps for the service it is inside, not for its own
+ * answers: "book a viewing" is one lane on the canvas however many ways it forks within.
+ * The opening and the close carry no name, because they belong to everybody. The canvas
+ * would infer the same names from the shape (`withServiceTags`), but only until somebody
+ * edits the flow, so a template says them outright rather than leaving them to be guessed.
  */
 export const flowFromTemplate = (template: {
   readonly fields: readonly DrawnField[];
@@ -281,15 +288,15 @@ export const flowFromTemplate = (template: {
    * Draw one arm downwards from `y` in the column at `x`. Returns the number of columns it
    * used and the lowest row it reached. The edge from the fork is written by the caller,
    * which knows the option and whether this arm is the catch-all, so the arm only reports
-   * its first node.
+   * its first node. Every step it draws, forks within it included, is in `service`.
    */
-  const drawArm = (arm: DrawnArm, prefix: string, x: number, y: number): { first: string; columns: number; deepest: number } => {
+  const drawArm = (arm: DrawnArm, prefix: string, x: number, y: number, service: string): { first: string; columns: number; deepest: number } => {
     let previous: string | null = null;
     let first: string | null = null;
     let rowY = y;
-    const step = (id: string, node: Omit<Flow["nodes"][number], "id" | "x" | "y">): void => {
+    const step = (id: string, node: Omit<Flow["nodes"][number], "id" | "x" | "y" | "service">): void => {
       rowY += ROW;
-      nodes.push({ id, x, y: rowY, ...node });
+      nodes.push({ id, x, y: rowY, service, ...node });
       if (previous !== null) edges.push({ from: previous, to: id });
       first ??= id;
       previous = id;
@@ -308,7 +315,7 @@ export const flowFromTemplate = (template: {
       options.forEach((option, index) => {
         const inner = arm.branch?.arms[option];
         if (inner === undefined) return;
-        const drawn = drawArm(inner, `${prefix}-${index + 1}`, x + used * COLUMN, forkY);
+        const drawn = drawArm(inner, `${prefix}-${index + 1}`, x + used * COLUMN, forkY, service);
         edges.push(
           index === options.length - 1
             ? { from: forkId, to: drawn.first, otherwise: true }
@@ -363,7 +370,7 @@ export const flowFromTemplate = (template: {
   options.forEach((option, index) => {
     const arm = template.branch?.arms[option];
     if (arm === undefined) return;
-    const drawn = drawArm(arm, `arm-${index + 1}`, 40 + used * COLUMN, y);
+    const drawn = drawArm(arm, `arm-${index + 1}`, 40 + used * COLUMN, y, option);
     edges.push(
       index === options.length - 1
         ? { from: "branch", to: drawn.first, otherwise: true }

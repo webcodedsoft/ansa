@@ -2,7 +2,8 @@ import { validateFlow } from "@ansa/shared/flow-validate";
 import { describe, expect, it } from "vitest";
 
 import { capturedFieldsSchema, type CapturedField } from "./agents.schema";
-import { flowFromTemplate } from "./flow.schema";
+import { laneGroups, tidied, withServiceTags } from "./flow-layout";
+import { flowFromTemplate, type Flow } from "./flow.schema";
 import { AGENT_TEMPLATES, allFields, formPolicies, servicesOf, TEMPLATE_SECTORS, type AgentTemplate, type TemplateBranch } from "./templates";
 
 /**
@@ -31,6 +32,24 @@ const forks = (
   ];
 };
 
+/**
+ * The service a drawn step should be in, read off its id. `flowFromTemplate` names the
+ * steps positionally — `arm-2-q1`, `arm-2-1-fork` — so the first number after `arm-` is
+ * the top-level option the step hangs under, however deep the fork inside it. The opening
+ * (`start`, `ask-*`, `branch`) and the close (`close`, `end`) are everybody's.
+ */
+const expectedService = (template: AgentTemplate, id: string): string | undefined => {
+  const arm = /^arm-(\d+)(?:-|$)/.exec(id);
+  if (arm === null || template.branch === undefined) return undefined;
+  return Object.keys(template.branch.arms)[Number(arm[1]) - 1];
+};
+
+/** The same flow with no step named for a service — what a flow saved before names looked like. */
+const unnamed = (flow: Flow): Flow => ({ ...flow, nodes: flow.nodes.map(({ service: _service, ...node }) => node) });
+
+/** Whether two steps are drawn on top of each other anywhere. */
+const overlaps = (flow: Flow): boolean => new Set(flow.nodes.map((node) => `${node.x},${node.y}`)).size !== flow.nodes.length;
+
 describe("the template catalogue", () => {
   it("has at least fifty organisations, across at least ten sectors", () => {
     expect(catalogue.length).toBeGreaterThanOrEqual(50);
@@ -44,12 +63,41 @@ describe("the template catalogue", () => {
 
   it.each(each)("%s publishes as a flow with nothing to fix", (_id, template) => {
     const flow = flowFromTemplate(template);
-    const blocking = validateFlow(flow).filter((problem) => problem.blocking);
-    expect(blocking, blocking.map((problem) => problem.message).join("\n")).toEqual([]);
-    // Every node on its own spot: two steps drawn on top of each other is a fork that
-    // widened into its neighbour, which the validator cannot see and a person cannot untangle.
-    const spots = flow.nodes.map((node) => `${node.x},${node.y}`);
-    expect(new Set(spots).size, "nodes drawn on top of each other").toBe(spots.length);
+    // Nothing at all, not merely nothing blocking. A warning — a choice with no answers, a
+    // branch waiting for an answer the question does not offer, a confirm on a value the
+    // engine already read back — is the problems panel opening on a template somebody has
+    // just picked, which is the same homework as a refusal with a softer face.
+    const problems = validateFlow(flow);
+    expect(problems, problems.map((problem) => `${problem.code}: ${problem.message}`).join("\n")).toEqual([]);
+    // Every node on its own spot, both as drawn and once the canvas lays it out: two steps
+    // on top of each other is a fork that widened into its neighbour, which the validator
+    // cannot see and a person cannot untangle.
+    expect(overlaps(flow), "nodes drawn on top of each other").toBe(false);
+    expect(overlaps(tidied(flow)), "nodes laid out on top of each other").toBe(false);
+  });
+
+  it.each(each)("%s names every step for its service, and the opening and close for nobody", (_id, template) => {
+    const flow = flowFromTemplate(template);
+    for (const node of flow.nodes) {
+      expect(node.service, `${node.id} (${node.kind})`).toBe(expectedService(template, node.id));
+    }
+    // A service is a lane on the canvas, so a forking template draws one lane per service,
+    // in the order the template lists them, and nothing else — and a straight line draws none.
+    const lanes = laneGroups(flow).filter((lane) => lane.id !== "opening");
+    expect(lanes.map((lane) => lane.label)).toEqual([...servicesOf(template)]);
+    for (const lane of lanes) expect(lane.ids.length, `lane ${lane.label} has no steps`).toBeGreaterThan(0);
+  });
+
+  it.each(each)("%s is already named the way the canvas would have named it", (_id, template) => {
+    const flow = flowFromTemplate(template);
+    // A flow that names its services is left alone — the same object back, which is how the
+    // canvas tells that nothing was inferred.
+    expect(withServiceTags(flow)).toBe(flow);
+    // And a flow drawn before names existed would have been read into exactly these names,
+    // which is what proves the template and the old rule agree about where every step belongs.
+    // Only while the old rule survives is that worth asserting; if it goes, so does this.
+    const inferred = withServiceTags(unnamed(flow));
+    expect(inferred.nodes.map((node) => [node.id, node.service])).toEqual(flow.nodes.map((node) => [node.id, node.service]));
   });
 
   it.each(each)("%s publishes as a form the API accepts", (_id, template) => {
@@ -196,6 +244,28 @@ describe("drawing a template", () => {
     expect(edge("branch", "arm-3-ack")?.otherwise).toBe(true);
     expect(edge("branch", "arm-1-q1")?.when).toEqual({ equals: "a" });
     expect(edge("arm-1-fork", "arm-1-2-why")?.otherwise).toBe(true);
+  });
+
+  it("names every step under an arm for that arm, forks inside it included", () => {
+    for (const id of ["arm-1-q1", "arm-1-fork", "arm-1-1-q1", "arm-1-1-close", "arm-1-2-why", "arm-1-2-person"]) {
+      expect(node(id)?.service, id).toBe("a");
+    }
+    expect(node("arm-2-why")?.service).toBe("b");
+    expect(node("arm-2-person")?.service).toBe("b");
+    expect(node("arm-3-ack")?.service).toBe("c");
+  });
+
+  it("leaves the opening and the close to everybody", () => {
+    for (const id of ["start", "ask-1", "branch", "close", "end"]) {
+      expect(node(id)?.service, id).toBeUndefined();
+    }
+  });
+
+  it("draws a lane per service, with a nested fork inside its own", () => {
+    const lanes = laneGroups(flow);
+    expect(lanes.map((lane) => lane.label)).toEqual(["everyone gets this", "a", "b", "c"]);
+    expect(lanes.find((lane) => lane.label === "a")?.ids).toEqual(expect.arrayContaining(["arm-1-fork", "arm-1-1-q1", "arm-1-2-why"]));
+    expect(lanes.find((lane) => lane.label === "c")?.catchAll).toBe(true);
   });
 
   it("publishes clean", () => {
