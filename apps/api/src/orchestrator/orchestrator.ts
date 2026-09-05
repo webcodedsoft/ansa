@@ -1,7 +1,15 @@
 import type { LlmProvider } from "@ansa/llm";
 import type { TranscriberSession } from "@ansa/transcriber";
 import type { TurnSession } from "@ansa/turn-detector";
-import type { AudioChunk, BusinessHours, CallDirection, Logger, OrganizationId } from "@ansa/shared";
+import { campaignLayer } from "@ansa/shared";
+import type {
+  AudioChunk,
+  BusinessHours,
+  CallDirection,
+  CampaignCall,
+  Logger,
+  OrganizationId,
+} from "@ansa/shared";
 import type { CallMediaStream } from "@ansa/telephony";
 import { durationMs, type SynthesisStream, type TtsProvider } from "@ansa/tts";
 import {
@@ -12,6 +20,7 @@ import {
   type ToolRegistry,
   type RecordedAnswer,
   type ConfirmedAnswer,
+  type RecordedOutcome,
 } from "@ansa/tools";
 
 import { ACKNOWLEDGEMENTS, createFillerPicker } from "../telephony/filler";
@@ -108,6 +117,14 @@ export interface ToolHooks {
    */
   readonly recordAnswer: (field: string, answer: string) => RecordedAnswer;
   readonly confirmAnswer: (field: string, confirmed: boolean) => ConfirmedAnswer;
+  /**
+   * The verdict the agent reached on a campaign call.
+   *
+   * The check that it is one this campaign listed happens where the campaign is known, which
+   * is not here. A tool that accepted any string would let a model invent a disposition, and a
+   * number built from invented dispositions is worse than no number.
+   */
+  readonly recordOutcome: (outcome: string, note: string | null) => RecordedOutcome;
 }
 
 /** This call's registry and dispatcher. Both per call — see the note in `makeTools`. */
@@ -272,6 +289,19 @@ export interface OrchestratorDeps {
    */
   readonly backchannel?: boolean;
   readonly direction: CallDirection;
+  /**
+   * Why this call was placed, when a campaign placed it.
+   *
+   * Null on every inbound call and on an outbound one with no campaign behind it.
+   * `OUTBOUND_LAYER` tells the agent it must open by saying who it is, which company, and why
+   * it is calling — and has nothing to say for the third. This is the third.
+   */
+  readonly campaign?: CampaignCall | null;
+  /**
+   * Where a recorded verdict goes. Called once, after the outcome has been checked against the
+   * campaign's own list, so the sink never has to re-decide whether it was allowed.
+   */
+  readonly onOutcome?: (outcome: string, note: string | null) => void;
   readonly businessHours: BusinessHours | null;
   /**
    * What this number has done before, or null when it is not known.
@@ -1146,6 +1176,32 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
    * Stored unconfirmed. A write-tier tool naming this field refuses to fire on it, which is
    * the gate that makes it safe for the model to be the parser here.
    */
+  /**
+   * How this call went, against the campaign's own list.
+   *
+   * Refused when there is no campaign, when the outcome is not one it asked for, and when the
+   * agent has already recorded one — a second verdict on the same call is a model changing its
+   * mind after the fact, and the first answer was the one it gave while the caller was still
+   * on the line.
+   */
+  let outcomeRecorded = false;
+  const recordOutcome = (outcome: string, note: string | null): RecordedOutcome => {
+    const allowed = deps.campaign?.outcomes ?? [];
+    if (allowed.length === 0) {
+      return { accepted: false, reason: "this call has no campaign outcomes to record against" };
+    }
+    if (outcomeRecorded) {
+      return { accepted: false, reason: "an outcome has already been recorded for this call" };
+    }
+    const match = allowed.find((one) => one.toLowerCase() === outcome.trim().toLowerCase());
+    if (match === undefined) {
+      return { accepted: false, reason: `not one of: ${allowed.join(", ")}` };
+    }
+    outcomeRecorded = true;
+    deps.onOutcome?.(match, note);
+    return { accepted: true, outcome: match };
+  };
+
   const recordAnswer = (field: string, answer: string): RecordedAnswer => {
     const question = form.answerable(field);
     if (question === null) {
@@ -1190,7 +1246,13 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
   const toolset: CallTools | null =
     toolOrganizationId === null
       ? null
-      : (deps.makeTools?.({ holding: toolHolding, endCall: endCallWhenHeard, recordAnswer, confirmAnswer }) ?? null);
+      : (deps.makeTools?.({
+          holding: toolHolding,
+          endCall: endCallWhenHeard,
+          recordAnswer,
+          confirmAnswer,
+          recordOutcome,
+        }) ?? null);
 
   const stageStart = new Map<string, number>();
   const mark = (stage: string): void => {
@@ -2238,6 +2300,12 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
        cache nothing — and it belongs near the top for the same reason the base does, since
        what it carries are prohibitions rather than details. */
     const outbound = deps.direction === "outbound" ? OUTBOUND_LAYER : "";
+    /* Straight after the safety layer and for the same reasons: static for the whole call, so
+       it sits inside the stable prefix and costs the prompt cache nothing, and it belongs near
+       the top because a reason for ringing is not a detail. Empty when no campaign placed the
+       call, which is every inbound one. */
+    const campaign =
+      deps.direction === "outbound" && deps.campaign != null ? campaignLayer(deps.campaign) : "";
     /* Where the conversation is, from the director — which question comes next, what to
        cover on the way, whether the graph has ended. Null for a form, whose questions are
        stated once in the standing prompt. Beside the situation, and after it, because it is
@@ -2272,7 +2340,16 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       flowEndReached = false;
       endCallWhenHeard("the flow reached its end");
     }
-    const system = [deps.systemPrompt, outbound, known, situation, steering, feeling, budget.instruction]
+    const system = [
+      deps.systemPrompt,
+      outbound,
+      campaign,
+      known,
+      situation,
+      steering,
+      feeling,
+      budget.instruction,
+    ]
       .filter((s) => s !== "")
       .join("\n\n");
     /**

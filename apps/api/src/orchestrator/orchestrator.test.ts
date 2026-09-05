@@ -1932,6 +1932,57 @@ describe("the prompt the call was configured with", () => {
     expect(system.startsWith(`${DEFAULT_SYSTEM_PROMPT}\n\n${OUTBOUND_LAYER}`)).toBe(true);
   });
 
+  describe("why this call was placed", () => {
+    const CAMPAIGN = {
+      organizationName: "Oakhaven Properties",
+      purpose: "to confirm your viewing at {property} on {when}",
+      opening: null,
+      outcomes: ["confirmed", "rescheduled", "declined"] as readonly string[],
+      facts: { property: "14 Adeola Odeku", when: "Tuesday at 2" },
+    };
+
+    it("tells the agent the reason, with this person's own detail in it", () => {
+      /* `OUTBOUND_LAYER` requires the agent to open by saying who it is, which company, and
+         why it is calling. This is the third; without it the model composes one, and an
+         invented reason for an unexpected call is what a scam sounds like. */
+      const h = setup({ direction: "outbound", campaign: CAMPAIGN });
+
+      h.listen.final("Hello?");
+
+      const system = h.llm.last().request.system;
+      expect(system).toContain("to confirm your viewing at 14 Adeola Odeku on Tuesday at 2");
+      expect(system).toContain("on behalf of Oakhaven Properties");
+    });
+
+    it("keeps it in the cacheable prefix, straight after the safety layer", () => {
+      const h = setup({ direction: "outbound", campaign: CAMPAIGN });
+
+      h.listen.final("Hello?");
+
+      const system = h.llm.last().request.system;
+      expect(system.startsWith(`${DEFAULT_SYSTEM_PROMPT}\n\n${OUTBOUND_LAYER}`)).toBe(true);
+      // And the reason sits immediately after it, before anything that moves per turn.
+      const afterSafety = system.indexOf(OUTBOUND_LAYER) + OUTBOUND_LAYER.length;
+      expect(system.indexOf("on behalf of Oakhaven Properties")).toBeGreaterThan(afterSafety);
+    });
+
+    it("says nothing about a campaign on an inbound call", () => {
+      const h = setup({ direction: "inbound", campaign: CAMPAIGN });
+
+      h.listen.final("Hello?");
+
+      expect(h.llm.last().request.system).not.toContain("on behalf of Oakhaven Properties");
+    });
+
+    it("says nothing when an outbound call has no campaign behind it", () => {
+      const h = setup({ direction: "outbound" });
+
+      h.listen.final("Hello?");
+
+      expect(h.llm.last().request.system).not.toContain("Why you are calling");
+    });
+  });
+
   /**
    * Small noises while the caller is still talking.
    *
@@ -3256,7 +3307,7 @@ describe("the platform tools on a call", () => {
     h.stream.ackAll();
   };
 
-  it("offers exactly the six non-data tools", () => {
+  it("offers exactly the seven non-data tools", () => {
     const h = setup({ makeTools: platform() });
     started(h);
     h.listen.final("Hello.");
@@ -3268,6 +3319,10 @@ describe("the platform tools on a call", () => {
       "end_call",
       // The model's answer to a choice question, into the director. No data behind it.
       "record_answer",
+      /* The verdict on a campaign call. Offered on every call and not only outbound ones:
+         it refuses in words when there is no campaign, which the model reads and stops. A
+         registry that varied by direction would be a second thing to keep in step. */
+      "record_call_outcome",
       "transfer_to_human",
       // Distinct from transfer_to_human on purpose: it goes to a line that answers outside
       // business hours, and only the model can recognise the call that needs it.

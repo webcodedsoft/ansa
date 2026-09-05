@@ -23,6 +23,9 @@ import {
   recordKnowledgeRetrieval,
   searchKnowledge,
   withOrganization,
+  readCampaignCallBrief,
+  recordCallOutcome,
+  type CampaignCallBrief,
 } from "@ansa/db";
 import { buildUrl, openDeepgramSession } from "@ansa/deepgram-listen";
 import { openListenSession } from "@ansa/openai-listen";
@@ -77,6 +80,8 @@ import {
   ORGANIZATION_PARAM,
   ORGANIZATION_REGISTRY,
   TTS_PROVIDER,
+  CAMPAIGN_PARAM,
+  SCHEDULED_CALL_PARAM,
 } from "./tokens";
 import { fromWebSocket } from "./ws-media-socket";
 
@@ -313,6 +318,54 @@ export class MediaGateway implements OnApplicationShutdown {
    * which is why `warmForOrganization` runs at ingress: the carrier still has to fetch TwiML and
    * open a socket, and that is usually enough.
    */
+  /**
+   * Why this call was placed, or null if it cannot be established.
+   *
+   * Null on every failure — no database, another tenant's id, a queue row that belongs to a
+   * different campaign, a campaign whose purpose was cleared underneath the call. The call
+   * then runs on the safety layer alone, which is a call that says less than it should rather
+   * than one that says something invented. Never throws: a brief that cannot be read must not
+   * take a live call down with it.
+   */
+  private async campaignBriefFor(
+    organizationId: OrganizationId,
+    campaignId: string,
+    scheduledCallId: string,
+  ): Promise<CampaignCallBrief | null> {
+    if (this.dataSource === null) return null;
+    try {
+      return await withOrganization(this.dataSource, organizationId, (scope) =>
+        readCampaignCallBrief(scope, campaignId, scheduledCallId),
+      );
+    } catch (error) {
+      this.log.warn("could not read the campaign brief for this call", {
+        campaignId,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
+  /** The verdict, onto the row that caused the call. Logged rather than retried; see the caller. */
+  private async saveOutcome(
+    organizationId: OrganizationId,
+    scheduledCallId: string,
+    outcome: string,
+    note: string | null,
+  ): Promise<void> {
+    if (this.dataSource === null) return;
+    try {
+      await withOrganization(this.dataSource, organizationId, (scope) =>
+        recordCallOutcome(scope, scheduledCallId, outcome, note),
+      );
+    } catch (error) {
+      this.log.warn("could not record the call outcome", {
+        scheduledCallId,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   private warmed(voiceId: string, greeting: string, speakingRate: number | undefined): WarmAudio {
     const key = cacheKey(voiceId, speakingRate, greeting);
     const ready = this.warm.get(key);
@@ -769,6 +822,19 @@ export class MediaGateway implements OnApplicationShutdown {
     // Read before the pre-render, because it decides what gets rendered.
     const direction: CallDirection =
       stream.parameters[DIRECTION_PARAM] === "outbound" ? "outbound" : "inbound";
+
+    /* Why this call was placed, when a campaign placed it.
+     *
+     * Both ids arrive as stream parameters because outbound resolves backwards: there is no
+     * dialled number to look a campaign up from. The read checks that the queue row actually
+     * belongs to the campaign, and it is organisation-scoped like everything else — an id
+     * arriving from outside on a socket finds nothing if it is another tenant's. */
+    const campaignId = stream.parameters[CAMPAIGN_PARAM] ?? null;
+    const scheduledCallId = stream.parameters[SCHEDULED_CALL_PARAM] ?? null;
+    const campaignBrief =
+      direction === "outbound" && campaignId !== null && scheduledCallId !== null && organizationId !== undefined
+        ? await this.campaignBriefFor(organizationId as OrganizationId, campaignId, scheduledCallId)
+        : null;
 
     const opening =
       direction === "outbound" ? outboundOpener(settings.name) : settings.greeting;
@@ -1239,6 +1305,26 @@ export class MediaGateway implements OnApplicationShutdown {
       // load. An unregistered number gets the default composition, which is exactly what
       // every call got before this line existed.
       systemPrompt: settings.systemPrompt,
+      /* The company name is the agent's own, which is what it introduces itself as — the same
+         name `outboundOpener` uses, so the opening and the reason agree about who is calling. */
+      campaign:
+        campaignBrief === null
+          ? null
+          : {
+              organizationName: settings.name,
+              purpose: campaignBrief.purpose,
+              opening: campaignBrief.opening,
+              outcomes: campaignBrief.outcomes,
+              facts: campaignBrief.facts,
+            },
+      onOutcome: (outcome, note) => {
+        if (scheduledCallId === null || organizationId === undefined) return;
+        /* Fire and forget, deliberately: the call is still running and a verdict that fails
+           to save must not stall the goodbye. It is logged rather than retried — the row it
+           belongs to is not going anywhere, and a second attempt during a live call buys
+           nothing a person can hear. */
+        void this.saveOutcome(organizationId as OrganizationId, scheduledCallId, outcome, note);
+      },
       forSpeech,
       // Rendered for this call's voice and this call's greeting, or null and synthesised
       // live. Never another voice's.

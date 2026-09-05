@@ -462,6 +462,79 @@ export interface DueCall extends ScheduledCall {
  * and nothing else, so the widest thing this can leak is which tenants are busy. The dialler
  * then opens a proper scope per organisation and reads the queue through the policies.
  */
+/**
+ * What a call in progress needs to know about why it was placed.
+ *
+ * One read, at the moment the media socket opens, joining the campaign to the queue row that
+ * caused this call. Both ids arrive as stream parameters — outbound has no dialled number to
+ * resolve them from — and both are checked here: a `scheduledCallId` that does not belong to
+ * the `campaignId` returns nothing rather than the wrong person's details, which is the
+ * mistake that would put somebody else's appointment in a stranger's ear.
+ *
+ * Organisation-scoped like everything else, so a campaign id from another tenant finds no row
+ * even though it arrived from outside on a socket.
+ */
+export interface CampaignCallBrief {
+  readonly purpose: string;
+  readonly opening: string | null;
+  readonly outcomes: readonly string[];
+  readonly facts: Readonly<Record<string, string>> | null;
+}
+
+export const readCampaignCallBrief = async (
+  scope: OrganizationScope,
+  campaignId: string,
+  scheduledCallId: string,
+): Promise<CampaignCallBrief | null> => {
+  const rows = await scope.query<Record<string, unknown>>(
+    `select cp.purpose, cp.opening, cp.outcomes, s.facts
+       from scheduled_calls s
+       join campaigns cp on cp.id = s.campaign_id
+      where s.id = $1 and cp.id = $2`,
+    [scheduledCallId, campaignId],
+  );
+  const row = rows[0];
+  if (row === undefined) return null;
+  const purpose = row["purpose"];
+  /* A campaign cannot start without a purpose, so this is a row that changed underneath a
+     call in flight. Null rather than an empty reason: the layer is not added at all, and the
+     agent falls back to the safety layer alone rather than announcing a blank. */
+  if (typeof purpose !== "string" || purpose.trim() === "") return null;
+  return {
+    purpose,
+    opening: row["opening"] === null || row["opening"] === undefined ? null : String(row["opening"]),
+    outcomes: Array.isArray(row["outcomes"]) ? (row["outcomes"] as string[]).map(String) : [],
+    facts: (row["facts"] ?? null) as Readonly<Record<string, string>> | null,
+  };
+};
+
+/**
+ * Write the verdict the agent recorded onto the row that caused the call.
+ *
+ * Refused unless the outcome is one the campaign actually listed — the check is here rather
+ * than in the tool, because the tool cannot know what this campaign asked for and a tool that
+ * accepted any string would let a model invent a disposition. A number built from invented
+ * dispositions is worse than no number.
+ */
+export const recordCallOutcome = async (
+  scope: OrganizationScope,
+  scheduledCallId: string,
+  outcome: string,
+  note: string | null,
+): Promise<boolean> => {
+  const rows = await scope.mutate<Record<string, unknown>>(
+    `update scheduled_calls s
+        set outcome = $2, updated_at = now()
+       from campaigns cp
+      where s.id = $1
+        and cp.id = s.campaign_id
+        and cp.outcomes @> to_jsonb($3::text)
+      returning s.id`,
+    [scheduledCallId, note === null ? outcome : `${outcome} — ${note}`, outcome],
+  );
+  return rows.length > 0;
+};
+
 export const organizationsWithDueCalls = async (
   dataSource: Db,
 ): Promise<readonly OrganizationId[]> => {
