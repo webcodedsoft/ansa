@@ -7,7 +7,9 @@ import { currentPrincipal } from "@/features/auth/auth.service";
 import { listAgents } from "@/features/agents/agents.service";
 import { listContacts } from "@/features/contacts/contacts.service";
 import { AddContactsButton } from "@/features/campaigns/components/add-contacts-button";
+import { readTools } from "@/features/agents/agents.service";
 import { CampaignBrief } from "@/features/campaigns/components/campaign-brief";
+import { CampaignConversation } from "@/features/campaigns/components/campaign-conversation";
 import { CampaignStatusControl } from "@/features/campaigns/components/campaign-status-control";
 import { ScheduledCallsTable } from "@/features/campaigns/components/scheduled-calls-table";
 import { windowSummary } from "@/features/campaigns/campaigns.display";
@@ -44,10 +46,13 @@ const CampaignPage = async ({
   });
   if (campaign === null) notFound();
 
-  const [principal, calls, agentList] = await Promise.all([
+  const [principal, calls, agentList, tools] = await Promise.all([
     currentPrincipal(),
     listCampaignCalls(campaignId, requested),
     listAgents(),
+    /* The organisation's tools, so a tool step can name one that exists. A campaign
+       enables nothing of its own — the tools belong to the agent it uses. */
+    readTools(),
   ]);
   const canWrite = principal.capabilities.includes("campaigns:write");
 
@@ -106,6 +111,17 @@ const CampaignPage = async ({
             maxAttempts: campaign.maxAttempts,
             retryAfterMinutes: campaign.retryAfterMinutes,
           }}
+        />
+      </div>
+
+      <div className="mt-4">
+        <CampaignConversation
+          campaignId={campaign.id}
+          flow={campaign.flow}
+          editable={campaign.briefEditable}
+          canWrite={canWrite}
+          tools={tools}
+          transferNumber={null}
         />
       </div>
 
