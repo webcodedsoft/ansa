@@ -1514,9 +1514,21 @@ export const FlowCanvas = ({
    */
   const focusNode = (nodeId: string): void => {
     const node = byId(nodeId);
-    if (node === undefined) return;
+    const port = canvasRef.current;
+    if (node === undefined || port === null) return;
+    /* A step folded away with its service is unfolded first, or the pan would arrive at an
+       empty box. Then the step goes to the middle of the viewport, at whatever zoom is set —
+       the old "a little in from the top-left" was worked out at 100% and, zoomed out, landed
+       the reader somewhere off to the side of it. */
+    const lane = laneOfStep.get(nodeId);
+    if (lane !== undefined && folded.has(lane.id)) toggleFold(lane.id);
     chooseStep(nodeId);
-    applyPan({ x: 120 - node.x, y: 90 - node.y });
+    const { scale } = viewLive.current;
+    const height = cardRefs.current.get(nodeId)?.offsetHeight ?? BODY_H;
+    applyPan({
+      x: port.clientWidth / 2 - (node.x + NODE_W / 2) * scale,
+      y: port.clientHeight / 2 - (node.y + height / 2) * scale,
+    });
   };
 
   /* Fit: the whole drawing under the viewport, scaled down when it is too big and never
@@ -1670,7 +1682,8 @@ export const FlowCanvas = ({
         Data captured tab, and everything else about the agent can be edited here.
       </Notice>
 
-      <div className="hidden items-start gap-3.5 sm:grid lg:grid-cols-[186px_minmax(0,1fr)_280px]">
+      <div className="hidden items-start gap-3.5 sm:grid lg:grid-cols-[224px_minmax(0,1fr)_280px]">
+        <div className="flex min-w-0 flex-col gap-3.5">
         <div className="surface flex flex-col gap-0.5 rounded-xl p-2.5">
           <h5 className="mt-0.5 mb-1.5 ml-1.5 font-mono text-[9.5px] tracking-[0.14em] text-[var(--ink-3)] uppercase">
             Add a step
@@ -1715,9 +1728,19 @@ export const FlowCanvas = ({
           </div>
         </div>
 
-        {/* One grid cell for the drawing and what is said about it, so the palette, this and
-            the inspector stay three columns. Mounted as siblings, the status line took the
-            inspector's column and the inspector wrapped under the palette. */}
+        {/* Whether this graph could answer a phone, and what stands in the way — under the
+            palette, beside the drawing, where it is seen without scrolling to the foot of a
+            tall canvas. Recomputed on every edit rather than at publish: `validateFlow` is the
+            same function the publish gate runs, so nobody reaches a refusal having been told
+            here that it was fine. */}
+        <div className="surface overflow-hidden rounded-xl">
+          <FlowStatus steps={nodes} problems={problems} onFocusNode={focusNode} compact className="border-t-0" />
+          {problems.length > 1 && <FlowProblems steps={nodes} problems={problems} onFocusNode={focusNode} compact />}
+        </div>
+        </div>
+
+        {/* One grid cell for the drawing, so the palette, this and the inspector stay three
+            columns. */}
         <div className="flex min-w-0 flex-col gap-3.5">
         <div
           ref={canvasRef}
@@ -2268,13 +2291,6 @@ export const FlowCanvas = ({
             </div>
           )}
         </div>
-
-        {/* Whether this graph could answer a phone, under the graph itself and recomputed on
-            every edit rather than at publish. `validateFlow` is the same function the publish
-            gate runs, so nobody reaches a refusal having been told here that it was fine. */}
-        <FlowStatus steps={nodes} problems={problems} onFocusNode={focusNode} />
-        {/* The full list, only once there is more than the dock shows. */}
-        {problems.length > 1 && <FlowProblems steps={nodes} problems={problems} onFocusNode={focusNode} />}
         </div>
 
         <div className="surface studio-inspector rounded-xl p-4">

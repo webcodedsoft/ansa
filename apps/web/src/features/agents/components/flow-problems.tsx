@@ -60,6 +60,8 @@ const Band = ({ label, count }: { readonly label: string; readonly count: number
 );
 
 const ROW = "flex w-full gap-2.5 border-l-2 px-4 py-2.5 text-left text-[13px] leading-relaxed";
+/** The same row for a narrow column beside the drawing. */
+const ROW_COMPACT = "flex w-full gap-2 border-l-2 px-3 py-2 text-left text-[12px] leading-relaxed";
 
 const RowBody = ({
   Icon,
@@ -93,6 +95,7 @@ export const FlowProblems = ({
   problems,
   steps,
   onFocusNode,
+  compact = false,
   className,
 }: {
   readonly problems: readonly FlowProblemLike[];
@@ -100,10 +103,13 @@ export const FlowProblems = ({
   readonly steps: readonly FlowStepLike[];
   /** Select the step and bring it into view. Rows with no step of their own are not clickable. */
   readonly onFocusNode: (nodeId: string) => void;
+  /** Smaller rows, for a narrow column beside the drawing rather than a panel under it. */
+  readonly compact?: boolean;
   readonly className?: string;
 }) => {
   const entries = orderProblems(problems, steps);
   if (entries.length === 0) return null;
+  const row = compact ? ROW_COMPACT : ROW;
 
   return (
     <section aria-label="Problems with this flow" className={cn("border-t border-[var(--hairline)]", className)}>
@@ -119,14 +125,14 @@ export const FlowProblems = ({
                   {/* A plain row, not a dead button: a control that selects nothing teaches
                       the operator that none of these rows are worth clicking. */}
                   {step === null ? (
-                    <div className={cn(ROW, rule)}>
+                    <div className={cn(row, rule)}>
                       <RowBody Icon={Icon} ink={ink} name={WHOLE_FLOW_LABEL} message={problem.message} />
                     </div>
                   ) : (
                     <button
                       type="button"
                       onClick={() => onFocusNode(step.id)}
-                      className={cn(ROW, rule, "cursor-pointer transition-colors hover:bg-[var(--surface-2)]")}
+                      className={cn(row, rule, "cursor-pointer transition-colors hover:bg-[var(--surface-2)]")}
                     >
                       <RowBody Icon={Icon} ink={ink} name={stepLabel(step)} message={problem.message} />
                     </button>

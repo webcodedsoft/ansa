@@ -4151,6 +4151,14 @@ what a step connects to reads at a glance. A picked link still wins when there i
 ends of a picked link — are lit with it, more quietly than the step itself, and every other
 card steps back to just over half, so for a moment the lit part is the drawing.
 
+**The verdict beside the drawing, and Show me that shows (2026-09-05).** The status line and
+the problems list moved from under the canvas — a screen below the fold on a tall drawing —
+to a card under the palette, in a `compact` variant of both components, with the palette
+column widened to 224px for it. Show me had been worked out at 100% and put the step a little
+in from the top-left; zoomed out or panned away it landed beside empty dots. It unfolds the
+step's service if folded and puts the step in the middle of the viewport at whatever zoom is
+set. Proved after pushing the drawing 3000px away: step centre = viewport centre.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and

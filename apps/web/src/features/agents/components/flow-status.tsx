@@ -31,6 +31,7 @@ export const FlowStatus = ({
   steps,
   problems,
   onFocusNode,
+  compact = false,
   className,
 }: {
   /** The graph's nodes. Counted, not drawn. */
@@ -38,6 +39,8 @@ export const FlowStatus = ({
   readonly problems: readonly FlowProblemLike[];
   /** Select the step the first problem names and bring it into view. */
   readonly onFocusNode?: (nodeId: string) => void;
+  /** Stacked and smaller, for a narrow column beside the drawing rather than a bar under it. */
+  readonly compact?: boolean;
   readonly className?: string;
 }) => {
   const { tone, label, summary } = flowStatusLine(steps, problems);
@@ -47,7 +50,8 @@ export const FlowStatus = ({
     <div
       role="status"
       className={cn(
-        "flex flex-wrap items-center gap-2.5 border-t border-[var(--hairline)] px-4 py-2.5 text-[12.5px]",
+        "flex flex-wrap items-center gap-2.5 border-t border-[var(--hairline)] text-[12.5px]",
+        compact ? "px-3 py-2.5 text-[12px]" : "px-4 py-2.5",
         className,
       )}
     >
@@ -56,7 +60,7 @@ export const FlowStatus = ({
         <span className="tabular-nums text-[var(--ink-3)]">{summary}</span>
       ) : (
         <>
-          <span className={cn("min-w-0 flex-1", first.problem.blocking ? "text-[var(--bad)]" : "text-[var(--warn)]")}>
+          <span className={cn("min-w-0 flex-1", compact && "basis-full leading-relaxed", first.problem.blocking ? "text-[var(--bad)]" : "text-[var(--warn)]")}>
             {first.step === null ? "" : `“${stepLabel(first.step)}” — `}
             {first.problem.message}
             {problems.length > 1 && <span className="text-[var(--ink-3)]"> · and {plural(problems.length - 1, "more")}</span>}
