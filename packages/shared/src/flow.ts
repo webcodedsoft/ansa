@@ -33,6 +33,8 @@ export const FLOW_LIMITS = {
   patternLength: 200,
   attempts: { min: 1, max: 10 },
   options: { max: 24, valueLength: 120 },
+  /** A port name — "got", "gave-up", "yes", "no". */
+  portLength: 32,
   sayLength: 600,
   toolNameLength: 128,
   nodes: 120,

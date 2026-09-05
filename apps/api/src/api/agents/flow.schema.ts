@@ -85,7 +85,9 @@ const nodeId = (): Schema<string> => text({ minLength: 1, maxLength: FLOW_LIMITS
  * console's side of the contract before this file learned about it, which is a 422 on a graph
  * that is perfectly well formed.
  */
-const PORT_LIMIT = 32;
+/* The one figure, from the shared limits, so this and the console cannot drift. It used to
+   be a local 32 while the console bounded the port not at all. */
+const PORT_LIMIT = FLOW_LIMITS.portLength;
 
 const flowNode: Schema<FlowNode> = object({
   id: nodeId(),

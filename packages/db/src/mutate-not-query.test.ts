@@ -31,14 +31,27 @@ const sqlLiteralsPassedToQuery = (contents: string): readonly string[] => {
   const found: string[] = [];
   // `scope.query<Row>(` or `scope.query(`, then a template literal. Deliberately naive: it
   // is looking for a shape, and anything it cannot parse is not what this is guarding.
-  const call = /scope\s*\.\s*query\s*(?:<[^>]*>)?\s*\(\s*`([^`]*)`/gs;
+  /* The type argument is matched as "anything up to the call's own paren" rather than
+     `<[^>]*>`, which stops at the first `>` and so never matched a nested generic like
+     `scope.query<Record<string, unknown>>(`. That blind spot let exactly the bug this file
+     exists to catch back into `contacts.ts`. */
+  const call = /scope\s*\.\s*query\s*(?:<[^(`]*>)?\s*\(\s*`([^`]*)`/gs;
   for (const match of contents.matchAll(call)) found.push(match[1] ?? "");
   return found;
 };
 
+/**
+ * Only a statement that *is* an update or a delete offends.
+ *
+ * Judged by the leading keyword, not by the word appearing anywhere: an
+ * `insert … on conflict do update … returning` contains "update" but is an INSERT, and the
+ * driver hands an insert its rows directly rather than as `[rows, count]` — verified against
+ * Postgres, not assumed. Keying on the word alone flagged two correct inserts in
+ * `contacts.ts`, and a guard that cries wolf is a guard somebody switches off.
+ */
 const offends = (sql: string): boolean => {
-  const flat = sql.toLowerCase();
-  return /\b(update|delete)\b/.test(flat) && flat.includes("returning");
+  const flat = sql.trim().toLowerCase();
+  return /^(update|delete)\b/.test(flat) && flat.includes("returning");
 };
 
 describe("update and delete with returning", () => {

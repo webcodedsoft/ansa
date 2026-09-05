@@ -44,18 +44,7 @@ import {
 import { useToastStore } from "@/stores/toast.store";
 import { PROMPT_EXAMPLE } from "../capture-vocabulary";
 
-import {
-  FLOW_FIELD_TYPES,
-  emptyFlow,
-  flowSchema,
-  readFlow,
-  type Flow,
-  type FlowCondition,
-  type FlowEdge,
-  type FlowField,
-  type FlowNode,
-  type FlowNodeKind,
-} from "../flow.schema";
+import { emptyFlow, type Flow, FLOW_FIELD_TYPES, FLOW_LIMITS, type FlowCondition, type FlowEdge, type FlowField, type FlowNode, type FlowNodeKind, flowSchema, readFlow } from "../flow.schema";
 import { FlowProblems } from "./flow-problems";
 import { FlowStatus } from "./flow-status";
 
@@ -686,6 +675,9 @@ const BranchRow = ({
           className={cn(CONTROL, "min-w-0 px-2 py-1 text-[12px]")}
           value={value}
           placeholder={example}
+          /* The same bound the schemas apply, so a long match value is stopped as it is typed
+             rather than accepted, drawn, and refused by the API after the work is done. */
+          maxLength={FLOW_LIMITS.options.valueLength}
           onChange={(event) => onChange(conditionFrom(operator, event.target.value))}
         />
       )}

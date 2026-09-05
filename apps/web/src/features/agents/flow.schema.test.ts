@@ -258,3 +258,54 @@ describe("drawing a template's form as a flow", () => {
     expect(drawn.nodes.map((node) => node.id)).not.toContain("reference");
   });
 });
+
+describe("the bounds the API applies are applied here too", () => {
+  /**
+   * The console and the API validate the same graph, and the console is the half a person is
+   * looking at. Five fields used to be unbounded here and bounded there — `id`, `from`, `to`,
+   * `port`, and a condition's values — so a branch on a free-text answer drew fine and came
+   * back 422 after the drawing was finished. The figures now come from one `FLOW_LIMITS`, but
+   * sharing the numbers is not the same as applying them, and this is what applies them.
+   */
+  const over = (n: number): string => "x".repeat(n + 1);
+
+  it("refuses a node id longer than the key length", () => {
+    expect(
+      flowNodeSchema.safeParse({ id: over(FLOW_LIMITS.keyLength), kind: "say", x: 0, y: 0 }).success,
+    ).toBe(false);
+  });
+
+  it("refuses an edge whose ends or port are too long", () => {
+    expect(flowEdgeSchema.safeParse({ from: over(FLOW_LIMITS.keyLength), to: "b" }).success).toBe(false);
+    expect(flowEdgeSchema.safeParse({ from: "a", to: over(FLOW_LIMITS.keyLength) }).success).toBe(false);
+    expect(
+      flowEdgeSchema.safeParse({ from: "a", to: "b", port: over(FLOW_LIMITS.portLength) }).success,
+    ).toBe(false);
+  });
+
+  it("refuses a branch value longer than an option, or more of them than a choice may hold", () => {
+    const long = over(FLOW_LIMITS.options.valueLength);
+    expect(flowEdgeSchema.safeParse({ from: "a", to: "b", when: { equals: long } }).success).toBe(false);
+    expect(flowEdgeSchema.safeParse({ from: "a", to: "b", when: { oneOf: [long] } }).success).toBe(false);
+    expect(
+      flowEdgeSchema.safeParse({
+        from: "a",
+        to: "b",
+        when: { oneOf: Array.from({ length: FLOW_LIMITS.options.max + 1 }, () => "ok") },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("still accepts a graph at exactly the limits", () => {
+    const at = (n: number): string => "x".repeat(n);
+    expect(flowNodeSchema.safeParse({ id: at(FLOW_LIMITS.keyLength), kind: "say", x: 0, y: 0 }).success).toBe(true);
+    expect(
+      flowEdgeSchema.safeParse({
+        from: "a",
+        to: "b",
+        port: at(FLOW_LIMITS.portLength),
+        when: { equals: at(FLOW_LIMITS.options.valueLength) },
+      }).success,
+    ).toBe(true);
+  });
+});

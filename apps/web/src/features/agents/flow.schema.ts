@@ -1,6 +1,9 @@
 import { z } from "zod";
 
+import { FLOW_LIMITS } from "@ansa/shared/flow";
+
 import { MAX_CAPTURED_FIELDS } from "./agents.schema";
+import { tidied } from "./flow-layout";
 
 /**
  * The conversation graph, as the console reads and writes it.
@@ -40,17 +43,16 @@ export const FLOW_FIELD_TYPES = [
 ] as const;
 
 /** The bounds both validators enforce. Copied from the shared module, which owns them. */
-export const FLOW_LIMITS = {
-  keyLength: 64,
-  promptLength: 300,
-  patternLength: 200,
-  attempts: { min: 1, max: 10 },
-  options: { max: 24, valueLength: 120 },
-  sayLength: 600,
-  toolNameLength: 128,
-  nodes: 120,
-  edges: 240,
-} as const;
+/**
+ * The bounds, re-exported from the shared contract rather than restated.
+ *
+ * There were two of these objects — this one and `@ansa/shared`'s — holding the same numbers
+ * by hand. That is not a hypothetical risk: the console left `id`, `from`, `to`, `port` and a
+ * condition's values unbounded while the API bounded all five, so a branch on a free-text
+ * answer drew fine here and came back 422 from the half that decides. One object cannot drift
+ * from itself.
+ */
+export { FLOW_LIMITS };
 
 export const FLOW_NODE_KINDS = [
   "start", "say", "collect", "confirm", "decide", "tool", "transfer", "hangup",
@@ -93,13 +95,18 @@ export type FlowField = z.infer<typeof flowFieldSchema>;
  * quietly parse as `equals` and the second operator would vanish between the drawing and the
  * call. Strict refuses it instead, which is the honest answer: the four are alternatives.
  *
- * The values carry no length bound because the shared contract names none. Inventing one here
- * would refuse a graph the API accepts, which is drift in the direction nobody tests: the
- * operator is told their own drawing is wrong by the half that does not decide.
+ * The values are bounded to the same figures the API applies — `options.valueLength` and
+ * `options.max`. They used to carry no bound at all, on the reasoning that inventing one here
+ * would refuse a graph the API accepts. That reasoning was sound and the premise was wrong:
+ * the API *does* bound them, so the drift ran the other way, which is the direction that
+ * actually bites. A branch on a free-text answer accepted a long match value here, drew fine,
+ * and came back 422 after the drawing was finished, from a validator nobody was looking at.
  */
 export const flowConditionSchema = z.union([
-  z.strictObject({ equals: z.string() }),
-  z.strictObject({ oneOf: z.array(z.string()) }),
+  z.strictObject({ equals: z.string().max(FLOW_LIMITS.options.valueLength) }),
+  z.strictObject({
+    oneOf: z.array(z.string().max(FLOW_LIMITS.options.valueLength)).max(FLOW_LIMITS.options.max),
+  }),
   z.strictObject({ isEmpty: z.literal(true) }),
   z.strictObject({ greaterThan: z.number() }),
 ]);
@@ -107,7 +114,7 @@ export const flowConditionSchema = z.union([
 export type FlowCondition = z.infer<typeof flowConditionSchema>;
 
 export const flowNodeSchema = z.object({
-  id: z.string().min(1),
+  id: z.string().min(1).max(FLOW_LIMITS.keyLength),
   kind: z.enum(FLOW_NODE_KINDS),
   /* Canvas position, carried so a reopened flow looks the way it was left. Not sanity-checked
      against a viewport: there isn't one, panning is unbounded, and a node at x = -4000 is
@@ -129,10 +136,10 @@ export const flowNodeSchema = z.object({
 export type FlowNode = z.infer<typeof flowNodeSchema>;
 
 export const flowEdgeSchema = z.object({
-  from: z.string().min(1),
-  to: z.string().min(1),
+  from: z.string().min(1).max(FLOW_LIMITS.keyLength),
+  to: z.string().min(1).max(FLOW_LIMITS.keyLength),
   /** Which labelled output it leaves by — "got"/"gave-up", "yes"/"no", "ok"/"failed". */
-  port: z.string().min(1).optional(),
+  port: z.string().min(1).max(FLOW_LIMITS.portLength).optional(),
   /** `decide` only. */
   when: flowConditionSchema.optional(),
   /** `decide` only, and exactly one per decide node: callers say unlisted things. */
@@ -251,6 +258,10 @@ interface DrawnBranch {
 }
 
 /** One column per arm, one row per step — the grid the canvas's own tidy-up uses. */
+/* Rough scaffolding, not the final placement: `flowFromTemplate` runs the whole graph
+   through the canvas's `tidied` before returning, so these only have to keep arms apart
+   while the drawing is assembled. They deliberately no longer try to match the canvas's own
+   spacing — an earlier version did, drifted, and made every template look hand-arranged. */
 const COLUMN = 260;
 const ROW = 170;
 
@@ -276,7 +287,9 @@ export const flowFromTemplate = (template: {
   readonly branch?: DrawnBranch;
   readonly closing?: string;
 }): Flow => {
-  if (template.branch === undefined) return withClosing(flowFromFields(template.fields), template.closing);
+  if (template.branch === undefined) {
+    return tidied(withClosing(flowFromFields(template.fields), template.closing));
+  }
 
   const nodes: Flow["nodes"][number][] = [{ id: "start", kind: "start", x: 40, y: 90 }];
   const edges: Flow["edges"][number][] = [];
@@ -394,7 +407,20 @@ export const flowFromTemplate = (template: {
     for (const from of toEnd) edges.push({ from, to: "end" });
   }
 
-  return { version: FLOW_VERSION, nodes, edges };
+  /* Placed by the canvas's own layout rather than by the grid below.
+   *
+   * This function used to position nodes on a private grid — `COLUMN`/`ROW` here were 260 and
+   * 170 against the canvas's 236 and 66 — and the two could never agree. The canvas decides
+   * whether a flow was arranged by a person with `some(service) && !samePlaces(flow,
+   * tidied(flow))`; once templates began shipping `service` tags, both halves were true for
+   * every one of them, so all 70 catalogue templates opened as though somebody had dragged
+   * them. That meant no centring on open, a "Tidy up" button offered on a drawing nobody
+   * arranged, lane reordering silently doing nothing (it is gated on derived layout), and
+   * every later edit nudged into a free slot instead of being re-laid out.
+   *
+   * Deriving the placement here instead makes `samePlaces` true, so the canvas recognises a
+   * template as what it is: a graph it may lay out itself. */
+  return tidied({ version: FLOW_VERSION, nodes, edges });
 };
 
 const withClosing = (flow: Flow, closing: string | undefined): Flow => {

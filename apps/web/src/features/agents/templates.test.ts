@@ -2,7 +2,7 @@ import { validateFlow } from "@ansa/shared/flow-validate";
 import { describe, expect, it } from "vitest";
 
 import { capturedFieldsSchema, type CapturedField } from "./agents.schema";
-import { laneGroups, tidied, withServiceTags } from "./flow-layout";
+import { laneGroups, samePlaces, tidied, withServiceTags } from "./flow-layout";
 import { flowFromTemplate, type Flow } from "./flow.schema";
 import { AGENT_TEMPLATES, allFields, formPolicies, servicesOf, TEMPLATE_SECTORS, type AgentTemplate, type TemplateBranch } from "./templates";
 
@@ -186,6 +186,30 @@ describe("the template catalogue", () => {
   });
 });
 
+describe("a template is not somebody's arrangement", () => {
+  /**
+   * The canvas decides whether a person arranged a flow with
+   * `some(service) && !samePlaces(flow, tidied(flow))`, and lays the flow out itself when the
+   * answer is no. Templates ship `service` tags, so the first half is always true and the
+   * whole judgement rests on the placement matching.
+   *
+   * It stopped matching: `flowFromTemplate` drew on a private 260x170 grid while the canvas
+   * used 236x66, and every one of the catalogue's templates opened as though it had been
+   * dragged there — no centring, lane reordering silently inert, "Tidy up" offered on a
+   * drawing nobody arranged. Nothing failed, because nothing compared the two.
+   *
+   * This is that comparison. It fails the moment a template is placed by anything but the
+   * canvas's own layout.
+   */
+  it.each(AGENT_TEMPLATES.map((template) => [template.id, template] as const))(
+    "%s opens with a layout the canvas would derive",
+    (_id, template) => {
+      const flow = flowFromTemplate(template);
+      expect(samePlaces(flow, tidied(flow))).toBe(true);
+    },
+  );
+});
+
 describe("drawing a template", () => {
   const template: AgentTemplate = {
     id: "t", name: "t", sector: "t", summary: "", persona: "", greeting: "", instructions: "", keyterms: [], policies: [],
@@ -220,10 +244,14 @@ describe("drawing a template", () => {
   it("forks inside an arm and widens the arm to hold it", () => {
     expect(node("arm-1-fork")?.kind).toBe("decide");
     expect(node("arm-1-fork")?.on).toBe("kind");
-    // Arm a took two columns (x and y), so arm b starts in the third.
-    expect(node("arm-1-1-q1")?.x).toBe(40);
-    expect(node("arm-1-2-why")?.x).toBe(40 + 260);
-    expect(node("arm-2-why")?.x).toBe(40 + 2 * 260);
+    /* Arm a took two columns (x and y), so arm b starts in the third. Asserted as three
+       distinct columns in order rather than as three pixel values: the placement is the
+       canvas's `tidied`, and pinning its constants here is what let the template grid drift
+       away from the canvas's without any test noticing. */
+    const columns = ["arm-1-1-q1", "arm-1-2-why", "arm-2-why"].map((id) => node(id)?.x ?? 0);
+    expect(columns[0]).toBeLessThan(columns[1] ?? 0);
+    expect(columns[1]).toBeLessThan(columns[2] ?? 0);
+    expect(new Set(columns).size).toBe(3);
   });
 
   it("ends a hand-over at a person, after saying why", () => {

@@ -326,7 +326,11 @@ export const renameContact = async (
   displayName: string | null,
 ): Promise<boolean> => {
   const trimmed = displayName?.trim() ?? "";
-  const rows = await scope.query<Record<string, unknown>>(
+  /* `mutate`, not `query`: an update comes back as `[rows, affectedCount]`, so `.length > 0`
+     on the raw result is a two-element array test that is true even when nothing matched —
+     which for a contact belonging to another organisation means reporting a write RLS
+     refused. See the note on `OrganizationScope.mutate`. */
+  const rows = await scope.mutate<Record<string, unknown>>(
     `update contacts
         set display_name = $2, updated_at = now()
       where id = $1

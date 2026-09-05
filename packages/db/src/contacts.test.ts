@@ -135,6 +135,28 @@ describe.skipIf(url === undefined)("the person behind the calls", () => {
     expect(people[0]?.values.some((v) => v.value === "Nobody")).toBe(false);
   });
 
+  it("says a rename did not land when it renamed nothing", async () => {
+    /* The bug this holds shut: an `update … returning` comes back as `[rows, count]`, so
+       reading `.length > 0` on the raw result is a two-element array test that is true even
+       when nothing matched. The handler above then answers 200 for a row it never touched.
+       Organisation B renaming A's contact is the case that matters — RLS refuses the write
+       and the caller must be told so, not congratulated. */
+    const [mine] = await contactsOf(A);
+    const theirs = String(mine?.id);
+
+    const asStranger = await withOrganization(ds, B, (s) => renameContact(s, theirs, "Hijacked"));
+    expect(asStranger).toBe(false);
+
+    const missing = await withOrganization(ds, A, (s) =>
+      renameContact(s, "cccccccc-cccc-4ccc-8ccc-cccccccccccc", "Nobody"),
+    );
+    expect(missing).toBe(false);
+
+    // And the name A gave it is untouched.
+    const [after] = await contactsOf(A);
+    expect(after?.displayName).not.toBe("Hijacked");
+  });
+
   it("keeps an operator's correction when the next call says the short name again", async () => {
     const [before] = await contactsOf(A);
     const renamed = await withOrganization(ds, A, (s) =>
