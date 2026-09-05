@@ -212,6 +212,57 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("the appointment
     expect(reply.status).toBe(422);
   });
 
+  /* What a person at a desk does, as against what a call does: write down a thing that is an
+     hour and a half long, call it something, then drag it an hour later and rename it. */
+  it("writes an appointment of its own length and name, then moves, resizes and renames it", async () => {
+    const id = await createCalendar();
+
+    const made = await send("POST", `/api/v1/appointments/calendars/${id}/bookings`, {
+      startsAt: "2026-03-04T09:00:00Z",
+      endsAt: "2026-03-04T10:30:00Z",
+      title: "Second viewing — 14 Adeola Odeku",
+      source: "manual",
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    expect(made.body).toMatchObject({
+      startsAt: "2026-03-04T09:00:00.000Z",
+      endsAt: "2026-03-04T10:30:00.000Z",
+      title: "Second viewing — 14 Adeola Odeku",
+    });
+    const bookingId = String(made.body["id"]);
+
+    // Dragged an hour down the grid and given a shorter length, with the note left alone.
+    const moved = await send("PATCH", `/api/v1/appointments/bookings/${bookingId}`, {
+      startsAt: "2026-03-04T10:00:00Z",
+      endsAt: "2026-03-04T11:00:00Z",
+      title: "Second viewing — moved",
+    });
+    expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+    expect(moved.body).toMatchObject({
+      startsAt: "2026-03-04T10:00:00.000Z",
+      endsAt: "2026-03-04T11:00:00.000Z",
+      title: "Second viewing — moved",
+    });
+
+    // Half a move is refused rather than left ending before it starts.
+    const half = await send("PATCH", `/api/v1/appointments/bookings/${bookingId}`, {
+      startsAt: "2026-03-04T12:00:00Z",
+    });
+    expect(half.status).toBe(422);
+
+    // And a move onto a minute something else already starts on is the 409 a booking gets.
+    const other = await send("POST", `/api/v1/appointments/calendars/${id}/bookings`, {
+      startsAt: "2026-03-04T15:00:00Z",
+      source: "manual",
+    });
+    expect(other.status).toBe(201);
+    const onto = await send("PATCH", `/api/v1/appointments/bookings/${bookingId}`, {
+      startsAt: "2026-03-04T15:00:00Z",
+      endsAt: "2026-03-04T16:00:00Z",
+    });
+    expect(onto.status).toBe(409);
+  });
+
   it("books a slot and turns a second booking of it into a 409", async () => {
     const id = await createCalendar();
     const startsAt = "2026-03-02T09:00:00Z";

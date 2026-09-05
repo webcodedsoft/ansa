@@ -612,6 +612,39 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
 
   appointments: {
     /**
+     * Move, resize or rename an appointment
+     * What dragging a block on the grid comes down to. Absent fields are left alone; a null title, note or contact clears it. Times move together — a start without an end is a 422. Landing on a minute another live appointment already starts on is a 409, the same refusal booking a taken slot gets. A cancelled appointment cannot be moved; book it again instead.
+     */
+    editBooking: (input: {
+        readonly path: {
+          readonly bookingId: string;
+        };
+        readonly body: {
+          readonly startsAt?: string;
+          readonly endsAt?: string;
+          readonly title?: string | null;
+          readonly notes?: string | null;
+          readonly contactId?: string | null;
+        };
+      }) =>
+      send<{
+        readonly id: string;
+        readonly calendarId: string;
+        readonly contactId: string | null;
+        readonly startsAt: string;
+        readonly endsAt: string;
+        readonly status: "held" | "booked" | "cancelled";
+        readonly holdExpiresAt: string | null;
+        readonly source: "call" | "manual" | "connector";
+        readonly callId: string | null;
+        readonly externalRef: string | null;
+        readonly title: string | null;
+        readonly notes: string | null;
+        readonly createdAt: string;
+        readonly updatedAt: string;
+      }>(options, "PATCH", `/api/v1/appointments/bookings/${encodeURIComponent(input.path.bookingId)}`, input),
+
+    /**
      * Cancel a booking or hold
      * The slot is freed for the next caller. Cancelling something already cancelled is not an error — the state asked for is the state it is in.
      */
@@ -631,6 +664,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly source: "call" | "manual" | "connector";
         readonly callId: string | null;
         readonly externalRef: string | null;
+        readonly title: string | null;
         readonly notes: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;
@@ -656,6 +690,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly source: "call" | "manual" | "connector";
         readonly callId: string | null;
         readonly externalRef: string | null;
+        readonly title: string | null;
         readonly notes: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;
@@ -820,6 +855,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly source: "call" | "manual" | "connector";
         readonly callId: string | null;
         readonly externalRef: string | null;
+        readonly title: string | null;
         readonly notes: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;
@@ -839,6 +875,8 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
           readonly source: "call" | "manual" | "connector";
           readonly status?: "held" | "booked";
           readonly holdMinutes?: number;
+          readonly endsAt?: string;
+          readonly title?: string;
           readonly contactId?: string;
           readonly notes?: string;
           readonly externalRef?: string;
@@ -855,6 +893,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly source: "call" | "manual" | "connector";
         readonly callId: string | null;
         readonly externalRef: string | null;
+        readonly title: string | null;
         readonly notes: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;

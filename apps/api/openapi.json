@@ -7570,6 +7570,250 @@
         }
       }
     },
+    "/api/v1/appointments/bookings/{bookingId}": {
+      "patch": {
+        "operationId": "appointments.editBooking",
+        "tags": [
+          "appointments"
+        ],
+        "summary": "Move, resize or rename an appointment",
+        "description": "What dragging a block on the grid comes down to. Absent fields are left alone; a null title, note or contact clears it. Times move together — a start without an end is a 422. Landing on a minute another live appointment already starts on is a 409, the same refusal booking a taken slot gets. A cancelled appointment cannot be moved; book it again instead.",
+        "x-ansa-capability": "appointments:write",
+        "parameters": [
+          {
+            "name": "bookingId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "startsAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "endsAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "title": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 200
+                  },
+                  "notes": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 4096
+                  },
+                  "contactId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uuid",
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "calendarId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "contactId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "startsAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "endsAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "held",
+                        "booked",
+                        "cancelled"
+                      ]
+                    },
+                    "holdExpiresAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "call",
+                        "manual",
+                        "connector"
+                      ]
+                    },
+                    "callId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "externalRef": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 256
+                    },
+                    "title": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 200
+                    },
+                    "notes": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 4096
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "calendarId",
+                    "contactId",
+                    "startsAt",
+                    "endsAt",
+                    "status",
+                    "holdExpiresAt",
+                    "source",
+                    "callId",
+                    "externalRef",
+                    "title",
+                    "notes",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold appointments:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/appointments/bookings/{bookingId}/cancel": {
       "post": {
         "operationId": "appointments.cancelBooking",
@@ -7663,6 +7907,13 @@
                       ],
                       "maxLength": 256
                     },
+                    "title": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 200
+                    },
                     "notes": {
                       "type": [
                         "string",
@@ -7690,6 +7941,7 @@
                     "source",
                     "callId",
                     "externalRef",
+                    "title",
                     "notes",
                     "createdAt",
                     "updatedAt"
@@ -7855,6 +8107,13 @@
                       ],
                       "maxLength": 256
                     },
+                    "title": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 200
+                    },
                     "notes": {
                       "type": [
                         "string",
@@ -7882,6 +8141,7 @@
                     "source",
                     "callId",
                     "externalRef",
+                    "title",
                     "notes",
                     "createdAt",
                     "updatedAt"
@@ -9028,6 +9288,13 @@
                             ],
                             "maxLength": 256
                           },
+                          "title": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 200
+                          },
                           "notes": {
                             "type": [
                               "string",
@@ -9055,6 +9322,7 @@
                           "source",
                           "callId",
                           "externalRef",
+                          "title",
                           "notes",
                           "createdAt",
                           "updatedAt"
@@ -9184,6 +9452,14 @@
                     "minimum": 1,
                     "maximum": 1440
                   },
+                  "endsAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
                   "contactId": {
                     "type": "string",
                     "format": "uuid",
@@ -9279,6 +9555,13 @@
                       ],
                       "maxLength": 256
                     },
+                    "title": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 200
+                    },
                     "notes": {
                       "type": [
                         "string",
@@ -9306,6 +9589,7 @@
                     "source",
                     "callId",
                     "externalRef",
+                    "title",
                     "notes",
                     "createdAt",
                     "updatedAt"

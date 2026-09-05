@@ -262,6 +262,8 @@ export interface Booking {
   readonly source: BookingSource;
   readonly callId: string | null;
   readonly externalRef: string | null;
+  /** What the appointment is, when a person wrote it down. Absent on one a call took. */
+  readonly title: string | null;
   readonly notes: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
@@ -269,7 +271,7 @@ export interface Booking {
 
 const BOOKING_COLUMNS = `
   id, calendar_id, contact_id, starts_at, ends_at, status, hold_expires_at, source, call_id,
-  external_ref, notes, created_at, updated_at`;
+  external_ref, title, notes, created_at, updated_at`;
 
 const asBooking = (row: Record<string, unknown>): Booking => ({
   id: String(row["id"]),
@@ -282,6 +284,7 @@ const asBooking = (row: Record<string, unknown>): Booking => ({
   source: String(row["source"]) as BookingSource,
   callId: row["call_id"] === null ? null : String(row["call_id"]),
   externalRef: row["external_ref"] === null ? null : String(row["external_ref"]),
+  title: row["title"] === null || row["title"] === undefined ? null : String(row["title"]),
   notes: row["notes"] === null ? null : String(row["notes"]),
   createdAt: new Date(String(row["created_at"])),
   updatedAt: new Date(String(row["updated_at"])),
@@ -356,6 +359,7 @@ export interface NewBooking {
   readonly source?: BookingSource;
   readonly callId?: string | null;
   readonly externalRef?: string | null;
+  readonly title?: string | null;
   readonly notes?: string | null;
 }
 
@@ -393,8 +397,8 @@ export const bookSlot = async (scope: OrganizationScope, input: NewBooking): Pro
     rows = await scope.query<Record<string, unknown>>(
       `insert into appointment_bookings
          (organization_id, calendar_id, contact_id, starts_at, ends_at, status, hold_expires_at,
-          source, call_id, external_ref, notes)
-       select c.organization_id, c.id, $2, $3, $4, $5, $6, coalesce($7, 'call'), $8, $9, $10
+          source, call_id, external_ref, title, notes)
+       select c.organization_id, c.id, $2, $3, $4, $5, $6, coalesce($7, 'call'), $8, $9, $10, $11
          from appointment_calendars c
         where c.id = $1
        returning ${BOOKING_COLUMNS}`,
@@ -408,6 +412,7 @@ export const bookSlot = async (scope: OrganizationScope, input: NewBooking): Pro
         input.source ?? null,
         input.callId ?? null,
         input.externalRef ?? null,
+        input.title?.trim() || null,
         input.notes?.trim() || null,
       ],
     );
@@ -438,6 +443,79 @@ export const bookSlot = async (scope: OrganizationScope, input: NewBooking): Pro
  * else's to take, and confirming it would put two people in the same chair — the exact
  * thing the index exists to stop, reached by a different door.
  */
+/**
+ * What a person may change about an appointment after writing it down.
+ *
+ * Every field optional and absent means "leave it": moving an appointment must not blank the
+ * note attached to it, and retitling one must not move it. `null` is a value here — it clears
+ * the title, the note or the contact — which is why absent and null are told apart rather than
+ * folded together the way a partial update usually folds them.
+ */
+export interface BookingEdit {
+  readonly startsAt?: Date;
+  readonly endsAt?: Date;
+  readonly title?: string | null;
+  readonly notes?: string | null;
+  readonly contactId?: string | null;
+}
+
+/**
+ * Move, resize or rename one appointment.
+ *
+ * This is what dragging a block on the grid comes down to. Null when the id is not this
+ * organisation's or is not there; `SlotTaken` when the move lands on a minute another live
+ * booking already starts on, which is the same index `bookSlot` answers to and the same
+ * refusal — so a dragged block and a booked slot cannot disagree about what is free.
+ *
+ * A cancelled booking is left alone: it holds no time, and moving it would resurrect it
+ * without saying so. Cancel-and-rebook is the honest way back from a cancellation.
+ */
+export const rescheduleBooking = async (
+  scope: OrganizationScope,
+  bookingId: string,
+  edit: BookingEdit,
+): Promise<Booking | null> => {
+  await scope.query("savepoint reschedule_booking");
+  let rows: Record<string, unknown>[];
+  try {
+    rows = await scope.mutate<Record<string, unknown>>(
+      `update appointment_bookings
+          set starts_at = coalesce($2, starts_at),
+              ends_at   = coalesce($3, ends_at),
+              title     = case when $4 then $5 else title end,
+              notes     = case when $6 then $7 else notes end,
+              contact_id = case when $8 then $9 else contact_id end
+        where id = $1
+          and status <> 'cancelled'
+        returning ${BOOKING_COLUMNS}`,
+      [
+        bookingId,
+        edit.startsAt ?? null,
+        edit.endsAt ?? null,
+        edit.title !== undefined,
+        edit.title?.trim() || null,
+        edit.notes !== undefined,
+        edit.notes?.trim() || null,
+        edit.contactId !== undefined,
+        edit.contactId ?? null,
+      ],
+    );
+  } catch (error: unknown) {
+    await scope.query("rollback to savepoint reschedule_booking");
+    if (
+      codeOf(error) === UNIQUE_VIOLATION &&
+      constraintOf(error) === "appointment_bookings_one_per_slot_idx"
+    ) {
+      throw new SlotTaken("", edit.startsAt ?? new Date(0));
+    }
+    throw error;
+  }
+  await scope.query("release savepoint reschedule_booking");
+
+  const row = rows[0];
+  return row === undefined ? null : asBooking(row);
+};
+
 export const confirmHold = async (
   scope: OrganizationScope,
   bookingId: string,

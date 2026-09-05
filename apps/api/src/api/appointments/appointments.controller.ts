@@ -1,5 +1,6 @@
 import {
   bookSlot,
+  rescheduleBooking,
   cancelBooking,
   confirmHold,
   createCalendar,
@@ -59,6 +60,8 @@ const BOOKING_SOURCES = ["call", "manual", "connector"] as const;
 
 const REF_LIMIT = 256;
 const NOTES_LIMIT = 4096;
+/** Long enough for "Second viewing — 14 Adeola Odeku Street", short enough to draw in a block. */
+const TITLE_LIMIT = 200;
 
 const calendar = object({
   id: uuid(),
@@ -132,12 +135,29 @@ const booking = object({
   callId: nullable(uuid()),
   /** The connector's own id for this booking, when it mirrored one outward. */
   externalRef: nullable(text({ maxLength: REF_LIMIT })),
+  /** What the appointment is, when somebody wrote it down. Null on one a call took. */
+  title: nullable(text({ maxLength: TITLE_LIMIT })),
   notes: nullable(text({ maxLength: NOTES_LIMIT })),
   createdAt: timestamp(),
   updatedAt: timestamp(),
 });
 
 const bookingList = object({ items: list(booking) });
+
+/**
+ * What may be changed about an appointment already in the diary.
+ *
+ * Every field optional, and absent means "leave it as it is" — moving an appointment must not
+ * blank the note somebody attached to it. `startsAt` and `endsAt` travel together or not at
+ * all, because half a move is a booking that ends before it starts.
+ */
+const bookingEdit = object({
+  startsAt: optional(timestamp()),
+  endsAt: optional(timestamp()),
+  title: optional(nullable(text({ maxLength: TITLE_LIMIT }))),
+  notes: optional(nullable(text({ maxLength: NOTES_LIMIT }))),
+  contactId: optional(nullable(uuid())),
+});
 
 const newBooking = object({
   startsAt: timestamp(),
@@ -149,6 +169,13 @@ const newBooking = object({
   status: optional(choice(CREATABLE_STATUSES)),
   /** Required when `status` is `held`: how long the reservation stands before it lapses. */
   holdMinutes: optional(integer({ minimum: 1, maximum: 24 * 60 })),
+  /**
+   * When it ends. Absent means one slot of the calendar's own length, which is what a call
+   * takes; a person writing in the diary drags out whatever length the thing actually is.
+   */
+  endsAt: optional(timestamp()),
+  /** What it is, for the grid to print. A call leaves this out and the contact names the row. */
+  title: optional(text({ maxLength: TITLE_LIMIT })),
   contactId: optional(uuid()),
   notes: optional(text({ maxLength: NOTES_LIMIT })),
   /** For a connector calendar: the outside diary's id for this booking. Sync itself is elsewhere. */
@@ -380,7 +407,13 @@ export class AppointmentsController {
     const made = await this.db.tx(async (scope) => {
       const cal = await readCalendar(scope, path.calendarId);
       if (cal === null) return null;
-      const endsAt = new Date(startsAt.getTime() + cal.slotMinutes * 60000);
+      /* The length the caller asked for, or one slot. A slot is what a call takes, because
+         that is what the agent offered; a person at the desk says when it ends. */
+      const endsAt =
+        body.endsAt === undefined
+          ? new Date(startsAt.getTime() + cal.slotMinutes * 60000)
+          : asTimestamp(body.endsAt, "endsAt");
+      if (endsAt.getTime() <= startsAt.getTime()) return "backwards" as const;
       return bookSlot(scope, {
         calendarId: path.calendarId,
         startsAt,
@@ -390,6 +423,7 @@ export class AppointmentsController {
         contactId: body.contactId ?? null,
         source: body.source,
         externalRef: body.externalRef ?? null,
+        title: body.title ?? null,
         notes: body.notes ?? null,
       });
     }).catch((error: unknown) => {
@@ -398,6 +432,9 @@ export class AppointmentsController {
       }
       throw error;
     });
+    if (made === "backwards") {
+      throw new UnprocessableEntityException("an appointment must end after it starts");
+    }
     if (made === null) throw new NotFoundException();
     return asBookingBody(made);
   }
@@ -434,6 +471,50 @@ export class AppointmentsController {
     }
     if (confirmed.booking === null) throw new NotFoundException();
     return asBookingBody(confirmed.booking);
+  }
+
+  @Patch("bookings/:bookingId")
+  @Endpoint({
+    summary: "Move, resize or rename an appointment",
+    description:
+      "What dragging a block on the grid comes down to. Absent fields are left alone; a null title, note or contact clears it. Times move together — a start without an end is a 422. Landing on a minute another live appointment already starts on is a 409, the same refusal booking a taken slot gets. A cancelled appointment cannot be moved; book it again instead.",
+    capability: "appointments:write",
+    params: bookingPath,
+    body: bookingEdit,
+    response: booking,
+  })
+  async editBooking(
+    @FromPath() path: Infer<typeof bookingPath>,
+    @FromBody() body: Infer<typeof bookingEdit>,
+  ): Promise<Infer<typeof booking>> {
+    const moving = body.startsAt !== undefined || body.endsAt !== undefined;
+    if (moving && (body.startsAt === undefined || body.endsAt === undefined)) {
+      throw new UnprocessableEntityException("moving an appointment needs both startsAt and endsAt");
+    }
+    const startsAt = body.startsAt === undefined ? undefined : asTimestamp(body.startsAt, "startsAt");
+    const endsAt = body.endsAt === undefined ? undefined : asTimestamp(body.endsAt, "endsAt");
+    if (startsAt !== undefined && endsAt !== undefined && endsAt.getTime() <= startsAt.getTime()) {
+      throw new UnprocessableEntityException("an appointment must end after it starts");
+    }
+
+    const moved = await this.db
+      .tx((scope) =>
+        rescheduleBooking(scope, path.bookingId, {
+          ...(startsAt === undefined ? {} : { startsAt }),
+          ...(endsAt === undefined ? {} : { endsAt }),
+          ...(body.title === undefined ? {} : { title: body.title }),
+          ...(body.notes === undefined ? {} : { notes: body.notes }),
+          ...(body.contactId === undefined ? {} : { contactId: body.contactId }),
+        }),
+      )
+      .catch((error: unknown) => {
+        if (error instanceof SlotTaken) {
+          throw new ConflictException("something else already starts at that time");
+        }
+        throw error;
+      });
+    if (moved === null) throw new NotFoundException();
+    return asBookingBody(moved);
   }
 
   @Post("bookings/:bookingId/cancel")
@@ -506,6 +587,7 @@ const asBookingBody = (row: Booking): Infer<typeof booking> => ({
   source: row.source,
   callId: row.callId,
   externalRef: row.externalRef,
+  title: row.title,
   notes: row.notes,
   createdAt: row.createdAt.toISOString(),
   updatedAt: row.updatedAt.toISOString(),
