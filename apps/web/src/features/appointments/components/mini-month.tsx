@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
@@ -18,6 +19,11 @@ const HEADS: readonly string[] = ["M", "T", "W", "T", "F", "S", "S"];
  * hand, which is the sort of friction that makes a calendar feel like a form. Every day is a
  * link carrying the view you are already in, so jumping to a date does not also throw away
  * whether you were reading a week or a month.
+ *
+ * **Double-click opens that one day.** Single click means "take me there in the view I am
+ * reading"; double click means "and just that day" — the two questions a little calendar is
+ * asked, and the split every calendar uses. It stays a real link so a single click, the
+ * keyboard and a middle click all behave; the second click only redirects where it lands.
  *
  * It keeps its own idea of which month it is showing, initialised from the anchor. That is
  * deliberate and is what Google does: paging the little calendar forward to glance at December
@@ -47,8 +53,11 @@ export const MiniMonth = ({
   const grid = calendarRange("month", shown, timeZone, { today });
   const anchorIso = isoDate(anchor);
 
-  const href = (iso: string): string =>
-    `/appointments?calendar=${encodeURIComponent(calendarId)}&view=${view}&date=${iso}${showWeekends ? "" : "&weekends=0"}`;
+  const router = useRouter();
+  const weekends = showWeekends ? "" : "&weekends=0";
+  const at = (iso: string, into: CalendarView): string =>
+    `/appointments?calendar=${encodeURIComponent(calendarId)}&view=${into}&date=${iso}${weekends}`;
+  const href = (iso: string): string => at(iso, view);
 
   return (
     <div className="surface rounded-xl p-2.5">
@@ -89,6 +98,14 @@ export const MiniMonth = ({
           <Link
             key={day.iso}
             href={href(day.iso)}
+            /* The first click has already navigated by the time this fires, so this is a
+               second, corrective hop rather than the only one. Both are client-side, so what
+               a person sees is one move that lands on the day. */
+            onDoubleClick={(event) => {
+              event.preventDefault();
+              router.push(at(day.iso, "day"));
+            }}
+            title={`${day.iso} — double-click to open the day`}
             aria-current={day.iso === anchorIso ? "date" : undefined}
             className={cn(
               "flex aspect-square items-center justify-center rounded-full text-[11px] tabular-nums transition-colors",
