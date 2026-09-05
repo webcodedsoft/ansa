@@ -4309,6 +4309,16 @@ geometry, unscaled); Delete with a field focused (the typing guard). Noted, not 
 auto-save while the drawing is unsaveable saves everything but the drawing and the header
 says "saved" — the canvas's own yellow notice is the word on that.
 
+**A setting takes the page (2026-09-05).** Voice, house rules, tools, knowledge and the rest
+used to fill the canvas's 280px inspector; a chosen one now takes the centre with a heading
+and Back to the flow, and the drawing steps aside. Hidden, not unmounted, both ways — every
+panel carries fields the form submits, the canvas carries the unsaved graph — and the
+canvas's wrapper is the `tabpanel` its observer watches to re-measure on return. The canvas
+lost its `settingsPane`/`openSetting`/`onChooseStep` props with the slot. Found on the way: a
+flow never saved by this canvas loaded as hand-arranged — the hand-arrangement check ran on
+the flow after its services were named, and a named flow at the template's old spacing is not
+the derived layout — so it is judged on the flow as loaded.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and

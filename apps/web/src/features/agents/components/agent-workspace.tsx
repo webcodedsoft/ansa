@@ -587,27 +587,39 @@ export const AgentWorkspace = ({
         {stagedMode === "flow" ? (
           <>
             <SettingsStrip items={stripItems} active={openSetting} onSelect={setOpenSetting} />
-            <FlowCanvas
-              key={shownAs([stagedFlow, stagedMode, generation])}
-              flow={stagedFlow}
-              publishForm={PUBLISH_FORM}
-              authoringMode={stagedMode}
-              onBlockingProblems={() => undefined}
-              availableTools={registryTools(tools).map((tool) => ({ name: tool.name, enabled: staged.enabledTools.includes(tool.name) }))}
-              transferNumber={config.escalation?.toNumber ?? null}
-              onOpenSettings={() => setOpenSetting("routing")}
-              openSetting={openSetting}
-              onChooseStep={() => setOpenSetting(null)}
-              onEdited={markDirty}
-              /* Every panel, all of them mounted: they carry the fields Save and Publish
-                 submit, so one that unmounted would take its edits with it. Only the chosen
-                 one is shown, which is what the strip is for. */
-              settingsPane={panels.map((panel) => (
+            {/* The chosen setting takes the page, and the drawing steps aside until it is
+                closed. Hidden rather than unmounted, both ways: every panel carries fields
+                the form submits, and the canvas carries the unsaved graph in a hidden field
+                of the same form — either unmounted would take its edits with it. The
+                `tabpanel` role is what the canvas watches to re-measure when it comes back. */}
+            <div hidden={openSetting === null} className="surface mt-3.5 rounded-xl p-5">
+              {openSetting !== null && (
+                <div className="mb-4 flex items-center justify-between gap-3 border-b border-[var(--hairline)] pb-3">
+                  <h2 className="text-[15px] font-[640] tracking-[-0.018em]">{panels.find((panel) => panel.id === openSetting)?.label ?? ""}</h2>
+                  <Button size="sm" variant="secondary" onClick={() => setOpenSetting(null)}>
+                    Back to the flow
+                  </Button>
+                </div>
+              )}
+              {panels.map((panel) => (
                 <div key={panel.id} hidden={panel.id !== openSetting}>
                   {panel.panel}
                 </div>
               ))}
-            />
+            </div>
+            <div role="tabpanel" hidden={openSetting !== null}>
+              <FlowCanvas
+                key={shownAs([stagedFlow, stagedMode, generation])}
+                flow={stagedFlow}
+                publishForm={PUBLISH_FORM}
+                authoringMode={stagedMode}
+                onBlockingProblems={() => undefined}
+                availableTools={registryTools(tools).map((tool) => ({ name: tool.name, enabled: staged.enabledTools.includes(tool.name) }))}
+                transferNumber={config.escalation?.toNumber ?? null}
+                onOpenSettings={() => setOpenSetting("routing")}
+                onEdited={markDirty}
+              />
+            </div>
           </>
         ) : (
           <Tabs tabs={panels} />

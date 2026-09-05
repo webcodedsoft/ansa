@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode,
+  useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent,
 } from "react";
 
 import {
@@ -742,23 +742,6 @@ interface FlowCanvasProps {
   readonly transferNumber: string | null;
   /** Show the agent's settings, at whatever a step turns out to need. */
   readonly onOpenSettings: () => void;
-  /**
-   * The agent's settings panels, to fill the right-hand pane when one is chosen on the strip.
-   *
-   * Always mounted, hidden when a step is being edited instead: the panels carry the fields
-   * Save and Publish submit, and one that unmounted would take its edits with it. Which is
-   * why this is a node rather than a render prop — the caller keeps it alive.
-   */
-  readonly settingsPane?: ReactNode;
-  /** Which setting is open, or null when the pane belongs to the selected step. */
-  readonly openSetting?: string | null;
-  /**
-   * A step was chosen, so the right-hand pane belongs to it again.
-   *
-   * Without this, clicking a card while a setting is open looks broken: the card highlights
-   * and the pane goes on showing the voice. Selecting a step is a request to see that step.
-   */
-  readonly onChooseStep?: () => void;
   /** The drawing changed — an edit, an undo, a redo — so whatever saves it knows there is something to save. */
   readonly onEdited?: () => void;
 }
@@ -771,9 +754,6 @@ export const FlowCanvas = ({
   availableTools,
   transferNumber,
   onOpenSettings,
-  settingsPane,
-  openSetting = null,
-  onChooseStep,
   onEdited,
 }: FlowCanvasProps) => {
   /* Read once, on mount. Later renders keep the operator's work in front of them; the
@@ -787,7 +767,10 @@ export const FlowCanvas = ({
      names from here on, so the next save writes them. */
   const [history, setHistory] = useState<History>(() => {
     const named = withServiceTags(loaded ?? emptyFlow());
-    return { past: [], present: arrangedByHand(named) ? named : tidied(named), future: [] };
+    /* Judged on the flow as it was loaded, not after its services were named: naming is the
+       first thing that happens to a flow saved before names existed, and a flow with names
+       and the template's old spacing would otherwise pass for somebody's arrangement. */
+    return { past: [], present: arrangedByHand(loaded ?? emptyFlow()) ? named : tidied(named), future: [] };
   });
   /* Every change to the drawing, reported once it has landed: the graph in state is what the
      hidden field carries, so this fires when that is current and not a render early. Not on
@@ -810,7 +793,7 @@ export const FlowCanvas = ({
    * hands it back. A saved flow says which it was by its positions: ones that match what the
    * layout would derive are derived; any other are somebody's arrangement, kept.
    */
-  const [layout, setLayout] = useState<"derived" | "hand">(() => (arrangedByHand(withServiceTags(loaded ?? emptyFlow())) ? "hand" : "derived"));
+  const [layout, setLayout] = useState<"derived" | "hand">(() => (arrangedByHand(loaded ?? emptyFlow()) ? "hand" : "derived"));
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
   const [pending, setPending] = useState<Readonly<Record<string, readonly FlowCondition[]>>>({});
@@ -957,21 +940,18 @@ export const FlowCanvas = ({
     setSelected(id);
     setSelectedEdge(null);
     setSelectedLane(null);
-    onChooseStep?.();
   };
   /** Pick a link out, and put down whatever step was picked: the inspector shows one thing. */
   const chooseEdge = (key: string) => {
     setSelectedEdge(key);
     setSelected(null);
     setSelectedLane(null);
-    onChooseStep?.();
   };
   /** Pick a service out: its name, how it is reached, what is in it. */
   const chooseLane = (id: string) => {
     setSelectedLane(id);
     setSelected(null);
     setSelectedEdge(null);
-    onChooseStep?.();
   };
 
   const byId = (id: string): FlowNode | undefined => nodes.find((n) => n.id === id);
@@ -2527,10 +2507,8 @@ export const FlowCanvas = ({
         </div>
 
         <div className="surface studio-inspector rounded-xl p-4">
-          {/* The settings live here rather than in an overlay, so changing the voice never
-              covers the call it speaks. Kept in the tree while hidden — see `settingsPane`. */}
-          {settingsPane !== undefined && <div hidden={openSetting === null}>{settingsPane}</div>}
-          <div hidden={openSetting !== null}>
+          {/* The step, link or service that is picked out. The agent's settings are not here:
+              a chosen setting takes the page and the drawing steps aside — see the workspace. */}
           {selectedNode === null && pickedEdge === null && pickedLane !== null ? (
             <div className="flex flex-col gap-3">
               <div>
@@ -2887,7 +2865,6 @@ export const FlowCanvas = ({
               )}
             </div>
           )}
-          </div>
         </div>
       </div>
     </div>
