@@ -4212,6 +4212,25 @@ shared column, straight over a lane; such steps take a column beside the last la
 quiet save, since the keys they reset on never changed — the page had not been told of the
 draft; every key carries a `generation` that a discard bumps.
 
+**The audit: what each step and each service could not yet do (2026-09-05).** Asked to look
+at every kind and every use and find what was missing. Found and fixed, all verified in the
+browser: removing a step broke the path — the step before dead-ended and the rest went
+unreachable — so `removeStep` closes the gap the way moving does, a fork leading on by its
+"anything else" with its named arms' services left unattached; the start and a fork could not
+be dragged at all, silently — they move by hand now, refusing only to be put "after" a step;
+"Value to branch on" and "Value to read back" were free text where a key had to match to the
+letter — they are a list of the fields the call collects, each key once, a stale value kept
+and marked; a step added after a fork, or on a service whose last step is a fork, got a bare
+condition-less link — `insertAfter` on a fork makes an arm with the answer to fill in; the
+"+ add a service" box was missing on a flow with no fork yet — it stands beside the column
+now; a refused rename said nothing — it toasts why; the canvas had no keyboard — Escape
+clears, Delete removes a picked link, ⌘Z / ⌘⇧Z undo and redo, none of them while a field is
+being typed in; a service could not be selected — a press on its box picks it out and the
+inspector shows its name (editable), how it is reached (its answer, the catch-all, other
+steps, or nothing yet), its step count and Remove; and with a link picked, a step from the
+palette goes *on* the link (`insertOn`), joining the service the link arrives in — a step on
+a fork's arm is that service's new first step. Eight layout tests added.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and

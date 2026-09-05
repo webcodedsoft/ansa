@@ -5,8 +5,8 @@ import { validateFlow } from "@ansa/shared/flow-validate";
 
 import {
   addService, appendToLane, branchHeads, detach, foldedAway, foldedCount, freshServiceName, insertAfter, jumpEdges, laneFrames,
-  laneGroups, linkToService, moveAfter, moveBefore, moveToLane, moveToNewService, onlyReachableThrough, placeNew, rejoinPoint, removeService,
-  renameService, reorderService, ROW, samePlaces, sameShape, serviceOf, tidied, TOP, withServiceTags,
+  insertOn, laneGroups, linkToService, moveAfter, moveBefore, moveToLane, moveToNewService, onlyReachableThrough, placeNew, rejoinPoint,
+  removeService, removeStep, renameService, reorderService, ROW, samePlaces, sameShape, serviceOf, tidied, TOP, withServiceTags,
 } from "./flow-layout";
 
 /**
@@ -683,5 +683,49 @@ describe("a drawing arranged by hand", () => {
     const after = placeNew(before, addService(before, node("head"), "viewings"));
     const head = after.nodes.find((n) => n.id === "head");
     expect(head?.x).toBeGreaterThan(Math.max(...before.nodes.map((n) => n.x)));
+  });
+});
+
+describe("removing a step, and putting one on a link", () => {
+  const linksFrom = (flow: Flow, id: string) => flow.edges.filter((e) => e.from === id).map((e) => e.to);
+  const SHAPE = new Set(["unreachable", "dead-end", "decide-without-otherwise", "edge-to-nowhere", "cycle", "no-start", "many-starts", "shadowed-branch", "branch-value-not-an-option"]);
+  const shapeProblems = (flow: Flow) => validateFlow(flow).filter((p) => SHAPE.has(p.code)).map((p) => `${p.code}@${p.nodeId ?? "flow"}`);
+
+  it("closes the gap a removed step leaves, so the call goes on past where it was", () => {
+    const gone = removeStep(forked(), "rent1");
+    expect(gone.nodes.some((n) => n.id === "rent1")).toBe(false);
+    expect(linksFrom(gone, "fork")).toEqual(["rent2", "buy1"]);
+    expect(shapeProblems(gone)).toEqual([]);
+    // The start stays whatever is asked.
+    const base = forked();
+    expect(removeStep(base, "start")).toBe(base);
+  });
+
+  it("removes a fork by leading on through its anything-else, leaving the other services unattached", () => {
+    const gone = removeStep(forked(), "fork");
+    expect(linksFrom(gone, "ask")).toEqual(["buy1"]);
+    expect(gone.edges.some((e) => e.from === "fork" || e.to === "fork")).toBe(false);
+    // rent's steps are still there, in their service, for something to lead to again.
+    expect(laneGroups(gone).find((lane) => lane.label === "rent")?.ids).toEqual(["rent1", "rent2"]);
+    expect(shapeProblems(gone)).toEqual(["unreachable@rent1", "unreachable@rent2"]);
+  });
+
+  it("puts a step on a link, joining the service the link arrives in", () => {
+    const base = forked();
+    const arm = base.edges.find((e) => e.from === "fork" && e.to === "rent1");
+    if (arm === undefined) throw new Error("no arm");
+    const grown = insertOn(base, arm, node("first"));
+    expect(grown.edges.find((e) => e.from === "fork" && e.to === "first")?.when).toEqual({ equals: "rent" });
+    expect(linksFrom(grown, "first")).toEqual(["rent1"]);
+    expect(serviceOf(grown.nodes.find((n) => n.id === "first") ?? node("none"))).toBe("rent");
+    expect(laneGroups(grown).find((lane) => lane.label === "rent")?.ids).toEqual(["first", "rent1", "rent2"]);
+    expect(shapeProblems(grown)).toEqual([]);
+  });
+
+  it("makes a step added after a fork a new arm of it, never a bare link", () => {
+    const grown = insertAfter(forked(), "fork", node("extra"));
+    const arm = grown.edges.find((e) => e.from === "fork" && e.to === "extra");
+    expect(arm?.when).toEqual({ equals: "" });
+    expect(arm?.otherwise).toBeUndefined();
   });
 });

@@ -651,7 +651,10 @@ export const insertAfter = (input: Flow, anchor: string, fresh: FlowNode): Flow 
   const out = defaultEdgeFrom(flow, anchor);
   const ends = fresh.kind === "transfer" || fresh.kind === "hangup";
   const edges = flow.edges.filter((edge) => edge !== out);
-  const toAnchor: FlowEdge = out === undefined ? { from: anchor, to: fresh.id } : { ...out, to: fresh.id };
+  /* After a fork means by a new arm of it — a fork has no default way out, and a bare link
+     from one is a link the director cannot take. The arm's answer is left to fill in. */
+  const fromFork = byId(flow, anchor)?.kind === "decide";
+  const toAnchor: FlowEdge = out === undefined ? (fromFork ? { from: anchor, to: fresh.id, when: { equals: "" } } : { from: anchor, to: fresh.id }) : { ...out, to: fresh.id };
   const onward: FlowEdge[] =
     out === undefined || ends
       ? []
@@ -802,6 +805,42 @@ export const detach = (flow: Flow, id: string): Flow => {
     .filter((edge) => edge !== out)
     .flatMap((edge) => (edge.to !== id ? [edge] : out === undefined ? [] : [{ ...edge, to: out.to }]));
   return { ...flow, edges };
+};
+
+/**
+ * Remove a step, closing the gap it leaves — the way taking a card out of a list works.
+ *
+ * Whatever led to the step leads to what it led to. A fork leads on by its "anything else":
+ * the one way out every caller can take, so the call still goes somewhere; its named arms go
+ * with it, and the services they led to stay, unattached, for the operator to lead something
+ * to again. The start cannot be removed: every call begins there.
+ */
+export const removeStep = (input: Flow, id: string): Flow => {
+  const flow = withServiceTags(input);
+  const node = byId(flow, id);
+  if (node === undefined || node.kind === "start") return input;
+  const onward = node.kind === "decide" ? flow.edges.find((edge) => edge.from === id && edge.otherwise === true)?.to : defaultEdgeFrom(flow, id)?.to;
+  const edges = flow.edges
+    .filter((edge) => edge.from !== id)
+    .flatMap((edge) => (edge.to !== id ? [edge] : onward === undefined ? [] : [{ ...edge, to: onward }]));
+  return { ...flow, nodes: flow.nodes.filter((n) => n.id !== id), edges };
+};
+
+/**
+ * Put a new step on a link: what the link led to, the new step now leads to, and the link
+ * leads to the new step. The step joins the service the link arrives in — a step put on a
+ * fork's arm is the first step of that service — or, arriving nowhere in particular, the
+ * service it left.
+ */
+export const insertOn = (input: Flow, link: FlowEdge, fresh: FlowNode): Flow => {
+  const flow = withServiceTags(input);
+  const at = flow.edges.find((edge) => edge === link) ?? flow.edges.find((edge) => edge.from === link.from && edge.to === link.to && edge.port === link.port && JSON.stringify(edge.when) === JSON.stringify(link.when) && edge.otherwise === link.otherwise);
+  if (at === undefined) return input;
+  const ends = fresh.kind === "transfer" || fresh.kind === "hangup";
+  const service = serviceOf(byId(flow, at.to) ?? fresh) ?? serviceOf(byId(flow, at.from) ?? fresh);
+  const placed = tagged(fresh, service);
+  const onward: FlowEdge[] = ends ? [] : fresh.kind === "decide" ? [{ from: placed.id, to: at.to, otherwise: true }] : [{ from: placed.id, to: at.to }];
+  return { ...flow, nodes: [...flow.nodes, placed], edges: [...flow.edges.map((edge) => (edge === at ? { ...edge, to: placed.id } : edge)), ...onward] };
 };
 
 /** The graph without one step in it, for putting the step back somewhere else. */

@@ -37,10 +37,11 @@ import { cn } from "@/lib/cn";
 import { validateFlow } from "@ansa/shared/flow-validate";
 
 import {
-  addService, appendToLane, branchEdgeOf, foldedAway, freshServiceName, insertAfter, insertBefore, jumpEdges, LANE_HEAD, laneFrames, laneGroups, LEFT, linkToService,
-  movable, moveAfter, moveBefore, moveToLane, moveToNewService, placeNew, removeService, renameService, reorderService, sameShape, samePlaces, serviceOf, tidied, TOP,
-  withServiceTags, type Lane,
+  addService, appendToLane, branchEdgeOf, COLUMN, foldedAway, freshServiceName, insertAfter, insertBefore, insertOn, jumpEdges, LANE_HEAD, laneFrames, laneGroups, LEFT,
+  linkToService, movable, moveAfter, moveBefore, moveToLane, moveToNewService, placeNew, removeService, removeStep, renameService, reorderService, ROW, sameShape,
+  samePlaces, serviceOf, tidied, TOP, withServiceTags, type Lane,
 } from "../flow-layout";
+import { useToastStore } from "@/stores/toast.store";
 
 import {
   FLOW_FIELD_TYPES,
@@ -782,6 +783,9 @@ export const FlowCanvas = ({
    * end — so a link across a busy drawing can be followed with the eye and not just found.
    */
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
+  /** The service the reader has picked out, by lane id: the inspector shows it as a thing of its own. */
+  const [selectedLane, setSelectedLane] = useState<string | null>(null);
+  const toast = useToastStore((store) => store.show);
   const [temp, setTemp] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   // Bumped whenever the canvas needs its port positions re-read from the DOM — after a tab
   // that was hidden becomes visible, chiefly, since `offsetTop` is 0 until then.
@@ -913,12 +917,21 @@ export const FlowCanvas = ({
   const chooseStep = (id: string) => {
     setSelected(id);
     setSelectedEdge(null);
+    setSelectedLane(null);
     onChooseStep?.();
   };
   /** Pick a link out, and put down whatever step was picked: the inspector shows one thing. */
   const chooseEdge = (key: string) => {
     setSelectedEdge(key);
     setSelected(null);
+    setSelectedLane(null);
+    onChooseStep?.();
+  };
+  /** Pick a service out: its name, how it is reached, what is in it. */
+  const chooseLane = (id: string) => {
+    setSelectedLane(id);
+    setSelected(null);
+    setSelectedEdge(null);
     onChooseStep?.();
   };
 
@@ -1234,8 +1247,10 @@ export const FlowCanvas = ({
     if ((e.target as HTMLElement).closest("[data-flow-node], [data-canvas-bar], [data-lane], [data-add-service], [data-link-end]")) return;
     panRef.current = { startX: e.clientX, startY: e.clientY, panX: viewLive.current.x, panY: viewLive.current.y };
     e.currentTarget.setPointerCapture(e.pointerId);
+    e.currentTarget.focus({ preventScroll: true });
     setSelected(null);
     setSelectedEdge(null);
+    setSelectedLane(null);
   };
   const onCanvasPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const p = panRef.current;
@@ -1375,6 +1390,13 @@ export const FlowCanvas = ({
     chooseStep(id);
   };
 
+  /** A new step on the picked link, between the two steps it joins. */
+  const addOnLink = (kind: FlowNodeKind, link: FlowEdge) => {
+    const id = freshId(new Set(nodes.map((n) => n.id)));
+    edit((f) => insertOn(f, link, blankNode(id, kind, 0, 0)));
+    chooseStep(id);
+  };
+
   /** A new service with a first step to fill in. Nothing leads to it until a branch is dragged onto it. */
   const addNewService = () => {
     const id = freshId(new Set(nodes.map((n) => n.id)));
@@ -1395,6 +1417,13 @@ export const FlowCanvas = ({
   const targetAt = (source: DragSource, clientX: number, clientY: number): DropTarget | null => {
     const under = document.elementFromPoint(clientX, clientY);
     if (under === null) return null;
+    /* The start and a fork go where they are put and nowhere else: neither can be put "after"
+       a step — one is where every call begins, the other has several ways out — so nothing
+       lights up for them, and the drop is a move. */
+    if ("node" in source) {
+      const dragged = byId(source.node);
+      if (dragged !== undefined && !movable(dragged)) return null;
+    }
     if ("lane" in source) {
       if (under.closest("[data-add-service]")) return { beforeLane: null };
       /* By geometry rather than by what is under the pointer: the cards sit on top of the
@@ -1562,6 +1591,8 @@ export const FlowCanvas = ({
          can be dragged by it; this is where the click it would have been is honoured. */
       if (!live.began) {
         if (live.pressed instanceof HTMLInputElement && e.currentTarget.contains(live.pressed)) live.pressed.focus();
+        // A press on a service that never moved picks the service out.
+        if ("lane" in live.source) chooseLane(live.source.lane.id);
         return;
       }
       // Only a drag that began on a palette button has a click of its own to swallow.
@@ -1594,8 +1625,10 @@ export const FlowCanvas = ({
   const draggedNode = drag !== null && "node" in drag.source ? drag.source.node : null;
   const draggedLane = drag !== null && "lane" in drag.source ? drag.source.lane.id : null;
 
+  /* Removing closes the gap the way moving does: whatever led to the step leads on to what
+     it led to, so the call goes on past where it was rather than stopping dead there. */
   const removeNode = (id: string) => {
-    edit((f) => ({ ...f, nodes: f.nodes.filter((n) => n.id !== id), edges: f.edges.filter((x) => x.from !== id && x.to !== id) }));
+    edit((f) => removeStep(f, id));
     setPending((all) => ({ ...all, [id]: [] }));
     setSelected((s) => (s === id ? null : s));
   };
@@ -1754,6 +1787,12 @@ export const FlowCanvas = ({
 
   const selectedNode = selected === null ? null : (byId(selected) ?? null);
   const pickedEdge = selectedEdge === null ? null : (edges.find((edge) => edgeKey(edge) === selectedEdge) ?? null);
+  const pickedLane = selectedLane === null ? null : (lanes.find((lane) => lane.id === selectedLane && lane.id !== "opening") ?? null);
+  /** The fields the call collects, for a fork or a confirm to read: the keys, in the order they are asked. */
+  const collected = inGraphOrder
+    .flatMap((n) => (n.kind === "collect" && n.field !== undefined && n.field.key !== "" ? [n.field] : []))
+    // Two services may each ask the same thing; the key is one field either way.
+    .filter((field, at, all) => all.findIndex((other) => other.key === field.key) === at);
   const branches = selectedNode === null ? [] : edges.filter(conditional(selectedNode.id));
   const waiting = selectedNode === null ? [] : (pending[selectedNode.id] ?? []);
 
@@ -1804,7 +1843,8 @@ export const FlowCanvas = ({
                       swallowClick.current = false;
                       return;
                     }
-                    addNode(kind, selected === null ? undefined : { after: selected });
+                    if (pickedEdge !== null) addOnLink(kind, pickedEdge);
+                    else addNode(kind, selected === null ? undefined : { after: selected });
                   }}
                   title={selected === null ? "Drag onto the drawing, or click to add" : "Drag onto the drawing, or click to add after the selected step"}
                   className="flex w-full cursor-grab touch-none items-center gap-2 rounded-lg px-2.5 py-[7px] text-left text-[12.5px] text-[var(--ink-2)] transition-colors select-none hover:bg-[var(--surface-2)] hover:text-[var(--ink)] active:cursor-grabbing"
@@ -1861,6 +1901,26 @@ export const FlowCanvas = ({
           onPointerDown={onCanvasPointerDown}
           onPointerMove={onCanvasPointerMove}
           onPointerUp={onCanvasPointerUp}
+          /* Focusable by script only (a press focuses it), so the keys below reach it while
+             the drawing is what was last clicked and never while a field is being typed in. */
+          tabIndex={-1}
+          onKeyDown={(e) => {
+            const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement;
+            if (typing) return;
+            if (e.key === "Escape") {
+              setSelected(null);
+              setSelectedEdge(null);
+              setSelectedLane(null);
+            } else if ((e.key === "Delete" || e.key === "Backspace") && pickedEdge !== null) {
+              const gone = pickedEdge;
+              setSelectedEdge(null);
+              edit((f) => ({ ...f, edges: f.edges.filter((edge) => edgeKey(edge) !== edgeKey(gone)) }));
+            } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+              coalescing.current = null;
+              setHistory(e.shiftKey ? stepForward : stepBack);
+            } else return;
+            e.preventDefault();
+          }}
         >
           {/* The toolbar, inside the drawing along its top edge. Canvas actions only — Save
               and Publish belong to the page header, where they act on the whole agent. On
@@ -2019,7 +2079,13 @@ export const FlowCanvas = ({
                       onBlur={(e) => {
                         const name = e.currentTarget.value;
                         if (name.trim() === lane.label) return;
-                        edit((f) => renameService(f, group, name));
+                        const before = history.present;
+                        const after = renameService(before, group, name);
+                        if (after === before) {
+                          toast("warn", name.trim() === "" ? "A service needs a name." : `"${name.trim()}" is already a service or an answer here.`);
+                          return;
+                        }
+                        edit(() => after);
                       }}
                       className="min-w-0 flex-1 cursor-text truncate rounded-[3px] border-0 bg-transparent px-0.5 py-0 font-mono text-[9.5px] tracking-[0.06em] text-inherit hover:bg-[var(--surface-2)] focus:bg-[var(--surface-2)] focus:text-[var(--ink)] focus:outline-none"
                     />
@@ -2087,11 +2153,18 @@ export const FlowCanvas = ({
             {/* Another service, beside the last one: the mockup's "+ Add a service" card. It
                 only exists once the call forks — a straight line has nothing to add a service
                 to — and adds the option, the branch and the first step together. */}
-            {laneBoxes.length > 1 && (() => {
+            {(() => {
+              /* Beside the last service — or, on a drawing with no services yet, beside the
+                 column, at the row the services would start on. A call with no fork can still
+                 have a service drawn ready for the fork that will lead to it. */
               const services = laneBoxes.filter((lane) => lane.id !== "opening");
               const first = services[0];
-              if (first === undefined) return null;
-              const rightmost = services.reduce((best, lane) => (lane.left > best.left ? lane : best), first);
+              const rightmost = first === undefined ? undefined : services.reduce((best, lane) => (lane.left > best.left ? lane : best), first);
+              const shown = nodes.filter((n) => !hidden.has(n.id));
+              const place =
+                rightmost !== undefined
+                  ? { left: rightmost.left + rightmost.width + 12, top: rightmost.top }
+                  : { left: (shown.length === 0 ? LEFT : Math.max(...shown.map((n) => n.x)) + COLUMN) - 8, top: TOP + ROW - LANE_HEAD };
               const aimedAt = dropNewService || dropBeforeLane === "";
               return (
                 <button
@@ -2103,7 +2176,7 @@ export const FlowCanvas = ({
                     "absolute flex items-center justify-center gap-1.5 rounded-[7px] border border-dashed bg-transparent font-mono text-[10px] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]",
                     aimedAt ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]" : "border-[var(--hairline)] text-[var(--ink-3)]",
                   )}
-                  style={{ left: rightmost.left + rightmost.width + 12, top: rightmost.top, width: NODE_W + 16, height: LANE_HEAD + 40 }}
+                  style={{ left: place.left, top: place.top, width: NODE_W + 16, height: LANE_HEAD + 40 }}
                 >
                   {dropBeforeLane === "" ? "move here" : drag !== null && "node" in drag.source ? "+ as a new service" : "+ add a service"}
                 </button>
@@ -2222,11 +2295,11 @@ export const FlowCanvas = ({
                   aria-label={`${kind.title}: ${line.title}${marked.has(n.id) ? ", has a problem" : ""}. Enter selects, Delete removes.`}
                   onKeyDown={(e) => onNodeKeyDown(e, n)}
                   onFocus={() => chooseStep(n.id)}
-                  {...(movable(n) ? draggable({ node: n.id }) : {})}
+                  {...draggable({ node: n.id })}
                   onPointerDown={(e) => {
                     chooseStep(n.id);
                     e.stopPropagation();
-                    if (movable(n)) draggable({ node: n.id }).onPointerDown(e);
+                    draggable({ node: n.id }).onPointerDown(e);
                   }}
                   className={cn(
                     "focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:outline-none",
@@ -2236,7 +2309,7 @@ export const FlowCanvas = ({
                        the card — "Collect a value" on every question was the heaviest thing
                        on the drawing and told nobody anything the icon did not. */
                     "group absolute flex w-[208px] touch-none items-start gap-2 rounded-[7px] border bg-[var(--surface-solid)] px-2.5 py-[7px] select-none",
-                    movable(n) ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
+                    "cursor-grab active:cursor-grabbing",
                     dropAfter === n.id || dropBefore === n.id
                       ? "border-[var(--accent)]"
                       : isBad
@@ -2416,7 +2489,54 @@ export const FlowCanvas = ({
               covers the call it speaks. Kept in the tree while hidden — see `settingsPane`. */}
           {settingsPane !== undefined && <div hidden={openSetting === null}>{settingsPane}</div>}
           <div hidden={openSetting !== null}>
-          {selectedNode === null && pickedEdge !== null ? (
+          {selectedNode === null && pickedEdge === null && pickedLane !== null ? (
+            <div className="flex flex-col gap-3">
+              <div>
+                <p className="mb-0.5 font-mono text-[9.5px] tracking-[0.13em] text-[var(--ink-3)] uppercase">Service</p>
+                <h3 className="text-[14px] font-[640] tracking-[-0.018em]">{pickedLane.label}</h3>
+                <p className="mt-1 text-[12px] leading-relaxed text-[var(--ink-3)]">
+                  {pickedLane.ids.length === 0 ? "No steps yet." : `${pickedLane.ids.length} step${pickedLane.ids.length === 1 ? "" : "s"}.`}{" "}
+                  {(() => {
+                    const arm = branchEdgeOf(history.present, pickedLane);
+                    if (arm !== undefined) return pickedLane.catchAll === true ? "Where the call goes when the answer is none of the others." : `Reached when the answer is “${describeEdge(arm)}”.`;
+                    const from = edges.filter((edge) => pickedLane.ids.includes(edge.to) && !pickedLane.ids.includes(edge.from));
+                    return from.length === 0 ? "Nothing leads here yet — drag a branch's dot onto it." : `Reached from ${from.length} other ${from.length === 1 ? "step" : "steps"}.`;
+                  })()}
+                </p>
+              </div>
+              {!(pickedLane.catchAll === true && pickedLane.label === "anything else") && (
+                <TextField
+                  label="Name"
+                  key={pickedLane.label}
+                  defaultValue={pickedLane.label}
+                  onBlur={(e) => {
+                    const name = e.currentTarget.value;
+                    if (name.trim() === pickedLane.label) return;
+                    const after = renameService(history.present, pickedLane, name);
+                    if (after === history.present) {
+                      toast("warn", name.trim() === "" ? "A service needs a name." : `"${name.trim()}" is already a service or an answer here.`);
+                      return;
+                    }
+                    edit(() => after);
+                    setSelectedLane(`svc:${name.trim()}`);
+                  }}
+                  hint="The answer that brings a caller here. Renaming it renames the option the fork reads."
+                />
+              )}
+              {!(pickedLane.catchAll === true && pickedLane.ids.length === 0) && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    setSelectedLane(null);
+                    edit((f) => removeService(f, pickedLane));
+                  }}
+                >
+                  {pickedLane.ids.length === 0 ? "Remove this service" : `Remove this service and its ${pickedLane.ids.length} step${pickedLane.ids.length === 1 ? "" : "s"}`}
+                </Button>
+              )}
+            </div>
+          ) : selectedNode === null && pickedEdge !== null ? (
             <div className="flex flex-col gap-3">
               <div>
                 <p className="mb-0.5 font-mono text-[9.5px] tracking-[0.13em] text-[var(--ink-3)] uppercase">Link</p>
@@ -2481,7 +2601,7 @@ export const FlowCanvas = ({
             </div>
           ) : selectedNode === null ? (
             <p className="py-6 text-center text-[12.5px] leading-relaxed text-[var(--ink-3)]">
-              Select a step to edit what it says and how it behaves, or a link to follow it.
+              Select a step to edit what it says and how it behaves, a link to follow it, or a service to see what reaches it.
             </p>
           ) : (
             <div className="flex flex-col gap-3">
@@ -2589,7 +2709,10 @@ export const FlowCanvas = ({
               )}
 
               {(selectedNode.kind === "confirm" || selectedNode.kind === "decide") && (
-                <TextField
+                /* The fields the call collects, as a list: a branch or a readback reads one of
+                   those and nothing else, and a key typed by hand had to match one to the
+                   letter. A value from a flow saved before this list existed is kept as is. */
+                <SelectField
                   label={selectedNode.kind === "confirm" ? "Value to read back" : "Value to branch on"}
                   value={selectedNode.on ?? ""}
                   onChange={(e) => updateSelected({ on: e.target.value }, "on")}
@@ -2597,9 +2720,20 @@ export const FlowCanvas = ({
                   hint={
                     selectedNode.kind === "decide"
                       ? "A branch reads something the caller was asked for. Opening hours are not one of those — the agent is told whether you are open and says so, rather than routing on it."
-                      : undefined
+                      : "The answer the caller is asked to confirm."
                   }
-                />
+                >
+                  <option value="">— choose a field —</option>
+                  {collected.map((field) => (
+                    <option key={field.key} value={field.key}>
+                      {field.key}
+                      {field.type === "choice" ? ` (${field.options.length} answers)` : ` (${field.type})`}
+                    </option>
+                  ))}
+                  {selectedNode.on !== undefined && selectedNode.on !== "" && !collected.some((field) => field.key === selectedNode.on) && (
+                    <option value={selectedNode.on}>{selectedNode.on} (not asked on this flow)</option>
+                  )}
+                </SelectField>
               )}
 
               {selectedNode.kind === "tool" && (
