@@ -6,9 +6,11 @@ import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { createMailer, MAILER, type Mailer } from "../mail/mailer";
 import { ApiGuard } from "./auth/api.guard";
 import { AgentsController } from "./agents/agents.controller";
+import { AppointmentsController } from "./appointments/appointments.controller";
 import { AuthController } from "./auth/auth.controller";
 import { AuthService } from "./auth/auth.service";
 import { CallsController } from "./calls/calls.controller";
+import { CampaignsController } from "./campaigns/campaigns.controller";
 import { loadApiConfig } from "./api-config";
 import { ConfigController } from "./config/config.controller";
 import { ContactsController } from "./contacts/contacts.controller";
@@ -43,8 +45,10 @@ import { VoicesController } from "./voices/voices.controller";
  */
 export const API_CONTROLLERS = [
   AgentsController,
+  AppointmentsController,
   AuthController,
   CallsController,
+  CampaignsController,
   ConfigController,
   ContactsController,
   CredentialsController,

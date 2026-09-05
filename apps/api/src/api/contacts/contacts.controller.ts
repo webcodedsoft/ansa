@@ -1,12 +1,15 @@
 import {
+  addContacts,
   readContact,
   readContactCalls,
   readContactStats,
   readContacts,
+  recordContactImport,
   renameContact,
   setContactValue,
+  type NewContact,
 } from "@ansa/db";
-import { Controller, Get, Inject, NotFoundException, Patch, Put } from "@nestjs/common";
+import { Controller, Get, Inject, NotFoundException, Patch, Post, Put } from "@nestjs/common";
 
 import { Endpoint } from "../http/endpoint";
 import {
@@ -18,8 +21,8 @@ import {
   type PageQuery,
 } from "../http/pagination";
 import { apiRoute, FromBody, FromPath, FromQuery } from "../http/request";
-import { integer, list, nullable, object, optional, text, type Infer } from "../http/schema";
-import { timestamp, uuid } from "../schemas";
+import { flag, integer, list, nullable, object, optional, text, type Infer } from "../http/schema";
+import { phoneNumber, timestamp, uuid } from "../schemas";
 import { OrganizationContext } from "../tenancy/organization-context";
 
 /**
@@ -115,6 +118,90 @@ const valueChange = object({
   value: text({ maxLength: 4096 }),
 });
 
+/**
+ * One person added by hand, for somebody who did not ring first.
+ *
+ * The phone is E.164 here — the same rule every other number field in this API enforces —
+ * because a single deliberate add is a form the operator is filling in now, and a form can
+ * say "use the full international form" before it saves. A spreadsheet cannot, which is why
+ * the import route below is more forgiving.
+ */
+const newContact = object({
+  phone: phoneNumber(),
+  displayName: optional(text({ maxLength: 200 })),
+  notes: optional(text({ maxLength: 2000 })),
+});
+
+/** What `addContacts` gives back for the one row: its id, and whether it was new. */
+const addedContact = object({
+  id: uuid(),
+  phone: text({ maxLength: 32 }),
+  /** False when the number was already known and the existing record was kept. */
+  created: flag(),
+});
+
+/**
+ * The largest batch one import may carry.
+ *
+ * A ceiling rather than a limit anyone reaches on purpose: it stops a single request from
+ * becoming an unbounded insert and an unbounded parse, and a genuine list larger than this
+ * is two imports, which the counts make legible anyway.
+ */
+const MAX_IMPORT_ROWS = 5000;
+
+/**
+ * One row of an uploaded list.
+ *
+ * The phone is free text, not `phoneNumber()`, on purpose: a spreadsheet holds `08030000000`
+ * far more often than `+2348030000000`, and both are the same line. The handler normalises
+ * each one and skips the cells that cannot be a number rather than rejecting the whole file
+ * over one bad row.
+ */
+const importRow = object({
+  phone: text({ minLength: 1, maxLength: 32 }),
+  displayName: optional(text({ maxLength: 200 })),
+  notes: optional(text({ maxLength: 2000 })),
+});
+
+const importRequest = object({
+  sourceLabel: text({ minLength: 1, maxLength: 200 }),
+  rows: list(importRow, { maxItems: MAX_IMPORT_ROWS }),
+});
+
+const importResult = object({
+  importId: uuid(),
+  /** Every row the operator sent, counted before anything was normalised or folded. */
+  received: integer({ minimum: 0 }),
+  /** Distinct numbers that did not already have a record. */
+  added: integer({ minimum: 0 }),
+  /** Distinct numbers that were already on the list; their existing record was kept. */
+  alreadyKnown: integer({ minimum: 0 }),
+  /** Rows whose phone could not be read as a number, and so were left out. */
+  skipped: integer({ minimum: 0 }),
+});
+
+/**
+ * A number from a list turned into the one form the rest of the system dials.
+ *
+ * E.164 passes through. A Nigerian national number — `0` then a mobile prefix then nine
+ * digits — becomes `+234…`, because there is no other country it could be and refusing it
+ * would fail on the commonest input rather than an unusual one; a bare `234…` is the same
+ * number missing its plus. Anything else returns null, which the import counts as skipped.
+ * This is the same shape `outbound/consent.ts` recognises, kept here as a third small copy
+ * rather than a shared one for the reason `schemas.ts` gives about the E.164 pattern: a
+ * malformed cell becomes a skipped row with a count, not a failure somewhere downstream.
+ */
+const E164 = /^\+[1-9][0-9]{6,14}$/;
+const NIGERIAN_NATIONAL = /^0[789]\d{9}$/;
+
+const toE164 = (raw: string): string | null => {
+  const trimmed = raw.replace(/[\s()-]/g, "");
+  if (E164.test(trimmed)) return trimmed;
+  if (NIGERIAN_NATIONAL.test(trimmed)) return `+234${trimmed.slice(1)}`;
+  if (/^234[789]\d{9}$/.test(trimmed)) return `+${trimmed}`;
+  return null;
+};
+
 @Controller(apiRoute("contacts"))
 export class ContactsController {
   constructor(@Inject(OrganizationContext) private readonly db: OrganizationContext) {}
@@ -142,6 +229,78 @@ export class ContactsController {
         repeatCallers: stats.repeatCallers,
         newThisWeek: stats.newThisWeek,
       },
+    };
+  }
+
+  @Post()
+  @Endpoint({
+    summary: "Add one person to the list by hand",
+    description:
+      "For somebody who did not ring first. The number is upserted, so adding a number that has already called returns that caller's existing record rather than a second one — `created` says which happened. The origin is recorded as `manual`.",
+    capability: "contacts:write",
+    body: newContact,
+    response: addedContact,
+    status: 201,
+  })
+  async add(@FromBody() body: Infer<typeof newContact>): Promise<Infer<typeof addedContact>> {
+    const rows = await this.db.tx((scope) =>
+      addContacts(
+        scope,
+        [{ phone: body.phone, displayName: body.displayName ?? null, notes: body.notes ?? null }],
+        "manual",
+      ),
+    );
+    const added = rows[0];
+    // addContacts returns one row per distinct phone, and one was given. An empty result
+    // would mean the upsert wrote nothing, which is a bug rather than a not-found.
+    if (added === undefined) throw new Error("adding one contact returned no row");
+    return { id: added.id, phone: added.phone, created: added.created };
+  }
+
+  @Post("imports")
+  @Endpoint({
+    summary: "Bring in a list of people at once",
+    description:
+      "Accepts a labelled batch of rows. Each phone is normalised — a Nigerian national number becomes `+234…` — and a row whose phone cannot be read as a number is left out and counted in `skipped`, so one bad cell does not fail the whole upload. The batch is recorded first so every contact it creates carries its `importId`. `received` is what was sent; `added`, `alreadyKnown` and `skipped` are the outcome per distinct number.",
+    capability: "contacts:write",
+    body: importRequest,
+    response: importResult,
+    status: 201,
+  })
+  async import(@FromBody() body: Infer<typeof importRequest>): Promise<Infer<typeof importResult>> {
+    let skipped = 0;
+    const normalised: NewContact[] = [];
+    for (const row of body.rows) {
+      const phone = toE164(row.phone);
+      if (phone === null) {
+        skipped += 1;
+        continue;
+      }
+      normalised.push({ phone, displayName: row.displayName ?? null, notes: row.notes ?? null });
+    }
+
+    const { batch, addedRows } = await this.db.tx(async (scope) => {
+      // Recorded first, so `addContacts` has an id to stamp on every row it writes.
+      // `rowCount` is what the operator uploaded, not what was new — the difference is
+      // visible from the contacts themselves.
+      const recorded = await recordContactImport(scope, {
+        sourceLabel: body.sourceLabel,
+        rowCount: body.rows.length,
+        createdBy: this.db.caller.userId,
+      });
+      return { batch: recorded, addedRows: await addContacts(scope, normalised, "import", recorded.id) };
+    });
+
+    // A number listed twice in one batch is folded to a single row by `addContacts`, so
+    // `added + alreadyKnown` counts distinct numbers rather than uploaded rows. `received`
+    // is the raw count, which is why the four numbers need not sum.
+    const added = addedRows.filter((row) => row.created).length;
+    return {
+      importId: batch.id,
+      received: body.rows.length,
+      added,
+      alreadyKnown: addedRows.length - added,
+      skipped,
     };
   }
 

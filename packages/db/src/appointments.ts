@@ -467,15 +467,4 @@ export const cancelBooking = async (
   return rows.length > 0;
 };
 
-/** Stamp a connector's own id on a booking it mirrored outward. */
-export const setBookingExternalRef = async (
-  scope: OrganizationScope,
-  bookingId: string,
-  externalRef: string | null,
-): Promise<boolean> => {
-  const rows = await scope.mutate<Record<string, unknown>>(
-    `update appointment_bookings set external_ref = $2 where id = $1 returning id`,
-    [bookingId, externalRef],
-  );
-  return rows.length > 0;
-};
+

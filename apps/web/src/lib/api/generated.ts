@@ -610,6 +610,277 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       }>(options, "PUT", `/api/v1/agents/${encodeURIComponent(input.path.agentId)}/tools`, input),
   },
 
+  appointments: {
+    /**
+     * Cancel a booking or hold
+     * The slot is freed for the next caller. Cancelling something already cancelled is not an error — the state asked for is the state it is in.
+     */
+    cancelBooking: (input: {
+        readonly path: {
+          readonly bookingId: string;
+        };
+      }) =>
+      send<{
+        readonly id: string;
+        readonly calendarId: string;
+        readonly contactId: string | null;
+        readonly startsAt: string;
+        readonly endsAt: string;
+        readonly status: "held" | "booked" | "cancelled";
+        readonly holdExpiresAt: string | null;
+        readonly source: "call" | "manual" | "connector";
+        readonly callId: string | null;
+        readonly externalRef: string | null;
+        readonly notes: string | null;
+        readonly createdAt: string;
+        readonly updatedAt: string;
+      }>(options, "POST", `/api/v1/appointments/bookings/${encodeURIComponent(input.path.bookingId)}/cancel`, input),
+
+    /**
+     * Confirm a held slot
+     * Turns a hold into a booking. A hold that has already lapsed cannot be confirmed — it is somebody else's to take by then — and this answers 409 rather than putting two people in one chair.
+     */
+    confirmBooking: (input: {
+        readonly path: {
+          readonly bookingId: string;
+        };
+      }) =>
+      send<{
+        readonly id: string;
+        readonly calendarId: string;
+        readonly contactId: string | null;
+        readonly startsAt: string;
+        readonly endsAt: string;
+        readonly status: "held" | "booked" | "cancelled";
+        readonly holdExpiresAt: string | null;
+        readonly source: "call" | "manual" | "connector";
+        readonly callId: string | null;
+        readonly externalRef: string | null;
+        readonly notes: string | null;
+        readonly createdAt: string;
+        readonly updatedAt: string;
+      }>(options, "POST", `/api/v1/appointments/bookings/${encodeURIComponent(input.path.bookingId)}/confirm`, input),
+
+    /**
+     * List this organisation's calendars
+     * Every calendar the organisation holds, oldest first, with its timezone and slot length.
+     */
+    listCalendars: () =>
+      send<{
+        readonly items: readonly ({
+        readonly id: string;
+        readonly name: string;
+        readonly timezone: string;
+        readonly slotMinutes: number;
+        readonly bufferMinutes: number;
+        readonly source: "hosted" | "connector";
+        readonly externalRef: string | null;
+        readonly createdAt: string;
+        readonly updatedAt: string;
+      })[];
+      }>(options, "GET", `/api/v1/appointments/calendars`, {}),
+
+    /**
+     * Create a calendar
+     * `timezone` must be a real IANA zone — the availability and slots are read in it. A `connector` calendar mirrors an outside diary and must carry that diary's `externalRef`; a `hosted` one is kept here.
+     */
+    createCalendar: (input: {
+        readonly body: {
+          readonly name: string;
+          readonly timezone: string;
+          readonly slotMinutes?: number;
+          readonly bufferMinutes?: number;
+          readonly source?: "hosted" | "connector";
+          readonly externalRef?: string;
+        };
+      }) =>
+      send<{
+        readonly id: string;
+        readonly name: string;
+        readonly timezone: string;
+        readonly slotMinutes: number;
+        readonly bufferMinutes: number;
+        readonly source: "hosted" | "connector";
+        readonly externalRef: string | null;
+        readonly createdAt: string;
+        readonly updatedAt: string;
+      }>(options, "POST", `/api/v1/appointments/calendars`, input),
+
+    /**
+     * Read one calendar
+     */
+    readCalendar: (input: {
+        readonly path: {
+          readonly calendarId: string;
+        };
+      }) =>
+      send<{
+        readonly id: string;
+        readonly name: string;
+        readonly timezone: string;
+        readonly slotMinutes: number;
+        readonly bufferMinutes: number;
+        readonly source: "hosted" | "connector";
+        readonly externalRef: string | null;
+        readonly createdAt: string;
+        readonly updatedAt: string;
+      }>(options, "GET", `/api/v1/appointments/calendars/${encodeURIComponent(input.path.calendarId)}`, input),
+
+    /**
+     * Edit a calendar
+     * Only the fields sent change. `timezone`, if sent, must be a real IANA zone.
+     */
+    editCalendar: (input: {
+        readonly path: {
+          readonly calendarId: string;
+        };
+        readonly body: {
+          readonly name?: string;
+          readonly timezone?: string;
+          readonly slotMinutes?: number;
+          readonly bufferMinutes?: number;
+        };
+      }) =>
+      send<{
+        readonly id: string;
+        readonly name: string;
+        readonly timezone: string;
+        readonly slotMinutes: number;
+        readonly bufferMinutes: number;
+        readonly source: "hosted" | "connector";
+        readonly externalRef: string | null;
+        readonly createdAt: string;
+        readonly updatedAt: string;
+      }>(options, "PATCH", `/api/v1/appointments/calendars/${encodeURIComponent(input.path.calendarId)}`, input),
+
+    /**
+     * Read a calendar's weekly hours
+     */
+    readAvailability: (input: {
+        readonly path: {
+          readonly calendarId: string;
+        };
+      }) =>
+      send<{
+        readonly windows: readonly ({
+        readonly id: string;
+        readonly weekday: number;
+        readonly startMinute: number;
+        readonly endMinute: number;
+      })[];
+      }>(options, "GET", `/api/v1/appointments/calendars/${encodeURIComponent(input.path.calendarId)}/availability`, input),
+
+    /**
+     * Replace a calendar's weekly hours
+     * The whole week at once, the way it is edited: everything the calendar had goes, and what is sent takes its place. Each window must end after it starts, and windows on the same weekday must not overlap.
+     */
+    replaceAvailability: (input: {
+        readonly path: {
+          readonly calendarId: string;
+        };
+        readonly body: {
+          readonly windows: readonly ({
+          readonly weekday: number;
+          readonly startMinute: number;
+          readonly endMinute: number;
+        })[];
+        };
+      }) =>
+      send<{
+        readonly windows: readonly ({
+        readonly id: string;
+        readonly weekday: number;
+        readonly startMinute: number;
+        readonly endMinute: number;
+      })[];
+      }>(options, "PUT", `/api/v1/appointments/calendars/${encodeURIComponent(input.path.calendarId)}/availability`, input),
+
+    /**
+     * The bookings in a range
+     * Every live booking and hold whose time overlaps the range, cancelled ones excluded. Lapsed holds are released first, so the list is what is actually taken now.
+     */
+    listBookings: (input: {
+        readonly path: {
+          readonly calendarId: string;
+        };
+        readonly query: {
+          readonly from: string;
+          readonly to: string;
+        };
+      }) =>
+      send<{
+        readonly items: readonly ({
+        readonly id: string;
+        readonly calendarId: string;
+        readonly contactId: string | null;
+        readonly startsAt: string;
+        readonly endsAt: string;
+        readonly status: "held" | "booked" | "cancelled";
+        readonly holdExpiresAt: string | null;
+        readonly source: "call" | "manual" | "connector";
+        readonly callId: string | null;
+        readonly externalRef: string | null;
+        readonly notes: string | null;
+        readonly createdAt: string;
+        readonly updatedAt: string;
+      })[];
+      }>(options, "GET", `/api/v1/appointments/calendars/${encodeURIComponent(input.path.calendarId)}/bookings`, input),
+
+    /**
+     * Book or hold a slot
+     * Takes a free slot at `startsAt`; the slot's length is the calendar's. `booked` takes it outright, `held` reserves it for `holdMinutes` while a caller decides. If the slot was taken between being offered and being booked, this answers 409 — offer the next one.
+     */
+    createBooking: (input: {
+        readonly path: {
+          readonly calendarId: string;
+        };
+        readonly body: {
+          readonly startsAt: string;
+          readonly source: "call" | "manual" | "connector";
+          readonly status?: "held" | "booked";
+          readonly holdMinutes?: number;
+          readonly contactId?: string;
+          readonly notes?: string;
+          readonly externalRef?: string;
+        };
+      }) =>
+      send<{
+        readonly id: string;
+        readonly calendarId: string;
+        readonly contactId: string | null;
+        readonly startsAt: string;
+        readonly endsAt: string;
+        readonly status: "held" | "booked" | "cancelled";
+        readonly holdExpiresAt: string | null;
+        readonly source: "call" | "manual" | "connector";
+        readonly callId: string | null;
+        readonly externalRef: string | null;
+        readonly notes: string | null;
+        readonly createdAt: string;
+        readonly updatedAt: string;
+      }>(options, "POST", `/api/v1/appointments/calendars/${encodeURIComponent(input.path.calendarId)}/bookings`, input),
+
+    /**
+     * The free slots in a range
+     * The recurring hours expanded over the range in the calendar's timezone, minus the buffer, minus every live booking and unexpired hold. Lapsed holds are released first, so a slot a dropped call never let go of is offered again. Each slot's start and end carry the calendar's own offset.
+     */
+    slots: (input: {
+        readonly path: {
+          readonly calendarId: string;
+        };
+        readonly query: {
+          readonly from: string;
+          readonly to: string;
+        };
+      }) =>
+      send<{
+        readonly slots: readonly ({
+        readonly start: string;
+        readonly end: string;
+      })[];
+      }>(options, "GET", `/api/v1/appointments/calendars/${encodeURIComponent(input.path.calendarId)}/slots`, input),
+  },
+
   auth: {
     /**
      * The signed-in user, their organisation, and what they may do in it
@@ -626,7 +897,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly name: string;
       };
         readonly role: "owner" | "admin" | "member";
-        readonly capabilities: readonly ("calls:read" | "calls:write" | "contacts:read" | "contacts:write" | "members:read" | "members:write" | "invitations:read" | "invitations:write" | "config:read" | "config:write")[];
+        readonly capabilities: readonly ("calls:read" | "calls:write" | "contacts:read" | "contacts:write" | "campaigns:read" | "campaigns:write" | "members:read" | "members:write" | "invitations:read" | "invitations:write" | "appointments:read" | "appointments:write" | "config:read" | "config:write")[];
       }>(options, "GET", `/api/v1/auth/me`, {}),
 
     /**
@@ -986,6 +1257,218 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly transferRate: string | null;
       })[];
       }>(options, "GET", `/api/v1/calls/trends`, {}),
+  },
+
+  campaigns: {
+    /**
+     * The organisation's outbound campaigns, newest first
+     * Each row carries where it has got to — total enqueued, still pending, and answered — counted from the scheduled calls under it.
+     */
+    list: (input: {
+        readonly query?: {
+          readonly page?: number;
+          readonly perPage?: number;
+        };
+      }) =>
+      send<{
+        readonly items: readonly ({
+        readonly id: string;
+        readonly agentId: string;
+        readonly name: string;
+        readonly status: "draft" | "scheduled" | "running" | "paused" | "done";
+        readonly callingWindow: {
+        readonly startHour: number;
+        readonly endHour: number;
+        readonly weekdays: readonly (number)[];
+      } | null;
+        readonly createdBy: string | null;
+        readonly createdAt: string;
+        readonly updatedAt: string;
+        readonly total: number;
+        readonly pending: number;
+        readonly answered: number;
+      })[];
+        readonly page: number;
+        readonly perPage: number;
+        readonly total: number;
+        readonly totalPages: number;
+      }>(options, "GET", `/api/v1/campaigns`, input),
+
+    /**
+     * Start a campaign
+     * Begins as a draft with nobody on it. The agent must be one this organisation runs; naming an agent it does not own is a 422 on `agentId`. An optional calling window narrows the hours and days — it can only narrow the 08:00–20:00 WAT bound `mayCall` already clamps to.
+     */
+    create: (input: {
+        readonly body: {
+          readonly name: string;
+          readonly agentId: string;
+          readonly callingWindow?: {
+          readonly startHour: number;
+          readonly endHour: number;
+          readonly weekdays: readonly (number)[];
+        };
+        };
+      }) =>
+      send<{
+        readonly id: string;
+        readonly agentId: string;
+        readonly name: string;
+        readonly status: "draft" | "scheduled" | "running" | "paused" | "done";
+        readonly callingWindow: {
+        readonly startHour: number;
+        readonly endHour: number;
+        readonly weekdays: readonly (number)[];
+      } | null;
+        readonly createdBy: string | null;
+        readonly createdAt: string;
+        readonly updatedAt: string;
+        readonly total: number;
+        readonly pending: number;
+        readonly answered: number;
+      }>(options, "POST", `/api/v1/campaigns`, input),
+
+    /**
+     * One campaign, with its progress counts
+     */
+    detail: (input: {
+        readonly path: {
+          readonly campaignId: string;
+        };
+      }) =>
+      send<{
+        readonly id: string;
+        readonly agentId: string;
+        readonly name: string;
+        readonly status: "draft" | "scheduled" | "running" | "paused" | "done";
+        readonly callingWindow: {
+        readonly startHour: number;
+        readonly endHour: number;
+        readonly weekdays: readonly (number)[];
+      } | null;
+        readonly createdBy: string | null;
+        readonly createdAt: string;
+        readonly updatedAt: string;
+        readonly total: number;
+        readonly pending: number;
+        readonly answered: number;
+      }>(options, "GET", `/api/v1/campaigns/${encodeURIComponent(input.path.campaignId)}`, input),
+
+    /**
+     * Rename a campaign, or change its calling window
+     * Send `name`, `callingWindow`, or both. An omitted field is left as it was; a null `callingWindow` clears it back to the default window. The window can only narrow the 08:00–20:00 WAT bound `mayCall` clamps to.
+     */
+    edit: (input: {
+        readonly path: {
+          readonly campaignId: string;
+        };
+        readonly body: {
+          readonly name?: string;
+          readonly callingWindow?: {
+          readonly startHour: number;
+          readonly endHour: number;
+          readonly weekdays: readonly (number)[];
+        } | null;
+        };
+      }) =>
+      send<{
+        readonly id: string;
+        readonly agentId: string;
+        readonly name: string;
+        readonly status: "draft" | "scheduled" | "running" | "paused" | "done";
+        readonly callingWindow: {
+        readonly startHour: number;
+        readonly endHour: number;
+        readonly weekdays: readonly (number)[];
+      } | null;
+        readonly createdBy: string | null;
+        readonly createdAt: string;
+        readonly updatedAt: string;
+        readonly total: number;
+        readonly pending: number;
+        readonly answered: number;
+      }>(options, "PATCH", `/api/v1/campaigns/${encodeURIComponent(input.path.campaignId)}`, input),
+
+    /**
+     * The calls scheduled under a campaign
+     * One row per enqueued contact, with the person beside it and where the call got to.
+     */
+    calls: (input: {
+        readonly path: {
+          readonly campaignId: string;
+        };
+        readonly query?: {
+          readonly page?: number;
+          readonly perPage?: number;
+        };
+      }) =>
+      send<{
+        readonly items: readonly ({
+        readonly id: string;
+        readonly campaignId: string;
+        readonly contactId: string;
+        readonly phone: string;
+        readonly displayName: string | null;
+        readonly status: "pending" | "placing" | "answered" | "no_answer" | "busy" | "voicemail" | "failed" | "suppressed";
+        readonly attempts: number;
+        readonly nextAttemptAt: string | null;
+        readonly lastAttemptAt: string | null;
+        readonly outcome: string | null;
+        readonly callId: string | null;
+        readonly createdAt: string;
+        readonly updatedAt: string;
+      })[];
+        readonly page: number;
+        readonly perPage: number;
+        readonly total: number;
+        readonly totalPages: number;
+      }>(options, "GET", `/api/v1/campaigns/${encodeURIComponent(input.path.campaignId)}/calls`, input),
+
+    /**
+     * Put contacts on a campaign
+     * Enqueues each contact as a pending call, due immediately — the scheduler still checks consent and the calling window before it dials. A contact already on the campaign, or an id from another organisation, is skipped; `enqueued` counts how many actually became a new call.
+     */
+    enqueue: (input: {
+        readonly path: {
+          readonly campaignId: string;
+        };
+        readonly body: {
+          readonly contactIds: readonly (string)[];
+        };
+      }) =>
+      send<{
+        readonly requested: number;
+        readonly enqueued: number;
+      }>(options, "POST", `/api/v1/campaigns/${encodeURIComponent(input.path.campaignId)}/contacts`, input),
+
+    /**
+     * Move a campaign between states
+     * draft → scheduled → running → paused → done, plus scheduled → draft and paused → running. A finished campaign is terminal. An illegal move is refused with a 409 that names it; setting the state it is already in is a no-op.
+     */
+    setStatus: (input: {
+        readonly path: {
+          readonly campaignId: string;
+        };
+        readonly body: {
+          readonly status: "draft" | "scheduled" | "running" | "paused" | "done";
+        };
+      }) =>
+      send<{
+        readonly id: string;
+        readonly agentId: string;
+        readonly name: string;
+        readonly status: "draft" | "scheduled" | "running" | "paused" | "done";
+        readonly callingWindow: {
+        readonly startHour: number;
+        readonly endHour: number;
+        readonly weekdays: readonly (number)[];
+      } | null;
+        readonly createdBy: string | null;
+        readonly createdAt: string;
+        readonly updatedAt: string;
+        readonly total: number;
+        readonly pending: number;
+        readonly answered: number;
+      }>(options, "POST", `/api/v1/campaigns/${encodeURIComponent(input.path.campaignId)}/status`, input),
   },
 
   config: {
@@ -1529,6 +2012,23 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       }>(options, "GET", `/api/v1/contacts`, input),
 
     /**
+     * Add one person to the list by hand
+     * For somebody who did not ring first. The number is upserted, so adding a number that has already called returns that caller's existing record rather than a second one — `created` says which happened. The origin is recorded as `manual`.
+     */
+    add: (input: {
+        readonly body: {
+          readonly phone: string;
+          readonly displayName?: string;
+          readonly notes?: string;
+        };
+      }) =>
+      send<{
+        readonly id: string;
+        readonly phone: string;
+        readonly created: boolean;
+      }>(options, "POST", `/api/v1/contacts`, input),
+
+    /**
      * One person, and every call they have made
      * The call list is matched on the number rather than through a key, so calls made before this contact existed are still theirs.
      */
@@ -1624,6 +2124,28 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly createdAt: string;
         readonly updatedAt: string;
       }>(options, "PUT", `/api/v1/contacts/${encodeURIComponent(input.path.contactId)}/values`, input),
+
+    /**
+     * Bring in a list of people at once
+     * Accepts a labelled batch of rows. Each phone is normalised — a Nigerian national number becomes `+234…` — and a row whose phone cannot be read as a number is left out and counted in `skipped`, so one bad cell does not fail the whole upload. The batch is recorded first so every contact it creates carries its `importId`. `received` is what was sent; `added`, `alreadyKnown` and `skipped` are the outcome per distinct number.
+     */
+    import: (input: {
+        readonly body: {
+          readonly sourceLabel: string;
+          readonly rows: readonly ({
+          readonly phone: string;
+          readonly displayName?: string;
+          readonly notes?: string;
+        })[];
+        };
+      }) =>
+      send<{
+        readonly importId: string;
+        readonly received: number;
+        readonly added: number;
+        readonly alreadyKnown: number;
+        readonly skipped: number;
+      }>(options, "POST", `/api/v1/contacts/imports`, input),
   },
 
   credentials: {

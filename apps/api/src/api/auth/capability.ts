@@ -33,12 +33,34 @@ export type Capability =
    * rather than a quiet widening of one whose whole point is that it is narrow.
    */
   | "contacts:write"
+  /** Read the outbound campaigns and the calls scheduled under them. */
+  | "campaigns:read"
+  /**
+   * Create a campaign, edit it, move it between states, and put contacts on it.
+   *
+   * Its own pair rather than a reuse of `contacts:write` or `config:write`: `contacts:write`
+   * is deliberately narrow — correcting one person's record — and a campaign places calls,
+   * which is a materially larger thing to grant; `config:write` is what a caller hears, and a
+   * campaign decides who is called, not what they hear.
+   */
+  | "campaigns:write"
   /** See who else is in the organisation. */
   | "members:read"
   /** Change someone's role, or remove them. */
   | "members:write"
   | "invitations:read"
   | "invitations:write"
+  /** Read the diary: calendars, opening hours, free slots and the bookings in them. */
+  | "appointments:read"
+  /**
+   * Change the diary: edit a calendar or its hours, book a slot, confirm a hold, cancel.
+   *
+   * Its own capability rather than a widening of `config:write`, for the reason `contacts:write`
+   * is its own: a booking is the organisation's operational data, made and cancelled day to day,
+   * not part of what a caller hears. A member reviewing calls should be able to see the diary
+   * without being able to move an appointment in it.
+   */
+  | "appointments:write"
   /** Read the agent's configuration: prompts, tools, numbers, hours. */
   | "config:read"
   /** Change it. This is the one that alters what callers hear. */
@@ -59,13 +81,17 @@ export type Capability =
  * change to this table and to that test — not a quiet grant here.
  */
 const GRANTS: Readonly<Record<MemberRole, readonly Capability[]>> = {
-  member: ["calls:read", "contacts:read", "members:read", "config:read"],
+  member: ["calls:read", "contacts:read", "campaigns:read", "members:read", "appointments:read", "config:read"],
   admin: [
     "calls:read",
     "calls:write",
     "contacts:read",
     "contacts:write",
+    "campaigns:read",
+    "campaigns:write",
     "members:read",
+    "appointments:read",
+    "appointments:write",
     "config:read",
     "config:write",
     "invitations:read",
@@ -75,10 +101,14 @@ const GRANTS: Readonly<Record<MemberRole, readonly Capability[]>> = {
     "calls:write",
     "contacts:read",
     "contacts:write",
+    "campaigns:read",
+    "campaigns:write",
     "members:read",
     "members:write",
     "invitations:read",
     "invitations:write",
+    "appointments:read",
+    "appointments:write",
     "config:read",
     "config:write",
   ],

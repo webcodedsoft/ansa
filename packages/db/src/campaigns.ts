@@ -69,19 +69,7 @@ export const recordContactImport = async (
   return asImport(row);
 };
 
-/** Every batch this organisation has brought in, newest first. */
-export const readContactImports = async (
-  scope: OrganizationScope,
-  page: PageRequest,
-): Promise<PageSlice<ContactImport>> => {
-  const rows = await scope.query<Record<string, unknown> & WithTotal>(
-    `select id, source_label, row_count, imported_at, created_by, ${TOTAL_COLUMN}
-       from contact_imports
-      ${pageOrder("imported_at", "id")}`,
-    pageParams(page),
-  );
-  return toSlice(rows, asImport);
-};
+
 
 // ---------------------------------------------------------------------------
 // Campaigns

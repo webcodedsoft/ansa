@@ -1,0 +1,512 @@
+import {
+  bookSlot,
+  cancelBooking,
+  confirmHold,
+  createCalendar,
+  expireLapsedHolds,
+  readAvailability,
+  readBooking,
+  readBookings,
+  readCalendar,
+  readCalendars,
+  replaceAvailability,
+  SlotTaken,
+  updateCalendar,
+  type AppointmentCalendar,
+  type Booking,
+  type StoredAvailabilityWindow,
+} from "@ansa/db";
+import {
+  ConflictException,
+  Controller,
+  Get,
+  Inject,
+  NotFoundException,
+  Patch,
+  Post,
+  Put,
+  UnprocessableEntityException,
+} from "@nestjs/common";
+
+import { Endpoint } from "../http/endpoint";
+import { apiRoute, FromBody, FromPath, FromQuery } from "../http/request";
+import { choice, integer, list, nullable, object, optional, text, type Infer } from "../http/schema";
+import { timestamp, uuid } from "../schemas";
+import { OrganizationContext } from "../tenancy/organization-context";
+
+import { availabilityProblem, computeFreeSlots, isValidTimezone, toOffsetIso } from "./slots";
+
+/**
+ * The diary: calendars, the weekly hours they keep, the free slots those hours leave, and the
+ * bookings that fill them.
+ *
+ * The database layer is deliberately incomplete on purpose (see `packages/db/appointments.ts`):
+ * it stores availability as a weekday and minutes past midnight, and it refuses a second
+ * booking on the same slot, but it does not know what a slot *is* — expanding a recurring
+ * pattern over real dates in a timezone, minus the buffer, minus what is already taken, is
+ * arithmetic that needs a timezone library and so lives here, in `slots.ts`. This controller is
+ * the seam: it hands that arithmetic its inputs from the scoped queries and projects its answer
+ * onto the wire.
+ *
+ * Every read is offered a current answer: `slots` and the bookings listing expire lapsed holds
+ * before they read, so a caller is never refused a time a dropped call never let go of.
+ */
+
+const CALENDAR_SOURCES = ["hosted", "connector"] as const;
+const BOOKING_STATUSES = ["held", "booked", "cancelled"] as const;
+const CREATABLE_STATUSES = ["held", "booked"] as const;
+const BOOKING_SOURCES = ["call", "manual", "connector"] as const;
+
+const REF_LIMIT = 256;
+const NOTES_LIMIT = 4096;
+
+const calendar = object({
+  id: uuid(),
+  name: text({ maxLength: 200 }),
+  /** The IANA zone the hours and slots are read in. */
+  timezone: text({ maxLength: 64 }),
+  slotMinutes: integer({ minimum: 1 }),
+  bufferMinutes: integer({ minimum: 0 }),
+  source: choice(CALENDAR_SOURCES),
+  /** The outside diary's own id, for a connected calendar. Null when hosted. */
+  externalRef: nullable(text({ maxLength: REF_LIMIT })),
+  createdAt: timestamp(),
+  updatedAt: timestamp(),
+});
+
+const calendarList = object({ items: list(calendar) });
+
+const newCalendar = object({
+  name: text({ minLength: 1, maxLength: 200 }),
+  timezone: text({ minLength: 1, maxLength: 64 }),
+  slotMinutes: optional(integer({ minimum: 1, maximum: 1440 })),
+  bufferMinutes: optional(integer({ minimum: 0, maximum: 1440 })),
+  source: optional(choice(CALENDAR_SOURCES)),
+  /** Required when `source` is `connector`, refused here rather than by the database's CHECK. */
+  externalRef: optional(text({ maxLength: REF_LIMIT })),
+});
+
+const calendarEdit = object({
+  name: optional(text({ minLength: 1, maxLength: 200 })),
+  timezone: optional(text({ minLength: 1, maxLength: 64 })),
+  slotMinutes: optional(integer({ minimum: 1, maximum: 1440 })),
+  bufferMinutes: optional(integer({ minimum: 0, maximum: 1440 })),
+});
+
+const calendarPath = object({ calendarId: uuid() });
+
+/** 0 is Sunday, as `getDay()` and the stored column have it. 1440 is midnight at the day's close. */
+const availabilityWindow = object({
+  weekday: integer({ minimum: 0, maximum: 6 }),
+  startMinute: integer({ minimum: 0, maximum: 1440 }),
+  endMinute: integer({ minimum: 0, maximum: 1440 }),
+});
+
+const storedWindow = object({
+  id: uuid(),
+  weekday: integer({ minimum: 0, maximum: 6 }),
+  startMinute: integer({ minimum: 0, maximum: 1440 }),
+  endMinute: integer({ minimum: 0, maximum: 1440 }),
+});
+
+const availability = object({ windows: list(storedWindow) });
+
+const availabilityReplace = object({ windows: list(availabilityWindow, { maxItems: 100 }) });
+
+const rangeQuery = object({ from: timestamp(), to: timestamp() });
+
+const slot = object({ start: timestamp(), end: timestamp() });
+
+const slots = object({ slots: list(slot) });
+
+const booking = object({
+  id: uuid(),
+  calendarId: uuid(),
+  contactId: nullable(uuid()),
+  startsAt: timestamp(),
+  endsAt: timestamp(),
+  status: choice(BOOKING_STATUSES),
+  /** When a hold lapses. Null unless `status` is `held`. */
+  holdExpiresAt: nullable(timestamp()),
+  source: choice(BOOKING_SOURCES),
+  callId: nullable(uuid()),
+  /** The connector's own id for this booking, when it mirrored one outward. */
+  externalRef: nullable(text({ maxLength: REF_LIMIT })),
+  notes: nullable(text({ maxLength: NOTES_LIMIT })),
+  createdAt: timestamp(),
+  updatedAt: timestamp(),
+});
+
+const bookingList = object({ items: list(booking) });
+
+const newBooking = object({
+  startsAt: timestamp(),
+  source: choice(BOOKING_SOURCES),
+  /**
+   * `booked` takes the slot outright; `held` reserves it until `holdMinutes` elapses, which is
+   * how a live call holds a time while the caller decides. Defaults to `booked`.
+   */
+  status: optional(choice(CREATABLE_STATUSES)),
+  /** Required when `status` is `held`: how long the reservation stands before it lapses. */
+  holdMinutes: optional(integer({ minimum: 1, maximum: 24 * 60 })),
+  contactId: optional(uuid()),
+  notes: optional(text({ maxLength: NOTES_LIMIT })),
+  /** For a connector calendar: the outside diary's id for this booking. Sync itself is elsewhere. */
+  externalRef: optional(text({ maxLength: REF_LIMIT })),
+});
+
+const bookingPath = object({ bookingId: uuid() });
+
+@Controller(apiRoute("appointments"))
+export class AppointmentsController {
+  constructor(@Inject(OrganizationContext) private readonly db: OrganizationContext) {}
+
+  @Get("calendars")
+  @Endpoint({
+    summary: "List this organisation's calendars",
+    description: "Every calendar the organisation holds, oldest first, with its timezone and slot length.",
+    capability: "appointments:read",
+    response: calendarList,
+  })
+  async listCalendars(): Promise<Infer<typeof calendarList>> {
+    const rows = await this.db.tx((scope) => readCalendars(scope));
+    return { items: rows.map(asCalendarBody) };
+  }
+
+  @Post("calendars")
+  @Endpoint({
+    summary: "Create a calendar",
+    description:
+      "`timezone` must be a real IANA zone — the availability and slots are read in it. A `connector` calendar mirrors an outside diary and must carry that diary's `externalRef`; a `hosted` one is kept here.",
+    capability: "appointments:write",
+    body: newCalendar,
+    response: calendar,
+    status: 201,
+  })
+  async createCalendar(@FromBody() body: Infer<typeof newCalendar>): Promise<Infer<typeof calendar>> {
+    if (!isValidTimezone(body.timezone)) {
+      throw new UnprocessableEntityException(`${body.timezone} is not a known IANA timezone`);
+    }
+    if (body.source === "connector" && (body.externalRef === undefined || body.externalRef.trim() === "")) {
+      throw new UnprocessableEntityException("a connector calendar needs an externalRef");
+    }
+    const created = await this.db.tx((scope) =>
+      createCalendar(scope, {
+        name: body.name,
+        timezone: body.timezone,
+        slotMinutes: body.slotMinutes,
+        bufferMinutes: body.bufferMinutes,
+        source: body.source,
+        externalRef: body.externalRef ?? null,
+      }),
+    );
+    return asCalendarBody(created);
+  }
+
+  @Get("calendars/:calendarId")
+  @Endpoint({
+    summary: "Read one calendar",
+    capability: "appointments:read",
+    params: calendarPath,
+    response: calendar,
+  })
+  async readCalendar(@FromPath() path: Infer<typeof calendarPath>): Promise<Infer<typeof calendar>> {
+    const found = await this.db.tx((scope) => readCalendar(scope, path.calendarId));
+    // Not ours, which under RLS is also what another organisation's calendar looks like.
+    if (found === null) throw new NotFoundException();
+    return asCalendarBody(found);
+  }
+
+  @Patch("calendars/:calendarId")
+  @Endpoint({
+    summary: "Edit a calendar",
+    description: "Only the fields sent change. `timezone`, if sent, must be a real IANA zone.",
+    capability: "appointments:write",
+    params: calendarPath,
+    body: calendarEdit,
+    response: calendar,
+  })
+  async editCalendar(
+    @FromPath() path: Infer<typeof calendarPath>,
+    @FromBody() body: Infer<typeof calendarEdit>,
+  ): Promise<Infer<typeof calendar>> {
+    if (body.timezone !== undefined && !isValidTimezone(body.timezone)) {
+      throw new UnprocessableEntityException(`${body.timezone} is not a known IANA timezone`);
+    }
+    const updated = await this.db.tx(async (scope) => {
+      const changed = await updateCalendar(scope, path.calendarId, body);
+      return changed ? readCalendar(scope, path.calendarId) : null;
+    });
+    if (updated === null) throw new NotFoundException();
+    return asCalendarBody(updated);
+  }
+
+  @Get("calendars/:calendarId/availability")
+  @Endpoint({
+    summary: "Read a calendar's weekly hours",
+    capability: "appointments:read",
+    params: calendarPath,
+    response: availability,
+  })
+  async readAvailability(
+    @FromPath() path: Infer<typeof calendarPath>,
+  ): Promise<Infer<typeof availability>> {
+    const found = await this.db.tx(async (scope) => {
+      const cal = await readCalendar(scope, path.calendarId);
+      if (cal === null) return null;
+      return readAvailability(scope, path.calendarId);
+    });
+    if (found === null) throw new NotFoundException();
+    return { windows: found.map(asWindowBody) };
+  }
+
+  @Put("calendars/:calendarId/availability")
+  @Endpoint({
+    summary: "Replace a calendar's weekly hours",
+    description:
+      "The whole week at once, the way it is edited: everything the calendar had goes, and what is sent takes its place. Each window must end after it starts, and windows on the same weekday must not overlap.",
+    capability: "appointments:write",
+    params: calendarPath,
+    body: availabilityReplace,
+    response: availability,
+  })
+  async replaceAvailability(
+    @FromPath() path: Infer<typeof calendarPath>,
+    @FromBody() body: Infer<typeof availabilityReplace>,
+  ): Promise<Infer<typeof availability>> {
+    const problem = availabilityProblem(body.windows);
+    if (problem !== null) throw new UnprocessableEntityException(problem);
+    const stored = await this.db.tx(async (scope) => {
+      const cal = await readCalendar(scope, path.calendarId);
+      if (cal === null) return null;
+      return replaceAvailability(scope, path.calendarId, body.windows);
+    });
+    if (stored === null) throw new NotFoundException();
+    return { windows: stored.map(asWindowBody) };
+  }
+
+  @Get("calendars/:calendarId/slots")
+  @Endpoint({
+    summary: "The free slots in a range",
+    description:
+      "The recurring hours expanded over the range in the calendar's timezone, minus the buffer, minus every live booking and unexpired hold. Lapsed holds are released first, so a slot a dropped call never let go of is offered again. Each slot's start and end carry the calendar's own offset.",
+    capability: "appointments:read",
+    params: calendarPath,
+    query: rangeQuery,
+    response: slots,
+  })
+  async slots(
+    @FromPath() path: Infer<typeof calendarPath>,
+    @FromQuery() query: Infer<typeof rangeQuery>,
+  ): Promise<Infer<typeof slots>> {
+    const { from, to } = asRange(query);
+    const computed = await this.db.tx(async (scope) => {
+      const cal = await readCalendar(scope, path.calendarId);
+      if (cal === null) return null;
+      const windows = await readAvailability(scope, path.calendarId);
+      await expireLapsedHolds(scope, path.calendarId, new Date());
+      const bookings = await readBookings(scope, path.calendarId, { from, to });
+      return { cal, windows, bookings };
+    });
+    if (computed === null) throw new NotFoundException();
+    const free = computeFreeSlots({
+      timeZone: computed.cal.timezone,
+      slotMinutes: computed.cal.slotMinutes,
+      bufferMinutes: computed.cal.bufferMinutes,
+      windows: computed.windows,
+      bookings: computed.bookings,
+      from,
+      to,
+    });
+    return {
+      slots: free.map((entry) => ({
+        start: toOffsetIso(entry.start, computed.cal.timezone),
+        end: toOffsetIso(entry.end, computed.cal.timezone),
+      })),
+    };
+  }
+
+  @Get("calendars/:calendarId/bookings")
+  @Endpoint({
+    summary: "The bookings in a range",
+    description:
+      "Every live booking and hold whose time overlaps the range, cancelled ones excluded. Lapsed holds are released first, so the list is what is actually taken now.",
+    capability: "appointments:read",
+    params: calendarPath,
+    query: rangeQuery,
+    response: bookingList,
+  })
+  async listBookings(
+    @FromPath() path: Infer<typeof calendarPath>,
+    @FromQuery() query: Infer<typeof rangeQuery>,
+  ): Promise<Infer<typeof bookingList>> {
+    const { from, to } = asRange(query);
+    const found = await this.db.tx(async (scope) => {
+      const cal = await readCalendar(scope, path.calendarId);
+      if (cal === null) return null;
+      await expireLapsedHolds(scope, path.calendarId, new Date());
+      return readBookings(scope, path.calendarId, { from, to });
+    });
+    if (found === null) throw new NotFoundException();
+    return { items: found.map(asBookingBody) };
+  }
+
+  @Post("calendars/:calendarId/bookings")
+  @Endpoint({
+    summary: "Book or hold a slot",
+    description:
+      "Takes a free slot at `startsAt`; the slot's length is the calendar's. `booked` takes it outright, `held` reserves it for `holdMinutes` while a caller decides. If the slot was taken between being offered and being booked, this answers 409 — offer the next one.",
+    capability: "appointments:write",
+    params: calendarPath,
+    body: newBooking,
+    response: booking,
+    status: 201,
+  })
+  async createBooking(
+    @FromPath() path: Infer<typeof calendarPath>,
+    @FromBody() body: Infer<typeof newBooking>,
+  ): Promise<Infer<typeof booking>> {
+    const startsAt = asTimestamp(body.startsAt, "startsAt");
+    const status = body.status ?? "booked";
+    if (status === "held" && body.holdMinutes === undefined) {
+      throw new UnprocessableEntityException("a held booking needs holdMinutes");
+    }
+    const now = new Date();
+    const holdExpiresAt =
+      status === "held" && body.holdMinutes !== undefined
+        ? new Date(now.getTime() + body.holdMinutes * 60000)
+        : null;
+
+    const made = await this.db.tx(async (scope) => {
+      const cal = await readCalendar(scope, path.calendarId);
+      if (cal === null) return null;
+      const endsAt = new Date(startsAt.getTime() + cal.slotMinutes * 60000);
+      return bookSlot(scope, {
+        calendarId: path.calendarId,
+        startsAt,
+        endsAt,
+        status,
+        holdExpiresAt,
+        contactId: body.contactId ?? null,
+        source: body.source,
+        externalRef: body.externalRef ?? null,
+        notes: body.notes ?? null,
+      });
+    }).catch((error: unknown) => {
+      if (error instanceof SlotTaken) {
+        throw new ConflictException("that slot is no longer free — offer the next one");
+      }
+      throw error;
+    });
+    if (made === null) throw new NotFoundException();
+    return asBookingBody(made);
+  }
+
+  @Post("bookings/:bookingId/confirm")
+  @Endpoint({
+    summary: "Confirm a held slot",
+    description:
+      "Turns a hold into a booking. A hold that has already lapsed cannot be confirmed — it is somebody else's to take by then — and this answers 409 rather than putting two people in one chair.",
+    capability: "appointments:write",
+    params: bookingPath,
+    response: booking,
+  })
+  async confirmBooking(@FromPath() path: Infer<typeof bookingPath>): Promise<Infer<typeof booking>> {
+    const now = new Date();
+    const confirmed = await this.db.tx(async (scope) => {
+      const existing = await readBooking(scope, path.bookingId);
+      if (existing === null) return { outcome: "missing" as const };
+      if (existing.status !== "held") return { outcome: "not-held" as const };
+      if (existing.holdExpiresAt === null || existing.holdExpiresAt.getTime() <= now.getTime()) {
+        return { outcome: "lapsed" as const };
+      }
+      const ok = await confirmHold(scope, path.bookingId, now);
+      // False now can only mean it lapsed in the moment between the read and the update.
+      if (!ok) return { outcome: "lapsed" as const };
+      return { outcome: "confirmed" as const, booking: await readBooking(scope, path.bookingId) };
+    });
+    if (confirmed.outcome === "missing") throw new NotFoundException();
+    if (confirmed.outcome === "not-held") {
+      throw new ConflictException("only a held booking can be confirmed");
+    }
+    if (confirmed.outcome === "lapsed") {
+      throw new ConflictException("that hold has lapsed and can no longer be confirmed");
+    }
+    if (confirmed.booking === null) throw new NotFoundException();
+    return asBookingBody(confirmed.booking);
+  }
+
+  @Post("bookings/:bookingId/cancel")
+  @Endpoint({
+    summary: "Cancel a booking or hold",
+    description:
+      "The slot is freed for the next caller. Cancelling something already cancelled is not an error — the state asked for is the state it is in.",
+    capability: "appointments:write",
+    params: bookingPath,
+    response: booking,
+  })
+  async cancelBooking(@FromPath() path: Infer<typeof bookingPath>): Promise<Infer<typeof booking>> {
+    const cancelled = await this.db.tx(async (scope) => {
+      const existing = await readBooking(scope, path.bookingId);
+      if (existing === null) return null;
+      await cancelBooking(scope, path.bookingId);
+      return readBooking(scope, path.bookingId);
+    });
+    if (cancelled === null) throw new NotFoundException();
+    return asBookingBody(cancelled);
+  }
+}
+
+/** A query timestamp, refused rather than silently treated as the epoch. */
+const asTimestamp = (value: string, field: string): Date => {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new UnprocessableEntityException(`${field} must be a timestamp`);
+  }
+  return parsed;
+};
+
+/** A `from`/`to` pair, both real timestamps and in order. */
+const asRange = (query: Infer<typeof rangeQuery>): { from: Date; to: Date } => {
+  const from = asTimestamp(query.from, "from");
+  const to = asTimestamp(query.to, "to");
+  if (from.getTime() >= to.getTime()) {
+    throw new UnprocessableEntityException("from must be before to");
+  }
+  return { from, to };
+};
+
+const asCalendarBody = (row: AppointmentCalendar): Infer<typeof calendar> => ({
+  id: row.id,
+  name: row.name,
+  timezone: row.timezone,
+  slotMinutes: row.slotMinutes,
+  bufferMinutes: row.bufferMinutes,
+  source: row.source,
+  externalRef: row.externalRef,
+  createdAt: row.createdAt.toISOString(),
+  updatedAt: row.updatedAt.toISOString(),
+});
+
+const asWindowBody = (row: StoredAvailabilityWindow): Infer<typeof storedWindow> => ({
+  id: row.id,
+  weekday: row.weekday,
+  startMinute: row.startMinute,
+  endMinute: row.endMinute,
+});
+
+const asBookingBody = (row: Booking): Infer<typeof booking> => ({
+  id: row.id,
+  calendarId: row.calendarId,
+  contactId: row.contactId,
+  startsAt: row.startsAt.toISOString(),
+  endsAt: row.endsAt.toISOString(),
+  status: row.status,
+  holdExpiresAt: row.holdExpiresAt?.toISOString() ?? null,
+  source: row.source,
+  callId: row.callId,
+  externalRef: row.externalRef,
+  notes: row.notes,
+  createdAt: row.createdAt.toISOString(),
+  updatedAt: row.updatedAt.toISOString(),
+});
