@@ -1,4 +1,5 @@
 import {
+  addHoliday,
   bookSlot,
   rescheduleBooking,
   cancelBooking,
@@ -10,16 +11,20 @@ import {
   readBookings,
   readCalendar,
   readCalendars,
+  readHolidays,
+  removeHoliday,
   replaceAvailability,
   SlotTaken,
   updateCalendar,
   type AppointmentCalendar,
   type Booking,
+  type Holiday,
   type StoredAvailabilityWindow,
 } from "@ansa/db";
 import {
   ConflictException,
   Controller,
+  Delete,
   Get,
   Inject,
   NotFoundException,
@@ -35,7 +40,13 @@ import { choice, integer, list, nullable, object, optional, text, type Infer } f
 import { timestamp, uuid } from "../schemas";
 import { OrganizationContext } from "../tenancy/organization-context";
 
-import { availabilityProblem, computeFreeSlots, isValidTimezone, toOffsetIso } from "./slots";
+import {
+  availabilityProblem,
+  computeFreeSlots,
+  isValidTimezone,
+  localDateKey,
+  toOffsetIso,
+} from "./slots";
 
 /**
  * The diary: calendars, the weekly hours they keep, the free slots those hours leave, and the
@@ -51,6 +62,11 @@ import { availabilityProblem, computeFreeSlots, isValidTimezone, toOffsetIso } f
  *
  * Every read is offered a current answer: `slots` and the bookings listing expire lapsed holds
  * before they read, so a caller is never refused a time a dropped call never let go of.
+ *
+ * The holidays (0064) sit here too, under the same capability pair, because a day the office
+ * is shut is a fact about calendar availability and nothing else. They are the organisation's,
+ * not any one calendar's, so they have no `calendarId` in their paths; `slots` reads the ones
+ * covering its range and hands them to the arithmetic.
  */
 
 const CALENDAR_SOURCES = ["hosted", "connector"] as const;
@@ -184,6 +200,44 @@ const newBooking = object({
 
 const bookingPath = object({ bookingId: uuid() });
 
+/**
+ * A calendar date, `YYYY-MM-DD`, with no hour on it.
+ *
+ * `timestamp()` is deliberately not reused. A holiday is a square on a calendar and an
+ * instant would carry an hour that has to be in *some* zone, which is the whole thing
+ * migration 0064 refuses to do. The pattern holds the shape; `asCalendarDate` below holds the
+ * meaning, because `2026-02-31` matches this happily.
+ */
+const calendarDate = () =>
+  text({ minLength: 10, maxLength: 10, pattern: /^\d{4}-\d{2}-\d{2}$/, format: "date" });
+
+/** Long enough for "Eid al-Fitr (second day)", which is the longest thing anyone writes here. */
+const HOLIDAY_NAME_LIMIT = 200;
+
+const holiday = object({
+  id: uuid(),
+  /** The date the office is shut, in the calendar's own zone. */
+  onDate: calendarDate(),
+  name: text({ maxLength: HOLIDAY_NAME_LIMIT }),
+  createdAt: timestamp(),
+  updatedAt: timestamp(),
+});
+
+const holidayList = object({ items: list(holiday) });
+
+/** Both ends inclusive, and both optional — absent means the whole list. */
+const holidayQuery = object({
+  from: optional(calendarDate()),
+  to: optional(calendarDate()),
+});
+
+const newHoliday = object({
+  onDate: calendarDate(),
+  name: text({ minLength: 1, maxLength: HOLIDAY_NAME_LIMIT }),
+});
+
+const holidayPath = object({ holidayId: uuid() });
+
 @Controller(apiRoute("appointments"))
 export class AppointmentsController {
   constructor(@Inject(OrganizationContext) private readonly db: OrganizationContext) {}
@@ -316,7 +370,7 @@ export class AppointmentsController {
   @Endpoint({
     summary: "The free slots in a range",
     description:
-      "The recurring hours expanded over the range in the calendar's timezone, minus the buffer, minus every live booking and unexpired hold. Lapsed holds are released first, so a slot a dropped call never let go of is offered again. Each slot's start and end carry the calendar's own offset.",
+      "The recurring hours expanded over the range in the calendar's timezone, minus the buffer, minus every live booking and unexpired hold, minus every day the organisation is shut. Lapsed holds are released first, so a slot a dropped call never let go of is offered again. A public holiday yields nothing at all — an appointment already written on one is still listed by the bookings endpoint, because withholding the offer is not the same as forbidding the booking. Each slot's start and end carry the calendar's own offset.",
     capability: "appointments:read",
     params: calendarPath,
     query: rangeQuery,
@@ -333,7 +387,15 @@ export class AppointmentsController {
       const windows = await readAvailability(scope, path.calendarId);
       await expireLapsedHolds(scope, path.calendarId, new Date());
       const bookings = await readBookings(scope, path.calendarId, { from, to });
-      return { cal, windows, bookings };
+      /* The days the range covers *in this calendar's zone*, which is not always the days it
+         covers in UTC — half past eleven at night in Lagos is already tomorrow in Kiritimati
+         and still today in London. Asking in the calendar's zone is what makes the holiday
+         land on the day the caller would actually be offered. */
+      const shut = await readHolidays(scope, {
+        from: localDateKey(from, cal.timezone),
+        to: localDateKey(to, cal.timezone),
+      });
+      return { cal, windows, bookings, shut };
     });
     if (computed === null) throw new NotFoundException();
     const free = computeFreeSlots({
@@ -342,6 +404,7 @@ export class AppointmentsController {
       bufferMinutes: computed.cal.bufferMinutes,
       windows: computed.windows,
       bookings: computed.bookings,
+      holidays: computed.shut.map((day) => day.onDate),
       from,
       to,
     });
@@ -536,6 +599,56 @@ export class AppointmentsController {
     if (cancelled === null) throw new NotFoundException();
     return asBookingBody(cancelled);
   }
+
+  @Get("holidays")
+  @Endpoint({
+    summary: "The days this organisation is shut",
+    description:
+      "Every date the organisation keeps closed, earliest first, with the name it gave each one. Organisation-wide: every calendar it holds is shut on these days. `from` and `to` are calendar dates, `YYYY-MM-DD`, and both ends are included; send neither for the whole list.",
+    capability: "appointments:read",
+    query: holidayQuery,
+    response: holidayList,
+  })
+  async listHolidays(
+    @FromQuery() query: Infer<typeof holidayQuery>,
+  ): Promise<Infer<typeof holidayList>> {
+    const range = asDateRange(query);
+    const rows = await this.db.tx((scope) => readHolidays(scope, range));
+    return { items: rows.map(asHolidayBody) };
+  }
+
+  @Post("holidays")
+  @Endpoint({
+    summary: "Mark a date shut",
+    description:
+      "`onDate` is a calendar date, `YYYY-MM-DD`, with no time on it — a holiday is a square on a calendar and it begins at midnight wherever the calendar is kept. From then on no calendar in this organisation offers a slot on that day. Existing appointments on it are left alone and a person may still write a new one, which is how an office that opens specially records it. A date already marked shut answers 409; there is no recurrence rule, so next year's Christmas is next year's row.",
+    capability: "appointments:write",
+    body: newHoliday,
+    response: holiday,
+    status: 201,
+  })
+  async addHoliday(@FromBody() body: Infer<typeof newHoliday>): Promise<Infer<typeof holiday>> {
+    const onDate = asCalendarDate(body.onDate, "onDate");
+    const added = await this.db.tx((scope) => addHoliday(scope, { onDate, name: body.name }));
+    if (added === null) {
+      throw new ConflictException(`${onDate} is already marked as a day this organisation is shut`);
+    }
+    return asHolidayBody(added);
+  }
+
+  @Delete("holidays/:holidayId")
+  @Endpoint({
+    summary: "The office is open that day after all",
+    description:
+      "Removes the date outright rather than hiding it — a holiday is a statement about the future, and one that still suppressed slots after being deleted would be worse than none. Slots on that day are offered again from the next request.",
+    capability: "appointments:write",
+    params: holidayPath,
+  })
+  async removeHoliday(@FromPath() path: Infer<typeof holidayPath>): Promise<void> {
+    const removed = await this.db.tx((scope) => removeHoliday(scope, path.holidayId));
+    // Not ours, which under RLS is also what another organisation's holiday looks like.
+    if (!removed) throw new NotFoundException();
+  }
 }
 
 /** A query timestamp, refused rather than silently treated as the epoch. */
@@ -545,6 +658,41 @@ const asTimestamp = (value: string, field: string): Date => {
     throw new UnprocessableEntityException(`${field} must be a timestamp`);
   }
   return parsed;
+};
+
+/**
+ * A calendar date that is a date somebody could stand on, not merely one that looks like one.
+ *
+ * The schema's pattern accepts `2026-02-31` and `2026-13-01`; Postgres would then refuse the
+ * `::date` cast mid-transaction and the caller would get a 500 for what is plainly their
+ * mistake. Round-tripping through UTC catches it: a real date renders back as itself, and
+ * February the thirty-first renders back as March the third.
+ */
+const asCalendarDate = (value: string, field: string): string => {
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+    throw new UnprocessableEntityException(`${field} must be a calendar date, as YYYY-MM-DD`);
+  }
+  return value;
+};
+
+/**
+ * The optional `from`/`to` of a holidays listing, or undefined for the whole list.
+ *
+ * Both ends or neither: half a range is almost always a console bug, and answering it with
+ * everything from the start of time reads as the filter having silently failed.
+ */
+const asDateRange = (
+  query: Infer<typeof holidayQuery>,
+): { from: string; to: string } | undefined => {
+  if (query.from === undefined && query.to === undefined) return undefined;
+  if (query.from === undefined || query.to === undefined) {
+    throw new UnprocessableEntityException("send both from and to, or neither");
+  }
+  const from = asCalendarDate(query.from, "from");
+  const to = asCalendarDate(query.to, "to");
+  if (from > to) throw new UnprocessableEntityException("from must not be after to");
+  return { from, to };
 };
 
 /** A `from`/`to` pair, both real timestamps and in order. */
@@ -565,6 +713,15 @@ const asCalendarBody = (row: AppointmentCalendar): Infer<typeof calendar> => ({
   bufferMinutes: row.bufferMinutes,
   source: row.source,
   externalRef: row.externalRef,
+  createdAt: row.createdAt.toISOString(),
+  updatedAt: row.updatedAt.toISOString(),
+});
+
+const asHolidayBody = (row: Holiday): Infer<typeof holiday> => ({
+  id: row.id,
+  // Already `YYYY-MM-DD` out of the query, and deliberately never a `Date` on the way here.
+  onDate: row.onDate,
+  name: row.name,
   createdAt: row.createdAt.toISOString(),
   updatedAt: row.updatedAt.toISOString(),
 });

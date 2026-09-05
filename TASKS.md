@@ -4562,6 +4562,22 @@ connector-backed.
       shrank the drawn day around its own content, so one 10am appointment left nowhere to
       drag a second. Both fixed; the window is a canvas now, never narrower than a working day.
 
+- [x] **A day the office is shut**. The week said Monday nine to five and nothing said the
+      first of October was Independence Day, so the agent would cheerfully offer a caller ten
+      o'clock and somebody would drive across Lagos to a locked door. `0064_a_day_the_office_is_shut`
+      adds `holidays` — organisation-wide, `on_date date` and not an instant, unique on
+      `(organization_id, on_date)`, no recurrence column because Eid does not recur on a rule
+      and a recurrence engine that handles Christmas and lies about Eid is worse than none.
+      `computeFreeSlots` now takes a required `holidays` list and yields nothing on those
+      dates, judged in the *calendar's* zone: nine in the morning in Kiritimati is the
+      previous day in UTC, and a UTC comparison would shut the wrong day and leave the right
+      one open. Bookings are deliberately untouched — an office that opens specially on a
+      public holiday still writes the appointment down, and `POST bookings` still takes it;
+      withholding the offer is not the same as forbidding the booking. `GET/POST
+      /appointments/holidays` and `DELETE /appointments/holidays/{id}` under the existing
+      `appointments:read`/`appointments:write`, no new capability pair, because a day the
+      office is shut is calendar availability and nothing else.
+
 Two gates earned their keep on agent output: `check:wiring` caught three exported accessors
 nothing called (`setContactNotes`, `readContactImports`, `setBookingExternalRef`), all removed
 rather than landed as inventory — the wave that needs them adds them wired.
