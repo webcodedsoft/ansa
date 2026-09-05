@@ -24,3 +24,6 @@ recordings/
 # Hand-onboarding working files: one organisation's real configuration, plus the
 # secrets that go with it. The tool reads a path, so these never need to be in the repo.
 tools/organization/local/
+
+# Agent worktrees are throwaway checkouts, not content.
+.claude/worktrees/
