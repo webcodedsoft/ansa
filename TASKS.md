@@ -4578,6 +4578,39 @@ connector-backed.
       `appointments:read`/`appointments:write`, no new capability pair, because a day the
       office is shut is calendar availability and nothing else.
 
+- [x] **Getting around the calendar, and the days it is shut** (`adc1537`, `d726117`, `6787053`,
+      `a706fe3`, `7e6df60`). Compared against Google Calendar and took the parts a Nigerian
+      front desk actually uses. A **schedule** view answers "what is next", which no grid does
+      and which is the only view that works on a phone. A **mini month** replaces pressing Next
+      eight times to reach November; it keeps its own month so glancing forward does not drag
+      the main grid. **Keyboard** D/W/M/A, T, and the arrows, guarded so typing "Wednesday
+      viewing" into a title box does not change the view four times. **Hiding weekends** drops
+      columns, never the query — a Saturday booking that is not drawn is still a booking.
+      **Search** finds an appointment whose week you do not know, across every calendar, with
+      `ilike` rather than full-text because a partial word is what a person types into a diary.
+
+      The calendar is now the page rather than one of three tabs, and a click on empty time
+      opens a **small card** — title, times, Save — instead of a modal asking five questions to
+      answer one; "More options" promotes the same draft into the full dialog.
+
+      **Public holidays** (`0064`) are the one part that changes calls rather than screens: a
+      date marked shut yields no free slots on any calendar, so the agent cannot offer a caller
+      a time on a day nobody is there. Code, not a prompt. Appointments already written on a
+      closed day survive and a new one can still be written — withholding the *offer* and
+      forbidding the *booking* are different things, and only the first is what a closure means.
+      `holidays` is a required field of `SlotRequest`, not an optional one, so a caller cannot
+      forget it and quietly get the old behaviour back.
+
+      Three bugs found by driving the page, none of which the type checker or the tests could
+      have caught: two `CreateCalendarDialog`s emitted the same `<form id>`, so the visible
+      button submitted the hidden dialog's form and "Create calendar" did nothing on an empty
+      page; `dayWindow` shrank the drawn day around its content, leaving nowhere to put a
+      second appointment; and the month grid hard-coded seven columns, so five-day rows wrapped
+      every seventh cell and put every date under the wrong weekday.
+
+      Not done: multi-calendar overlay. Bookings are fetched per calendar, so drawing two at
+      once needs a cross-calendar route and a colour per calendar. Deferred deliberately.
+
 Two gates earned their keep on agent output: `check:wiring` caught three exported accessors
 nothing called (`setContactNotes`, `readContactImports`, `setBookingExternalRef`), all removed
 rather than landed as inventory — the wave that needs them adds them wired.
