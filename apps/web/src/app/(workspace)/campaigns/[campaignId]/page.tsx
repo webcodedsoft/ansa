@@ -7,6 +7,7 @@ import { currentPrincipal } from "@/features/auth/auth.service";
 import { listAgents } from "@/features/agents/agents.service";
 import { listContacts } from "@/features/contacts/contacts.service";
 import { AddContactsButton } from "@/features/campaigns/components/add-contacts-button";
+import { CampaignBrief } from "@/features/campaigns/components/campaign-brief";
 import { CampaignStatusControl } from "@/features/campaigns/components/campaign-status-control";
 import { ScheduledCallsTable } from "@/features/campaigns/components/scheduled-calls-table";
 import { windowSummary } from "@/features/campaigns/campaigns.display";
@@ -91,6 +92,22 @@ const CampaignPage = async ({
           {canWrite && <AddContactsButton campaignId={campaign.id} contacts={contacts} />}
         </PanelBody>
       </Panel>
+
+      <div className="mt-4">
+        <CampaignBrief
+          campaignId={campaign.id}
+          editable={campaign.briefEditable}
+          canWrite={canWrite}
+          values={{
+            purpose: campaign.purpose,
+            opening: campaign.opening,
+            outcomes: campaign.outcomes,
+            voicemail: campaign.voicemail,
+            maxAttempts: campaign.maxAttempts,
+            retryAfterMinutes: campaign.retryAfterMinutes,
+          }}
+        />
+      </div>
 
       <SectionHead>Scheduled calls</SectionHead>
       <ScheduledCallsTable calls={calls.items} />

@@ -1,3 +1,4 @@
+import { CAMPAIGN_LIMITS, VOICEMAIL_MODES } from "@ansa/shared/campaign";
 import { z } from "zod";
 
 /**
@@ -51,3 +52,46 @@ export const setStatusSchema = z.object({
   campaignId: z.uuid(),
   status: statusSchema,
 });
+
+/**
+ * What an operator writes about a campaign.
+ *
+ * Bounded to the same figures the API applies, from the one shared object, so a brief that
+ * draws fine here is a brief the API accepts. The purpose is the field that matters: without
+ * it the agent has nothing to say it is calling about, and `prompts/outbound.ts` requires a
+ * reason. It is optional here and required at Start, which is where the API checks it — a
+ * half-written brief should save.
+ */
+export const campaignBriefSchema = z.object({
+  purpose: z
+    .string()
+    .trim()
+    .max(CAMPAIGN_LIMITS.purposeLength, "That is too long for one line.")
+    .optional(),
+  opening: z
+    .string()
+    .trim()
+    .max(CAMPAIGN_LIMITS.openingLength, "That opening is too long.")
+    .optional(),
+  outcomes: z
+    .array(z.string().trim().min(1).max(CAMPAIGN_LIMITS.outcomeLength))
+    .max(CAMPAIGN_LIMITS.outcomes, "That is more outcomes than anyone chooses between.")
+    .optional(),
+  voicemailMode: z.enum(VOICEMAIL_MODES),
+  voicemailMessage: z
+    .string()
+    .trim()
+    .max(CAMPAIGN_LIMITS.voicemailLength, "That message is too long to leave.")
+    .optional(),
+  maxAttempts: z
+    .number()
+    .int()
+    .min(CAMPAIGN_LIMITS.attempts.min)
+    .max(CAMPAIGN_LIMITS.attempts.max, "Ringing somebody more than ten times is not diligence."),
+  retryAfterMinutes: z
+    .number()
+    .int()
+    .min(CAMPAIGN_LIMITS.retryMinutes.min, "Leave at least a quarter of an hour between tries.")
+    .max(CAMPAIGN_LIMITS.retryMinutes.max),
+});
+export type CampaignBriefInput = z.infer<typeof campaignBriefSchema>;

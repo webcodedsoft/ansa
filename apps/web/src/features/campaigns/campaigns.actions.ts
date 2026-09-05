@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { failureMessage } from "@/lib/api/server";
+import { failureMessage, refusedWith } from "@/lib/api/server";
 import { listContacts } from "@/features/contacts/contacts.service";
 import { failedForm, invalidForm, succeededForm, type FormState } from "@/lib/form-state";
 
@@ -12,12 +12,15 @@ import {
   enqueueSchema,
   setStatusSchema,
   type CreateCampaignInput,
+  campaignBriefSchema,
 } from "./campaigns.schema";
 import {
   createCampaign,
   enqueueContacts,
   setCampaignStatus,
   type CampaignStatus,
+  saveBrief,
+  saveCampaignFlow,
 } from "./campaigns.service";
 
 /**
@@ -189,5 +192,102 @@ export const findCampaignContacts = async (search: string): Promise<ContactSearc
     };
   } catch (error) {
     return { ok: false, message: failureMessage(error) };
+  }
+};
+
+const stringOrUndefined = (raw: FormDataEntryValue | null): string | undefined => {
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  return trimmed === "" ? undefined : trimmed;
+};
+
+const numberOrNaN = (raw: FormDataEntryValue | null): number =>
+  raw === null || raw === "" ? Number.NaN : Number(raw);
+
+export type BriefState = FormState<{ readonly campaignId: string }>;
+
+/**
+ * Save what a campaign is about.
+ *
+ * The 409 is the one worth naming. It means somebody started the campaign while this form was
+ * open, and the brief is fixed from that moment — not out of caution but because a call may
+ * already be in flight, and a person hearing "your viewing on Tuesday" must not have had the
+ * reason changed under them. The message says that rather than "conflict".
+ */
+export const saveBriefAction = async (
+  _previous: BriefState,
+  form: FormData,
+): Promise<BriefState> => {
+  const campaignId = String(form.get("campaignId") ?? "");
+  if (campaignId === "") return failedForm("This form does not say which campaign it is for.");
+
+  const parsed = campaignBriefSchema.safeParse({
+    purpose: stringOrUndefined(form.get("purpose")),
+    opening: stringOrUndefined(form.get("opening")),
+    outcomes: String(form.get("outcomes") ?? "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line !== ""),
+    voicemailMode: String(form.get("voicemailMode") ?? "hang_up"),
+    voicemailMessage: stringOrUndefined(form.get("voicemailMessage")),
+    maxAttempts: numberOrNaN(form.get("maxAttempts")),
+    retryAfterMinutes: numberOrNaN(form.get("retryAfterMinutes")),
+  });
+  if (!parsed.success) return invalidForm(parsed.error);
+
+  const brief = parsed.data;
+  if (brief.voicemailMode === "leave_message" && (brief.voicemailMessage ?? "") === "") {
+    return failedForm("Write the message to leave, or choose to hang up.");
+  }
+
+  try {
+    await saveBrief(campaignId, {
+      purpose: brief.purpose === undefined || brief.purpose === "" ? null : brief.purpose,
+      opening: brief.opening === undefined || brief.opening === "" ? null : brief.opening,
+      outcomes: brief.outcomes === undefined || brief.outcomes.length === 0 ? null : brief.outcomes,
+      voicemail:
+        brief.voicemailMode === "leave_message"
+          ? { mode: "leave_message", message: brief.voicemailMessage ?? "" }
+          : { mode: "hang_up" },
+      maxAttempts: brief.maxAttempts,
+      retryAfterMinutes: brief.retryAfterMinutes,
+    });
+    revalidatePath(`/campaigns/${campaignId}`);
+    return succeededForm({ campaignId }, "Saved.");
+  } catch (error) {
+    if (refusedWith(error, 409)) {
+      revalidatePath(`/campaigns/${campaignId}`);
+      return failedForm(
+        "This campaign has started, so what it says can no longer be changed — a call may already be in flight. Pause is not enough; make a new campaign to say something different.",
+      );
+    }
+    return failedForm(failureMessage(error));
+  }
+};
+
+/** The conversation, saved from the canvas on its own. */
+export const saveCampaignFlowAction = async (
+  _previous: BriefState,
+  form: FormData,
+): Promise<BriefState> => {
+  const campaignId = String(form.get("campaignId") ?? "");
+  if (campaignId === "") return failedForm("This form does not say which campaign it is for.");
+
+  let flow: unknown;
+  try {
+    flow = JSON.parse(String(form.get("flow") ?? "null"));
+  } catch {
+    return failedForm("The drawing could not be read. Reload the page and try again.");
+  }
+
+  try {
+    await saveCampaignFlow(campaignId, flow);
+    revalidatePath(`/campaigns/${campaignId}`);
+    return succeededForm({ campaignId }, "Conversation saved.");
+  } catch (error) {
+    if (refusedWith(error, 409)) {
+      return failedForm("This campaign has started, so its conversation can no longer be changed.");
+    }
+    return failedForm(failureMessage(error));
   }
 };
