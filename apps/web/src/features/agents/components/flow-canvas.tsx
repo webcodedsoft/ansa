@@ -1936,12 +1936,17 @@ export const FlowCanvas = ({
                     </button>
                   )}
                   {/* Remove the service: its branch, its option and its own steps go together,
-                      the way they arrived. Undo brings them back. The catch-all stays — a fork
-                      without one cannot publish. */}
-                  {isService && !catchAll && (
+                      the way they arrived. Undo brings them back. The catch-all's branch stays
+                      and leads on to what came after the service, since a fork cannot be
+                      without one. */}
+                  {isService && !(catchAll && lane.empty) && (
                     <button
                       type="button"
-                      title={lane.steps === 0 ? "Remove this service" : `Remove this service and its ${lane.steps} step${lane.steps === 1 ? "" : "s"}`}
+                      title={
+                        lane.steps === 0
+                          ? "Remove this service"
+                          : `Remove this service and its ${lane.steps} step${lane.steps === 1 ? "" : "s"}${catchAll ? " — anything else then goes straight on to what came after it" : ""}`
+                      }
                       aria-label={`Remove the ${lane.label} service`}
                       onPointerDown={(e) => e.stopPropagation()}
                       onClick={() => {

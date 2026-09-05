@@ -491,7 +491,39 @@ describe("moving steps and services", () => {
     expect(new Set(last.edges.map((e) => JSON.stringify(e)))).toEqual(new Set(three.edges.map((e) => JSON.stringify(e))));
   });
 
-  it("removes a service with its branch, its option and its own steps, and never the catch-all", () => {
+  it("removes the catch-all service too, leading its branch on to wherever the service led", () => {
+    const base = withChoice();
+    const buy = laneGroups(base).find((lane) => lane.catchAll === true);
+    if (buy === undefined) throw new Error("no catch-all");
+    const gone = removeService(base, buy);
+    expect(gone.nodes.map((n) => n.id)).toEqual(["start", "ask", "fork", "rent1", "rent2", "close", "end"]);
+    // "Anything else" now means: nothing to ask, straight on to the close.
+    expect(gone.edges.find((e) => e.from === "fork" && e.otherwise === true)?.to).toBe("close");
+    expect(laneGroups(gone).map((lane) => lane.label)).toEqual(["everyone gets this", "rent", "anything else"]);
+    expect(laneGroups(gone).find((lane) => lane.catchAll === true)?.ids).toEqual([]);
+    expect(shapeProblems(gone)).toEqual([]);
+    // With every service gone the fork still has its catch-all, and nothing else — and the
+    // close and the end are still everybody's, not a service the lone branch invented.
+    const none = removeService(gone, laneGroups(gone).find((lane) => lane.label === "rent") ?? buy);
+    expect(none.edges.filter((e) => e.from === "fork")).toEqual([{ from: "fork", to: "close", otherwise: true }]);
+    expect(laneGroups(none).map((lane) => `${lane.label}:${lane.ids.length}`)).toEqual(["everyone gets this:3", "anything else:0"]);
+    expect(shapeProblems(none)).toEqual([]);
+  });
+
+  it("drops the catch-all's branch when the service ended the call itself, and says so", () => {
+    const base: Flow = {
+      ...withChoice(),
+      nodes: [...withChoice().nodes, node("bye", "hangup")],
+      edges: withChoice().edges.map((e) => (e.from === "buy1" && e.to === "close" ? { ...e, to: "bye" } : e)),
+    };
+    const buy = laneGroups(base).find((lane) => lane.catchAll === true);
+    if (buy === undefined) throw new Error("no catch-all");
+    const gone = removeService(base, buy);
+    expect(gone.edges.some((e) => e.from === "fork" && e.otherwise === true)).toBe(false);
+    expect(shapeProblems(gone)).toContain("decide-without-otherwise@fork");
+  });
+
+  it("removes a service with its branch, its option and its own steps", () => {
     const base = withChoice();
     const rent = laneGroups(base).find((lane) => lane.label === "rent");
     if (rent === undefined) throw new Error("no rent lane");
@@ -504,8 +536,6 @@ describe("moving steps and services", () => {
     // The shared close survives: it was never only rent's.
     expect(shapeProblems(gone)).toEqual([]);
 
-    const catchAll = laneGroups(base).find((lane) => lane.label === "anything else");
-    expect(removeService(base, catchAll ?? rent)).toBe(base);
   });
 
   it("names the catch-all by the one option the named branches leave uncovered, and renames that option", () => {
@@ -530,8 +560,6 @@ describe("moving steps and services", () => {
     // With two options uncovered there is no one name to give it.
     const wide: Flow = { ...base, nodes: base.nodes.map((n) => (n.id === "ask" && n.field !== undefined ? { ...n, field: { ...n.field, options: ["rent", "buy", "let"] } } : n)) };
     expect(laneGroups(wide)[2]?.label).toBe("anything else");
-    // And an empty catch-all lane is keyed by that name, the way a named one is.
-    expect(removeService(base, buy)).toBe(base);
   });
 
   it("renames a service on the branch and on the choice together, and refuses a taken name", () => {

@@ -188,6 +188,9 @@ const derivedServices = (flow: Flow): readonly { readonly label: string; readonl
   const fork = firstFork(flow, depths(flow));
   if (fork === undefined) return [];
   const branches = flow.edges.filter((edge) => edge.from === fork.id);
+  /* One branch is not a fork into services: the rest of the call after a lone catch-all is
+     the rest of the call, not a service called "anything else". */
+  if (branches.length < 2) return [];
   const targets = branches.map((edge) => edge.to);
   const heads = new Set(targets.filter((target) => !converges(flow, target, targets)));
   const spine: Flow = { ...flow, edges: flow.edges.filter((edge) => edge.from === fork.id || !heads.has(edge.to)) };
@@ -202,12 +205,15 @@ const derivedServices = (flow: Flow): readonly { readonly label: string; readonl
 /**
  * Every step named for its service, for a flow that was saved before steps had names.
  *
- * Only steps with no name are touched, and only where the old rule puts them in a service:
- * the opening and the close belong to everybody and stay unnamed. The same flow object comes
- * back when there is nothing to do, so a caller can tell.
+ * Only a flow with no names at all is read this way, and only the steps the old rule puts in
+ * a service are named: the opening and the close belong to everybody and stay unnamed. A
+ * flow with any name on it is already speaking the new language, and its unnamed steps are
+ * shared on purpose — reading them the old way would, once a service was removed, fold the
+ * close into whichever service was left. The same flow object comes back when there is
+ * nothing to do, so a caller can tell.
  */
 export const withServiceTags = (flow: Flow): Flow => {
-  if (flow.nodes.every((node) => serviceOf(node) !== undefined)) return flow;
+  if (flow.nodes.some((node) => serviceOf(node) !== undefined)) return flow;
   const derived = new Map<string, string>();
   for (const service of derivedServices(flow)) for (const id of service.ids) derived.set(id, service.label);
   if (!flow.nodes.some((node) => serviceOf(node) === undefined && derived.has(node.id))) return flow;
@@ -585,7 +591,11 @@ export const foldedCount = (flow: Flow, head: string): number => laneFor(analyse
  * unreachable rather than pretending. A new branch takes over the old link as its catch-all,
  * which is the one way out a branch must have before it can be published.
  */
-export const insertAfter = (flow: Flow, anchor: string, fresh: FlowNode): Flow => {
+/* Every edit below reads a named flow (`withServiceTags`), so a flow that is partly named never
+   comes out of one; and every refusal hands back the very object it was given, which is how
+   the canvas tells an edit that did nothing from one that did. */
+export const insertAfter = (input: Flow, anchor: string, fresh: FlowNode): Flow => {
+  const flow = withServiceTags(input);
   const out = defaultEdgeFrom(flow, anchor);
   const ends = fresh.kind === "transfer" || fresh.kind === "hangup";
   const edges = flow.edges.filter((edge) => edge !== out);
@@ -606,7 +616,8 @@ export const insertAfter = (flow: Flow, anchor: string, fresh: FlowNode): Flow =
  * the top of a service and for the opening lane, whose last step is the fork — a question
  * dropped there is asked before the call splits. Nothing goes before the answer.
  */
-export const insertBefore = (flow: Flow, anchor: string, fresh: FlowNode): Flow => {
+export const insertBefore = (input: Flow, anchor: string, fresh: FlowNode): Flow => {
+  const flow = withServiceTags(input);
   if (fresh.kind === "transfer" || fresh.kind === "hangup") return insertAfter(flow, anchor, fresh);
   const at = byId(flow, anchor);
   if (at?.kind === "start") return insertAfter(flow, anchor, fresh);
@@ -634,7 +645,8 @@ export const laneTail = (flow: Flow, lane: Lane): string | undefined => {
  * means after the service's last step. A service with nothing in it yet gets its first step,
  * and if a branch of the fork leads to the service's place, the step goes on the branch.
  */
-export const appendToLane = (flow: Flow, lane: Lane, fresh: FlowNode): Flow => {
+export const appendToLane = (input: Flow, lane: Lane, fresh: FlowNode): Flow => {
+  const flow = withServiceTags(input);
   if (lane.id === "opening") {
     const fork = lane.ids.find((id) => byId(flow, id)?.kind === "decide");
     const loose = tagged(fresh, undefined);
@@ -672,7 +684,10 @@ export const rejoinPoint = (flow: Flow, lanes: readonly Lane[]): string | undefi
  * link, and links are drawn from a branch's dot onto the service, from the fork or from a
  * branch inside another service, when the business knows which answer takes a caller there.
  */
-export const addService = (flow: Flow, head: FlowNode, name: string): Flow => ({ ...flow, nodes: [...flow.nodes, tagged(head, name)] });
+export const addService = (input: Flow, head: FlowNode, name: string): Flow => {
+  const flow = withServiceTags(input);
+  return { ...flow, nodes: [...flow.nodes, tagged(head, name)] };
+};
 
 /** A service name nothing is using yet: "new service", then "new service 2"… */
 export const freshServiceName = (flow: Flow): string => {
@@ -691,8 +706,9 @@ export const freshServiceName = (flow: Flow): string => {
  * reads so the model may record it. From a branch inside a service the name is only a
  * starting guess at the answer, and is there to be edited.
  */
-export const linkToService = (flow: Flow, edge: FlowEdge, lane: Lane): Flow => {
-  if (lane.head === undefined || lane.ids.length === 0) return flow;
+export const linkToService = (input: Flow, edge: FlowEdge, lane: Lane): Flow => {
+  const flow = withServiceTags(input);
+  if (lane.head === undefined || lane.ids.length === 0) return input;
   const a = analyse(flow);
   const unnamed = edge.when !== undefined && "equals" in edge.when && edge.when.equals === "";
   const link: FlowEdge = unnamed ? { ...edge, to: lane.head, when: { equals: lane.label } } : { ...edge, to: lane.head };
@@ -745,18 +761,20 @@ const lifted = (flow: Flow, id: string): { readonly node: FlowNode; readonly res
 };
 
 /** Put a step that is already on the drawing right after another, in that step's service. */
-export const moveAfter = (flow: Flow, id: string, anchor: string): Flow => {
-  if (id === anchor) return flow;
+export const moveAfter = (input: Flow, id: string, anchor: string): Flow => {
+  const flow = withServiceTags(input);
+  if (id === anchor) return input;
   const moved = lifted(flow, id);
-  if (moved === undefined || byId(flow, anchor) === undefined) return flow;
+  if (moved === undefined || byId(flow, anchor) === undefined) return input;
   return insertAfter(moved.rest, anchor, moved.node);
 };
 
 /** Put a step that is already on the drawing right before another — at the top of a service, say. */
-export const moveBefore = (flow: Flow, id: string, anchor: string): Flow => {
-  if (id === anchor) return flow;
+export const moveBefore = (input: Flow, id: string, anchor: string): Flow => {
+  const flow = withServiceTags(input);
+  if (id === anchor) return input;
   const moved = lifted(flow, id);
-  if (moved === undefined || byId(flow, anchor) === undefined) return flow;
+  if (moved === undefined || byId(flow, anchor) === undefined) return input;
   return insertBefore(moved.rest, anchor, moved.node);
 };
 
@@ -767,22 +785,24 @@ export const moveBefore = (flow: Flow, id: string, anchor: string): Flow => {
  * leaves the lane with nothing — the label is what survives, and a lane a branch still leads
  * to is drawn empty and takes the step back onto the branch.
  */
-export const moveToLane = (flow: Flow, id: string, lane: Lane): Flow => {
+export const moveToLane = (input: Flow, id: string, lane: Lane): Flow => {
+  const flow = withServiceTags(input);
   const moved = lifted(flow, id);
-  if (moved === undefined) return flow;
+  if (moved === undefined) return input;
   const after = laneGroups(moved.rest);
   const target =
     after.find((one) => one.id === lane.id) ??
     after.find((one) => one.label === lane.label) ??
     (lane.id === "opening" ? undefined : { id: `svc:${lane.label}`, label: lane.label, ids: [] });
-  if (target === undefined) return flow;
+  if (target === undefined) return input;
   return appendToLane(moved.rest, target, moved.node);
 };
 
 /** Make a step that is already on the drawing the first step of a new service. */
-export const moveToNewService = (flow: Flow, id: string, name: string): Flow => {
+export const moveToNewService = (input: Flow, id: string, name: string): Flow => {
+  const flow = withServiceTags(input);
   const moved = lifted(flow, id);
-  if (moved === undefined) return flow;
+  if (moved === undefined) return input;
   return addService(moved.rest, moved.node, name);
 };
 
@@ -792,8 +812,9 @@ export const moveToNewService = (flow: Flow, id: string, name: string): Flow => 
  * The lanes are drawn in the order their names first appear among the steps, so this moves
  * the service's steps in the list and changes nothing about the call.
  */
-export const reorderService = (flow: Flow, lane: Lane, before: Lane | null): Flow => {
-  if (lane.ids.length === 0) return flow;
+export const reorderService = (input: Flow, lane: Lane, before: Lane | null): Flow => {
+  const flow = withServiceTags(input);
+  if (lane.ids.length === 0) return input;
   const moving = new Set(lane.ids);
   const rest = flow.nodes.filter((node) => !moving.has(node.id));
   const taken = flow.nodes.filter((node) => moving.has(node.id));
@@ -803,15 +824,26 @@ export const reorderService = (flow: Flow, lane: Lane, before: Lane | null): Flo
 };
 
 /**
- * Remove a service: every step in it, the links to and from them, its branch from the fork
- * and its option on the choice the fork reads. Not the catch-all: a fork without one cannot
- * publish, and "anything else" is not something a business is without.
+ * Remove a service: every step in it, the links to and from them, its option on the choice
+ * the fork reads, and its branch from the fork.
+ *
+ * The catch-all is the one branch a fork cannot be without, so removing that service keeps
+ * its branch and leads it straight to wherever the service led — the shared close, usually —
+ * which is what "anything else" then means: nothing to ask, on to the goodbye. A service that
+ * ended the call itself has nowhere to lead on to, and the branch is dropped; the validator
+ * then says the fork needs an "anything else", which is true and is the operator's to wire.
  */
-export const removeService = (flow: Flow, lane: Lane): Flow => {
-  if (lane.id === "opening" || lane.catchAll === true) return flow;
+export const removeService = (input: Flow, lane: Lane): Flow => {
+  const flow = withServiceTags(input);
+  if (lane.id === "opening") return input;
   const branch = branchEdgeOf(flow, lane);
   const fork = lane.fork === undefined ? undefined : byId(flow, lane.fork);
   const gone = new Set(lane.ids);
+  const tail = laneTail(flow, lane);
+  const onward = tail === undefined ? undefined : defaultEdgeFrom(flow, tail)?.to;
+  const rejoin = onward !== undefined && !gone.has(onward) ? onward : undefined;
+  const kept = flow.edges.filter((edge) => edge !== branch && !gone.has(edge.from) && !gone.has(edge.to));
+  const edges = lane.catchAll === true && branch !== undefined && rejoin !== undefined ? [...kept, { ...branch, to: rejoin }] : kept;
   return {
     ...flow,
     nodes: flow.nodes
@@ -820,7 +852,7 @@ export const removeService = (flow: Flow, lane: Lane): Flow => {
         if (fork === undefined || node.kind !== "collect" || node.field === undefined || node.field.key !== fork.on || node.field.type !== "choice") return node;
         return { ...node, field: { ...node.field, options: node.field.options.filter((option) => option !== lane.label) } };
       }),
-    edges: flow.edges.filter((edge) => edge !== branch && !gone.has(edge.from) && !gone.has(edge.to)),
+    edges,
   };
 };
 
@@ -830,17 +862,18 @@ export const removeService = (flow: Flow, lane: Lane): Flow => {
  * name is the one option left uncovered and renaming it renames that option; with no such
  * option it has no name to change. A name another service has is not available.
  */
-export const renameService = (flow: Flow, lane: Lane, name: string): Flow => {
+export const renameService = (input: Flow, lane: Lane, name: string): Flow => {
+  const flow = withServiceTags(input);
   const trimmed = name.trim();
-  if (lane.id === "opening" || trimmed === "" || trimmed === lane.label) return flow;
+  if (lane.id === "opening" || trimmed === "" || trimmed === lane.label) return input;
   const a = analyse(flow);
   const field = a.fork === undefined ? undefined : choiceOf(flow, a.fork);
   const taken =
     a.lanes.some((other) => other.label === trimmed) ||
     (a.fork !== undefined && flow.edges.some((edge) => edge.from === a.fork?.id && edge.when !== undefined && "equals" in edge.when && edge.when.equals === trimmed)) ||
     (field?.options ?? []).includes(trimmed);
-  if (taken) return flow;
-  if (lane.catchAll === true && (field === undefined || !field.options.includes(lane.label))) return flow;
+  if (taken) return input;
+  if (lane.catchAll === true && (field === undefined || !field.options.includes(lane.label))) return input;
   const branch = branchEdgeOf(flow, lane);
   return {
     ...flow,

@@ -4159,6 +4159,20 @@ in from the top-left; zoomed out or panned away it landed beside empty dots. It 
 step's service if folded and puts the step in the middle of the viewport at whatever zoom is
 set. Proved after pushing the drawing 3000px away: step centre = viewport centre.
 
+**Every service can be removed (2026-09-05).** "User can not delete all service — why?" The
+catch-all's × was withheld because a fork cannot publish without an "anything else". It can
+be removed now: its steps go, and its branch stays and leads straight on to wherever the
+service led — the close, usually — so "anything else" then means nothing to ask, on to the
+goodbye; a service that ended the call itself has nowhere to lead on to, and the validator
+says the fork needs its catch-all, which is true. Doing it found two deeper faults in the
+bootstrap. Once a service was removed, `withServiceTags` re-read the still-unnamed close and
+end by the old rule and folded them into whichever service was left; it runs only on a flow
+with no names at all now, and every edit reads a named flow first, so a partly named flow
+never comes out of one. And a fork with a single branch was read as forking into a service
+called "anything else" made of the rest of the call; one branch is not a fork into services.
+Refusals hand back the object they were given, which is how `edit` tells nothing from
+something. Proved on Oakhaven: rent, then buy, each step still "ready to publish".
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and
