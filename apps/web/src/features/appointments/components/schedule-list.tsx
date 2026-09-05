@@ -27,7 +27,7 @@ export const ScheduleList = ({
   readonly days: readonly DayColumn[];
   readonly canWrite: boolean;
   readonly onOpenBooking: (booking: BookingView) => void;
-  readonly onAddOn: (dayIso: string) => void;
+  readonly onAddOn: (dayIso: string, at: { readonly x: number; readonly y: number }) => void;
 }) => {
   const busy = days.filter((day) => day.bookings.length > 0);
 
@@ -84,7 +84,7 @@ export const ScheduleList = ({
             {canWrite && (
               <button
                 type="button"
-                onClick={() => onAddOn(day.iso)}
+                onClick={(event) => onAddOn(day.iso, { x: event.clientX, y: event.clientY })}
                 className="self-start rounded-lg px-2 py-1 text-[12px] font-medium text-[var(--ink-3)] transition-colors hover:text-[var(--accent)]"
               >
                 + Add on this day

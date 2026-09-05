@@ -59,7 +59,7 @@ export const TimeGrid = ({
   readonly hasHours: boolean;
   readonly canWrite: boolean;
   readonly onOpenBooking: (booking: BookingView) => void;
-  readonly onDraft: (span: DraftSpan) => void;
+  readonly onDraft: (span: DraftSpan, at: { readonly x: number; readonly y: number }) => void;
 }) => {
   const [drag, setDrag] = useState<Drag | null>(null);
   const columnTop = useRef(0);
@@ -129,16 +129,18 @@ export const TimeGrid = ({
     event.currentTarget.releasePointerCapture(event.pointerId);
     const span = spanOf(drag);
     setDrag(null);
-    onDraft({ dayIso: drag.dayIso, startMinute: span.startMinute, endMinute: span.endMinute });
+    onDraft(
+      { dayIso: drag.dayIso, startMinute: span.startMinute, endMinute: span.endMinute },
+      { x: event.clientX, y: event.clientY },
+    );
   };
 
   /** The keyboard's way in: a normal-length appointment at the top of the drawn day. */
-  const addOn = (dayIso: string): void =>
-    onDraft({
-      dayIso,
-      startMinute,
-      endMinute: Math.min(startMinute + slotMinutes, endMinute),
-    });
+  const addOn = (dayIso: string, at: { readonly x: number; readonly y: number }): void =>
+    onDraft(
+      { dayIso, startMinute, endMinute: Math.min(startMinute + slotMinutes, endMinute) },
+      at,
+    );
 
   return (
     <div className="surface overflow-auto rounded-xl">
@@ -180,7 +182,10 @@ export const TimeGrid = ({
                 {canWrite && (
                   <button
                     type="button"
-                    onClick={() => addOn(day.iso)}
+                    onClick={(event) => {
+                      const box = event.currentTarget.getBoundingClientRect();
+                      addOn(day.iso, { x: box.left, y: box.bottom });
+                    }}
                     aria-label={`Add an appointment on ${day.shortLabel} ${day.dayNumber}`}
                     className="rounded-md p-1 text-[var(--ink-3)] transition-colors hover:bg-[var(--accent-soft)] hover:text-[var(--accent)]"
                   >

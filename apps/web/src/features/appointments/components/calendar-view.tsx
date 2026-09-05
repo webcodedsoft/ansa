@@ -9,6 +9,7 @@ import type { CalendarView as ViewKind } from "../appointments.range";
 import type { BookingView, DayColumn, DraftSpan, MonthCell } from "../appointments.view";
 import { AppointmentDialog, type DialogTarget } from "./appointment-dialog";
 import { MonthGrid } from "./month-grid";
+import { QuickCreate, type Anchor } from "./quick-create";
 import { ScheduleList } from "./schedule-list";
 import { TimeGrid } from "./time-grid";
 
@@ -49,22 +50,32 @@ export const CalendarBoard = ({
 }) => {
   const [target, setTarget] = useState<DialogTarget>(null);
 
+  /* Writing an appointment goes through the small card first. Most need a name and the time
+     the click already decided, and opening a modal with contact, note and hold options asks
+     five questions to answer one — "More options" promotes the same draft into the full
+     dialog for the times the rest is actually wanted. */
+  const [quick, setQuick] = useState<{ readonly span: DraftSpan; readonly at: Anchor } | null>(
+    null,
+  );
+
   /* Built here rather than handed down: a server component cannot pass a function across the
      boundary, and the link only ever needs the calendar it is already given. */
   const dayHref = (iso: string): string =>
     `/appointments?calendar=${encodeURIComponent(calendarId)}&view=day&date=${iso}`;
 
-  const openBooking = (booking: BookingView): void =>
+  const openBooking = (booking: BookingView): void => {
+    setQuick(null);
     setTarget({ kind: "existing", booking });
-  const openSpan = (span: DraftSpan): void => setTarget({ kind: "new", span });
+  };
+
+  const openQuick = (span: DraftSpan, at: Anchor): void => setQuick({ span, at });
 
   /** A day with no gesture behind it: one normal-length appointment at the top of the day. */
-  const addOn = (dayIso: string): void =>
-    openSpan({
-      dayIso,
-      startMinute,
-      endMinute: Math.min(startMinute + slotMinutes, endMinute),
-    });
+  const addOn = (dayIso: string, at: Anchor): void =>
+    openQuick(
+      { dayIso, startMinute, endMinute: Math.min(startMinute + slotMinutes, endMinute) },
+      at,
+    );
 
   /* "Add appointment" needs a day, and in the month view the anchor day is the honest choice —
      the first day of the period on screen that is actually in it. */
@@ -75,7 +86,14 @@ export const CalendarBoard = ({
     <div className="flex flex-col gap-3">
       {canWrite && firstDay !== null && (
         <div className="flex justify-end">
-          <Button variant="primary" size="sm" onClick={() => addOn(firstDay)}>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={(event) => {
+              const box = event.currentTarget.getBoundingClientRect();
+              addOn(firstDay, { x: box.left - 220, y: box.bottom });
+            }}
+          >
             <Plus aria-hidden className="size-3.5" />
             Add appointment
           </Button>
@@ -107,9 +125,21 @@ export const CalendarBoard = ({
           hasHours={hasHours}
           canWrite={canWrite}
           onOpenBooking={openBooking}
-          onDraft={openSpan}
+          onDraft={openQuick}
         />
       )}
+
+      <QuickCreate
+        calendarId={calendarId}
+        span={quick?.span ?? null}
+        anchor={quick?.at ?? null}
+        timeZone={timeZone}
+        onClose={() => setQuick(null)}
+        onMoreOptions={(span) => {
+          setQuick(null);
+          setTarget({ kind: "new", span });
+        }}
+      />
 
       <AppointmentDialog
         calendarId={calendarId}

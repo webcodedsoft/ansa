@@ -45,7 +45,7 @@ export const MonthGrid = ({
   readonly canWrite: boolean;
   readonly dayHref: (iso: string) => string;
   readonly onOpenBooking: (booking: BookingView) => void;
-  readonly onAddOn: (dayIso: string) => void;
+  readonly onAddOn: (dayIso: string, at: { readonly x: number; readonly y: number }) => void;
 }) => (
   <div className="surface overflow-hidden rounded-xl">
     <div
@@ -93,7 +93,7 @@ export const MonthGrid = ({
             {canWrite && (
               <button
                 type="button"
-                onClick={() => onAddOn(cell.iso)}
+                onClick={(event) => onAddOn(cell.iso, { x: event.clientX, y: event.clientY })}
                 aria-label={`Add an appointment on ${cell.iso}`}
                 className="absolute inset-0 cursor-cell rounded-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-inset"
               />

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { EmptyState, Notice, PageHeader, Panel, Tabs, type TabDef } from "@/components/ui";
+import { EmptyState, Notice, PageHeader, Panel } from "@/components/ui";
 import { currentPrincipal } from "@/features/auth/auth.service";
 import {
   listBookings,
@@ -9,10 +9,9 @@ import {
   readAvailability,
   type CalendarSummary,
 } from "@/features/appointments/appointments.service";
-import { AvailabilityEditor } from "@/features/appointments/components/availability-editor";
 import { CalendarSwitcher } from "@/features/appointments/components/calendar-switcher";
 import { CreateCalendarDialog } from "@/features/appointments/components/create-calendar-dialog";
-import { EditCalendarPanel } from "@/features/appointments/components/edit-calendar-panel";
+import { CalendarSettings } from "@/features/appointments/components/calendar-settings";
 import { CalendarBoard } from "@/features/appointments/components/calendar-view";
 import { CalendarNav } from "@/features/appointments/components/calendar-nav";
 import {
@@ -180,95 +179,71 @@ const AppointmentsPage = async ({
 
   const noAvailability = availability.windows.length === 0;
 
-  const tabs: readonly TabDef[] = [
-    {
-      id: "calendar",
-      label: "Calendar",
-      panel: (
-        <div className="flex flex-col gap-3.5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <CalendarNav
-              calendarId={selected.id}
-              view={view}
-              anchor={anchor}
-              timeZone={selected.timezone}
-              showWeekends={showWeekends}
-            />
-            <div className="text-[12px] text-[var(--ink-3)]">
-              Times shown in{" "}
-              <span className="font-medium text-[var(--ink-2)]">{selected.timezone}</span>
-            </div>
-          </div>
-
-          {noAvailability ? (
-            <Notice tone="info">
-              This calendar has no open hours yet, so the agent offers no slots on a call. You can
-              still write appointments into it here. Set its weekly hours on the Weekly hours tab
-              to have the agent offer them.
-            </Notice>
-          ) : (
-            selected.source === "connector" && (
-              <Notice tone="info">
-                This is a connector calendar, mirroring an outside diary. Its slots and
-                appointments are shown here and can be written against; the diary remains the
-                source of truth.
-              </Notice>
-            )
-          )}
-
-          {/* The little month sits beside the grid on a wide screen and above it on a narrow
-              one, where a sidebar would push the calendar off the edge. */}
-          <div className="flex flex-col gap-3.5 lg:grid lg:grid-cols-[196px_minmax(0,1fr)] lg:items-start">
-            <MiniMonth
-              calendarId={selected.id}
-              view={view}
-              anchor={anchor}
-              timeZone={selected.timezone}
-              todayIso={isoDate(today)}
-            />
-
-            <CalendarBoard
-              key={`${selected.id}:${view}`}
-              calendarId={selected.id}
-              view={view}
-              days={days}
-              cells={cells}
-              startMinute={dayBounds.startMinute}
-              endMinute={dayBounds.endMinute}
-              timeZone={selected.timezone}
-              slotMinutes={selected.slotMinutes}
-              hasHours={!noAvailability}
-              canWrite={canWrite}
-            />
-          </div>
-
-          <CalendarKeys
-            calendarId={selected.id}
-            view={view}
-            anchor={anchor}
-            timeZone={selected.timezone}
-          />
-        </div>
-      ),
-    },
-    {
-      id: "hours",
-      label: "Weekly hours",
-      panel: (
-        <AvailabilityEditor
-          key={selected.id}
+  const calendarBody = (
+    <div className="flex flex-col gap-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <CalendarNav
           calendarId={selected.id}
-          windows={availability.windows}
+          view={view}
+          anchor={anchor}
+          timeZone={selected.timezone}
+          showWeekends={showWeekends}
+        />
+        <div className="text-[12px] text-[var(--ink-3)]">
+          Times shown in{" "}
+          <span className="font-medium text-[var(--ink-2)]">{selected.timezone}</span>
+        </div>
+      </div>
+
+      {noAvailability ? (
+        <Notice tone="info">
+          This calendar has no open hours yet, so the agent offers no slots on a call. You can
+          still write appointments into it here. Set its weekly hours to have the agent offer
+          them.
+        </Notice>
+      ) : (
+        selected.source === "connector" && (
+          <Notice tone="info">
+            This is a connector calendar, mirroring an outside diary. Its slots and appointments
+            are shown here and can be written against; the diary remains the source of truth.
+          </Notice>
+        )
+      )}
+
+      {/* The little month sits beside the grid on a wide screen and above it on a narrow
+          one, where a sidebar would push the calendar off the edge. */}
+      <div className="flex flex-col gap-3.5 lg:grid lg:grid-cols-[196px_minmax(0,1fr)] lg:items-start">
+        <MiniMonth
+          calendarId={selected.id}
+          view={view}
+          anchor={anchor}
+          timeZone={selected.timezone}
+          todayIso={isoDate(today)}
+        />
+
+        <CalendarBoard
+          key={`${selected.id}:${view}`}
+          calendarId={selected.id}
+          view={view}
+          days={days}
+          cells={cells}
+          startMinute={dayBounds.startMinute}
+          endMinute={dayBounds.endMinute}
+          timeZone={selected.timezone}
+          slotMinutes={selected.slotMinutes}
+          hasHours={!noAvailability}
           canWrite={canWrite}
         />
-      ),
-    },
-    {
-      id: "settings",
-      label: "Settings",
-      panel: <EditCalendarPanel key={selected.id} calendar={selected} canWrite={canWrite} />,
-    },
-  ];
+      </div>
+
+      <CalendarKeys
+        calendarId={selected.id}
+        view={view}
+        anchor={anchor}
+        timeZone={selected.timezone}
+      />
+    </div>
+  );
 
   return (
     <>
@@ -279,12 +254,17 @@ const AppointmentsPage = async ({
         actions={
           <div className="flex items-center gap-2">
             <CalendarSwitcher calendars={calendars} selectedId={selected.id} />
+            <CalendarSettings
+              calendar={selected}
+              windows={availability.windows}
+              canWrite={canWrite}
+            />
             {canWrite && <CreateCalendarDialog trigger="secondary" />}
           </div>
         }
       />
 
-      <Tabs tabs={tabs} />
+      {calendarBody}
     </>
   );
 };
