@@ -8,7 +8,7 @@ import { cn } from "@/lib/cn";
 
 import { dragSpan, minuteAt, snapStepFor, type Span } from "../appointments.drag";
 import { bookingLabel } from "../appointments.range";
-import { clockLabel, minutesOfDay } from "../appointments.time";
+import { clockLabel, hourLabel, minutesOfDay } from "../appointments.time";
 import type { BookingView, DayColumn, DraftSpan } from "../appointments.view";
 
 /** Pixels per hour. The grid's whole vertical scale derives from this one number. */
@@ -207,7 +207,7 @@ export const TimeGrid = ({
                 className="absolute right-2 -translate-y-1/2 text-[10.5px] tabular-nums text-[var(--ink-3)]"
                 style={{ top: `${pxFor(minute - startMinute)}px` }}
               >
-                {clockLabel(minute)}
+                {hourLabel(minute)}
               </div>
             ))}
           </div>

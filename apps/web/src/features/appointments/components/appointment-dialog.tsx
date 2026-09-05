@@ -34,6 +34,7 @@ import {
 } from "../appointments.time";
 import type { BookingView, DraftSpan } from "../appointments.view";
 import { ContactPicker } from "./contact-picker";
+import { TimeSelect } from "./time-select";
 
 const START: BookingState = idleForm();
 
@@ -306,21 +307,17 @@ export const AppointmentDialog = ({
               onChange={(event) => set({ dayIso: event.target.value })}
               required
             />
-            <TextField
+            <TimeSelect
               label="From"
-              type="time"
               value={draft.startTime}
-              onChange={(event) => set({ startTime: event.target.value })}
+              onChange={(startTime) => set({ startTime })}
               error={fieldErrors["startsAt"]}
-              required
             />
-            <TextField
+            <TimeSelect
               label="To"
-              type="time"
               value={draft.endTime}
-              onChange={(event) => set({ endTime: event.target.value })}
+              onChange={(endTime) => set({ endTime })}
               error={endError}
-              required
             />
           </div>
 

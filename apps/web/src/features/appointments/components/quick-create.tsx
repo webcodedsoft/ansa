@@ -3,14 +3,14 @@
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 
-import { Button, CONTROL, Notice } from "@/components/ui";
-import { cn } from "@/lib/cn";
+import { Button, Notice } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 import { useFormToast } from "@/stores/toast.store";
 
 import { createBookingAction, type BookingState } from "../appointments.actions";
 import { minuteToInput } from "../appointments.drag";
 import { parseIsoDate, timeToMinutes, zonedTimeToUtc } from "../appointments.time";
+import { TimeSelect } from "./time-select";
 import type { DraftSpan } from "../appointments.view";
 
 const START: BookingState = idleForm();
@@ -171,21 +171,13 @@ export const QuickCreate = ({
 
         <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-[var(--ink-2)]">
           <span className="shrink-0 tabular-nums whitespace-nowrap">{span.dayIso}</span>
-          <input
-            type="time"
-            value={startTime}
-            onChange={(event) => setStartTime(event.target.value)}
-            aria-label="From"
-            className={cn(CONTROL, "h-7 w-[110px] px-1.5 text-[12.5px]")}
-          />
+          <div className="w-[104px]">
+            <TimeSelect label="From" hideLabel value={startTime} onChange={setStartTime} />
+          </div>
           <span aria-hidden>–</span>
-          <input
-            type="time"
-            value={endTime}
-            onChange={(event) => setEndTime(event.target.value)}
-            aria-label="To"
-            className={cn(CONTROL, "h-7 w-[110px] px-1.5 text-[12.5px]")}
-          />
+          <div className="w-[104px]">
+            <TimeSelect label="To" hideLabel value={endTime} onChange={setEndTime} />
+          </div>
         </div>
 
         {instants === null && (

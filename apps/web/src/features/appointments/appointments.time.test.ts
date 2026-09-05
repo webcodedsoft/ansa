@@ -10,11 +10,13 @@ import {
   endMinutesToTime,
   groupBookingsByDay,
   groupSlotsByDay,
+  hourLabel,
   isoDate,
   minutesOfDay,
   minutesToTime,
   mondayOf,
   parseIsoDate,
+  quarterHours,
   timeToEndMinutes,
   timeToMinutes,
   weekdayOf,
@@ -126,7 +128,7 @@ describe("groupSlotsByDay", () => {
     );
     const monday = grouped.get("2026-03-02") ?? [];
     expect(monday).toHaveLength(2);
-    expect(monday[0]).toMatchObject({ startMinute: 540, endMinute: 570, label: "9:00" });
+    expect(monday[0]).toMatchObject({ startMinute: 540, endMinute: 570, label: "9:00am" });
     expect(grouped.get("2026-03-04")).toHaveLength(1);
     expect(grouped.get("2026-03-03")).toHaveLength(0);
   });
@@ -233,9 +235,28 @@ describe("availabilityProblem", () => {
 });
 
 describe("clock helpers", () => {
-  it("clockLabel is 24-hour", () => {
-    expect(clockLabel(9 * 60)).toBe("9:00");
-    expect(clockLabel(14 * 60 + 30)).toBe("14:30");
+  it("clockLabel is twelve hour, lowercase, no leading zero", () => {
+    expect(clockLabel(9 * 60)).toBe("9:00am");
+    expect(clockLabel(14 * 60 + 30)).toBe("2:30pm");
+    // The pair worth checking in any implementation of this.
+    expect(clockLabel(0)).toBe("12:00am");
+    expect(clockLabel(12 * 60)).toBe("12:00pm");
+  });
+
+  it("hourLabel drops the minutes a gutter never varies", () => {
+    expect(hourLabel(9 * 60)).toBe("9am");
+    expect(hourLabel(12 * 60)).toBe("12pm");
+    expect(hourLabel(17 * 60)).toBe("5pm");
+    // Anything off the hour keeps them rather than lying about the time.
+    expect(hourLabel(9 * 60 + 30)).toBe("9:30am");
+  });
+
+  it("offers every quarter of the day, written the same way", () => {
+    const quarters = quarterHours();
+    expect(quarters).toHaveLength(96);
+    expect(quarters[0]).toEqual({ value: "00:00", label: "12:00am" });
+    expect(quarters[38]).toEqual({ value: "09:30", label: "9:30am" });
+    expect(quarters[95]).toEqual({ value: "23:45", label: "11:45pm" });
   });
 
   it("timeToMinutes parses and rejects", () => {

@@ -261,13 +261,37 @@ export interface PlacedBooking<T> {
   readonly endMinute: number;
 }
 
-/** `9:00` / `14:30`, 24-hour, the reading a Nigerian office clock shows. */
+/**
+ * `9:30am` / `6:00pm` — twelve hour, lowercase, no leading zero and no space.
+ *
+ * This was 24-hour on the reasoning that it is "the reading a Nigerian office clock shows".
+ * Clocks may well, but people do not: a viewing is at half four, not at sixteen thirty, and
+ * every calendar anybody here has used writes it the short way. Midnight is 12:00am and noon
+ * is 12:00pm, which is the one pair worth checking in any implementation of this.
+ */
 export const clockLabel = (minutes: number): string => {
   const clamped = ((minutes % DAY_MINUTES) + DAY_MINUTES) % DAY_MINUTES;
-  const hour = Math.floor(clamped / 60);
+  const hour24 = Math.floor(clamped / 60);
   const minute = clamped % 60;
-  return `${hour}:${String(minute).padStart(2, "0")}`;
+  const hour = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  return `${hour}:${String(minute).padStart(2, "0")}${hour24 < 12 ? "am" : "pm"}`;
 };
+
+/**
+ * The same clock, shortened for the grid's hour gutter: `9am`, `12pm`, `5pm`.
+ *
+ * A column of "9:00am / 10:00am / 11:00am" is the same word three times; the minutes are
+ * always zero there and saying so costs the width the gutter does not have.
+ */
+export const hourLabel = (minutes: number): string => {
+  const clamped = ((minutes % DAY_MINUTES) + DAY_MINUTES) % DAY_MINUTES;
+  const hour24 = Math.floor(clamped / 60);
+  const minute = clamped % 60;
+  if (minute !== 0) return clockLabel(minutes);
+  const hour = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  return `${hour}${hour24 < 12 ? "am" : "pm"}`;
+};
+
 
 /**
  * Group free slots into the day columns they belong to, in the calendar's zone.
@@ -454,6 +478,21 @@ export const minutesToTime = (minutes: number): string => {
 };
 
 /**
+ * Every quarter hour of the day, as a value and the way it reads.
+ *
+ * What a time field offers instead of a native `<input type="time">`, which renders in the
+ * browser's own locale and cannot be told to show `9:30pm`. Quarter hours because that is the
+ * granularity an appointment is actually agreed at; anything finer is typed rather than picked.
+ */
+export const quarterHours = (): readonly { value: string; label: string }[] => {
+  const out: { value: string; label: string }[] = [];
+  for (let minute = 0; minute < DAY_MINUTES; minute += 15) {
+    out.push({ value: minutesToTime(minute), label: clockLabel(minute) });
+  }
+  return out;
+};
+
+/**
  * The same, for the *end* of an open period, where midnight means the close of the day.
  *
  * A window may end at 1440 — the schema says so and the migration spells it out — but an
@@ -482,13 +521,15 @@ export const timeToEndMinutes = (value: string): number | null => {
  * The zone is spelled out because a time with no zone on a page a colleague in another one
  * might read is the ambiguity this whole feature is trying to remove.
  */
-export const bookingWhen = (iso: string, timeZone: string): string =>
-  new Intl.DateTimeFormat("en-NG", {
+export const bookingWhen = (iso: string, timeZone: string): string => {
+  /* The date through `Intl`, the clock through `clockLabel`, so a booking's time is written
+     the same way here as on the grid and in the pickers. `Intl` would give "9:30 pm" with a
+     space and a capital, which is a second format for the same thing. */
+  const date = new Intl.DateTimeFormat("en-NG", {
     timeZone,
     weekday: "short",
     day: "numeric",
     month: "short",
-    hour: "numeric",
-    minute: "2-digit",
-    hourCycle: "h23",
   }).format(new Date(iso));
+  return `${date}, ${clockLabel(minutesOfDay(new Date(iso), timeZone))}`;
+};

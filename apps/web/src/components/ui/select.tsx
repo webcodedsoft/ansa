@@ -100,9 +100,20 @@ const readOptions = (children: ReactNode): readonly (Choice | Group)[] => {
 const flatten = (options: readonly (Choice | Group)[]): readonly Choice[] =>
   options.flatMap((one) => ("value" in one ? [one] : one.options));
 
-/** Above the page's own layers. Inside a dialog the top layer does the real work. */
+/** How tall the list gets before it scrolls. Short enough to fit inside a modal. */
+const MENU_HEIGHT = 216;
+
+/**
+ * The two things that must be real CSS rather than classes.
+ *
+ * The portal needs a stacking order. And the list needs its `maxHeight` in the library's own
+ * styles, not only in a Tailwind class: `unstyled` sets no height, so the library believes the
+ * list is its full unscrolled length and never scrolls the chosen option into view — which for
+ * a ninety-six row time picker meant opening at midnight with ten in the morning selected.
+ */
 const PORTAL_STYLES: StylesConfig<Choice, false, Group> = {
   menuPortal: (base) => ({ ...base, zIndex: 70 }),
+  menuList: (base) => ({ ...base, maxHeight: MENU_HEIGHT }),
 };
 
 export interface SelectFieldProps extends FieldShell {
@@ -179,6 +190,24 @@ export const SelectField = ({
 
   const canSearch = searchable ?? flat.length >= SEARCH_FROM;
 
+  /**
+   * Put the chosen option on screen when the list opens.
+   *
+   * The library styles the selected option but does not scroll to it: with a searchable list
+   * it focuses the first row, so a ninety-six row time picker opened at midnight while ten in
+   * the morning sat forty rows down, marked and invisible. The option ids are the library's
+   * own documented shape, and a miss is a no-op rather than an error.
+   */
+  const revealChosen = (): void => {
+    const index = chosen == null ? -1 : flat.findIndex((one) => one.value === chosen.value);
+    if (index < 0) return;
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`react-select-${instanceId}-option-${index}`)
+        ?.scrollIntoView({ block: "center" });
+    });
+  };
+
   return (
     <Field
       as="div"
@@ -204,6 +233,12 @@ export const SelectField = ({
         /* Rendered into the body so a modal's or the canvas's `overflow-hidden` cannot clip
            the menu. Guarded because this file is also rendered on the server, where there is
            no document to portal into. */
+        /* Told in a number, not only in a class. `unstyled` means the library sets no height
+           of its own, so without this it cannot work out where the selected option sits and
+           opens a long list at the top — a ninety-six row time picker opening at midnight
+           when ten in the morning is chosen. Must match the `menuList` class below. */
+        maxMenuHeight={MENU_HEIGHT}
+        onMenuOpen={revealChosen}
         menuPortalTarget={host}
         /* Downward inside a dialog. `auto` measures against the viewport, which inside a
            modal is the wrong box — it sees room above the dialog, opens up into it, and the
@@ -242,9 +277,8 @@ export const SelectField = ({
               "mt-1 overflow-hidden rounded-lg border border-[var(--hairline)]",
               "bg-[var(--surface-solid)] shadow-xl",
             ),
-          /* Short enough to fit inside a modal without pushing its buttons off screen. A
-             list you can type into does not need to show twenty rows at once. */
-          menuList: () => "max-h-[216px] py-1 text-left",
+          /* The height itself is in `PORTAL_STYLES`, where the library can read it. */
+          menuList: () => "py-1 text-left",
           groupHeading: () =>
             "px-2.5 pt-2 pb-1 text-[10.5px] font-medium tracking-wide text-[var(--ink-3)] uppercase",
           option: ({ isSelected, isFocused, isDisabled }) =>

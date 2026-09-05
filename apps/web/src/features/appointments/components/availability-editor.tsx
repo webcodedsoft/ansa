@@ -4,12 +4,12 @@ import { Plus, Trash2 } from "lucide-react";
 import { useActionState, useState } from "react";
 
 import { Button, Card, IconButton, Notice } from "@/components/ui";
-import { cn } from "@/lib/cn";
 import { idleForm } from "@/lib/form-state";
 import { useFormToast } from "@/stores/toast.store";
 
 import { replaceAvailabilityAction, type AvailabilityState } from "../appointments.actions";
 import type { AvailabilityWindows } from "../appointments.service";
+import { TimeSelect } from "./time-select";
 import {
   availabilityProblem,
   endMinutesToTime,
@@ -190,31 +190,25 @@ export const AvailabilityEditor = ({
               <div className="flex min-w-0 flex-1 flex-col gap-2">
                 {dayRows.map((row) => (
                   <div key={row.key} className="flex items-center gap-2">
-                    <input
-                      type="time"
-                      aria-label={`${WEEKDAY_LABELS[weekday]} opens`}
-                      value={row.start}
-                      disabled={!canWrite}
-                      onChange={(event) => editRow(row.key, "start", event.target.value)}
-                      className={cn(
-                        "rounded-lg border border-[var(--hairline)] bg-[var(--surface-2)] px-2.5 py-1.5 text-[13px] text-[var(--ink)]",
-                        "tabular-nums disabled:opacity-55",
-                      )}
-                    />
+                    <div className="w-[116px]">
+                      <TimeSelect
+                        label={`${WEEKDAY_LABELS[weekday]} opens`}
+                        hideLabel
+                        value={row.start}
+                        onChange={(next) => editRow(row.key, "start", next)}
+                      />
+                    </div>
                     <span aria-hidden className="text-[var(--ink-3)]">
                       –
                     </span>
-                    <input
-                      type="time"
-                      aria-label={`${WEEKDAY_LABELS[weekday]} closes`}
-                      value={row.end}
-                      disabled={!canWrite}
-                      onChange={(event) => editRow(row.key, "end", event.target.value)}
-                      className={cn(
-                        "rounded-lg border border-[var(--hairline)] bg-[var(--surface-2)] px-2.5 py-1.5 text-[13px] text-[var(--ink)]",
-                        "tabular-nums disabled:opacity-55",
-                      )}
-                    />
+                    <div className="w-[116px]">
+                      <TimeSelect
+                        label={`${WEEKDAY_LABELS[weekday]} closes`}
+                        hideLabel
+                        value={row.end}
+                        onChange={(next) => editRow(row.key, "end", next)}
+                      />
+                    </div>
                     {canWrite && (
                       <IconButton aria-label="Remove this period" onClick={() => removeRow(row.key)}>
                         <Trash2 aria-hidden className="size-4" />
