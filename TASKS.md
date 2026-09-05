@@ -4122,6 +4122,10 @@ how a link is deleted now: picked, then removed, never by a slip. The click is t
 invisible stroke, since a line a pixel and a half wide cannot be aimed at; only the click,
 not the press, so a drag that begins on a link is still a pan.
 
+**A picked step fills its wired dots (2026-09-05).** The dot a link lands on and every dot a
+link leaves by fill accent while the step is selected; a dot nothing is wired to stays hollow,
+which is how it says so — the "+" arm on a fork included.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and

@@ -2108,7 +2108,11 @@ export const FlowCanvas = ({
                       aria-hidden
                       className={cn(
                         "absolute top-[-5px] left-[calc(50%-4.5px)] size-[9px] rounded-full border-[1.5px] transition-opacity",
-                        selectedEdge !== null && edges.some((edge) => edge.to === n.id && edgeKey(edge) === selectedEdge)
+                        /* Filled while it is a joint being looked at: the end of a picked link,
+                           or any wired dot of the picked step. An unwired dot on a picked step
+                           stays hollow, which is how it says nothing lands there yet. */
+                        (selectedEdge !== null && edges.some((edge) => edge.to === n.id && edgeKey(edge) === selectedEdge)) ||
+                          (n.id === selected && edges.some((edge) => edge.to === n.id))
                           ? "border-[var(--accent)] bg-[var(--accent)]"
                           : "border-[var(--ink-3)] bg-[var(--surface-solid)]",
                         n.id === selected || edges.some((edge) => edge.to === n.id) ? "opacity-100" : "opacity-0 group-hover:opacity-100",
@@ -2132,7 +2136,9 @@ export const FlowCanvas = ({
                         n.id === selected || edges.some((edge) => port.holds(edge))
                           ? "border-[var(--ink-3)] opacity-100"
                           : "border-[var(--ink-3)] opacity-0 group-hover:opacity-100",
-                        selectedEdge !== null && edges.some((edge) => port.holds(edge) && edgeKey(edge) === selectedEdge) && "border-[var(--accent)] bg-[var(--accent)] opacity-100",
+                        ((selectedEdge !== null && edges.some((edge) => port.holds(edge) && edgeKey(edge) === selectedEdge)) ||
+                          (n.id === selected && edges.some((edge) => port.holds(edge)))) &&
+                          "border-[var(--accent)] bg-[var(--accent)] opacity-100",
                       )}
                       style={{ left: `calc(${portAlong(at, ports.length, n.kind) * 100}% - 4.5px)` }}
                       onPointerDown={(e) => onOutPortPointerDown(e, n, port)}
