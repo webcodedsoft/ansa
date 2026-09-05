@@ -315,6 +315,42 @@ export const readBookings = async (
   return rows.map(asBooking);
 };
 
+/**
+ * Find appointments by what they are called, across every calendar the organisation keeps.
+ *
+ * The week grid answers "what is on this week"; this answers "when is the Adeola viewing",
+ * which is the question that otherwise costs a person twenty clicks through the weeks. It
+ * deliberately spans calendars and ignores the date window: a search that only looked at the
+ * fortnight already on screen would fail at exactly the moment it is reached for.
+ *
+ * `ilike` on title and notes rather than full-text search. The corpus is one organisation's
+ * appointment titles, a substring is what a person means by searching a diary ("adeola" must
+ * find "14 Adeola Odeku"), and a tsquery would stem and tokenise its way out of matching the
+ * partial words somebody types. Cancelled rows are excluded — they are not appointments any
+ * more, and returning them would offer a time that is not kept.
+ *
+ * Scoped by `OrganizationScope`, so RLS answers the tenancy question rather than a `where`
+ * clause anybody could forget: an organisation cannot search another's diary.
+ */
+export const searchBookings = async (
+  scope: OrganizationScope,
+  term: string,
+  limit: number,
+): Promise<readonly Booking[]> => {
+  /* Escape the wildcards so a caller searching for "50%" is not handed the whole diary. */
+  const escaped = term.replace(/[\\%_]/g, (match) => `\\${match}`);
+  const rows = await scope.query<Record<string, unknown>>(
+    `select ${BOOKING_COLUMNS}
+       from appointment_bookings
+      where status <> 'cancelled'
+        and (title ilike $1 escape '\\' or notes ilike $1 escape '\\')
+      order by starts_at desc, id
+      limit $2`,
+    [`%${escaped}%`, limit],
+  );
+  return rows.map(asBooking);
+};
+
 export const readBooking = async (
   scope: OrganizationScope,
   bookingId: string,

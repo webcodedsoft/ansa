@@ -354,10 +354,60 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("the appointment
     expect(booking.body["externalRef"]).toBe("evt_outside_456");
   });
 
+  it("finds an appointment by name across calendars, and never another organisation's", async () => {
+    const diary = await send("POST", "/api/v1/appointments/calendars", {
+      name: "Search diary",
+      timezone: "Africa/Lagos",
+      slotMinutes: 30,
+      bufferMinutes: 0,
+      source: "hosted",
+    });
+    expect(diary.status, JSON.stringify(diary.body)).toBe(201);
+    const calendarId = String(diary.body["id"]);
+
+    const made = await send("POST", `/api/v1/appointments/calendars/${calendarId}/bookings`, {
+      startsAt: "2026-04-02T09:00:00Z",
+      source: "manual",
+      title: "Second viewing, 14 Adeola Odeku",
+      notes: "bring the spare keys",
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+
+    // A partial word is what a person types into a diary; it has to match.
+    const byTitle = await send("GET", "/api/v1/appointments/bookings/search?q=adeola");
+    expect(byTitle.status, JSON.stringify(byTitle.body)).toBe(200);
+    const titleHits = byTitle.body["items"] as readonly Record<string, unknown>[];
+    expect(titleHits).toHaveLength(1);
+    expect(titleHits[0]?.["id"]).toBe(made.body["id"]);
+
+    // The note is searched too, since an appointment a call took has no title.
+    const byNote = await send("GET", "/api/v1/appointments/bookings/search?q=spare%20keys");
+    expect((byNote.body["items"] as readonly unknown[]).length).toBe(1);
+
+    const miss = await send("GET", "/api/v1/appointments/bookings/search?q=nothinglikethis");
+    expect(miss.body["items"]).toEqual([]);
+
+    // A wildcard is a literal, not a request for the whole diary.
+    const wildcard = await send("GET", "/api/v1/appointments/bookings/search?q=%25%25");
+    expect(wildcard.status).toBe(200);
+    expect(wildcard.body["items"]).toEqual([]);
+
+    // One character is not a search.
+    const tooShort = await send("GET", "/api/v1/appointments/bookings/search?q=a");
+    expect(tooShort.status).toBe(422);
+
+    // Cancelled appointments are not results: they are not appointments any more.
+    const cancelled = await send("POST", `/api/v1/appointments/bookings/${String(made.body["id"])}/cancel`, {});
+    expect(cancelled.status, JSON.stringify(cancelled.body)).toBe(200);
+    const afterCancel = await send("GET", "/api/v1/appointments/bookings/search?q=adeola");
+    expect(afterCancel.body["items"]).toEqual([]);
+  });
+
   it("refuses every route without a session", async () => {
     for (const path of [
       "/api/v1/appointments/calendars",
       `/api/v1/appointments/calendars/${randomUUID()}/slots?from=2026-03-02T00:00:00Z&to=2026-03-03T00:00:00Z`,
+      "/api/v1/appointments/bookings/search?q=adeola",
     ]) {
       const response = await fetch(`${baseUrl}${path}`);
       expect(response.status, path).toBe(401);

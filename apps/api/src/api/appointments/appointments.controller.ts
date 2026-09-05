@@ -8,6 +8,7 @@ import {
   readAvailability,
   readBooking,
   readBookings,
+  searchBookings,
   readCalendar,
   readCalendars,
   replaceAvailability,
@@ -143,6 +144,17 @@ const booking = object({
 });
 
 const bookingList = object({ items: list(booking) });
+
+/**
+ * What a search asks for.
+ *
+ * A short floor on the term because a one-character search returns the whole diary and means
+ * nothing; a ceiling on `limit` because this is a lookup box, not an export.
+ */
+const searchQuery = object({
+  q: text({ minLength: 2, maxLength: 200 }),
+  limit: optional(integer({ minimum: 1, maximum: 100 })),
+});
 
 /**
  * What may be changed about an appointment already in the diary.
@@ -375,6 +387,27 @@ export class AppointmentsController {
       return readBookings(scope, path.calendarId, { from, to });
     });
     if (found === null) throw new NotFoundException();
+    return { items: found.map(asBookingBody) };
+  }
+
+  /* Before any `bookings/:something` route would be, so a literal path is never swallowed by
+     a parameter. There is no such GET route today; this comment is here because adding one
+     later without noticing would break search silently. */
+  @Get("bookings/search")
+  @Endpoint({
+    summary: "Find appointments by name",
+    description:
+      "Matches the title and the note, across every calendar the organisation keeps, ignoring the dates on screen — the point is to find an appointment whose week you do not know. Cancelled appointments are excluded. Newest first.",
+    capability: "appointments:read",
+    query: searchQuery,
+    response: bookingList,
+  })
+  async search(
+    @FromQuery() query: Infer<typeof searchQuery>,
+  ): Promise<Infer<typeof bookingList>> {
+    const term = query.q.trim();
+    if (term.length < 2) return { items: [] };
+    const found = await this.db.tx((scope) => searchBookings(scope, term, query.limit ?? 25));
     return { items: found.map(asBookingBody) };
   }
 
