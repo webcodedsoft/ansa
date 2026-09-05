@@ -293,14 +293,17 @@ export const AgentWorkspace = ({
   }, [saveState]);
   /* Leaving with work unsaved is asked about. The browser's own dialog, since a custom one
      cannot stop a navigation. */
+  /* A failed save leaves the work unsaved too, whatever `dirty` says: it is cleared after
+     a failure so the save is not retried on a loop, and the warning must not go with it. */
+  const unsaved = dirty || saving || saveState.status === "failed";
   useEffect(() => {
-    if (!dirty && !saving) return;
+    if (!unsaved) return;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty, saving]);
+  }, [unsaved]);
   /* Discarding must reset every panel and the canvas to what is live, and the keys they
      reset on — the configuration, the graph — do not change when the draft the page never
      heard of (a quiet save's) is thrown away. So a discard bumps this, and it is in every key. */

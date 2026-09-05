@@ -491,6 +491,30 @@ describe("moving steps and services", () => {
     expect(new Set(last.edges.map((e) => JSON.stringify(e)))).toEqual(new Set(three.edges.map((e) => JSON.stringify(e))));
   });
 
+  it("leads a branch that jumped into the removed service on to wherever the service led", () => {
+    /* Inside buy, a branch sends some callers into rent. Removing rent must not take that
+       branch's arm with it: the arm leads on to the close, as rent did. */
+    const base: Flow = {
+      ...withChoice(),
+      nodes: [...withChoice().nodes, { ...node("inner", "decide"), on: "intent" }],
+      edges: [
+        ...withChoice().edges.filter((e) => !(e.from === "buy1" && e.to === "close")),
+        { from: "buy1", to: "inner" },
+        { from: "inner", to: "rent1", when: { equals: "rent" } },
+        { from: "inner", to: "close", otherwise: true },
+      ],
+    };
+    const rent = laneGroups(base).find((lane) => lane.label === "rent");
+    if (rent === undefined) throw new Error("no rent lane");
+    const gone = removeService(base, rent);
+    const arm = gone.edges.find((e) => e.from === "inner" && e.when !== undefined);
+    expect(arm).toEqual({ from: "inner", to: "close", when: { equals: "rent" } });
+    expect(gone.nodes.some((n) => n.id === "rent1")).toBe(false);
+    // What is left to say is the validator's: the arm still waits for an answer the choice no
+    // longer offers, since the service's option went with it. Said, not hidden.
+    expect(shapeProblems(gone)).toEqual(["branch-value-not-an-option@inner"]);
+  });
+
   it("removes the catch-all service too, leading its branch on to wherever the service led", () => {
     const base = withChoice();
     const buy = laneGroups(base).find((lane) => lane.catchAll === true);

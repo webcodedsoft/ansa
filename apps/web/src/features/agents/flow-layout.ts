@@ -933,8 +933,17 @@ export const removeService = (input: Flow, lane: Lane): Flow => {
   const tail = laneTail(flow, lane);
   const onward = tail === undefined ? undefined : defaultEdgeFrom(flow, tail)?.to;
   const rejoin = onward !== undefined && !gone.has(onward) ? onward : undefined;
-  const kept = flow.edges.filter((edge) => edge !== branch && !gone.has(edge.from) && !gone.has(edge.to));
-  const edges = lane.catchAll === true && branch !== undefined && rejoin !== undefined ? [...kept, { ...branch, to: rejoin }] : kept;
+  /* Whatever led into the service from outside it — a branch inside another service that
+     jumped here, or the catch-all — leads on to wherever the service led, so no arm loses
+     its answer for the service it pointed at being gone. The fork's named branch is the
+     service's own and goes with it, option and all; with nowhere to lead on to, a link is
+     dropped and the validator says what is now missing. */
+  const edges = flow.edges.flatMap((edge) => {
+    if (edge === branch) return lane.catchAll === true && rejoin !== undefined ? [{ ...edge, to: rejoin }] : [];
+    if (gone.has(edge.from)) return [];
+    if (gone.has(edge.to)) return rejoin === undefined ? [] : [{ ...edge, to: rejoin }];
+    return [edge];
+  });
   return {
     ...flow,
     nodes: flow.nodes

@@ -4284,6 +4284,31 @@ question feeds its confirm step a "no" without stopping to read back nothing; th
 own confirmation cannot be undone by a model-recorded "no"; a denied readback is in memory
 only, so a reconnected call reads the value back once more, which is the safe way round.
 
+**Reviewed again, deeper (2026-09-05).** Two adversarial reviewers were sent at the call path
+and the builder; both were cut off by a session rate limit before reporting, so the pass was
+done by hand against their briefs. Two findings held. Removing a service that another
+service's branch jumped into deleted that arm outright, condition and all; the arm leads on to
+wherever the removed service led now, the way the catch-all's does, and what is left — that
+the arm waits for an answer the choice no longer offers — is the validator's to say, and it
+does. A failed auto-save cleared `dirty` (so as not to retry on a loop) and with it the
+leave-page warning, so a tab could be closed on unsaved work without a word; the warning
+holds while a save has failed. Suspicions that did not survive the code: the model calling
+`confirm_answer` before the walk reaches the step or for a value the engine is mid-readback on
+(refused: the key holds no answer yet, and the refusal is speech); two calls in one batch (the
+engine's confirmation wins, a second decide is harmless); a confirm on a volunteered value
+(engine-heard is confirmed already and passes; model-recorded stops to be read back); a
+`say` after a confirm (covered once, filtered after); the goodbye inside a tool turn (the
+harness was wrong, the orchestrator right); outbound skips (a skipped key says no, without a
+readback of nothing); `outstanding() === null` with `complete() === false` at a confirm stop
+(the steering is speech, never silence); the version diff ignoring `service` (deliberate: it
+never reaches the call, like x and y); rename collisions through header and inspector (one
+`renameService`); `svc:`/`via:` ids (distinct prefixes); `insertOn` a jump or a ported link
+(joins the arriving service, keeps the port); non-contiguous lane nodes on reorder (gathered
+in order); pointercancel and window resize mid-drag; zoom and `elementFromPoint` (DOM
+geometry, unscaled); Delete with a field focused (the typing guard). Noted, not changed: an
+auto-save while the drawing is unsaveable saves everything but the drawing and the header
+says "saved" — the canvas's own yellow notice is the word on that.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and
