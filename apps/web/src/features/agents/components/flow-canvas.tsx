@@ -1690,6 +1690,36 @@ export const FlowCanvas = ({
   const fitRef = useRef(fit);
   fitRef.current = fit;
 
+  /**
+   * A canvas that mounted inside a closed tab has never been measured.
+   *
+   * `Tabs` renders every panel eagerly and hides the closed ones with `hidden`, so a form
+   * half-filled on one tab is still there when you come back. A canvas pays for that: it
+   * measures a viewport of 0×0, computes its scale and offset against nothing, and when the
+   * tab is finally opened the cards sit on top of the toolbar. The observer above does not
+   * rescue it — that one re-centres, which keeps the very scale and y that were derived from
+   * zero.
+   *
+   * So this fires once, and only for a canvas that started with no size. One that was
+   * visible at mount is left completely alone: its view may be a pan and zoom somebody chose,
+   * and refitting that on the first resize would throw their place away.
+   */
+  const everSized = useRef(false);
+  useEffect(() => {
+    const port = canvasRef.current;
+    if (port === null) return;
+    everSized.current = port.clientWidth > 0 && port.clientHeight > 0;
+    if (everSized.current) return;
+
+    const observer = new ResizeObserver(() => {
+      if (everSized.current || port.clientWidth === 0 || port.clientHeight === 0) return;
+      everSized.current = true;
+      fitRef.current();
+    });
+    observer.observe(port);
+    return () => observer.disconnect();
+  }, []);
+
   const updateSelected = (patch: Partial<FlowNode>, what: string) => {
     edit((f) => ({ ...f, nodes: f.nodes.map((n) => (n.id === selected ? { ...n, ...patch } : n)) }), `${selected ?? ""}:${what}`);
   };

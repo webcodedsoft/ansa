@@ -4,58 +4,8 @@ import { Tag } from "@/components/ui";
 import { when } from "@/lib/format";
 
 import { campaignTone, windowSummary } from "../campaigns.display";
+import { CampaignProgress } from "./campaign-progress";
 import type { CampaignSummary } from "../campaigns.service";
-
-/**
- * How far through a campaign is, as a bar and a figure.
- *
- * "Done" is total minus pending rather than answered: a call that rang out, hit voicemail or
- * was suppressed is finished with, and counting only answers would leave a campaign that has
- * dialled everybody sitting at 40% forever. Answered is shown separately because it is the
- * number somebody actually cares about, and the two say different things.
- *
- * A campaign with nobody on it renders no bar at all. Zero of zero is not 0% or 100%, and
- * drawing either would be inventing a fact about an empty list.
- */
-const Progress = ({ campaign }: { readonly campaign: CampaignSummary }) => {
-  if (campaign.total === 0) {
-    return (
-      <p className="text-[12px] text-[var(--ink-3)]">
-        Nobody on it yet — add contacts to give it something to dial.
-      </p>
-    );
-  }
-
-  const settled = campaign.total - campaign.pending;
-  const percent = Math.round((settled / campaign.total) * 100);
-
-  return (
-    <div>
-      <div className="mb-1.5 flex items-baseline justify-between gap-2">
-        <span className="text-[12px] text-[var(--ink-3)]">
-          {settled} of {campaign.total} called
-        </span>
-        <span className="text-[12px] tabular-nums text-[var(--ink-3)]">{percent}%</span>
-      </div>
-      <div
-        /* `--hairline`, not `--surface-2`. The track has to stay visible against the card it
-           sits on in both themes, and `--surface-2` is white at 60% in light mode — an
-           invisible track on a white card, which reads as a bar that is always at 100%. */
-        className="h-1.5 overflow-hidden rounded-full bg-[var(--hairline)]"
-        role="progressbar"
-        aria-valuenow={percent}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-label={`${settled} of ${campaign.total} called`}
-      >
-        <div
-          className="h-full rounded-full bg-[var(--accent)] transition-[width]"
-          style={{ width: `${percent}%` }}
-        />
-      </div>
-    </div>
-  );
-};
 
 const Figure = ({ label, value }: { readonly label: string; readonly value: number }) => (
   <div>
@@ -98,7 +48,7 @@ export const CampaignCard = ({
       <Tag tone={campaignTone[campaign.status]}>{campaign.status}</Tag>
     </div>
 
-    <Progress campaign={campaign} />
+    <CampaignProgress pending={campaign.pending} total={campaign.total} />
 
     <p className="text-[12px] leading-relaxed text-[var(--ink-2)]">
       {windowSummary(campaign.callingWindow)}

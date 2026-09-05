@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 
-import { Notice, Panel, SectionHead, SubmitButton } from "@/components/ui";
+import { Card, Notice, SubmitButton } from "@/components/ui";
 import type { ToolsDocument } from "@/features/agents/agents.service";
 import { FlowCanvas } from "@/features/agents/components/flow-canvas";
 import { registryTools } from "@/features/agents/components/tools-tab";
@@ -67,14 +67,12 @@ export const CampaignConversation = ({
   const available = registryTools(tools).map((tool) => ({ name: tool.name, enabled: true }));
 
   return (
-    <Panel>
-      <SectionHead>The conversation</SectionHead>
-      <p className="mb-3.5 max-w-[62ch] text-[12.5px] leading-relaxed text-[var(--ink-3)]">
-        Optional. A campaign that only confirms something needs no drawing — the agent says why
-        it rang, listens, and records how it went. Draw one when the call has to collect
-        something: a new date, a reason, a number to ring back on.
-      </p>
-
+    /* `Card`, not `Panel` with a section head inside it — `Panel` is an unpadded surface, so
+       the heading and the canvas sat flush against its border. Same fix as the brief. */
+    <Card
+      title="The conversation"
+      description="Optional. A campaign that only confirms something needs no drawing — the agent says why it rang, listens, and records how it went. Draw one when the call has to collect something: a new date, a reason, a number to ring back on."
+    >
       {!editable && (
         <Notice tone="info">
           This campaign has started, so its conversation is fixed. It is shown here to read.
@@ -122,6 +120,6 @@ export const CampaignConversation = ({
           )}
         </div>
       )}
-    </Panel>
+    </Card>
   );
 };

@@ -3,10 +3,9 @@
 import { useActionState, useState } from "react";
 
 import {
+  Card,
   Notice,
   NumberField,
-  Panel,
-  SectionHead,
   SelectField,
   Stack,
   SubmitButton,
@@ -64,13 +63,13 @@ export const CampaignBrief = ({
   const disabled = !editable || !canWrite;
 
   return (
-    <Panel>
-      <SectionHead>What this call is about</SectionHead>
-      <p className="mb-3.5 max-w-[62ch] text-[12.5px] leading-relaxed text-[var(--ink-3)]">
-        The agent says this in the opening. Everything else — the voice, the manner, the tools —
-        comes from the agent it uses, which is what lets one agent run more than one campaign.
-      </p>
-
+    /* `Card` rather than `Panel` with a section head inside it. `Panel` is an unpadded
+       surface, so the heading and every field sat flush against its border — the same
+       heading band every other card on this page draws, drawn wrong. */
+    <Card
+      title="What this call is about"
+      description="The agent says this in the opening. Everything else — the voice, the manner, the tools — comes from the agent it uses, which is what lets one agent run more than one campaign."
+    >
       {!editable && (
         <Notice tone="info">
           This campaign has started, so what it says is fixed. A call may already be in flight,
@@ -81,7 +80,11 @@ export const CampaignBrief = ({
 
       {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
 
-      <form action={action}>
+      {/* Held to a reading measure. These are sentences somebody writes and then reads back,
+          and a text field stretched across a 1200px page is neither pleasant to write in nor
+          possible to scan — the helper text under each one is already capped, which left the
+          inputs and their explanations on two different widths. */}
+      <form action={action} className="max-w-[70ch]">
         <input type="hidden" name="campaignId" value={campaignId} />
         <Stack gap="md">
           <TextField
@@ -163,6 +166,6 @@ export const CampaignBrief = ({
           )}
         </Stack>
       </form>
-    </Panel>
+    </Card>
   );
 };

@@ -4812,6 +4812,42 @@ rather than landed as inventory — the wave that needs them adds them wired.
       both themes. Worth keeping: the first grid comment claimed a measurement taken off a
       downscaled screenshot and was wrong by 50%; the computed width was 326px, not 210px.
 
+- [x] **The campaign page, redesigned** (this session)
+
+      It was one scroll holding everything: three stat boxes, a control strip, a long brief
+      form, a full flow canvas, and the call list underneath all of it. Two things were wrong
+      with that. The canvas is a work surface and wants width, which it never got at the bottom
+      of a column; and the call list — the thing you open the page for while a campaign is
+      running — sat below a form you had already finished with.
+
+      Now: one panel for the state, and tabs for the work. The panel carries the progress bar,
+      the counts and the two controls, so "Schedule" sits beside the word `draft` rather than a
+      row away from it. Which tab opens is decided by status — a draft is being written, so the
+      brief is the work; anything started is being watched, so the calls are.
+
+      Progress comes from `CampaignProgress`, extracted so the list card and this page cannot
+      come to disagree about what "done" means.
+
+      **The bug worth writing down.** `Tabs` renders every panel eagerly and hides the closed
+      ones with `hidden`, which is deliberate — a half-filled form survives a tab switch. A
+      canvas pays for that: it measured a 0×0 viewport, computed its scale and offset against
+      nothing, and opened with its cards sitting on top of the toolbar. Clicking Fit corrected
+      it, which is what identified the cause. The existing `ResizeObserver` was no rescue — it
+      re-centres, keeping the very scale and y derived from zero. `flow-canvas` now fits once,
+      and only for a canvas that started with no size; one visible at mount is left alone,
+      because its view may be a pan and zoom somebody chose. The agent workspace has the same
+      tabs-plus-canvas arrangement, so this fixes a latent bug there too.
+
+      Two smaller things found by looking: `CampaignBrief` and `CampaignConversation` both
+      rendered into a bare `Panel`, which is an unpadded surface, so their headings and fields
+      sat flush against the border. Both are `Card` now, which draws the padded heading band
+      every other card on the page has. And the brief's inputs stretched the full width while
+      their own helper text was capped at 62 characters — two different measures for the same
+      field. The form is held to 70 characters.
+
+      Not done: the canvas column is still narrow inside a ~1010px content width, since the
+      builder is three columns. Same as the agent workspace, and not made worse here.
+
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The queue drains, the consent gate is in the path, and a call can now offer and take a time,
 but every one of those is green tests and database round trips. By Rule 1 both slices are open
