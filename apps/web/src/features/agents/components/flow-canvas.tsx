@@ -945,8 +945,8 @@ export const FlowCanvas = ({
       const boxTop = { x, y: frame.top - LANE_HEAD };
       const boxBottom = { x, y: frame.top + BODY_H + 8 };
       return [
-        { key: `${at}`, edge: edgeKey(edge), d: elbow(p1, boxTop, boxTop.y - 12), jump: false, label: "", mid: boxTop },
-        { key: `${at}b`, edge: edgeKey(edge), d: elbow(boxBottom, p2, p2.y - 16), jump: false, label: "", mid: p2 },
+        { key: `${at}`, edge: edgeKey(edge), d: elbow(p1, boxTop, boxTop.y - 12), jump: false, label: "", mid: boxTop, end: null },
+        { key: `${at}b`, edge: edgeKey(edge), d: elbow(boxBottom, p2, p2.y - 16), jump: false, label: "", mid: p2, end: p2 },
       ];
     }
 
@@ -962,6 +962,7 @@ export const FlowCanvas = ({
           jump: true,
           label: ports[index]?.label ?? "",
           mid: { x: p1.x, y: p1.y + 12 },
+          end: p2,
         },
       ];
     }
@@ -977,7 +978,7 @@ export const FlowCanvas = ({
     const fansOut = from.id === laneFork && (intoLane || lanes.some((lane) => lane.head === to.id));
     const rejoins = inService.has(from.id) && !inService.has(to.id);
     const d = fansOut ? elbow(p1, p2, p2.y - LANE_HEAD - 12) : rejoins ? elbow(p1, p2, p2.y - 16) : bezier(p1, p2);
-    return [{ key: `${at}`, edge: edgeKey(edge), d, jump: false, label: splits && !intoLane ? (ports[index]?.label ?? "") : "", mid }];
+    return [{ key: `${at}`, edge: edgeKey(edge), d, jump: false, label: splits && !intoLane ? (ports[index]?.label ?? "") : "", mid, end: p2 }];
   });
 
   const localPoint = (e: ReactPointerEvent): Point => {
@@ -1003,24 +1004,30 @@ export const FlowCanvas = ({
     const p2 = localPoint(e);
     setTemp({ x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y });
   };
-  const onOutPortPointerUp = (e: ReactPointerEvent<HTMLSpanElement>) => {
-    const wire = wireRef.current;
-    wireRef.current = null;
-    setTemp(null);
-    if (!wire) return;
-    const target = document.elementFromPoint(e.clientX, e.clientY);
-    const dropNode = target?.closest("[data-flow-node]");
-    const to = dropNode?.getAttribute("data-flow-node");
-    /* Dropped on a service rather than on a step: the link goes to the service's first
-       step, and — from the fork, for an arm with no answer yet — the service's name becomes
-       the answer and an option on the choice, so the fork can publish as it stands. */
-    const onLane = lanes.find((lane) => lane.id === target?.closest("[data-lane]")?.getAttribute("data-lane"));
-    if ((to === null || to === undefined) && onLane !== undefined && onLane.id !== "opening" && onLane.ids.length > 0 && onLane.head !== wire.from) {
-      const link = wire.port.wire(onLane.head ?? "");
-      edit((f) => linkToService({ ...f, edges: f.edges.filter((x) => !wire.port.holds(x)) }, link, onLane));
-    } else {
-      if (to === null || to === undefined || to === wire.from) return;
-      edit((f) => ({ ...f, edges: [...f.edges.filter((x) => !wire.port.holds(x)), wire.port.wire(to)] }));
+  /**
+   * Lead a way out somewhere: to a step, or to a service.
+   *
+   * Whatever the port led to before is dropped and the new link takes its place, so this is
+   * both how a link is made and how one is moved. Led to a service, the link goes to the
+   * service's first step, and — from the fork, for an arm with no answer yet — the service's
+   * name becomes the answer and an option on the choice, so the fork can publish as it stands.
+   * The link that results stays picked when the one before it was, so a moved link can be
+   * followed to where it now goes.
+   */
+  const lead = (wire: { readonly from: string; readonly port: Port }, target: string | Lane) => {
+    const lane = typeof target === "string" ? undefined : target;
+    const to = typeof target === "string" ? target : (target.head ?? "");
+    if (to === "" || to === wire.from) return;
+    if (lane !== undefined && (lane.id === "opening" || lane.ids.length === 0)) return;
+    const link = wire.port.wire(to);
+    const wasPicked = selectedEdge !== null && edges.some((x) => wire.port.holds(x) && edgeKey(x) === selectedEdge);
+    edit((f) => {
+      const without = { ...f, edges: f.edges.filter((x) => !wire.port.holds(x)) };
+      return lane === undefined ? { ...without, edges: [...without.edges, link] } : linkToService(without, link, lane);
+    });
+    if (wasPicked) {
+      const named = lane !== undefined && link.when !== undefined && "equals" in link.when && link.when.equals === "" ? { ...link, when: { equals: lane.label } } : link;
+      setSelectedEdge(edgeKey(named));
     }
     /* A branch that was waiting for somewhere to go now has one, so it is an edge and stops
        being pending. Leaving it would show the same branch twice. */
@@ -1028,6 +1035,30 @@ export const FlowCanvas = ({
       const at = Number(wire.port.key.slice("pending:".length));
       setPending((all) => ({ ...all, [wire.from]: (all[wire.from] ?? []).filter((_, i) => i !== at) }));
     }
+  };
+
+  const onOutPortPointerUp = (e: ReactPointerEvent<HTMLSpanElement>) => {
+    const wire = wireRef.current;
+    wireRef.current = null;
+    setTemp(null);
+    if (!wire) return;
+    const target = document.elementFromPoint(e.clientX, e.clientY);
+    const to = target?.closest("[data-flow-node]")?.getAttribute("data-flow-node");
+    if (to !== null && to !== undefined) return lead(wire, to);
+    const onLane = lanes.find((lane) => lane.id === target?.closest("[data-lane]")?.getAttribute("data-lane"));
+    if (onLane !== undefined) lead(wire, onLane);
+  };
+
+  /**
+   * Pick up the arriving end of the picked link and carry it somewhere else. The same drag
+   * as from a port dot — the wire follows the pointer from where the link leaves — with the
+   * port worked out from the link, so dropping it is the same `lead`.
+   */
+  const onLinkEndPointerDown = (e: ReactPointerEvent<HTMLSpanElement>, edge: FlowEdge) => {
+    const from = byId(edge.from);
+    const port = from === undefined ? undefined : portsFor(from).find((one) => one.holds(edge));
+    if (from === undefined || port === undefined) return;
+    onOutPortPointerDown(e, from, port);
   };
 
   /**
@@ -1161,7 +1192,7 @@ export const FlowCanvas = ({
   };
 
   const onCanvasPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if ((e.target as HTMLElement).closest("[data-flow-node], [data-canvas-bar], [data-lane], [data-add-service]")) return;
+    if ((e.target as HTMLElement).closest("[data-flow-node], [data-canvas-bar], [data-lane], [data-add-service], [data-link-end]")) return;
     panRef.current = { startX: e.clientX, startY: e.clientY, panX: viewLive.current.x, panY: viewLive.current.y };
     e.currentTarget.setPointerCapture(e.pointerId);
     setSelected(null);
@@ -2001,6 +2032,26 @@ export const FlowCanvas = ({
               )}
             </svg>
 
+            {/* The picked link's arriving end, as a handle: drag it to another step or service
+                and the link goes there instead. Drawn after the cards so it sits on top of the
+                dot it covers. */}
+            {pickedEdge !== null &&
+              edgePaths
+                .filter((p) => p.edge === selectedEdge && p.end !== null)
+                .map((p) => (
+                  <span
+                    key={`end:${p.key}`}
+                    data-link-end
+                    role="button"
+                    aria-label="Drag to lead this link somewhere else"
+                    title="Drag to another step or service"
+                    className="absolute z-[3] size-[15px] cursor-grab rounded-full border-2 border-[var(--accent)] bg-[var(--accent)] shadow-[0_0_0_3px_var(--accent-soft)] active:cursor-grabbing"
+                    style={{ left: (p.end?.x ?? 0) - 7.5, top: (p.end?.y ?? 0) - 7.5 }}
+                    onPointerDown={(e) => onLinkEndPointerDown(e, pickedEdge)}
+                    onPointerMove={onOutPortPointerMove}
+                    onPointerUp={onOutPortPointerUp}
+                  />
+                ))}
             {inGraphOrder.filter((n) => !hidden.has(n.id)).map((n) => {
               const kind = NODE_KINDS[n.kind];
               const ports = portsFor(n);
@@ -2226,6 +2277,45 @@ export const FlowCanvas = ({
                   <b className="font-medium text-[var(--ink-2)]">{cardLine(byId(pickedEdge.to) ?? blankNode("", "say", 0, 0), edges).title || "an unnamed step"}</b>. The dashes run the way the call goes.
                 </p>
               </div>
+              {/* Where it goes, as a list: every step, then every service, for the keyboard
+                  and for a drawing too big to drag across. */}
+              <label className="flex flex-col gap-1 text-[12.5px]">
+                <span>Leads to</span>
+                <select
+                  aria-label="Where this link leads"
+                  value={pickedEdge.to}
+                  className={CONTROL}
+                  onChange={(e) => {
+                    const from = byId(pickedEdge.from);
+                    const port = from === undefined ? undefined : portsFor(from).find((one) => one.holds(pickedEdge));
+                    if (from === undefined || port === undefined) return;
+                    const value = e.target.value;
+                    const lane = lanes.find((one) => `lane:${one.id}` === value);
+                    lead({ from: from.id, port }, lane ?? value);
+                  }}
+                >
+                  <optgroup label="Steps">
+                    {inGraphOrder
+                      .filter((m) => m.id !== pickedEdge.from && m.kind !== "start")
+                      .map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {NODE_KINDS[m.kind].title}: {cardLine(m, edges).title || m.id}
+                        </option>
+                      ))}
+                  </optgroup>
+                  {lanes.some((lane) => lane.id !== "opening" && lane.ids.length > 0) && (
+                    <optgroup label="Services">
+                      {lanes
+                        .filter((lane) => lane.id !== "opening" && lane.ids.length > 0 && lane.head !== pickedEdge.from)
+                        .map((lane) => (
+                          <option key={lane.id} value={`lane:${lane.id}`}>
+                            {lane.label}
+                          </option>
+                        ))}
+                    </optgroup>
+                  )}
+                </select>
+              </label>
               {/* Removing a link is deliberate now: pick it, then remove it. Whatever led by it
                   leads nowhere afterwards, which the drawing then says. */}
               <Button

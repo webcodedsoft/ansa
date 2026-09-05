@@ -4135,6 +4135,14 @@ never moved, and whatever `elementFromPoint` finds there carrying `data-edge` is
 picked (`onCanvasPointerUp`). Proved with the extension's own click this time, dashes seen
 moving between two samples 130ms apart.
 
+**A picked link can be led elsewhere (2026-09-05).** Its arriving end is a handle: drag it onto
+another step or a service and the link goes there instead, by the same `lead` the port dots
+use — the old link dropped, the new one made, a service's name taken as the answer when the
+arm had none, and the link staying picked so it can be followed to where it now goes. The
+inspector offers the same as a list, "Leads to", every step and then every service, for the
+keyboard and for a drawing too wide to drag across. One path for making, moving and leading
+a link; `onOutPortPointerUp` is now a hit-test and a call.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and
