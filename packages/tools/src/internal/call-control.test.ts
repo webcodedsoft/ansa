@@ -96,6 +96,10 @@ describe("the platform tool set", () => {
       // Also non-data: it writes the caller's own stated answer onto the call's record, and
       // the orchestrator decides whether the field and the answer are ones this agent asks.
       "record_answer",
+      // And this one: a verdict on how the call went, chosen from the campaign's own list.
+      // It reads nothing — it writes a row this campaign owns, and the orchestrator decides
+      // whether the outcome is one the campaign actually listed.
+      "record_call_outcome",
       "transfer_to_human",
       // Also a non-data tool: it hands the call to a person, at a number the operator
       // configured, and answers nothing from a fixture.

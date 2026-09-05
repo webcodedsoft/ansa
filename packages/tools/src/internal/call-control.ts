@@ -38,6 +38,14 @@ export interface CallControlOptions {
    */
   readonly recordAnswer: (field: string, answer: string) => RecordedAnswer;
   /**
+   * How this outbound call went, against the campaign's own list of outcomes.
+   *
+   * Optional because most calls have no campaign behind them: an inbound call has nothing to
+   * report a verdict on, and a campaign that asked for no outcomes is not asking for one
+   * either. Absent means the tool refuses politely rather than being offered and failing.
+   */
+  readonly recordOutcome?: (outcome: string, note: string | null) => RecordedOutcome;
+  /**
    * The caller's yes or no to an answer read back to them.
    *
    * A `confirm` step in the flow reads a value the caller gave earlier back to them and
@@ -357,6 +365,54 @@ const RECORD_ANSWER: ToolDefinition = {
   },
 };
 
+export type RecordedOutcome =
+  | { readonly accepted: true; readonly outcome: string }
+  | { readonly accepted: false; readonly reason: string };
+
+const OUTCOME_PARAMETERS = {
+  type: "object",
+  properties: {
+    outcome: {
+      type: "string",
+      description:
+        "Exactly one of the outcomes listed for this campaign, copied as written.",
+    },
+    note: {
+      type: "string",
+      description:
+        "One sentence on what actually happened, in their words where you can. " +
+        "Use this to say so when none of the listed outcomes fits.",
+    },
+  },
+  required: ["outcome"],
+} as const;
+
+/**
+ * How the call went, for a campaign that asked.
+ *
+ * `read` tier, and that is not a loophole. The tiers are about what a tool does to the world
+ * outside the call: `write` earns a spoken readback because the caller is agreeing to
+ * something, and `irreversible` never fires at all. Recording a verdict changes a row this
+ * campaign owns and nothing the caller has any stake in, so reading it back would be asking
+ * somebody to approve our own bookkeeping.
+ *
+ * The orchestrator owns the check that the outcome is one this campaign actually listed. A
+ * tool that accepted any string would let a model invent a disposition, and the number it
+ * produced would be worse than no number at all.
+ */
+const RECORD_OUTCOME: ToolDefinition = {
+  name: "record_call_outcome",
+  description:
+    "Record how this outbound call went, choosing exactly one of the outcomes listed for the " +
+    "campaign. Record it once, near the end, from what they actually said.",
+  parameters: OUTCOME_PARAMETERS,
+  riskTier: "read",
+  summarise: (result) => {
+    const recorded = result as RecordedOutcome;
+    return recorded.accepted ? `Recorded outcome: ${recorded.outcome}.` : `Not recorded: ${recorded.reason}`;
+  },
+};
+
 const BUSINESS_HOURS: ToolDefinition = {
   name: "business_hours",
   description: "Check whether the office is open right now, and when it next opens.",
@@ -381,6 +437,7 @@ export const CALL_CONTROL_DEFINITIONS: readonly ToolDefinition[] = [
   BUSINESS_HOURS,
   RECORD_ANSWER,
   CONFIRM_ANSWER,
+  RECORD_OUTCOME,
 ];
 
 const handlersFor = (options: CallControlOptions): Readonly<Record<string, InternalHandler>> => {
@@ -418,6 +475,24 @@ const handlersFor = (options: CallControlOptions): Readonly<Record<string, Inter
         return { accepted: false, reason: "both the field and the answer are needed" } satisfies RecordedAnswer;
       }
       return options.recordAnswer(field, answer);
+    },
+
+    [RECORD_OUTCOME.name]: async ({ args }) => {
+      const outcome = typeof args["outcome"] === "string" ? args["outcome"].trim() : "";
+      const note = typeof args["note"] === "string" ? args["note"].trim() : "";
+      if (outcome === "") {
+        return { accepted: false, reason: "an outcome is needed" } satisfies RecordedOutcome;
+      }
+      /* Absent on every inbound call, and on a campaign that asked for no verdict. Refusing
+         in words beats being offered a tool that throws: the model reads the reason and
+         stops trying. */
+      if (options.recordOutcome === undefined) {
+        return {
+          accepted: false,
+          reason: "this call has no campaign outcomes to record against",
+        } satisfies RecordedOutcome;
+      }
+      return options.recordOutcome(outcome, note === "" ? null : note);
     },
 
     [CONFIRM_ANSWER.name]: async ({ args }) => {
