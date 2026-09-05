@@ -4173,6 +4173,18 @@ called "anything else" made of the rest of the call; one branch is not a fork in
 Refusals hand back the object they were given, which is how `edit` tells nothing from
 something. Proved on Oakhaven: rent, then buy, each step still "ready to publish".
 
+**Moving things by hand (2026-09-05).** A drop on empty canvas is a move now: a card goes to
+the point under its ghost, a service goes by the distance it was carried with every card in
+it, a palette step is made where it lands. From that moment the drawing is arranged by hand
+— `layout: "hand"` — and stays as put through every later edit: what an edit adds is placed
+near what it was added to (`placeNew`: under the step that leads to it, a new service to the
+right of everything, nudged aside from a taken spot) and nothing else moves; re-centring
+stops; a lane dropped on another lane is a move, not a reorder. Tidy up derives the layout
+again and fits it, and the drawing is derived until the next move. A saved flow says which it
+is by its positions alone (`samePlaces` against `tidied`), so nothing new is stored; a flow
+that predates named services is always derived. Found on the way: any drag was swallowing the
+next palette click, when only a drag that began on the palette has a click of its own.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and

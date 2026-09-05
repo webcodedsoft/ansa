@@ -5,8 +5,8 @@ import { validateFlow } from "@ansa/shared/flow-validate";
 
 import {
   addService, appendToLane, branchHeads, detach, foldedAway, foldedCount, freshServiceName, insertAfter, jumpEdges, laneFrames,
-  laneGroups, linkToService, moveAfter, moveBefore, moveToLane, moveToNewService, onlyReachableThrough, rejoinPoint, removeService, renameService,
-  reorderService, ROW, sameShape, serviceOf, tidied, TOP, withServiceTags,
+  laneGroups, linkToService, moveAfter, moveBefore, moveToLane, moveToNewService, onlyReachableThrough, placeNew, rejoinPoint, removeService,
+  renameService, reorderService, ROW, samePlaces, sameShape, serviceOf, tidied, TOP, withServiceTags,
 } from "./flow-layout";
 
 /**
@@ -637,5 +637,37 @@ describe("a branch that jumps to another service", () => {
     const gone = foldedAway(flow, ["buy1"]);
     expect([...gone].sort()).toEqual(["buy1", "buy2"]);
     expect(foldedCount(flow, "buy1")).toBe(2);
+  });
+});
+
+describe("a drawing arranged by hand", () => {
+  it("tells the derived layout from somebody's arrangement by the positions alone", () => {
+    const derived = tidied(withServiceTags(forked()));
+    expect(samePlaces(derived, tidied(derived))).toBe(true);
+    const moved: Flow = { ...derived, nodes: derived.nodes.map((n) => (n.id === "rent2" ? { ...n, x: n.x + 300, y: n.y + 40 } : n)) };
+    expect(samePlaces(moved, tidied(moved))).toBe(false);
+  });
+
+  it("places what an edit added near what it was added to, and moves nothing else", () => {
+    const before = tidied(withServiceTags(forked()));
+    const rent2 = before.nodes.find((n) => n.id === "rent2");
+    if (rent2 === undefined) throw new Error("no rent2");
+    const after = placeNew(before, insertAfter(before, "rent2", node("new")));
+    const added = after.nodes.find((n) => n.id === "new");
+    // Under the step that leads to it, one row down.
+    expect(added).toMatchObject({ x: rent2.x, y: rent2.y + ROW });
+    // Everything that was there is exactly where it was.
+    for (const was of before.nodes) expect(after.nodes.find((n) => n.id === was.id)).toMatchObject({ x: was.x, y: was.y });
+    // A second step added to the same place is nudged aside rather than stacked.
+    const twice = placeNew(after, insertAfter(after, "rent2", node("newer")));
+    const second = twice.nodes.find((n) => n.id === "newer");
+    expect(second?.x === added?.x && second?.y === added?.y).toBe(false);
+  });
+
+  it("puts a new service to the right of everything on a hand-arranged drawing", () => {
+    const before = tidied(withServiceTags(forked()));
+    const after = placeNew(before, addService(before, node("head"), "viewings"));
+    const head = after.nodes.find((n) => n.id === "head");
+    expect(head?.x).toBeGreaterThan(Math.max(...before.nodes.map((n) => n.x)));
   });
 });

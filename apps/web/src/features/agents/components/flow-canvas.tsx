@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   GitBranch,
   GripVertical,
+  LayoutGrid,
   Maximize2,
   MessageSquareText,
   PhoneForwarded,
@@ -37,7 +38,8 @@ import { validateFlow } from "@ansa/shared/flow-validate";
 
 import {
   addService, appendToLane, branchEdgeOf, foldedAway, freshServiceName, insertAfter, insertBefore, jumpEdges, LANE_HEAD, laneFrames, laneGroups, LEFT, linkToService,
-  movable, moveAfter, moveBefore, moveToLane, moveToNewService, removeService, renameService, reorderService, sameShape, tidied, TOP, withServiceTags, type Lane,
+  movable, moveAfter, moveBefore, moveToLane, moveToNewService, placeNew, removeService, renameService, reorderService, sameShape, samePlaces, serviceOf, tidied, TOP,
+  withServiceTags, type Lane,
 } from "../flow-layout";
 
 import {
@@ -376,6 +378,13 @@ const stepForward = (history: History): History => {
 };
 
 /* ----------------------------------------------------------------------- layout */
+
+/**
+ * Whether a saved drawing is somebody's arrangement rather than the derived layout. Only a
+ * flow saved by this canvas can be — it names its services — and it is when its positions
+ * are not what the layout would derive.
+ */
+const arrangedByHand = (flow: Flow): boolean => flow.nodes.some((node) => serviceOf(node) !== undefined) && !samePlaces(flow, tidied(flow));
 
 /** What a drag picked up: a kind from the palette, a card by id, or a whole service. */
 type DragSource = { readonly kind: FlowNodeKind } | { readonly node: string } | { readonly lane: Lane };
@@ -733,7 +742,22 @@ export const FlowCanvas = ({
   /* Services named on the way in: a flow saved before steps carried their service is read
      the old way once — a service was whatever one branch of the fork reached — and carries
      names from here on, so the next save writes them. */
-  const [history, setHistory] = useState<History>(() => ({ past: [], present: tidied(withServiceTags(loaded ?? emptyFlow())), future: [] }));
+  const [history, setHistory] = useState<History>(() => {
+    const named = withServiceTags(loaded ?? emptyFlow());
+    return { past: [], present: arrangedByHand(named) ? named : tidied(named), future: [] };
+  });
+  /**
+   * Whether the drawing is arranged by hand or derived from the graph.
+   *
+   * Derived by default: nothing to arrange, nothing untidy. The moment a card or a service is
+   * dropped on empty canvas the drawing is the operator's, and stays as they put it through
+   * every later edit — new steps are placed near what they were added to — until Tidy up
+   * hands it back. A saved flow says which it was by its positions: ones that match what the
+   * layout would derive are derived; any other are somebody's arrangement, kept.
+   */
+  const [layout, setLayout] = useState<"derived" | "hand">(() => (arrangedByHand(withServiceTags(loaded ?? emptyFlow())) ? "hand" : "derived"));
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
   const [pending, setPending] = useState<Readonly<Record<string, readonly FlowCondition[]>>>({});
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1 });
   const [selected, setSelected] = useState<string | null>(null);
@@ -865,7 +889,7 @@ export const FlowCanvas = ({
     setHistory((current) => {
       const changed = change(current.present);
       if (changed === current.present) return current;
-      const next = sameShape(current.present, changed) ? changed : tidied(changed);
+      const next = layoutRef.current === "hand" ? placeNew(current.present, changed) : sameShape(current.present, changed) ? changed : tidied(changed);
       return merge ? { ...current, present: next, future: [] } : remember(current, next);
     });
   };
@@ -1136,7 +1160,7 @@ export const FlowCanvas = ({
   const centreRef = useRef(centre);
   centreRef.current = centre;
   useLayoutEffect(() => {
-    centreRef.current();
+    if (layoutRef.current === "derived") centreRef.current();
   }, [drawingWidth]);
   useEffect(() => {
     const port = canvasRef.current;
@@ -1391,6 +1415,45 @@ export const FlowCanvas = ({
     return { lane };
   };
 
+  /** A point on the screen, in the drawing's own coordinates at the current pan and zoom. */
+  const worldPoint = (clientX: number, clientY: number): Point => {
+    const box = canvasRef.current?.getBoundingClientRect();
+    const { x, y, scale } = viewLive.current;
+    return { x: (clientX - (box?.left ?? 0) - x) / scale, y: (clientY - (box?.top ?? 0) - y) / scale };
+  };
+
+  /**
+   * A drop on empty canvas: put the thing where it was dropped, and from now on the drawing
+   * is arranged by hand. A card goes to the point under its ghost; a service goes by the
+   * distance it was carried, every card in it together; a step from the palette is made where
+   * it was dropped, wired to nothing, for the operator to lead something to.
+   */
+  const place = (live: LiveDrag) => {
+    const { source } = live;
+    const at = worldPoint(live.lastX - live.offsetX, live.lastY - live.offsetY);
+    const { scale } = viewLive.current;
+    if ("lane" in source) {
+      const dx = (live.lastX - live.startX) / scale;
+      const dy = (live.lastY - live.startY) / scale;
+      const moving = new Set(source.lane.ids);
+      setLayout("hand");
+      layoutRef.current = "hand";
+      edit((f) => ({ ...f, nodes: f.nodes.map((n) => (moving.has(n.id) ? { ...n, x: Math.round(n.x + dx), y: Math.round(n.y + dy) } : n)) }));
+      return;
+    }
+    setLayout("hand");
+    layoutRef.current = "hand";
+    if ("node" in source) {
+      const id = source.node;
+      edit((f) => ({ ...f, nodes: f.nodes.map((n) => (n.id === id ? { ...n, x: Math.round(at.x), y: Math.round(at.y) } : n)) }));
+      chooseStep(id);
+      return;
+    }
+    const id = freshId(new Set(nodes.map((n) => n.id)));
+    edit((f) => ({ ...f, nodes: [...f.nodes, blankNode(id, source.kind, Math.round(at.x), Math.round(at.y))] }));
+    chooseStep(id);
+  };
+
   /** What a finished drag does to the graph. */
   const drop = (source: DragSource, target: DropTarget) => {
     if ("kind" in source) {
@@ -1415,8 +1478,9 @@ export const FlowCanvas = ({
     }
     /* Laid out by hand: a reorder keeps every step and every link, so `sameShape` would call
        it unchanged and leave the lanes where they were — the one edit whose whole point is
-       where things are. */
-    if ("beforeLane" in target) edit((f) => tidied(reorderService(f, source.lane, target.beforeLane)));
+       where things are. On a hand-arranged drawing there is no order to change, only places,
+       and the drop is a move like any other. */
+    if ("beforeLane" in target && layoutRef.current === "derived") edit((f) => tidied(reorderService(f, source.lane, target.beforeLane)));
   };
 
   /**
@@ -1477,15 +1541,26 @@ export const FlowCanvas = ({
         if (live.pressed instanceof HTMLInputElement && e.currentTarget.contains(live.pressed)) live.pressed.focus();
         return;
       }
-      swallowClick.current = true;
+      // Only a drag that began on a palette button has a click of its own to swallow.
+      if ("kind" in live.source) swallowClick.current = true;
       setDrag(null);
-      if (live.target !== null) drop(live.source, live.target);
+      if (live.target === null || ("lane" in live.source && layoutRef.current === "hand")) place(live);
+      else drop(live.source, live.target);
     },
     onPointerCancel: () => {
       dragRef.current = null;
       setDrag(null);
     },
   });
+
+  /** Tidy up: the layout derived again from the graph, kept that way until the next move, and brought back into view. */
+  const tidyUp = () => {
+    setLayout("derived");
+    layoutRef.current = "derived";
+    edit((f) => tidied(f));
+    // Fit reads the drawing as rendered, so it waits for the tidied one.
+    requestAnimationFrame(() => fitRef.current());
+  };
 
   /** The card or lane under a drag right now, for the target to say so. */
   const dropAfter = drag?.target !== null && drag?.target !== undefined && "after" in drag.target ? drag.target.after : null;
@@ -1540,6 +1615,9 @@ export const FlowCanvas = ({
     const scale = clampScale(Math.min(1, (port.clientWidth - 16) / right, (port.clientHeight - TOOLBAR_CLEAR) / bottom));
     applyView({ x: (port.clientWidth - right * scale) / 2, y: Math.max(0, TOOLBAR_CLEAR - (TOP - LANE_HEAD) * scale), scale });
   };
+
+  const fitRef = useRef(fit);
+  fitRef.current = fit;
 
   const updateSelected = (patch: Partial<FlowNode>, what: string) => {
     edit((f) => ({ ...f, nodes: f.nodes.map((n) => (n.id === selected ? { ...n, ...patch } : n)) }), `${selected ?? ""}:${what}`);
@@ -1785,6 +1863,12 @@ export const FlowCanvas = ({
             <Button size="sm" variant="ghost" onClick={() => zoomTo(viewLive.current.scale * ZOOM_STEP)} disabled={view.scale >= ZOOM_MAX - 0.001} title="Zoom in (⌘ + scroll)" aria-label="Zoom in">
               <ZoomIn className="size-3.5" />
             </Button>
+            {layout === "hand" && (
+              <Button size="sm" variant="ghost" onClick={tidyUp} title="Lay the drawing out again from the graph">
+                <LayoutGrid className="size-3.5" />
+                Tidy up
+              </Button>
+            )}
             <Button size="sm" variant="ghost" onClick={fit} title="Fit the whole drawing under the viewport">
               <Maximize2 className="size-3.5" />
               Fit

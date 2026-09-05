@@ -522,6 +522,47 @@ export const laneFrames = (input: Flow): readonly { readonly id: string; readonl
     .filter((frame) => frame.id !== "opening");
 };
 
+/** Whether every step sits where it sits in the other graph, to the pixel. */
+export const samePlaces = (a: Flow, b: Flow): boolean => {
+  const at = new Map(a.nodes.map((node) => [node.id, `${node.x},${node.y}`]));
+  return a.nodes.length === b.nodes.length && b.nodes.every((node) => at.get(node.id) === `${node.x},${node.y}`);
+};
+
+/**
+ * Place what an edit added, on a drawing arranged by hand, and move nothing else.
+ *
+ * A new step goes under the step that leads to it; the first step of a new service goes to
+ * the right of everything; anything else goes under the lowest card. Nudged aside when that
+ * spot is taken, so two steps added to one place do not sit on top of each other. The rest of
+ * the drawing is the operator's and is not touched.
+ */
+export const placeNew = (before: Flow, after: Flow): Flow => {
+  const known = new Set(before.nodes.map((node) => node.id));
+  const fresh = after.nodes.filter((node) => !known.has(node.id));
+  if (fresh.length === 0) return after;
+  const placed = new Map(after.nodes.filter((node) => known.has(node.id)).map((node) => [node.id, { x: node.x, y: node.y }]));
+  const taken = (x: number, y: number): boolean => [...placed.values()].some((p) => Math.abs(p.x - x) < 30 && Math.abs(p.y - y) < 30);
+  const free = (x: number, y: number): { x: number; y: number } => {
+    let spot = { x, y };
+    for (let tries = 0; tries < 24 && taken(spot.x, spot.y); tries += 1) spot = { x: spot.x + 24, y: spot.y + 24 };
+    return spot;
+  };
+  const right = Math.max(LEFT, ...[...placed.values()].map((p) => p.x + COLUMN));
+  const bottom = Math.max(TOP, ...[...placed.values()].map((p) => p.y + ROW));
+  for (const node of fresh) {
+    const from = after.edges.find((edge) => edge.to === node.id && placed.has(edge.from));
+    const anchor = from === undefined ? undefined : placed.get(from.from);
+    const spot =
+      anchor !== undefined
+        ? free(anchor.x, anchor.y + ROW)
+        : serviceOf(node) !== undefined && !before.nodes.some((other) => serviceOf(other) === serviceOf(node))
+          ? free(right, TOP + ROW + LANE_GAP)
+          : free(LEFT, bottom);
+    placed.set(node.id, spot);
+  }
+  return { ...after, nodes: after.nodes.map((node) => (known.has(node.id) ? node : { ...node, ...placed.get(node.id) })) };
+};
+
 /**
  * Whether two graphs have the same steps, the same links and the same services.
  *
