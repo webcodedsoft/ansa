@@ -434,8 +434,9 @@ export const bookSlot = async (scope: OrganizationScope, input: NewBooking): Pro
       `insert into appointment_bookings
          (organization_id, calendar_id, contact_id, starts_at, ends_at, status, hold_expires_at,
           source, call_id, external_ref, title, notes)
-       select c.organization_id, c.id, $2, $3, $4, $5, $6, coalesce($7, 'call'), $8, $9, $10, $11
+       select c.organization_id, c.id, ct.id, $3, $4, $5, $6, coalesce($7, 'call'), $8, $9, $10, $11
          from appointment_calendars c
+         left join contacts ct on ct.id = $2
         where c.id = $1
        returning ${BOOKING_COLUMNS}`,
       [
@@ -511,6 +512,11 @@ export const rescheduleBooking = async (
   bookingId: string,
   edit: BookingEdit,
 ): Promise<Booking | null> => {
+  /* The contact is resolved through a subselect over `contacts` rather than written straight
+     in. Referential integrity is checked outside row security, so a bare id would let one
+     organisation pin another's contact onto its own appointment — and then deleting that
+     contact would reach across and null the other organisation's row. Under RLS the subselect
+     finds nothing and the column clears instead. */
   await scope.query("savepoint reschedule_booking");
   let rows: Record<string, unknown>[];
   try {
@@ -520,7 +526,10 @@ export const rescheduleBooking = async (
               ends_at   = coalesce($3, ends_at),
               title     = case when $4 then $5 else title end,
               notes     = case when $6 then $7 else notes end,
-              contact_id = case when $8 then $9 else contact_id end
+              contact_id = case
+                when $8 then (select ct.id from contacts ct where ct.id = $9)
+                else contact_id
+              end
         where id = $1
           and status <> 'cancelled'
         returning ${BOOKING_COLUMNS}`,

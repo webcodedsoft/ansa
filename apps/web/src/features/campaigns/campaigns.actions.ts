@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { failureMessage } from "@/lib/api/server";
+import { listContacts } from "@/features/contacts/contacts.service";
 import { failedForm, invalidForm, succeededForm, type FormState } from "@/lib/form-state";
 
 import {
@@ -149,5 +150,44 @@ export const setStatusAction = async (
     return succeededForm({ status: result.status }, `Campaign is now ${result.status}.`);
   } catch (error) {
     return failedForm(failureMessage(error));
+  }
+};
+
+export interface PickerMatch {
+  readonly id: string;
+  readonly displayName: string | null;
+  readonly phone: string;
+}
+
+export type ContactSearch =
+  | { readonly ok: true; readonly contacts: readonly PickerMatch[] }
+  | { readonly ok: false; readonly message: string };
+
+/**
+ * Find contacts to put on a campaign.
+ *
+ * The picker used to be handed one page of 100 and filter it in the browser, which quietly
+ * made the import feature useless: `readContacts` orders by the most recent call and an
+ * imported contact has never called, so every one of them sorts behind everybody who has.
+ * An organisation with a hundred past callers could import five hundred people and find not
+ * one of them in the picker — the import reported success and then dead-ended.
+ *
+ * Searching the server instead means the directory is reachable whatever its size and
+ * whatever a contact's call history. Failure is reported as a message rather than thrown, so
+ * a picker whose search fails shows "no matches" instead of taking the dialog down.
+ */
+export const findCampaignContacts = async (search: string): Promise<ContactSearch> => {
+  try {
+    const { page } = await listContacts(search === "" ? undefined : search, { perPage: 50 });
+    return {
+      ok: true,
+      contacts: page.items.map((person) => ({
+        id: person.id,
+        displayName: person.displayName,
+        phone: person.phone,
+      })),
+    };
+  } catch (error) {
+    return { ok: false, message: failureMessage(error) };
   }
 };

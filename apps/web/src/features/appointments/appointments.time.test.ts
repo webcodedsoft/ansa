@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { calendarRange } from "./appointments.range";
+
 import {
   addDays,
   availabilityProblem,
@@ -263,5 +265,41 @@ describe("the drawn day is a canvas, not a summary", () => {
     const late = dayWindow([], [{ startMinute: 20 * 60, endMinute: 21 * 60 }]);
     expect(late.startMinute).toBe(8 * 60);
     expect(late.endMinute).toBe(22 * 60);
+  });
+});
+
+describe("a wall time inside a spring-forward gap", () => {
+  /**
+   * Havana jumps at midnight, so 00:00 on 8 March 2026 does not exist there.
+   *
+   * The old two-pass conversion answered with the instant *before* the gap, which in a zone
+   * that jumps at midnight is 23:00 on the previous day. That was not a harmless rounding:
+   * `calendarRange` bounds a view with `zonedTimeToUtc(lastDay + 1, 0)`, so the range ended an
+   * hour early and an appointment in that hour failed `starts_at < to` — absent from the grid,
+   * no error, nothing to notice.
+   */
+  it("resolves forward, not onto the day before", () => {
+    const midnight = zonedTimeToUtc({ year: 2026, month: 3, day: 8 }, 0, "America/Havana");
+    const back = zonedParts(midnight, "America/Havana");
+
+    expect(back.day).toBe(8);
+    expect(back.hour).toBe(1);
+  });
+
+  it("leaves an ordinary day and an autumn repeat alone", () => {
+    const plain = zonedTimeToUtc({ year: 2026, month: 6, day: 10 }, 9 * 60, "America/Havana");
+    expect(zonedParts(plain, "America/Havana")).toMatchObject({ day: 10, hour: 9, minute: 0 });
+
+    // Lagos has no DST at all; midnight is midnight.
+    const lagos = zonedTimeToUtc({ year: 2026, month: 3, day: 8 }, 0, "Africa/Lagos");
+    expect(zonedParts(lagos, "Africa/Lagos")).toMatchObject({ day: 8, hour: 0 });
+  });
+
+  it("keeps a day view's range covering its whole last day", () => {
+    const day = calendarRange("day", { year: 2026, month: 3, day: 7 }, "America/Havana");
+    const endsAt = zonedParts(new Date(day.to), "America/Havana");
+
+    // The exclusive end is the next day's first real instant, not 23:00 on the 7th.
+    expect(endsAt.day).toBe(8);
   });
 });

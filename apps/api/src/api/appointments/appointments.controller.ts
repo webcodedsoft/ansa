@@ -139,6 +139,10 @@ const slot = object({ start: timestamp(), end: timestamp() });
 
 const slots = object({ slots: list(slot) });
 
+/** A day, plus the buffer: enough to catch an appointment that ends just before a range. */
+const bookingLookback = (bufferMinutes: number): number =>
+  24 * 60 * 60_000 + bufferMinutes * 60_000;
+
 const booking = object({
   id: uuid(),
   calendarId: uuid(),
@@ -398,7 +402,19 @@ export class AppointmentsController {
       if (cal === null) return null;
       const windows = await readAvailability(scope, path.calendarId);
       await expireLapsedHolds(scope, path.calendarId, new Date());
-      const bookings = await readBookings(scope, path.calendarId, { from, to });
+      /* Widened by the buffer, and by a day at the start.
+       *
+       * `readBookings` keeps a row only while `ends_at > from`, so a booking that finishes on
+       * or before the range start is never loaded — and `computeFreeSlots` cannot apply a
+       * buffer to a booking it was not given. With a 30-minute buffer and an appointment
+       * ending at 09:00, asking from 09:00 offered 09:00 itself, inside the dead time either
+       * side of it. The day at the start also covers a long appointment that began before the
+       * range and is still running into it. */
+      const guard = bookingLookback(cal.bufferMinutes);
+      const bookings = await readBookings(scope, path.calendarId, {
+        from: new Date(from.getTime() - guard),
+        to: new Date(to.getTime() + cal.bufferMinutes * 60_000),
+      });
       /* The days the range covers *in this calendar's zone*, which is not always the days it
          covers in UTC — half past eleven at night in Lagos is already tomorrow in Kiritimati
          and still today in London. Asking in the calendar's zone is what makes the holiday

@@ -56,11 +56,20 @@ const tzOffsetMs = (instant: Date, timeZone: string): number => {
 /**
  * The UTC instant of a wall-clock time in the zone.
  *
- * The guess reads the wall components as though they were UTC, then shifts by the offset.
- * The offset itself depends on the instant, so on a day the clocks change the first guess can
- * land on the wrong side of the transition — the second read corrects it. A wall time inside a
- * spring-forward gap does not exist; it resolves to one side rather than throwing, which for a
- * window boundary is harmless.
+ * The guess reads the wall components as though they were UTC, then shifts by the offset. The
+ * offset itself depends on the instant, so on a day the clocks change the first guess can land
+ * on the wrong side of the transition and the second read corrects it.
+ *
+ * **A wall time inside a spring-forward gap does not exist, and which side it resolves to is
+ * not a free choice.** Taking `utcGuess - secondOffset` picks the instant *before* the gap,
+ * which for a zone that jumps at midnight is the previous calendar day — so a window boundary
+ * of 00:00 became 23:00 on the day before, and the slot loop then walked forward from a date
+ * it had never checked against the opening hours or against the holidays. Havana, 8 March
+ * 2026: slots were offered at 23:00 on Saturday the 7th, a day with no availability window at
+ * all, and marking the 7th shut did not remove them.
+ *
+ * A gap resolves forward, to the first instant that exists — the convention every date library
+ * follows, and the only one that keeps the result on the day that was asked for.
  */
 const wallTimeToInstant = (
   year: number,
@@ -73,7 +82,18 @@ const wallTimeToInstant = (
   const firstOffset = tzOffsetMs(new Date(utcGuess), timeZone);
   const instant = utcGuess - firstOffset;
   const secondOffset = tzOffsetMs(new Date(instant), timeZone);
-  return new Date(secondOffset === firstOffset ? instant : utcGuess - secondOffset);
+  if (secondOffset === firstOffset) return new Date(instant);
+
+  /* The two offsets disagree, so the wall time sits at a transition. Either candidate may be
+     the real one; the test is whether it reads back as the time that was asked for. */
+  const corrected = utcGuess - secondOffset;
+  const readsBack = (candidate: number): boolean =>
+    candidate + tzOffsetMs(new Date(candidate), timeZone) === utcGuess;
+
+  if (readsBack(corrected)) return new Date(corrected);
+  if (readsBack(instant)) return new Date(instant);
+  // Neither exists: a spring-forward gap. Forward is the later of the two.
+  return new Date(Math.max(instant, corrected));
 };
 
 const pad = (value: number): string => String(value).padStart(2, "0");

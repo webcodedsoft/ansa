@@ -152,9 +152,10 @@ const zoneOffsetMs = (instant: Date, timeZone: string): number => {
 /**
  * The instant at which the wall clock in `timeZone` reads the given date and time.
  *
- * The inverse of `zonedParts`, needed only to bound the week: "Monday 00:00 in the calendar's
+ * The inverse of `zonedParts`, needed only to bound a view: "Monday 00:00 in the calendar's
  * zone" is an instant the slots and bookings queries take. One correction pass handles the
- * hour a DST transition skips or repeats; a no-DST zone settles on the first guess.
+ * hour a DST transition skips or repeats; a no-DST zone settles on the first guess, and a
+ * time inside a spring-forward gap resolves forward rather than onto the day before.
  */
 export const zonedTimeToUtc = (
   date: PlainDate,
@@ -164,10 +165,24 @@ export const zonedTimeToUtc = (
   const hour = Math.floor(minutesFromMidnight / 60);
   const minute = minutesFromMidnight % 60;
   const wallAsUtc = Date.UTC(date.year, date.month - 1, date.day, hour, minute, 0);
-  const firstGuess = new Date(wallAsUtc - zoneOffsetMs(new Date(wallAsUtc), timeZone));
-  const secondOffset = zoneOffsetMs(firstGuess, timeZone);
-  const settled = new Date(wallAsUtc - secondOffset);
-  return settled;
+  const firstOffset = zoneOffsetMs(new Date(wallAsUtc), timeZone);
+  const firstGuess = wallAsUtc - firstOffset;
+  const secondOffset = zoneOffsetMs(new Date(firstGuess), timeZone);
+  if (secondOffset === firstOffset) return new Date(firstGuess);
+
+  /* The offsets disagree, so this wall time sits at a transition. Either candidate might be
+     the real one; the test is whether it reads back as the time that was asked for. */
+  const corrected = wallAsUtc - secondOffset;
+  const readsBack = (candidate: number): boolean =>
+    candidate + zoneOffsetMs(new Date(candidate), timeZone) === wallAsUtc;
+
+  if (readsBack(corrected)) return new Date(corrected);
+  if (readsBack(firstGuess)) return new Date(firstGuess);
+  /* Neither exists: a spring-forward gap. Resolve forward, to the first instant that does.
+     Taking the earlier one puts midnight on the previous calendar day, which truncated a
+     view's range so the last hour of its last day was never fetched — an appointment there
+     was simply absent from the grid, with no error and no gap to notice. */
+  return new Date(Math.max(firstGuess, corrected));
 };
 
 /** Add whole days to a plain date, rolling months and years over correctly. */
