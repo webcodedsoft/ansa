@@ -102,6 +102,13 @@ export interface AgentSummary {
   /** Null is the voice's own pace, which is what almost every agent should use. */
   readonly speakingRate: number | null;
   readonly dialledNumber: string | null;
+  /**
+   * The diary this agent books into, or null when it has none.
+   *
+   * A link and not a spoken word, which is why it is patched rather than published — the
+   * same argument `dialledNumber` makes just above it.
+   */
+  readonly appointmentCalendarId: string | null;
   readonly configVersion: number;
   readonly enabledTools: readonly string[];
   /** Which of the organisation's knowledge sources this agent may answer from. */
@@ -150,6 +157,7 @@ interface AgentRow {
   voice_id: string | null;
   speaking_rate: number | null;
   dialled_number: string | null;
+  appointment_calendar_id: string | null;
   config_version: number;
   enabled_tools: string[] | null;
   knowledge_sources: string[] | null;
@@ -176,6 +184,7 @@ const toSummary = (row: AgentRow): AgentSummary => ({
   voiceId: row.voice_id,
   speakingRate: row.speaking_rate,
   dialledNumber: row.dialled_number,
+  appointmentCalendarId: row.appointment_calendar_id,
   configVersion: row.config_version,
   enabledTools: row.enabled_tools ?? [],
   knowledgeSources: row.knowledge_sources ?? [],
@@ -192,6 +201,7 @@ const COLUMNS = `
   a.id, a.organization_id, a.name, a.persona, a.greeting, a.instructions, a.voice_id,
   a.speaking_rate,
   a.dialled_number,
+  a.appointment_calendar_id,
   a.config_version, a.barge_in, a.answering_machine_detection, a.captured_fields,
   a.flow, a.authoring_mode,
   a.deleted_at, a.created_at,
@@ -300,6 +310,15 @@ export const createAgent = async (scope: OrganizationScope, agent: NewAgent): Pr
 export interface AgentEdit {
   /** Null unroutes the agent, a number moves it, omitted leaves it alone. */
   readonly dialledNumber?: string | null;
+  /**
+   * Null takes the diary away, an id points the agent at one, omitted leaves it alone.
+   *
+   * The id is checked against this organisation's calendars before it is written, and that
+   * check cannot be skipped: a foreign key is verified with RLS bypassed, so Postgres would
+   * happily accept another organisation's calendar here. The contact link made exactly this
+   * mistake before it was fixed.
+   */
+  readonly appointmentCalendarId?: string | null;
 }
 
 /**
@@ -324,6 +343,22 @@ export const updateAgent = async (
   };
 
   if (edit.dialledNumber !== undefined) set("dialled_number", edit.dialledNumber);
+  if (edit.appointmentCalendarId !== undefined) {
+    /* Resolved through `appointment_calendars` rather than written straight in, so RLS and
+       not the foreign key decides whether this organisation holds it — a foreign key is
+       checked with RLS bypassed and would accept another organisation's calendar.
+
+       This is the second line and not the first: a foreign id selects nothing here, so the
+       column ends up null, which is safe but reads to the caller as "it worked" and quietly
+       takes their diary away. The endpoint refuses an unknown calendar before calling this,
+       and that is where the 422 comes from. */
+    values.push(edit.appointmentCalendarId);
+    sets.push(
+      edit.appointmentCalendarId === null
+        ? `appointment_calendar_id = $${values.length}`
+        : `appointment_calendar_id = (select c.id from appointment_calendars c where c.id = $${values.length})`,
+    );
+  }
 
   if (sets.length === 0) return findAgent(scope, agentId);
 

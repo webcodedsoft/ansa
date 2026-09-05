@@ -137,6 +137,14 @@
                             "maxLength": 16,
                             "pattern": "^\\+[1-9][0-9]{6,14}$"
                           },
+                          "appointmentCalendarId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "uuid",
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                          },
                           "configVersion": {
                             "type": "integer",
                             "minimum": 1
@@ -486,6 +494,7 @@
                           "voiceId",
                           "speakingRate",
                           "dialledNumber",
+                          "appointmentCalendarId",
                           "configVersion",
                           "enabledTools",
                           "knowledgeSources",
@@ -676,6 +685,14 @@
                       "maxLength": 16,
                       "pattern": "^\\+[1-9][0-9]{6,14}$"
                     },
+                    "appointmentCalendarId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
                     "configVersion": {
                       "type": "integer",
                       "minimum": 1
@@ -1025,6 +1042,7 @@
                     "voiceId",
                     "speakingRate",
                     "dialledNumber",
+                    "appointmentCalendarId",
                     "configVersion",
                     "enabledTools",
                     "knowledgeSources",
@@ -1175,6 +1193,14 @@
                       "maxLength": 16,
                       "pattern": "^\\+[1-9][0-9]{6,14}$"
                     },
+                    "appointmentCalendarId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
                     "configVersion": {
                       "type": "integer",
                       "minimum": 1
@@ -1524,6 +1550,7 @@
                     "voiceId",
                     "speakingRate",
                     "dialledNumber",
+                    "appointmentCalendarId",
                     "configVersion",
                     "enabledTools",
                     "knowledgeSources",
@@ -1608,7 +1635,7 @@
           "agents"
         ],
         "summary": "Move which number reaches an agent",
-        "description": "Routing only. Send `dialledNumber: null` to unroute the agent, or a number to move it; refuses with 409 if that number is not available to route. Everything the agent says — its name, greeting, persona, instructions, voice and pace — is published, not patched, so it is not settable here: this endpoint would otherwise be a way to change what a caller hears with no version behind it.",
+        "description": "Routing and the diary. Send `dialledNumber: null` to unroute the agent, or a number to move it; refuses with 409 if that number is not available to route. Send `appointmentCalendarId` to point the agent at a calendar, or null to take it away — a call gets the two booking tools exactly when it is set, and refuses with 422 for a calendar this organisation does not hold. Everything the agent says — its name, greeting, persona, instructions, voice and pace — is published, not patched, so it is not settable here: this endpoint would otherwise be a way to change what a caller hears with no version behind it.",
         "x-ansa-capability": "config:write",
         "parameters": [
           {
@@ -1636,6 +1663,14 @@
                     ],
                     "maxLength": 16,
                     "pattern": "^\\+[1-9][0-9]{6,14}$"
+                  },
+                  "appointmentCalendarId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uuid",
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
                   }
                 },
                 "required": [],
@@ -1704,6 +1739,14 @@
                       ],
                       "maxLength": 16,
                       "pattern": "^\\+[1-9][0-9]{6,14}$"
+                    },
+                    "appointmentCalendarId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
                     },
                     "configVersion": {
                       "type": "integer",
@@ -2054,6 +2097,7 @@
                     "voiceId",
                     "speakingRate",
                     "dialledNumber",
+                    "appointmentCalendarId",
                     "configVersion",
                     "enabledTools",
                     "knowledgeSources",

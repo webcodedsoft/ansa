@@ -207,6 +207,12 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("the agents endp
   afterAll(async () => {
     await app?.close();
     for (const id of organizations) {
+      /* The diary rows first. Every appointment table has a foreign key to the organisation,
+         so dropping the organisation while a calendar still points at it fails — and the
+         failure lands in teardown, where it reads as an unrelated flake. */
+      for (const table of ["appointment_bookings", "appointment_availability", "appointment_calendars"]) {
+        await owner.query(`delete from ${table} where organization_id = $1`, [id]);
+      }
       await owner.query("delete from organizations where id = $1", [id]);
     }
     for (const id of users) await owner.query("delete from users where id = $1", [id]);
@@ -594,6 +600,63 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("the agents endp
         body: { tools: [] },
       });
       expect(reply.status, JSON.stringify(reply.body)).toBe(403);
+    });
+
+    /**
+     * Pointing an agent at a diary, and the one way that could have gone wrong quietly.
+     *
+     * A foreign key is checked with RLS bypassed, so Postgres would accept another
+     * organisation's calendar id here without complaint. The contact link made exactly that
+     * mistake. The interesting assertion is not the 422 on its own — it is that the agent's
+     * existing diary survives the refusal, because the first version of the guard resolved
+     * the id through a scoped subselect and a foreign id simply wrote null.
+     */
+    describe("the diary an agent books into", () => {
+      let ours: string;
+
+      beforeAll(async () => {
+        const created = await request("POST", "/api/v1/appointments/calendars", {
+          token: gamma.owner.token,
+          body: { name: "Consulting room", timezone: "Africa/Lagos" },
+        });
+        expect(created.status, JSON.stringify(created.body)).toBe(201);
+        ours = String(created.body["id"]);
+      }, 30_000);
+
+      it("takes one of this organisation's calendars", async () => {
+        const reply = await request("PATCH", `/api/v1/agents/${agentId}`, {
+          token: gamma.owner.token,
+          body: { appointmentCalendarId: ours },
+        });
+        expect(reply.status, JSON.stringify(reply.body)).toBe(200);
+        expect(reply.body["appointmentCalendarId"]).toBe(ours);
+      });
+
+      it("refuses another organisation's calendar and keeps the one it had", async () => {
+        const theirs = await request("POST", "/api/v1/appointments/calendars", {
+          token: alpha.owner.token,
+          body: { name: "Somebody else's room", timezone: "Africa/Lagos" },
+        });
+        expect(theirs.status, JSON.stringify(theirs.body)).toBe(201);
+
+        const reply = await request("PATCH", `/api/v1/agents/${agentId}`, {
+          token: gamma.owner.token,
+          body: { appointmentCalendarId: String(theirs.body["id"]) },
+        });
+        expect(reply.status, JSON.stringify(reply.body)).toBe(422);
+
+        const after = await request("GET", `/api/v1/agents/${agentId}`, { token: gamma.owner.token });
+        expect(after.body["appointmentCalendarId"]).toBe(ours);
+      });
+
+      it("gives the diary back", async () => {
+        const reply = await request("PATCH", `/api/v1/agents/${agentId}`, {
+          token: gamma.owner.token,
+          body: { appointmentCalendarId: null },
+        });
+        expect(reply.status, JSON.stringify(reply.body)).toBe(200);
+        expect(reply.body["appointmentCalendarId"]).toBeNull();
+      });
     });
   });
 });

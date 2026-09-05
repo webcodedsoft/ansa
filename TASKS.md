@@ -4661,9 +4661,77 @@ rather than landed as inventory — the wave that needs them adds them wired.
       trips. By Rule 1 this slice is open until a scheduled call rings a real phone and the
       agent says why it called.
 
-**Still not done, and it is the part that matters.** No handset has rung. The queue drains and
-the gate is in the path, but nothing has proved it on a phone — and no built-in booking tool
-lets a call take an appointment while the caller is on the line. By Rule 1 both slices are open
+- [x] **A call that can take an appointment** (this session)
+
+      Two tools, and the gate that decides whether the model is ever told about them.
+      `find_appointment_slots` is `read` and reads out at most three times, because nine read
+      down a phone is a list nobody remembers the start of. `book_appointment` is `write`, so
+      the dispatcher makes the agent say the time back and get a yes before anything is
+      written — `sayInstant` exists so the readback is "3 March at 2pm" and never an ISO
+      string with an offset on it.
+
+      **The link, and why it is not published configuration.** `agents.appointment_calendar_id`
+      (0067) rides down to the call inside `agent_config_for_number` and its three siblings
+      (0068), beside the escalation numbers. Rule 4 protects the *words a caller hears*; a
+      calendar id is not words, it is a link like `dialled_number`, and pointing an agent at a
+      different diary does not change a syllable it says. Recreating those four functions meant
+      restoring their ACLs by hand — `drop function` plus `create function` regrants EXECUTE to
+      PUBLIC, which 0056 learned expensively and 0057 wrote down.
+
+      **One gate, not two.** `appointmentDefinitions(hasCalendar)` feeds the prompt and
+      `appointmentTools({hasCalendar})` feeds the registry, and both read the same fact, exactly
+      as `knowledgeDefinitions` does. An agent with no diary is told nothing and registers
+      nothing — a tool the model can see is a tool it will offer, and "let me book you in"
+      followed by a refusal is worse than never raising it. The first draft registered both
+      tools and had them refuse; that is the version that would have made the agent lie.
+
+      **The check that matters is in `takeSlot`.** Only an instant the diary *just offered* is
+      booked. The model composes a string, and opening hours, buffers and public holidays live
+      in `computeFreeSlots` and not in the model — so the way to enforce them is to ask again
+      and require an exact match. Re-reading also closes most of the gap between being offered
+      a time and saying yes; the narrow race left over is Postgres's unique index, turned into
+      "somebody has just taken that time". `booking.test.ts` fires two bookings at one slot
+      concurrently and asserts one row.
+
+      **The assembly is shared, not copied.** `freeSlotsIn` was lifted out of the slots endpoint
+      so the console and the call read one function. The buffer lookback, the holiday lookup in
+      the calendar's own zone and the lapsed-hold release were each found once, in one of two
+      copies, and a second copy is a second chance to fix only one of them.
+
+      **The FK does not enforce tenancy.** `PATCH /agents/:id` now takes `appointmentCalendarId`,
+      and it is checked with a scoped `readCalendar` before it is written, because a foreign key
+      is verified with RLS bypassed and Postgres would have accepted another organisation's
+      calendar — the mistake the contact link already made. A subselect alone was not enough: a
+      foreign id selected nothing and wrote null, which reads to the operator as success while
+      quietly taking their diary away. The test asserts the 422 *and* that the agent keeps the
+      calendar it had.
+
+      Console: a Diary card beside Routing on the agent's workspace, applied immediately rather
+      than staged, for the same reason routing is — there is no version for it to wait in.
+
+      **Two seams found by auditing the finished work, both the same shape.** The system prompt
+      is composed per agent and carries the tool list; `OUTBOUND_LAYER` is stacked on per call.
+      So an outbound call was being told it had `book_appointment` — which `dispatch.ts` refuses
+      for every `write` tool on a call we placed. That is exactly the "tool the model can see
+      and cannot use" failure the no-diary gate exists to prevent, arriving by a different road,
+      and it lands on the most obvious outbound campaign there is: a booking reminder. The
+      outbound layer now says plainly that it may read times out and may not take one. The
+      deeper question — whether booking should be carved out of the outbound write refusal at
+      all — is left open on purpose, because it is a change to a security rule and not mine to
+      make quietly.
+
+      The second: the flow canvas offers platform tools as hardcoded options (`business_hours`),
+      and the booking pair was missing, so a designer could not draw a booking step. Worth
+      knowing before fixing it: `guidance.tools` is *steering text* — "Use the X tool now" — and
+      not a restriction on the registry, so a flow-authored agent could already book without any
+      node naming the tool. The gap was convenience, not a blocker.
+
+      Not done: **no handset has rung.** Ten tests book against a real Postgres under RLS, and
+      no caller has said a word.
+
+**Still not done, and it is the part that matters.** No handset has rung — for either slice.
+The queue drains, the consent gate is in the path, and a call can now offer and take a time,
+but every one of those is green tests and database round trips. By Rule 1 both slices are open
 until a scheduled call rings a real handset and an agent books a slot mid-call.
 
 

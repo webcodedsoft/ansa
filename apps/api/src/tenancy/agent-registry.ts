@@ -15,6 +15,7 @@ import {
 } from "@ansa/db";
 import {
   CALL_CONTROL_DEFINITIONS,
+  appointmentDefinitions,
   NO_CONNECTORS,
   NO_EVENTS,
   prepareConnectors,
@@ -109,6 +110,14 @@ export interface CallAgent {
    * list — and that is the reading that degrades into speech rather than into silence.
    */
   readonly flow: Flow | null;
+  /**
+   * The diary this agent books into, when it has one (migration 0067).
+   *
+   * Carried down to the call rather than looked up when a caller asks for a time, because
+   * the lookup would be a round trip inside a turn — and a turn that pauses to ask the
+   * database which calendar it owns is a turn the caller hears as silence.
+   */
+  readonly appointmentCalendarId: string | null;
   /** Outbound only: hang up on voicemail rather than talk to a greeting. */
   readonly answeringMachineDetection: boolean;
   /** Recorded on every call so a call from weeks ago can still be explained (R7.5). */
@@ -161,6 +170,8 @@ export const UNKNOWN_AGENT: CallAgent = {
   // An unregistered number has no agent, so there is no form to conduct.
   capturedFields: [],
   flow: null,
+  // No agent, so no diary. The booking tools are not registered for a call like this.
+  appointmentCalendarId: null,
   configVersion: 0,
 };
 
@@ -322,6 +333,10 @@ const toCallAgent = async (
       tools: [
         ...PLATFORM_TOOLS,
         ...knowledgeDefinitions({ agentId: config.agentId, hasSources: hasKnowledgeSources }),
+        /* Booking sits here for the same reason knowledge does — it is one of ours, built by
+           the registry rather than by `prepareConnectors` — and is listed on exactly the
+           condition it is registered: this agent has been pointed at a diary. */
+        ...appointmentDefinitions(config.appointmentCalendarId !== null),
         ...connectors.tools,
       ],
       fields,
@@ -337,6 +352,7 @@ const toCallAgent = async (
     bargeIn: config.bargeIn,
     capturedFields: fields,
     flow,
+    appointmentCalendarId: config.appointmentCalendarId,
     answeringMachineDetection: config.answeringMachineDetection,
     configVersion: config.configVersion,
   };

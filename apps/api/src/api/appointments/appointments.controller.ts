@@ -36,6 +36,7 @@ import {
   UnprocessableEntityException,
 } from "@nestjs/common";
 
+import { freeSlotsIn } from "./free-slots";
 import { Endpoint } from "../http/endpoint";
 import { apiRoute, FromBody, FromPath, FromQuery } from "../http/request";
 import { choice, integer, list, nullable, object, optional, text, type Infer } from "../http/schema";
@@ -44,9 +45,7 @@ import { OrganizationContext } from "../tenancy/organization-context";
 
 import {
   availabilityProblem,
-  computeFreeSlots,
   isValidTimezone,
-  localDateKey,
   toOffsetIso,
 } from "./slots";
 
@@ -139,10 +138,6 @@ const rangeQuery = object({ from: timestamp(), to: timestamp() });
 const slot = object({ start: timestamp(), end: timestamp() });
 
 const slots = object({ slots: list(slot) });
-
-/** A day, plus the buffer: enough to catch an appointment that ends just before a range. */
-const bookingLookback = (bufferMinutes: number): number =>
-  24 * 60 * 60_000 + bufferMinutes * 60_000;
 
 const booking = object({
   id: uuid(),
@@ -431,49 +426,12 @@ export class AppointmentsController {
     @FromQuery() query: Infer<typeof rangeQuery>,
   ): Promise<Infer<typeof slots>> {
     const { from, to } = asRange(query);
-    const computed = await this.db.tx(async (scope) => {
-      const cal = await readCalendar(scope, path.calendarId);
-      if (cal === null) return null;
-      const windows = await readAvailability(scope, path.calendarId);
-      await expireLapsedHolds(scope, path.calendarId, new Date());
-      /* Widened by the buffer, and by a day at the start.
-       *
-       * `readBookings` keeps a row only while `ends_at > from`, so a booking that finishes on
-       * or before the range start is never loaded — and `computeFreeSlots` cannot apply a
-       * buffer to a booking it was not given. With a 30-minute buffer and an appointment
-       * ending at 09:00, asking from 09:00 offered 09:00 itself, inside the dead time either
-       * side of it. The day at the start also covers a long appointment that began before the
-       * range and is still running into it. */
-      const guard = bookingLookback(cal.bufferMinutes);
-      const bookings = await readBookings(scope, path.calendarId, {
-        from: new Date(from.getTime() - guard),
-        to: new Date(to.getTime() + cal.bufferMinutes * 60_000),
-      });
-      /* The days the range covers *in this calendar's zone*, which is not always the days it
-         covers in UTC — half past eleven at night in Lagos is already tomorrow in Kiritimati
-         and still today in London. Asking in the calendar's zone is what makes the holiday
-         land on the day the caller would actually be offered. */
-      const shut = await readHolidays(scope, {
-        from: localDateKey(from, cal.timezone),
-        to: localDateKey(to, cal.timezone),
-      });
-      return { cal, windows, bookings, shut };
-    });
+    const computed = await this.db.tx((scope) => freeSlotsIn(scope, path.calendarId, { from, to }));
     if (computed === null) throw new NotFoundException();
-    const free = computeFreeSlots({
-      timeZone: computed.cal.timezone,
-      slotMinutes: computed.cal.slotMinutes,
-      bufferMinutes: computed.cal.bufferMinutes,
-      windows: computed.windows,
-      bookings: computed.bookings,
-      holidays: computed.shut.map((day) => day.onDate),
-      from,
-      to,
-    });
     return {
-      slots: free.map((entry) => ({
-        start: toOffsetIso(entry.start, computed.cal.timezone),
-        end: toOffsetIso(entry.end, computed.cal.timezone),
+      slots: computed.slots.map((entry) => ({
+        start: toOffsetIso(entry.start, computed.calendar.timezone),
+        end: toOffsetIso(entry.end, computed.calendar.timezone),
       })),
     };
   }

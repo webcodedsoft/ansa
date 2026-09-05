@@ -33,6 +33,7 @@ import { buildUrl, openDeepgramSession } from "@ansa/deepgram-listen";
 import { openListenSession } from "@ansa/openai-listen";
 import type { TtsProvider } from "@ansa/tts";
 import {
+  appointmentTools,
   callControlTools,
   createCircuitBreaker,
   createToolDispatcher,
@@ -42,6 +43,7 @@ import {
 import { Inject, Injectable, type OnApplicationShutdown } from "@nestjs/common";
 import { WebSocketServer, type WebSocket } from "ws";
 
+import { offerSlots, takeSlot } from "./booking";
 import type { AppConfig } from "../config/env";
 import { ACKNOWLEDGEMENTS, ALL_FILLERS, PROGRESS, STILL_WORKING } from "./filler";
 import { ALL_GREETING_LEADS, chooseGreetingLead } from "./greeting-lead";
@@ -1201,6 +1203,50 @@ export class MediaGateway implements OnApplicationShutdown {
                 searchKnowledge(scope, agentId, query, limit),
               );
             },
+          }),
+        );
+        /* The diary, on exactly the condition the prompt was told about it: this agent has
+           been pointed at a calendar. `appointmentTools` registers nothing when it has not,
+           so the model is never offered a booking the dispatcher would refuse.
+
+           Like the knowledge search, both closures take the organisation scope rather than
+           holding one: a scope is a transaction handle, and keeping one open across a
+           caller's pause would hold a connection for the length of the silence. */
+        /* One gate, not three. A booking needs a database, an organisation and a diary, and
+           an unregistered number has none of them — `organizationId` is null there, which is
+           what already disables tool dispatch outright. Folding them together means
+           `hasCalendar` and the two closures cannot disagree about whether this call can
+           book, which is the disagreement that would register a tool and then refuse it. */
+        const diary =
+          dataSource !== null &&
+          settings.organizationId !== null &&
+          settings.appointmentCalendarId !== null
+            ? {
+                dataSource,
+                organizationId: settings.organizationId,
+                calendarId: settings.appointmentCalendarId,
+              }
+            : null;
+        registerInternalTools(
+          registry,
+          appointmentTools({
+            hasCalendar: diary !== null,
+            findSlots: async (day) =>
+              diary === null
+                ? []
+                : offerSlots(diary.dataSource, diary.organizationId, diary.calendarId, day, new Date()),
+            book: async (startsAt, name) =>
+              diary === null
+                ? { booked: false, reason: "there is no diary to book into" }
+                : takeSlot(
+                    diary.dataSource,
+                    diary.organizationId,
+                    diary.calendarId,
+                    stream.callId,
+                    startsAt,
+                    name,
+                    new Date(),
+                  ),
           }),
         );
         // Prepared when the organization's configuration was loaded, so this is map writes

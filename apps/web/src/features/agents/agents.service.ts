@@ -59,6 +59,18 @@ export const routeAgent = async (agentId: string, dialledNumber: string | null) 
   (await api()).agents.update({ path: { agentId }, body: { dialledNumber } });
 
 /**
+ * Point an agent at a diary, or take it away.
+ *
+ * The same endpoint as routing and applied the same way, immediately, for the same reason:
+ * it changes nothing a caller hears, so there is no version for it to wait in. What it does
+ * change is what the agent is *told it can do* — the two booking tools are registered on a
+ * call exactly when this is set, so clearing it stops the model offering times it could not
+ * then take.
+ */
+export const setAgentCalendar = async (agentId: string, appointmentCalendarId: string | null) =>
+  (await api()).agents.update({ path: { agentId }, body: { appointmentCalendarId } });
+
+/**
  * Stage a behaviour switch. Nothing about a live call changes until somebody publishes.
  *
  * Only the switch that moved is sent. An omitted flag is left as it was — staged or live —

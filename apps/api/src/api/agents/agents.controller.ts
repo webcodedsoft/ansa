@@ -6,6 +6,7 @@ import {
   loadDraftFlow,
   loadPublishedFlow,
   NumberNotRoutable,
+  readCalendar,
   stageAgentSelection,
   stageDraftFlow,
   updateAgent,
@@ -21,6 +22,7 @@ import {
   Patch,
   Post,
   Put,
+  UnprocessableEntityException,
 } from "@nestjs/common";
 
 import { Endpoint } from "../http/endpoint";
@@ -95,6 +97,14 @@ const agent = object({
   speakingRate: nullable(number({ minimum: 0.7, maximum: 1.2 })),
   /** The number that reaches this agent. Null while unrouted, which is a real state. */
   dialledNumber: nullable(phoneNumber()),
+  /**
+   * The diary this agent books into. Null means it takes no appointments, which is most.
+   *
+   * Patched rather than published for the same reason `dialledNumber` is: it changes nothing
+   * a caller hears. The two booking tools are registered on a call exactly when this is set,
+   * so clearing it takes them away and the model is no longer told it can offer times.
+   */
+  appointmentCalendarId: nullable(uuid()),
   /** Per agent. Two agents both on version 3 is ordinary and means nothing. */
   configVersion: integer({ minimum: 1 }),
   /**
@@ -172,6 +182,7 @@ const newAgent = object({
  */
 const agentEdit = object({
   dialledNumber: optional(nullable(phoneNumber())),
+  appointmentCalendarId: optional(nullable(uuid())),
 });
 
 /**
@@ -278,6 +289,9 @@ const toResponse = (row: {
     authoringMode: row.authoringMode,
   }) as unknown as Infer<typeof agent>;
 
+/** Distinguishable from `null`, which already means "no such agent" here. */
+const NO_SUCH_CALENDAR = Symbol("no such calendar");
+
 const asConflict = (error: unknown): never => {
   if (error instanceof NumberNotRoutable) {
     throw new ConflictException(
@@ -337,7 +351,7 @@ export class AgentsController {
   @Endpoint({
     summary: "Move which number reaches an agent",
     description:
-      "Routing only. Send `dialledNumber: null` to unroute the agent, or a number to move it; refuses with 409 if that number is not available to route. Everything the agent says — its name, greeting, persona, instructions, voice and pace — is published, not patched, so it is not settable here: this endpoint would otherwise be a way to change what a caller hears with no version behind it.",
+      "Routing and the diary. Send `dialledNumber: null` to unroute the agent, or a number to move it; refuses with 409 if that number is not available to route. Send `appointmentCalendarId` to point the agent at a calendar, or null to take it away — a call gets the two booking tools exactly when it is set, and refuses with 422 for a calendar this organisation does not hold. Everything the agent says — its name, greeting, persona, instructions, voice and pace — is published, not patched, so it is not settable here: this endpoint would otherwise be a way to change what a caller hears with no version behind it.",
     capability: "config:write",
     params: agentPath,
     body: agentEdit,
@@ -348,8 +362,21 @@ export class AgentsController {
     @FromBody() body: Infer<typeof agentEdit>,
   ): Promise<Infer<typeof agent>> {
     const updated = await this.db
-      .tx((scope) => updateAgent(scope, path.agentId, body))
+      .tx(async (scope) => {
+        /* Checked here rather than left to the foreign key, which is verified with RLS
+           bypassed and would accept another organisation's calendar. `readCalendar` is
+           scoped, so a foreign id reads as one that does not exist — and the caller is
+           refused rather than quietly having the diary unset. */
+        if (body.appointmentCalendarId != null) {
+          const calendar = await readCalendar(scope, body.appointmentCalendarId);
+          if (calendar === null) return NO_SUCH_CALENDAR;
+        }
+        return updateAgent(scope, path.agentId, body);
+      })
       .catch(asConflict);
+    if (updated === NO_SUCH_CALENDAR) {
+      throw new UnprocessableEntityException("That calendar does not exist.");
+    }
     if (updated === null) throw new NotFoundException();
     return toResponse(updated);
   }

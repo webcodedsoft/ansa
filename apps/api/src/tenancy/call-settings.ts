@@ -47,6 +47,14 @@ export interface CallSettings {
    * document to trust.
    */
   readonly flow: Flow | null;
+  /**
+   * The diary this call can book into, or null when the agent has none.
+   *
+   * Null is what decides whether the booking tools exist for this call at all, rather than
+   * being a value they check on the way in. A tool the model can see and cannot use is a
+   * tool it will offer to the caller.
+   */
+  readonly appointmentCalendarId: string | null;
   /** Outbound only: hang up on voicemail instead of talking to a greeting. */
   readonly answeringMachineDetection: boolean;
   readonly name: string;
@@ -112,6 +120,7 @@ export const callSettings = (
     bargeIn: resolved.bargeIn,
     capturedFields: resolved.capturedFields,
     flow: resolved.flow,
+    appointmentCalendarId: resolved.appointmentCalendarId,
     hasKnowledgeSources: resolved.hasKnowledgeSources,
     answeringMachineDetection: resolved.answeringMachineDetection,
     name: resolved.name,

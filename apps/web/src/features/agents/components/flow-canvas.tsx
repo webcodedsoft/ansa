@@ -2766,8 +2766,15 @@ export const FlowCanvas = ({
                         {tool.enabled ? "" : " — not enabled yet"}
                       </option>
                     ))}
-                    {/* Platform tools are on every call and never need enabling. */}
+                    {/* Platform tools are on every call and never need enabling. The two
+                        booking tools are here on the same footing, with the one condition
+                        that is not about enabling: they are registered only when this agent
+                        has been pointed at a calendar under Routing & hours. A step naming
+                        one still publishes without a diary, deliberately — picking the
+                        calendar and publishing are separate acts in either order. */}
                     <option value="business_hours">business_hours — always available</option>
+                    <option value="find_appointment_slots">find_appointment_slots — needs a diary</option>
+                    <option value="book_appointment">book_appointment — needs a diary</option>
                   </SelectField>
                   {selectedNode.tool !== undefined &&
                     selectedNode.tool !== "" &&

@@ -1,5 +1,5 @@
 import { validateFlow, type AuthoringMode, type Flow } from "@ansa/shared";
-import { CALL_CONTROL_DEFINITIONS } from "@ansa/tools";
+import { APPOINTMENT_DEFINITIONS, CALL_CONTROL_DEFINITIONS } from "@ansa/tools";
 
 import { ENFORCED_IN_CODE } from "../../prompts/guarantees";
 import { compileOrganizationLayer } from "../../prompts/organization-layer";
@@ -295,6 +295,12 @@ export const flowPublicationProblems = (input: {
   const available = new Set([
     ...input.enabledTools,
     ...CALL_CONTROL_DEFINITIONS.map((definition) => definition.name),
+    /* The booking tools are platform tools too, and are allowed here whether or not this
+       agent currently has a diary. Publishing and being pointed at a calendar are separate
+       acts that can happen in either order, so refusing the step would block a flow that is
+       correct the moment somebody picks the calendar — and the call path already withholds
+       both tools when there is no diary, which is where that belongs. */
+    ...APPOINTMENT_DEFINITIONS.map((definition) => definition.name),
   ]);
   const unavailable = input.flow.nodes
     .filter((node) => node.kind === "tool" && node.tool !== undefined && node.tool !== "")

@@ -22,5 +22,6 @@ export * from "./connector/http";
 export * from "./connector/mcp";
 export * from "./connector/prepare";
 export * from "./internal/adapter";
+export * from "./internal/appointments";
 export * from "./internal/call-control";
 export * from "./internal/policy";

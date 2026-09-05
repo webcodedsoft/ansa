@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Card, CheckboxField, Notice, NumberField, Stack, Td, TextField } from "@/components/ui";
 
 import type { LiveConfiguration } from "../agents.service";
+import { DiaryCard, type PickableCalendar } from "./diary-card";
 import { RoutingCard, type HeldNumber } from "./routing-card";
 import { SaveBar } from "./save-bar";
 
@@ -10,6 +11,9 @@ interface RoutingTabProps {
   readonly agentId: string;
   /** Every number the organisation holds, so the picker can show what is taken and by whom. */
   readonly held: readonly HeldNumber[];
+  /** The organisation's diaries, and which of them this agent books into. */
+  readonly calendars: readonly PickableCalendar[];
+  readonly appointmentCalendarId: string | null;
   readonly config: LiveConfiguration["config"];
   readonly operatorManaged: LiveConfiguration["operatorManaged"];
   readonly errors: Readonly<Record<string, string>>;
@@ -18,7 +22,7 @@ interface RoutingTabProps {
 }
 
 /** When the organisation counts as open, where a call hands over, and what the operator controls. */
-export const RoutingTab = ({ agentId, held, config, operatorManaged, errors, publishForm, savingDraft }: RoutingTabProps) => {
+export const RoutingTab = ({ agentId, held, calendars, appointmentCalendarId, config, operatorManaged, errors, publishForm, savingDraft }: RoutingTabProps) => {
   const escalation = config.escalation;
   const { consent } = operatorManaged;
   const callingHours =
@@ -51,6 +55,14 @@ export const RoutingTab = ({ agentId, held, config, operatorManaged, errors, pub
         agentId={agentId}
         dialledNumber={operatorManaged.dialledNumber}
         held={held}
+      />
+
+      {/* Beside routing rather than on its own tab: both are links the agent holds rather
+          than words it says, both apply immediately, and neither is in a published version. */}
+      <DiaryCard
+        agentId={agentId}
+        appointmentCalendarId={appointmentCalendarId}
+        calendars={calendars}
       />
 
       <Card title="Escalation" description="Where a call goes when the agent hands over to a person.">

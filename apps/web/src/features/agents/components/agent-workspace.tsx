@@ -54,6 +54,7 @@ import { SettingsStrip, type StripItem } from "./settings-strip";
 import { OverviewTab, type AgentStats, type AttentionItem } from "./overview-tab";
 import { PolicyTab } from "./policy-tab";
 import type { HeldNumber } from "./routing-card";
+import type { PickableCalendar } from "./diary-card";
 import { RoutingTab } from "./routing-tab";
 import { KnowledgeTab } from "./knowledge-tab";
 import { registryTools, ToolsTab } from "./tools-tab";
@@ -160,6 +161,8 @@ interface AgentWorkspaceProps {
   readonly graph: AgentFlowDocument;
   /** Every number the organisation holds, for the routing picker. */
   readonly held: readonly HeldNumber[];
+  /** The organisation's diaries, so one can be picked for this agent to book into. */
+  readonly calendars: readonly PickableCalendar[];
   readonly tools: Awaited<ReturnType<typeof readTools>>;
   readonly knowledge: KnowledgeDocument;
   readonly versions: readonly VersionRow[];
@@ -183,6 +186,7 @@ interface AgentWorkspaceProps {
  */
 export const AgentWorkspace = ({
   held,
+  calendars,
   agent,
   liveConfiguration,
   draft,
@@ -412,7 +416,7 @@ export const AgentWorkspace = ({
     },
     { id: "voice", label: "Voice", problem: problemTabs.has("voice"), panel: <VoiceTab key={shownAs([config, generation])} catalogue={voiceCatalogue} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
     { id: "policies", label: "Policies", problem: problemTabs.has("policies"), panel: <PolicyTab key={shownAs([config, generation])} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
-    { id: "routing", label: "Routing & hours", problem: problemTabs.has("routing"), panel: <RoutingTab key={shownAs([config, generation])} agentId={agent.agentId} held={held} config={config} operatorManaged={operatorManaged} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
+    { id: "routing", label: "Routing & hours", problem: problemTabs.has("routing"), panel: <RoutingTab key={shownAs([config, generation])} agentId={agent.agentId} held={held} calendars={calendars} appointmentCalendarId={agent.appointmentCalendarId} config={config} operatorManaged={operatorManaged} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
     { id: "versions", label: "Versions", panel: <VersionsTab agentId={agent.agentId} versions={versions} liveVersion={agent.configVersion} liveShape={stagedMode} liveBranches={liveBranches} /> },
   ];
 

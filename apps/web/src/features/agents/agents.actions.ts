@@ -29,6 +29,7 @@ import {
   createAgent,
   currentConfiguration,
   routeAgent,
+  setAgentCalendar,
   diffVersions,
   discardDraft,
   saveDraft,
@@ -1109,6 +1110,31 @@ export const setRouting = async (
        numbers page shows which agent answers each. One write, two screens. */
     revalidatePath("/", "layout");
     return succeededForm({ dialledNumber });
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+};
+
+/**
+ * Which diary this agent books into.
+ *
+ * Applied immediately, like routing. The revalidation is narrower than `setRouting`'s: no
+ * other screen shows which calendar an agent uses, so the workspace is the only tree that
+ * has gone stale.
+ */
+export type DiaryState = FormState<{ readonly appointmentCalendarId: string | null }>;
+
+export const setDiary = async (_previous: DiaryState, form: FormData): Promise<DiaryState> => {
+  const agentId = agentFrom(form);
+  if (agentId === null) return failedForm("This form does not say which agent it is for.");
+
+  const raw = form.get("appointmentCalendarId");
+  const appointmentCalendarId = typeof raw === "string" && raw.trim() !== "" ? raw.trim() : null;
+
+  try {
+    await setAgentCalendar(agentId, appointmentCalendarId);
+    revalidatePath("/", "layout");
+    return succeededForm({ appointmentCalendarId });
   } catch (error) {
     return failedForm(failureMessage(error));
   }

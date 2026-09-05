@@ -135,6 +135,14 @@ export interface AgentConfig {
    */
   readonly authoringMode: "form" | "flow";
   /**
+   * The diary this agent books into, or null if it has none (migration 0067).
+   *
+   * A link rather than published words, which is why it rides here beside the escalation
+   * numbers and not in the agent's prompt. Null is the ordinary case and is not an error:
+   * it means the booking tools refuse rather than that something is misconfigured.
+   */
+  readonly appointmentCalendarId: string | null;
+  /**
    * Which of the organization's own systems get pushed a record of a call, and what is masked on
    * the way (Slice 6a, R5.2.4). Null until they configure some, which is every organization.
    *
@@ -178,6 +186,8 @@ interface ConfigRow {
   /** Absent before migration 0060, which is every agent authored as a form. */
   flow?: unknown | null;
   authoring_mode?: "form" | "flow" | null;
+  /** Absent before migration 0068. Null on every agent that has not been pointed at a diary. */
+  appointment_calendar_id?: string | null;
   event_config: unknown;
   escalation_to_number: string | null;
   /** Migration 0055. `undefined` on a database that has not applied it. */
@@ -278,6 +288,9 @@ const toConfig = (row: ConfigRow): AgentConfig => ({
   /* Absent before migration 0060, and "form" is the correct reading of that: every agent
      that existed before the graph did was conducted by the list. */
   authoringMode: row.authoring_mode ?? "form",
+  /* `undefined` against a database without migration 0068, and "no diary" is the right
+     reading of that: an agent that cannot be pointed at a calendar has not been. */
+  appointmentCalendarId: row.appointment_calendar_id ?? null,
   eventConfig: row.event_config ?? null,
   sealedCredentials: toSealed(row),
   configVersion: row.config_version,

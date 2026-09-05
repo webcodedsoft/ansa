@@ -11,6 +11,7 @@ import {
   readTools,
 } from "@/features/agents/agents.service";
 import { AgentWorkspace } from "@/features/agents/components/agent-workspace";
+import { listCalendars } from "@/features/appointments/appointments.service";
 import { listNumbers } from "@/features/connect/connect.service";
 import type {
   AgentStats,
@@ -108,8 +109,17 @@ const AgentWorkspacePage = async ({
   const since = new Date(now - WINDOW_DAYS * DAY_MS).toISOString();
   const previousStart = new Date(now - 2 * WINDOW_DAYS * DAY_MS).toISOString();
 
-  const [liveConfiguration, unpublished, tools, knowledge, readiness, versionPage, numbers, graph] =
-    await Promise.all([
+  const [
+    liveConfiguration,
+    unpublished,
+    tools,
+    knowledge,
+    readiness,
+    versionPage,
+    numbers,
+    graph,
+    calendars,
+  ] = await Promise.all([
     /* The id from the URL, at last. This page used to read whichever agent the database
        picked and render it under whatever id the reader had navigated to — the same document
        on every agent's page. */
@@ -128,6 +138,11 @@ const AgentWorkspacePage = async ({
        than settled: an agent authored as a flow whose graph failed to load would render an
        empty canvas, and the next Save would write that emptiness over a real conversation. */
     readAgentFlow(agentId),
+    /* The organisation's diaries, so the routing tab can say which one this agent books
+       into. Awaited with the rest rather than settled: an empty list and a failed read would
+       render the same "no calendars yet" notice, and telling somebody to go and make one
+       they already have is worse than the page not loading. */
+    listCalendars(),
   ]);
 
   /* Counts and signals are decoration relative to the agent itself, and none of them may
@@ -219,6 +234,7 @@ const AgentWorkspacePage = async ({
     <AgentWorkspace
       agent={agent}
       held={numbers.items}
+      calendars={calendars.items}
       liveConfiguration={liveConfiguration}
       draft={unpublished.draft}
       graph={graph}
