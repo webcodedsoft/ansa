@@ -1,26 +1,27 @@
 import {
   addHoliday,
   bookSlot,
-  rescheduleBooking,
   cancelBooking,
   confirmHold,
   createCalendar,
+  ensureDefaultCalendar,
   expireLapsedHolds,
   readAvailability,
   readBooking,
   readBookings,
-  searchBookings,
   readCalendar,
   readCalendars,
   readHolidays,
   removeHoliday,
   replaceAvailability,
+  rescheduleBooking,
+  searchBookings,
   SlotTaken,
-  updateCalendar,
   type AppointmentCalendar,
   type Booking,
   type Holiday,
   type StoredAvailabilityWindow,
+  updateCalendar,
 } from "@ansa/db";
 import {
   ConflictException,
@@ -216,6 +217,11 @@ const newBooking = object({
 
 const bookingPath = object({ bookingId: uuid() });
 
+/** Only the zone, and even that is optional: everything else about a first calendar is decided. */
+const defaultCalendarBody = object({
+  timezone: optional(text({ minLength: 1, maxLength: 64 })),
+});
+
 /**
  * A calendar date, `YYYY-MM-DD`, with no hour on it.
  *
@@ -268,6 +274,34 @@ export class AppointmentsController {
   async listCalendars(): Promise<Infer<typeof calendarList>> {
     const rows = await this.db.tx((scope) => readCalendars(scope));
     return { items: rows.map(asCalendarBody) };
+  }
+
+  /* Before `calendars/:calendarId`, so the literal path is not read as an id. */
+  @Post("calendars/default")
+  @Endpoint({
+    summary: "Make sure this organisation has a calendar",
+    description:
+      "Idempotent. Creates one calendar, named Appointments, seeded from the organisation's own business hours, and does nothing at all if the organisation already has one. Exists so the appointments screen opens on a diary rather than on a button asking for one; `timezone` may name the zone to keep it in, and defaults to Africa/Lagos.",
+    capability: "appointments:write",
+    body: defaultCalendarBody,
+    response: calendar,
+  })
+  async ensureCalendar(
+    @FromBody() body: Infer<typeof defaultCalendarBody>,
+  ): Promise<Infer<typeof calendar>> {
+    const timezone = body.timezone ?? "Africa/Lagos";
+    if (!isValidTimezone(timezone)) {
+      throw new UnprocessableEntityException(`${timezone} is not a known IANA timezone`);
+    }
+    const made = await this.db.tx(async (scope) => {
+      const created = await ensureDefaultCalendar(scope, timezone);
+      /* Null means one already existed. Return it rather than a 409 — "make sure there is a
+         calendar" is satisfied either way, and a caller that has to branch on which of the
+         two happened is a caller doing the idempotency itself. */
+      return created ?? (await readCalendars(scope))[0] ?? null;
+    });
+    if (made === null) throw new UnprocessableEntityException("this organisation has no calendar and one could not be made");
+    return asCalendarBody(made);
   }
 
   @Post("calendars")

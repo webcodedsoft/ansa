@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { EmptyState, Notice, PageHeader, Panel } from "@/components/ui";
 import { currentPrincipal } from "@/features/auth/auth.service";
 import {
+  ensureCalendar,
   listBookings,
   listCalendars,
   listHolidays,
@@ -80,11 +81,20 @@ const AppointmentsPage = async ({
   readonly searchParams: Promise<AppointmentsSearch>;
 }) => {
   const search = await searchParams;
-  const [principal, { items: calendars }] = await Promise.all([
-    currentPrincipal(),
-    listCalendars(),
-  ]);
+  const [principal, listed] = await Promise.all([currentPrincipal(), listCalendars()]);
   const canWrite = principal.capabilities.includes("appointments:write");
+
+  /* An organisation always has a calendar. Opening this screen on "no calendars yet" and a
+     button is the wrong first thing to show somebody who came to look at a diary, and it is
+     not what any calendar worth copying does. Provisioned on the first visit by somebody who
+     could have made one by hand anyway; a reader without that permission still sees the empty
+     state, which is the honest answer for them. */
+  const calendars =
+    listed.items.length === 0 && canWrite
+      ? await ensureCalendar()
+          .then((made) => [made])
+          .catch(() => listed.items)
+      : listed.items;
 
   if (calendars.length === 0) {
     return (

@@ -23,6 +23,18 @@ import type {
 
 export const listCalendars = async () => (await api()).appointments.listCalendars();
 
+/**
+ * Make sure this organisation has a calendar, and say which.
+ *
+ * Idempotent: it creates one only when there are none, seeded from the organisation's own
+ * business hours. The appointments screen calls it so it opens on a diary rather than on a
+ * button asking for one — nobody opens a calendar expecting to be asked to make it first.
+ */
+export const ensureCalendar = async (timezone?: string) =>
+  (await api()).appointments.ensureCalendar({
+    body: timezone === undefined ? {} : { timezone },
+  });
+
 export const readCalendar = async (calendarId: string) =>
   (await api()).appointments.readCalendar({ path: { calendarId } });
 

@@ -692,11 +692,32 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("the appointment
     await send("DELETE", `/api/v1/appointments/holidays/${String(shut.body["id"])}`);
   });
 
+  it("gives an organisation a calendar the first time it asks, and only the first time", async () => {
+    /* The appointments screen opens on a diary rather than on a button asking for one, which
+       means something has to make the first calendar. It has to be idempotent: two tabs
+       opening at once must not leave the organisation with two. */
+    const before = await send("GET", "/api/v1/appointments/calendars");
+    const had = (before.body["items"] as readonly unknown[]).length;
+
+    const first = await send("POST", "/api/v1/appointments/calendars/default", {});
+    expect(first.status, JSON.stringify(first.body)).toBe(200);
+
+    const again = await send("POST", "/api/v1/appointments/calendars/default", {});
+    expect(again.status, JSON.stringify(again.body)).toBe(200);
+
+    const after = await send("GET", "/api/v1/appointments/calendars");
+    const items = after.body["items"] as readonly Record<string, unknown>[];
+    // This suite's organisation already has calendars, so the guarantee is "no new one".
+    expect(items).toHaveLength(had);
+    expect(again.body["id"]).toBe(first.body["id"]);
+  });
+
   it("refuses every route without a session", async () => {
     for (const path of [
       "/api/v1/appointments/calendars",
       `/api/v1/appointments/calendars/${randomUUID()}/slots?from=2026-03-02T00:00:00Z&to=2026-03-03T00:00:00Z`,
       "/api/v1/appointments/bookings/search?q=adeola",
+      "/api/v1/appointments/calendars/default",
       "/api/v1/appointments/holidays",
     ]) {
       const response = await fetch(`${baseUrl}${path}`);

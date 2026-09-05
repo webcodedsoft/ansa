@@ -120,6 +120,63 @@ export const createCalendar = async (
   return asCalendar(row);
 };
 
+/**
+ * The calendar an organisation always has.
+ *
+ * Appointments used to open on "No calendars yet" and a button, which is the wrong first
+ * screen for a diary: nobody opens a calendar expecting to be asked to make one. Google never
+ * shows it because a calendar always exists. This is that — created once, on the first visit
+ * by somebody who could have created it by hand anyway.
+ *
+ * Seeded from the organisation's own working week rather than from an invented default. It
+ * already told us when it opens, which days it keeps, and that is a better first guess than
+ * nine-to-five on a Monday. A organisation that never set business hours gets no availability
+ * and an empty-but-usable grid, which is honest: the hours are a thing to fill in, not a thing
+ * to fabricate.
+ *
+ * Idempotent by the count, and safe under concurrency by the caller's transaction: two tabs
+ * opening at once serialise on it, and the second sees the first's row. Returns null when one
+ * already exists, so a caller can tell provisioning from a no-op.
+ */
+export const ensureDefaultCalendar = async (
+  scope: OrganizationScope,
+  timezone: string,
+): Promise<AppointmentCalendar | null> => {
+  const existing = await scope.query<Record<string, unknown>>(
+    "select 1 from appointment_calendars limit 1",
+  );
+  if (existing.length > 0) return null;
+
+  const calendar = await createCalendar(scope, {
+    name: "Appointments",
+    timezone,
+    slotMinutes: 30,
+    bufferMinutes: 0,
+    source: "hosted",
+  });
+
+  /* The organisation's own open hours, one window per working day. `business_days` is the
+     same 0-Sunday numbering the availability table uses, so it maps across directly. */
+  const hours = await scope.query<Record<string, unknown>>(
+    "select business_open_hour, business_close_hour, business_days from organizations limit 1",
+  );
+  const row = hours[0];
+  const opens = row?.["business_open_hour"];
+  const closes = row?.["business_close_hour"];
+  const days = row?.["business_days"];
+  if (typeof opens === "number" && typeof closes === "number" && Array.isArray(days) && closes > opens) {
+    await replaceAvailability(
+      scope,
+      calendar.id,
+      days
+        .filter((day): day is number => typeof day === "number")
+        .map((weekday) => ({ weekday, startMinute: opens * 60, endMinute: closes * 60 })),
+    );
+  }
+
+  return calendar;
+};
+
 export const readCalendars = async (
   scope: OrganizationScope,
 ): Promise<readonly AppointmentCalendar[]> => {

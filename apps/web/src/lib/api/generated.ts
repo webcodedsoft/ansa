@@ -949,6 +949,27 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       }>(options, "GET", `/api/v1/appointments/calendars/${encodeURIComponent(input.path.calendarId)}/slots`, input),
 
     /**
+     * Make sure this organisation has a calendar
+     * Idempotent. Creates one calendar, named Appointments, seeded from the organisation's own business hours, and does nothing at all if the organisation already has one. Exists so the appointments screen opens on a diary rather than on a button asking for one; `timezone` may name the zone to keep it in, and defaults to Africa/Lagos.
+     */
+    ensureCalendar: (input: {
+        readonly body: {
+          readonly timezone?: string;
+        };
+      }) =>
+      send<{
+        readonly id: string;
+        readonly name: string;
+        readonly timezone: string;
+        readonly slotMinutes: number;
+        readonly bufferMinutes: number;
+        readonly source: "hosted" | "connector";
+        readonly externalRef: string | null;
+        readonly createdAt: string;
+        readonly updatedAt: string;
+      }>(options, "POST", `/api/v1/appointments/calendars/default`, input),
+
+    /**
      * The days this organisation is shut
      * Every date the organisation keeps closed, earliest first, with the name it gave each one. Organisation-wide: every calendar it holds is shut on these days. `from` and `to` are calendar dates, `YYYY-MM-DD`, and both ends are included; send neither for the whole list.
      */
