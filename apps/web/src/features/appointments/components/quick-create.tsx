@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 
-import { Button, Notice } from "@/components/ui";
+import { Button, Notice, SELECT_MENU_CLASS } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 import { useFormToast } from "@/stores/toast.store";
 
@@ -91,25 +91,35 @@ export const QuickCreate = ({
 
   /* Escape closes, and a press outside closes — the two ways out of a popover a person
      expects without being told. Pointerdown rather than click, so it closes on the press
-     that lands elsewhere rather than waiting for the release. */
+     that lands elsewhere rather than waiting for the release.
+     
+     Both have to know about the time list. It is portalled to the body, so by the DOM a press
+     on "10:30am" is nowhere near this card — choosing a time closed the card instead of
+     setting it. The same for Escape, which should shut the open list first and only close the
+     card when there is no list to shut. */
   useEffect(() => {
     if (span === null) return;
+    const menuIsOpen = (): boolean => document.querySelector(`.${SELECT_MENU_CLASS}`) !== null;
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape" && !menuIsOpen()) onClose();
     };
     const onDown = (event: PointerEvent): void => {
       const target = event.target;
-      if (card.current !== null && target instanceof Node && !card.current.contains(target)) {
-        onClose();
-      }
+      if (!(target instanceof Node)) return;
+      if (target instanceof Element && target.closest(`.${SELECT_MENU_CLASS}`) !== null) return;
+      if (card.current !== null && !card.current.contains(target)) onClose();
     };
-    window.addEventListener("keydown", onKey);
+    /* Capture, not bubble. The list closes itself on Escape from its own handler, which runs
+       first on the way up — so by the time a bubbled listener looked, there was no open list
+       to find and the card closed along with it. Capturing puts this question before the
+       answer. */
+    window.addEventListener("keydown", onKey, true);
     /* Deferred a frame: the very press that opened this card is still being delivered, and
        without the wait it would close the card it just opened. */
     const id = window.setTimeout(() => window.addEventListener("pointerdown", onDown), 0);
     return () => {
       window.clearTimeout(id);
-      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onKey, true);
       window.removeEventListener("pointerdown", onDown);
     };
   }, [span, onClose]);

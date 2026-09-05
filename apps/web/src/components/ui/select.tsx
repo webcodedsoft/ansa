@@ -104,6 +104,16 @@ const flatten = (options: readonly (Choice | Group)[]): readonly Choice[] =>
 const MENU_HEIGHT = 216;
 
 /**
+ * Marks the open list, wherever it is rendered.
+ *
+ * A popover that closes on a press outside itself has to be able to tell that a press on one
+ * of these is not outside: the menu is portalled to the body, so by the DOM it is nowhere near
+ * the popover that owns the select. Without this, choosing a time from the quick-create card
+ * closed the card instead of setting the time.
+ */
+export const SELECT_MENU_CLASS = "ansa-select-menu";
+
+/**
  * The two things that must be real CSS rather than classes.
  *
  * The portal needs a stacking order. And the list needs its `maxHeight` in the library's own
@@ -274,9 +284,13 @@ export const SelectField = ({
           indicatorSeparator: () => "hidden",
           menu: () =>
             cn(
+              SELECT_MENU_CLASS,
               "mt-1 overflow-hidden rounded-lg border border-[var(--hairline)]",
               "bg-[var(--surface-solid)] shadow-xl",
             ),
+          /* The portal wrapper carries it too: the press lands on the menu, but a popover
+             checking `closest` should find the marker either way. */
+          menuPortal: () => SELECT_MENU_CLASS,
           /* The height itself is in `PORTAL_STYLES`, where the library can read it. */
           menuList: () => "py-1 text-left",
           groupHeading: () =>
