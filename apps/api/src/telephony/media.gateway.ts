@@ -43,6 +43,7 @@ import {
 import { Inject, Injectable, type OnApplicationShutdown } from "@nestjs/common";
 import { WebSocketServer, type WebSocket } from "ws";
 
+import { flowAllowsTool } from "@ansa/shared";
 import { offerSlots, takeSlot } from "./booking";
 import type { AppConfig } from "../config/env";
 import { ACKNOWLEDGEMENTS, ALL_FILLERS, PROGRESS, STILL_WORKING } from "./filler";
@@ -1171,6 +1172,13 @@ export class MediaGateway implements OnApplicationShutdown {
         // Bound out of `this` here rather than inside the closure below, which runs per
         // tool call and must not depend on how it was invoked.
         const dataSource = this.dataSource;
+        /* The same question the prompt asked, from the same set. `callControlTools` builds all
+           seven from one list on purpose — so a tool cannot be offered and then be missing —
+           and the filter is applied to its result rather than inside it, keeping that list the
+           single source of what exists while this decides what this call holds. */
+        const allowed = (tool: { readonly definition: { readonly name: string } }): boolean =>
+          flowAllowsTool(settings.namedTools, tool.definition.name);
+
         registerInternalTools(
           registry,
           callControlTools({
@@ -1180,7 +1188,7 @@ export class MediaGateway implements OnApplicationShutdown {
             // Null until the organization configures hours; the tool then says it does not know
             // rather than inventing a nine to five (R6.5, migration 0012).
             businessHours: settings.businessHours,
-          }),
+          }).filter(allowed),
         );
         /* Registered only when the agent has sources, which `knowledgeTools` decides from
            the same availability the prompt was composed from — so the model is never told
@@ -1247,7 +1255,7 @@ export class MediaGateway implements OnApplicationShutdown {
                     name,
                     new Date(),
                   ),
-          }),
+          }).filter(allowed),
         );
         // Prepared when the organization's configuration was loaded, so this is map writes
         // rather than a handshake on the answer path.

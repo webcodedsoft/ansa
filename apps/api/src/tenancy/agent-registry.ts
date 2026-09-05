@@ -30,6 +30,7 @@ import { knowledgeDefinitions } from "../orchestrator/knowledge";
 import { composeSystemPrompt, DEFAULT_SYSTEM_PROMPT } from "../prompts/compose";
 import { compileOrganizationLayer } from "../prompts/organization-layer";
 
+import { flowAllowsTool, namedInternalTools } from "@ansa/shared";
 import { parseCapturedFields, readStoredFlow, type CollectedField } from "./captured-fields";
 import { BASE_KEYTERMS, MAX_KEYTERMS } from "./defaults";
 
@@ -118,6 +119,14 @@ export interface CallAgent {
    * database which calendar it owns is a turn the caller hears as silence.
    */
   readonly appointmentCalendarId: string | null;
+  /**
+   * The internal tools this agent's drawing names, or null when it is not a drawing.
+   *
+   * Carried down rather than recomputed on the socket so the registry gates on the same set
+   * the prompt was filtered by. Two walks of the same graph is two chances to disagree, and
+   * disagreeing is precisely the failure — a tool described and not held.
+   */
+  readonly namedTools: ReadonlySet<string> | null;
   /** Outbound only: hang up on voicemail rather than talk to a greeting. */
   readonly answeringMachineDetection: boolean;
   /** Recorded on every call so a call from weeks ago can still be explained (R7.5). */
@@ -172,6 +181,8 @@ export const UNKNOWN_AGENT: CallAgent = {
   flow: null,
   // No agent, so no diary. The booking tools are not registered for a call like this.
   appointmentCalendarId: null,
+  // No agent means no drawing, and tool dispatch is off entirely on this call anyway.
+  namedTools: null,
   configVersion: 0,
 };
 
@@ -285,6 +296,10 @@ const toCallAgent = async (
   /* The graph, on the same terms as the form above: parsed once here, never on the answer
      path, and never throwing. */
   const flow = config.authoringMode === "flow" ? readStoredFlow(config.flow, config.agentId, log) : null;
+  /* Null for a form-authored agent, and every reader treats that as "gate nothing". An agent
+     conducted by the ordered list has no nodes to name a tool with, so applying the gate to it
+     would take all four tools off every form agent at once. */
+  const named = namedInternalTools(flow);
 
   // Discovery and the MCP handshake happen here, once per configuration load, rather than
   // per call. `prepareConnectors` never throws: a organization whose endpoint is unreachable
@@ -331,12 +346,18 @@ const toCallAgent = async (
     systemPrompt: composeSystemPrompt({
       organization: layer,
       tools: [
-        ...PLATFORM_TOOLS,
+        /* Filtered by what the drawing names, for the four tools that are steps rather than
+           machinery. A flow that never draws a transfer is not told it can transfer — which is
+           the point of the gate, and is also why this filter and the registry's must read the
+           same `named` set. `flowAllowsTool` is that one question. */
+        ...PLATFORM_TOOLS.filter((tool) => flowAllowsTool(named, tool.name)),
         ...knowledgeDefinitions({ agentId: config.agentId, hasSources: hasKnowledgeSources }),
         /* Booking sits here for the same reason knowledge does — it is one of ours, built by
            the registry rather than by `prepareConnectors` — and is listed on exactly the
            condition it is registered: this agent has been pointed at a diary. */
-        ...appointmentDefinitions(config.appointmentCalendarId !== null),
+        ...appointmentDefinitions(config.appointmentCalendarId !== null).filter((definition) =>
+          flowAllowsTool(named, definition.name),
+        ),
         ...connectors.tools,
       ],
       fields,
@@ -352,6 +373,7 @@ const toCallAgent = async (
     bargeIn: config.bargeIn,
     capturedFields: fields,
     flow,
+    namedTools: named,
     appointmentCalendarId: config.appointmentCalendarId,
     answeringMachineDetection: config.answeringMachineDetection,
     configVersion: config.configVersion,

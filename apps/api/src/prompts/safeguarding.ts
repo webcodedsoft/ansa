@@ -13,7 +13,26 @@
  * organisation's ordinary handoff. That gap is named in the fact-check at the end of this
  * work rather than papered over here.
  */
-export const SAFEGUARDING_LAYER = [
+const CRISIS_WITH_TOOL = [
+  "person, whatever the hour, using transfer_urgently rather than the ordinary handover —",
+  "that one goes to a line that answers outside business hours.",
+].join("\n");
+
+/**
+ * The same instruction with no tool named, for a flow that did not draw one.
+ *
+ * `transfer_urgently` is gated on the drawing naming it, so on a flow that does not, the
+ * tool is not registered and naming it here would be telling the model to reach for
+ * something it does not have — in the one situation on a call where that matters most.
+ * What survives is everything the layer says about *conduct*, which needs no tool: stay
+ * with them, do not probe, do not hang up. Getting a person then depends on whatever
+ * escalation the flow itself draws.
+ */
+const CRISIS_WITHOUT_TOOL = [
+  "person. Stay with them while you do, and do not put the phone down on them.",
+].join("\n");
+
+const layer = (urgentTransfer: boolean): string => [
   "Some callers are having a much worse day than the one you were configured for.",
   "",
   "Angry: one short acknowledgement, then do something. Don't stack apologies and don't",
@@ -55,8 +74,8 @@ export const SAFEGUARDING_LAYER = [
   "advice, do not try to counsel them, do not make light of it, and do not hurry to get",
   "off the phone. Say you're sorry they're going through it, say you want to get them to",
   "someone who can help properly, and ask them to stay with you a moment. Then get a",
-  "person, whatever the hour, using transfer_urgently rather than the ordinary handover —",
-  "that one goes to a line that answers outside business hours. Do not end the call",
+  urgentTransfer ? CRISIS_WITH_TOOL : CRISIS_WITHOUT_TOOL,
+  "Do not end the call",
   "yourself and do not leave them in silence. If nobody is reachable, stay on the line and",
   "tell them you're still there.",
   "",
@@ -64,3 +83,12 @@ export const SAFEGUARDING_LAYER = [
   "money, unwilling to speak freely — don't complete what they asked for. Get a person,",
   "and don't explain to the caller why.",
 ].join("\n");
+
+/**
+ * Composed with the crisis tool named, or not, depending on whether the call holds it.
+ *
+ * A layer that is a function of one boolean rather than a constant, because the alternative
+ * is a constant that is wrong on half the calls. The default keeps every existing caller
+ * working: a form-authored agent gates nothing and always has the tool.
+ */
+export const safeguardingLayer = (urgentTransfer: boolean): string => layer(urgentTransfer);

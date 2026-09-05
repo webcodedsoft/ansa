@@ -55,6 +55,13 @@ export interface CallSettings {
    * tool it will offer to the caller.
    */
   readonly appointmentCalendarId: string | null;
+  /**
+   * What this agent's drawing names, or null when it is conducted by the list.
+   *
+   * The registry gates on this so the model is never told about a step the operator did not
+   * draw. Null means no gate — a form-authored agent has no nodes and names nothing.
+   */
+  readonly namedTools: ReadonlySet<string> | null;
   /** Outbound only: hang up on voicemail instead of talking to a greeting. */
   readonly answeringMachineDetection: boolean;
   readonly name: string;
@@ -121,6 +128,7 @@ export const callSettings = (
     capturedFields: resolved.capturedFields,
     flow: resolved.flow,
     appointmentCalendarId: resolved.appointmentCalendarId,
+    namedTools: resolved.namedTools,
     hasKnowledgeSources: resolved.hasKnowledgeSources,
     answeringMachineDetection: resolved.answeringMachineDetection,
     name: resolved.name,

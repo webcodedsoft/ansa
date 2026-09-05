@@ -4,7 +4,7 @@ import { EMOTIONAL_LAYER } from "./emotional";
 import { renderPolicyBlocks, toPolicyBlocks } from "./policy-blocks";
 import { GUARANTEES_LAYER } from "./guarantees";
 import { LOCALE_LAYER } from "./locale";
-import { SAFEGUARDING_LAYER } from "./safeguarding";
+import { safeguardingLayer } from "./safeguarding";
 import { SITUATIONS_LAYER } from "./situations";
 import { VARIATION_LAYER } from "./variation";
 import { fenceOrganizationText, type OrganizationLayer } from "./organization-layer";
@@ -89,7 +89,11 @@ export const composeSystemPrompt = (input: CallPrompt): string =>
     EMOTIONAL_LAYER,
     /* After the emotional read, because both are about the person rather than the task,
        and this is what to do once that read says something is wrong. */
-    SAFEGUARDING_LAYER,
+    /* Named from the same list the task layer describes, so the crisis instruction cannot
+       tell the model to reach for a tool this call does not hold. When `transfer_urgently`
+       is gated off by a drawing that never named it, the conduct survives and the tool name
+       does not. */
+    safeguardingLayer(input.tools.some((tool) => tool.name === "transfer_urgently")),
     SITUATIONS_LAYER,
     GUARANTEES_LAYER,
   ].join("\n\n");

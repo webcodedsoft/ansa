@@ -4729,6 +4729,48 @@ rather than landed as inventory — the wave that needs them adds them wired.
       Not done: **no handset has rung.** Ten tests book against a real Postgres under RLS, and
       no caller has said a word.
 
+- [x] **Four internal tools now register only when a drawing names them** (this session)
+
+      `find_appointment_slots`, `book_appointment`, `transfer_to_human` and `transfer_urgently`
+      are registered for a flow-authored agent only when its graph names them. The other six —
+      `end_call`, `confirm_answer`, `record_answer`, `record_call_outcome`, `business_hours`,
+      `search_knowledge_base` — are untouched. The line is not how dangerous a tool is; it is
+      whether it is a *step somebody draws* or machinery every call needs. `record_answer` and
+      `confirm_answer` are how the engine writes and reads back a captured field, so gating
+      them would stop every flow collecting anything with no error to say why.
+
+      `namedInternalTools(flow)` in `@ansa/shared` is the single answer, and `flowAllowsTool`
+      is the single question. The prompt filter in `agent-registry` and the registry filter in
+      `media.gateway` both read the same set, carried down on `settings.namedTools` rather than
+      recomputed — two walks of one graph is two chances to disagree, and disagreeing *is* the
+      failure this gate exists to prevent.
+
+      **A transfer step names its tool by being one.** `transfer` is its own node kind, not a
+      tool node with `tool` set; `flow-form` walks to `{ kind: "transfer" }`. Reading only
+      `.tool` would have taken the transfer tool off every flow that draws a transfer — the
+      feature failing on its commonest use. `hangup`/`end_call` is the same pairing and is
+      listed for the day `end_call` is gated too.
+
+      **Null is not an empty set.** A form-authored agent has no nodes and cannot name
+      anything, so `namedInternalTools` returns null and every reader treats that as "gate
+      nothing". Collapsing the two would take all four tools off every form agent at once. A
+      flow whose stored document fails to parse also lands on null, which is the existing safe
+      degradation: conduct it with the list, holding everything.
+
+      **What this costs, said plainly.** `callerInCrisis` has exactly one caller —
+      `transfer_urgently` reaching the handoff at `orchestrator.ts`. So a flow that does not
+      draw the crisis handover has no crisis route. That was raised before the change and
+      chosen deliberately. Two consequences were handled rather than left: `SAFEGUARDING_LAYER`
+      named the tool in prose unconditionally and is now `safeguardingLayer(urgentTransfer)`,
+      so a call without the tool keeps every instruction about *conduct* — stay with them, do
+      not probe, do not hang up — and stops naming a tool it does not hold; and the canvas had
+      no way to name `transfer_urgently` at all, so a flow could not have had it even
+      deliberately. It is now an option on a tool step.
+
+      Worth doing next and not done: a readiness warning for a published flow that draws no
+      crisis handover. `readiness.ts` already reports on the crisis number, so it is the
+      natural home, and a silent absence is the thing most likely to go unnoticed.
+
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The queue drains, the consent gate is in the path, and a call can now offer and take a time,
 but every one of those is green tests and database round trips. By Rule 1 both slices are open

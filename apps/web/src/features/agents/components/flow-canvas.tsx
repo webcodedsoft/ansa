@@ -2757,7 +2757,7 @@ export const FlowCanvas = ({
                     label="Tool"
                     value={selectedNode.tool ?? ""}
                     onChange={(e) => updateSelected({ tool: e.target.value }, "tool")}
-                    hint="From the organisation's registry. The step uses it; enabling it for this agent is in Settings, under Tools."
+                    hint="From the organisation's registry. The step uses it; enabling it for this agent is in Settings, under Tools. Booking and the two handovers are registered only when a step names them — a Transfer step counts as naming transfer_to_human."
                   >
                     <option value="">— choose a tool —</option>
                     {availableTools.map((tool) => (
@@ -2775,6 +2775,10 @@ export const FlowCanvas = ({
                     <option value="business_hours">business_hours — always available</option>
                     <option value="find_appointment_slots">find_appointment_slots — needs a diary</option>
                     <option value="book_appointment">book_appointment — needs a diary</option>
+                    {/* The crisis handover. It has no node shape of its own and nothing else
+                        names it, so without this option a flow cannot have it at all — and
+                        these four tools are registered only for a flow that names them. */}
+                    <option value="transfer_urgently">transfer_urgently — crisis handover</option>
                   </SelectField>
                   {selectedNode.tool !== undefined &&
                     selectedNode.tool !== "" &&
