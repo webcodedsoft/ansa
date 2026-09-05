@@ -6,7 +6,7 @@ import { cn } from "@/lib/cn";
  * The agent's own settings, along the top of the canvas instead of behind a button.
  *
  * This replaced a drawer, and the reason is the complaint that produced it: the greeting,
- * the voice, the house rules and the tools are not settings *about* a call, they are part
+ * the voice, the policies and the tools are not settings *about* a call, they are part
  * of what the caller hears. A drawer said otherwise — it put them one click and one overlay
  * away from the steps they belong beside, and covered the drawing while you read them.
  *

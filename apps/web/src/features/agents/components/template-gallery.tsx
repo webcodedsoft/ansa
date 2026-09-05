@@ -49,8 +49,8 @@ export const TemplateGallery = ({
       title="Choose a starting point"
       description={
         mode === "flow"
-          ? "Every template is one organisation's whole front desk — each service it is rung about, its house rules, and the words callers use. Pick one and it is drawn on the canvas, every fork and hand-over included; give the agent a name and it can go live."
-          : "Every template is one organisation's whole front desk — each service it is rung about, its house rules, and the words callers use. Pick one and its questions, greeting, rules and vocabulary are set; give the agent a name and it can go live."
+          ? "Every template is one organisation's whole front desk — each service it is rung about, its policies, and the words callers use. Pick one and it is drawn on the canvas, every fork and hand-over included; give the agent a name and it can go live."
+          : "Every template is one organisation's whole front desk — each service it is rung about, its policies, and the words callers use. Pick one and its questions, greeting, rules and vocabulary are set; give the agent a name and it can go live."
       }
     >
       <div className="flex flex-col gap-3">

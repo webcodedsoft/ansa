@@ -444,7 +444,7 @@ const agentNameSchema = z
  *
  * The template's instructions ride along on the create. They used to be left behind —
  * `POST /agents` did not accept them and the only endpoint that wrote them was
- * organisation-scoped, so applying them here would have put this template's house rules on
+ * organisation-scoped, so applying them here would have put this template's policies on
  * the organisation's *oldest* agent. Both endpoints take `instructions` now, so the agent
  * is complete when this returns and nothing has to be pasted in afterwards.
  */

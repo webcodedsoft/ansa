@@ -108,7 +108,7 @@ export const CreateAgent = ({ mode }: { readonly mode: AuthoringMode }) => {
           <h2 className="text-[13px] font-medium">Start from</h2>
           <p className="mt-1 mb-2.5 max-w-[62ch] text-[12.5px] text-[var(--ink-3)]">
             Every template is a whole front desk for one kind of organisation — every
-            service it is rung about, day to day, with its house rules and the words callers
+            service it is rung about, day to day, with its policies and the words callers
             use. Pick the one closest to yours; most need nothing more than a name.
             {authoringMode === "flow" &&
               " It is drawn on the canvas as it is, branches and all, and you take it from there."}
@@ -140,11 +140,11 @@ export const CreateAgent = ({ mode }: { readonly mode: AuthoringMode }) => {
         {template !== null && template.instructions !== "" && (
           <Panel>
             <PanelBody>
-              <h3 className="text-[13px] font-medium">House rules this template comes with</h3>
+              <h3 className="text-[13px] font-medium">Policies this template comes with</h3>
               <p className="mt-1.5 text-[12.5px] leading-relaxed text-[var(--ink-2)]">
                 {template.instructions}
               </p>
-              {/* Shown rather than hidden behind the create: house rules are the part of a
+              {/* Shown rather than hidden behind the create: policies are the part of a
                   template somebody is most likely to want to change, and seeing them before
                   agreeing to them is cheaper than finding them on the Conversation tab
                   afterwards. They are applied with everything else. */}

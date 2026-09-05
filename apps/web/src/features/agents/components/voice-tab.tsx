@@ -7,7 +7,7 @@ import { Pause, Play, Search } from "lucide-react";
 import { Button, Card, CONTROL, Notice, SelectField, Stack, Tag, TextField, type Tone } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
-import { loadVoiceCatalogue } from "../agents.actions";
+import type { VoiceCatalogueLoaded } from "../agents.actions";
 import { SaveBar } from "./save-bar";
 import type { LiveConfiguration, VoiceChoice } from "../agents.service";
 
@@ -36,6 +36,15 @@ import type { LiveConfiguration, VoiceChoice } from "../agents.service";
  */
 
 interface VoiceTabProps {
+  /**
+   * The voice list, loaded once by the workspace.
+   *
+   * Fetched there rather than here because the settings strip names the current voice on every
+   * tab, so the workspace needs the list whether or not this tab is open — and two components
+   * asking for the same cached list is one request more than the answer is worth. Null while
+   * it is still in flight.
+   */
+  readonly catalogue: VoiceCatalogueLoaded | null;
   readonly config: LiveConfiguration["config"];
   readonly errors: Readonly<Record<string, string>>;
   /** The id of the page's publish form, which the voice is part of. */
@@ -398,8 +407,19 @@ const Picker = ({
   );
 };
 
-export const VoiceTab = ({ config, errors, publishForm, savingDraft }: VoiceTabProps) => {
-  const [catalogue, setCatalogue] = useState<Catalogue>({ status: "loading" });
+export const VoiceTab = ({
+  catalogue: loaded,
+  config,
+  errors,
+  publishForm,
+  savingDraft,
+}: VoiceTabProps) => {
+  const catalogue: Catalogue =
+    loaded === null
+      ? { status: "loading" }
+      : loaded.ok
+        ? { status: "ready", voices: loaded.voices, libraryUnread: loaded.libraryUnread }
+        : { status: "unavailable", message: loaded.message };
   /* Held here rather than inside the rate card so the sample can be played at it. Trying a
      rate you cannot hear is guessing, and 0.85 versus 1.0 is not a thing anybody knows the
      sound of from the number. */
@@ -409,21 +429,6 @@ export const VoiceTab = ({ config, errors, publishForm, savingDraft }: VoiceTabP
      before they changed it. */
   const [rate, setRate] = useState(config.speakingRate ?? 1);
   const [voiceId, setVoiceId] = useState(config.voiceId ?? "");
-
-  useEffect(() => {
-    let live = true;
-    void loadVoiceCatalogue().then((result) => {
-      if (!live) return;
-      setCatalogue(
-        result.ok
-          ? { status: "ready", voices: result.voices, libraryUnread: result.libraryUnread }
-          : { status: "unavailable", message: result.message },
-      );
-    });
-    return () => {
-      live = false;
-    };
-  }, []);
 
   const selected =
     catalogue.status === "ready"

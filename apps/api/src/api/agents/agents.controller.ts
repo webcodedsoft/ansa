@@ -88,7 +88,7 @@ const agent = object({
   name: text({ maxLength: NAME_LIMIT }),
   persona: nullable(text({ maxLength: PERSONA_LIMIT })),
   greeting: nullable(text({ maxLength: GREETING_LIMIT })),
-  /** House rules, layered onto the base prompt and never replacing it. */
+  /** Policies, layered onto the base prompt and never replacing it. */
   instructions: nullable(text({ maxLength: INSTRUCTIONS_LIMIT })),
   voiceId: nullable(text({ maxLength: VOICE_LIMIT })),
   /** Null is the voice's own pace. 0.7 to 1.2, the range ElevenLabs renders cleanly. */

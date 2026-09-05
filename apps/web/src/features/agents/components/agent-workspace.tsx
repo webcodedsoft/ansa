@@ -24,13 +24,15 @@ import type { CallSummary } from "@/features/calls/calls.service";
 
 import {
   discardDraftAction,
-  retireAgent,
-  publish,
-  saveDraftAction,
   type DiscardDraftState,
-  type RetireState,
+  loadVoiceCatalogue,
+  publish,
   type PublishState,
+  retireAgent,
+  type RetireState,
+  saveDraftAction,
   type SaveDraftState,
+  type VoiceCatalogueLoaded,
 } from "../agents.actions";
 import type {
   AgentDraft,
@@ -364,6 +366,32 @@ export const AgentWorkspace = ({
    * way. Data captured is "Questions" for a flow, since there it is a read-only view of what
    * the canvas asks and the place to switch back to a form.
    */
+  /* The voice list, once, for the whole workspace.
+   *
+   * The strip names the current voice on every tab, so this is needed whether or not the Voice
+   * tab is open — and it is what lets the strip say "Ade" rather than an ElevenLabs id, which
+   * is a string nobody can read aloud. Loaded in an effect so no tab waits on a vendor round
+   * trip to render, and the API caches the list, so the cost of asking is a request. */
+  const [voiceCatalogue, setVoiceCatalogue] = useState<VoiceCatalogueLoaded | null>(null);
+  useEffect(() => {
+    let live = true;
+    void loadVoiceCatalogue().then((result) => {
+      if (live) setVoiceCatalogue(result);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  /* The chosen voice's name, falling back to the id while the list is loading and if it never
+     arrives. An id is a poor label but it is a true one; inventing a name would be worse. */
+  const voiceName =
+    config.voiceId === null
+      ? "default"
+      : (voiceCatalogue?.ok === true
+          ? voiceCatalogue.voices.find((voice) => voice.voiceId === config.voiceId)?.name
+          : undefined) ?? config.voiceId;
+
   const panels: readonly TabDef[] = [
     {
       id: "overview",
@@ -382,7 +410,7 @@ export const AgentWorkspace = ({
       label: "Knowledge",
       panel: <KnowledgeTab key={shownAs(staged.knowledgeSources)} agent={staged} knowledge={knowledge} />,
     },
-    { id: "voice", label: "Voice", problem: problemTabs.has("voice"), panel: <VoiceTab key={shownAs([config, generation])} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
+    { id: "voice", label: "Voice", problem: problemTabs.has("voice"), panel: <VoiceTab key={shownAs([config, generation])} catalogue={voiceCatalogue} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
     { id: "policies", label: "Policies", problem: problemTabs.has("policies"), panel: <PolicyTab key={shownAs([config, generation])} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
     { id: "routing", label: "Routing & hours", problem: problemTabs.has("routing"), panel: <RoutingTab key={shownAs([config, generation])} agentId={agent.agentId} held={held} config={config} operatorManaged={operatorManaged} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
     { id: "versions", label: "Versions", panel: <VersionsTab agentId={agent.agentId} versions={versions} liveVersion={agent.configVersion} liveShape={stagedMode} liveBranches={liveBranches} /> },
@@ -405,12 +433,12 @@ export const AgentWorkspace = ({
     {
       id: "voice",
       label: "Voice",
-      value: `${config.voiceId ?? "default"}${config.speakingRate === null ? "" : ` · ${config.speakingRate}×`}`,
+      value: `${voiceName}${config.speakingRate === null ? "" : ` · ${config.speakingRate}×`}`,
       tone: problemTabs.has("voice") ? "problem" : undefined,
     },
     {
       id: "policies",
-      label: "House rules",
+      label: "Policies",
       value: String(config.policyBlocks?.length ?? 0),
       tone: problemTabs.has("policies") ? "problem" : undefined,
     },
