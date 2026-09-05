@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Plus } from "lucide-react";
 
 import { Button } from "@/components/ui";
@@ -24,6 +24,11 @@ import { TimeGrid } from "./time-grid";
  * Day and week are the same grid with a different number of columns; month is its own, because
  * a month cell is a list rather than a clock. All three open the same dialog, so an appointment
  * behaves identically wherever it was clicked.
+ *
+ * It owns the left column too. "Add appointment" is the page's primary act and belongs at the
+ * top of that column, above the little month — the shape every calendar uses — and it can only
+ * live where the dialog state does, which is here. Whatever else belongs beside the grid comes
+ * in as `sidebar`, so the page decides what that is without this needing to know.
  */
 export const CalendarBoard = ({
   calendarId,
@@ -36,6 +41,7 @@ export const CalendarBoard = ({
   slotMinutes,
   hasHours,
   canWrite,
+  sidebar,
 }: {
   readonly calendarId: string;
   readonly view: ViewKind;
@@ -47,6 +53,8 @@ export const CalendarBoard = ({
   readonly slotMinutes: number;
   readonly hasHours: boolean;
   readonly canWrite: boolean;
+  /** Drawn under the create button: the little month, and the calendar's own setup. */
+  readonly sidebar?: ReactNode;
 }) => {
   const [target, setTarget] = useState<DialogTarget>(null);
 
@@ -83,23 +91,27 @@ export const CalendarBoard = ({
     view === "month" ? (cells.flat().find((cell) => cell.inMonth)?.iso ?? null) : (days[0]?.iso ?? null);
 
   return (
-    <div className="flex flex-col gap-3">
-      {canWrite && firstDay !== null && (
-        <div className="flex justify-end">
+    <div className="flex flex-col gap-3.5 lg:grid lg:grid-cols-[196px_minmax(0,1fr)] lg:items-start lg:gap-4">
+      {/* The column stacks above the grid on a narrow screen, where a sidebar would push the
+          calendar off the edge. */}
+      <div className="flex flex-col gap-3">
+        {canWrite && firstDay !== null && (
           <Button
             variant="primary"
-            size="sm"
+            className="w-full justify-center"
             onClick={(event) => {
               const box = event.currentTarget.getBoundingClientRect();
-              addOn(firstDay, { x: box.left - 220, y: box.bottom });
+              addOn(firstDay, { x: box.right + 8, y: box.bottom });
             }}
           >
-            <Plus aria-hidden className="size-3.5" />
+            <Plus aria-hidden className="size-4" />
             Add appointment
           </Button>
-        </div>
-      )}
+        )}
+        {sidebar}
+      </div>
 
+      <div className="min-w-0">
       {view === "schedule" ? (
         <ScheduleList
           days={days}
@@ -128,6 +140,7 @@ export const CalendarBoard = ({
           onDraft={openQuick}
         />
       )}
+      </div>
 
       <QuickCreate
         calendarId={calendarId}

@@ -78,8 +78,10 @@ export const CalendarNav = ({
       )}
 
       {/* The segmented control keeps the anchor, so switching view stays on the day you were
-          looking at rather than jumping back to today. */}
-      <div className="ml-auto flex items-center rounded-lg border border-[var(--hairline)] p-0.5">
+          looking at rather than jumping back to today. No `ml-auto`: the page's toolbar owns
+          the row now and puts the search on the right, and a nav that claimed the whole width
+          pushed it onto a line of its own. */}
+      <div className="flex items-center rounded-lg border border-[var(--hairline)] p-0.5">
         {CALENDAR_VIEWS.map((option) => (
           <Link
             key={option}

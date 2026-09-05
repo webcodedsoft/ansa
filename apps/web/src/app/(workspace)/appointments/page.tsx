@@ -202,74 +202,6 @@ const AppointmentsPage = async ({
 
   const noAvailability = availability.windows.length === 0;
 
-  const calendarBody = (
-    <div className="flex flex-col gap-3.5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <CalendarNav
-          calendarId={selected.id}
-          view={view}
-          anchor={anchor}
-          timeZone={selected.timezone}
-          showWeekends={showWeekends}
-        />
-        <div className="text-[12px] text-[var(--ink-3)]">
-          Times shown in{" "}
-          <span className="font-medium text-[var(--ink-2)]">{selected.timezone}</span>
-        </div>
-      </div>
-
-      {noAvailability ? (
-        <Notice tone="info">
-          This calendar has no open hours yet, so it computes no free slots. You can still
-          write appointments into it here; set its weekly hours to have it work out the times
-          that are free.
-        </Notice>
-      ) : (
-        selected.source === "connector" && (
-          <Notice tone="info">
-            This is a connector calendar, mirroring an outside diary. Its slots and appointments
-            are shown here and can be written against; the diary remains the source of truth.
-          </Notice>
-        )
-      )}
-
-      {/* The little month sits beside the grid on a wide screen and above it on a narrow
-          one, where a sidebar would push the calendar off the edge. */}
-      <div className="flex flex-col gap-3.5 lg:grid lg:grid-cols-[196px_minmax(0,1fr)] lg:items-start">
-        <MiniMonth
-          calendarId={selected.id}
-          view={view}
-          anchor={anchor}
-          timeZone={selected.timezone}
-          todayIso={isoDate(today)}
-          showWeekends={showWeekends}
-        />
-
-        <CalendarBoard
-          key={`${selected.id}:${view}`}
-          calendarId={selected.id}
-          view={view}
-          days={days}
-          cells={cells}
-          startMinute={dayBounds.startMinute}
-          endMinute={dayBounds.endMinute}
-          timeZone={selected.timezone}
-          slotMinutes={selected.slotMinutes}
-          hasHours={!noAvailability}
-          canWrite={canWrite}
-        />
-      </div>
-
-      <CalendarKeys
-        calendarId={selected.id}
-        view={view}
-        anchor={anchor}
-        timeZone={selected.timezone}
-        showWeekends={showWeekends}
-      />
-    </div>
-  );
-
   /* A search answers a different question from the grid — "where is the Adeola viewing",
      not "what is on this week" — so it replaces the calendar rather than filtering it. A
      match three months out would need three months of grid drawn around it to be seen. */
@@ -302,31 +234,105 @@ const AppointmentsPage = async ({
           ];
         });
 
+  const calendarBody = (
+    <div className="flex flex-col gap-3.5">
+      {/* One toolbar. Moving between days, choosing how to read them, and finding something
+          are the three things done here constantly, and they were spread over three rows with
+          a button alone on each. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <CalendarNav
+          calendarId={selected.id}
+          view={view}
+          anchor={anchor}
+          timeZone={selected.timezone}
+          showWeekends={showWeekends}
+        />
+        <div className="ml-auto">
+          <AppointmentSearch calendarId={selected.id} query={term} />
+        </div>
+      </div>
+
+      {noAvailability ? (
+        <Notice tone="info">
+          This calendar has no open hours yet, so it computes no free slots. You can still
+          write appointments into it here; set its weekly hours to have it work out the times
+          that are free.
+        </Notice>
+      ) : (
+        selected.source === "connector" && (
+          <Notice tone="info">
+            This is a connector calendar, mirroring an outside diary. Its slots and appointments
+            are shown here and can be written against; the diary remains the source of truth.
+          </Notice>
+        )
+      )}
+
+      <CalendarBoard
+        key={`${selected.id}:${view}`}
+        calendarId={selected.id}
+        view={view}
+        days={days}
+        cells={cells}
+        startMinute={dayBounds.startMinute}
+        endMinute={dayBounds.endMinute}
+        timeZone={selected.timezone}
+        slotMinutes={selected.slotMinutes}
+        hasHours={!noAvailability}
+        canWrite={canWrite}
+        sidebar={
+          <>
+            <MiniMonth
+              calendarId={selected.id}
+              view={view}
+              anchor={anchor}
+              timeZone={selected.timezone}
+              todayIso={isoDate(today)}
+              showWeekends={showWeekends}
+            />
+            {/* The zone every time on this page is read in. It belongs with the calendar
+                rather than in the toolbar: it is a fact about which calendar is open, it never
+                changes while you work, and in the toolbar it crowded out the search. */}
+            <p className="px-0.5 text-[11.5px] text-[var(--ink-3)]">
+              Times in <span className="font-medium text-[var(--ink-2)]">{selected.timezone}</span>
+            </p>
+
+            {/* Setting the hours and the closures is occasional work about this calendar, so
+                it sits with the calendar rather than in the page's own header. Stacked and
+                full width so three buttons read as a short list rather than a ragged row. */}
+            <div className="flex flex-col gap-1.5 [&>button]:w-full [&>button]:justify-start">
+              <CalendarSettings
+                calendar={selected}
+                windows={availability.windows}
+                holidays={holidays.items}
+                canWrite={canWrite}
+              />
+            </div>
+          </>
+        }
+      />
+
+      <CalendarKeys
+        calendarId={selected.id}
+        view={view}
+        anchor={anchor}
+        timeZone={selected.timezone}
+        showWeekends={showWeekends}
+      />
+    </div>
+  );
+
   return (
     <>
       <PageHeader
         eyebrow="Operate"
         title="Appointments"
-        meta="One calendar's diary, in its own timezone. Drag on any empty time to write an appointment; the tinted hours are the ones its weekly hours leave free."
         actions={
           <div className="flex items-center gap-2">
             <CalendarSwitcher calendars={calendars} selectedId={selected.id} />
-            <CalendarSettings
-              calendar={selected}
-              windows={availability.windows}
-              holidays={holidays.items}
-              canWrite={canWrite}
-            />
             {canWrite && <CreateCalendarDialog trigger="secondary" />}
           </div>
         }
       />
-
-      {/* Above both, because the box must not vanish at the moment it is being used — a
-          search that hides its own input leaves nothing to correct a typo in. */}
-      <div className="mb-3.5 flex justify-end">
-        <AppointmentSearch calendarId={selected.id} query={term} />
-      </div>
 
       {found !== null ? (
         <SearchResults
