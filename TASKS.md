@@ -4202,6 +4202,16 @@ graph the canvas opened with instead. Proved: typed into a card, status went uns
 saving… → saved with focus never leaving the field, reload showed the draft, fresh load saved
 nothing, Discard cleared it.
 
+**The problems list has a ceiling (2026-09-05).** It scrolls inside its card past
+min(40vh, 360px); the verdict and Show me stay above it. Three things found while filling it
+with problems. A step added "after" the top fork hung off it by a bare, condition-less link;
+it is a new service now, with the arm named for it (`addNode` → `addService` +
+`linkToService`). A shared step whose row falls among the lanes' rows was drawn in the centred
+shared column, straight over a lane; such steps take a column beside the last lane (the
+`stray` slot in `columns`). And Discard left the panels and the canvas as they were after a
+quiet save, since the keys they reset on never changed — the page had not been told of the
+draft; every key carries a `generation` that a discard bumps.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and

@@ -1359,6 +1359,14 @@ export const FlowCanvas = ({
     const id = freshId(new Set(nodes.map((n) => n.id)));
     const fresh = blankNode(id, kind, 0, 0);
     edit((f) => {
+      /* "After the fork" is a new service: a fork's ways out are its answers, and a step
+         hanging off it is the first step of the service that answer leads to. The arm's
+         answer is the service's name, to be renamed; anywhere else, after means after. */
+      if (where?.after !== undefined && where.after === laneFork) {
+        const named = addService(f, fresh, freshServiceName(f));
+        const lane = laneGroups(named).find((one) => one.ids.includes(id));
+        return lane === undefined ? named : linkToService(named, { from: where.after, to: "", when: { equals: "" } }, lane);
+      }
       if (where?.after !== undefined && f.nodes.some((n) => n.id === where.after)) return insertAfter(f, where.after, fresh);
       if (where?.before !== undefined && f.nodes.some((n) => n.id === where.before)) return insertBefore(f, where.before, fresh);
       if (where?.lane !== undefined) return appendToLane(f, where.lane, fresh);
@@ -1826,9 +1834,15 @@ export const FlowCanvas = ({
             tall canvas. Recomputed on every edit rather than at publish: `validateFlow` is the
             same function the publish gate runs, so nobody reaches a refusal having been told
             here that it was fine. */}
-        <div className="surface overflow-hidden rounded-xl">
-          <FlowStatus steps={nodes} problems={problems} onFocusNode={focusNode} compact className="border-t-0" />
-          {problems.length > 1 && <FlowProblems steps={nodes} problems={problems} onFocusNode={focusNode} compact />}
+        <div className="surface flex flex-col overflow-hidden rounded-xl">
+          <FlowStatus steps={nodes} problems={problems} onFocusNode={focusNode} compact className="flex-none border-t-0" />
+          {/* The list scrolls inside its card past a screen's worth, so a flow with twenty
+              problems does not push the page down; the verdict above it stays put. */}
+          {problems.length > 1 && (
+            <div className="max-h-[min(40vh,360px)] overflow-y-auto overscroll-contain">
+              <FlowProblems steps={nodes} problems={problems} onFocusNode={focusNode} compact />
+            </div>
+          )}
         </div>
         </div>
 

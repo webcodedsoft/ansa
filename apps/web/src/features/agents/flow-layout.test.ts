@@ -640,6 +640,20 @@ describe("a branch that jumps to another service", () => {
   });
 });
 
+describe("a shared step among the lanes", () => {
+  it("takes a column beside the lanes rather than the centre, where it would cover them", () => {
+    /* A step hung off the fork by a bare link is in no service and sits on the lanes' rows.
+       Centred across the lanes it would be drawn on top of one of them. */
+    const flow: Flow = { ...forked(), nodes: [...forked().nodes, node("stray")], edges: [...forked().edges, { from: "fork", to: "stray" }] };
+    const laid = tidied(flow);
+    const at = (id: string) => laid.nodes.find((n) => n.id === id);
+    expect(at("stray")?.y).toBe(at("rent1")?.y);
+    expect(at("stray")?.x).toBeGreaterThan(Math.max(at("rent1")?.x ?? 0, at("buy1")?.x ?? 0));
+    const places = laid.nodes.map((n) => `${n.x},${n.y}`);
+    expect(new Set(places).size).toBe(places.length);
+  });
+});
+
 describe("a drawing arranged by hand", () => {
   it("tells the derived layout from somebody's arrangement by the positions alone", () => {
     const derived = tidied(withServiceTags(forked()));

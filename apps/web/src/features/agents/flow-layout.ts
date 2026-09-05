@@ -456,6 +456,13 @@ const columns = (input: Flow) => {
     if (lane.id === "opening") return;
     for (const id of lane.ids) laneIndex.set(id, at);
   });
+  /* A shared step whose row falls among the lanes' rows — reachable, in no service, and
+     not the opening: a step hung off the fork by a bare link, say — cannot go in the centred
+     shared column, which runs straight through the lanes there. Such steps take a column
+     of their own beside the last lane, as a lane with no name. */
+  const stray = lanes.length;
+  const band = (row: number): boolean => row > forkDepth && row <= laneFloor;
+  for (const node of flow.nodes) if (!laneIndex.has(node.id) && band(rowOf(node.id))) laneIndex.set(node.id, stray);
 
   /** Rows inside one lane (or the shared area, keyed -1): how many steps share each row. */
   const perLane = new Map<number, Map<number, number>>();
@@ -478,6 +485,10 @@ const columns = (input: Flow) => {
     laneLeft[at] = total;
     if (lane.id !== "opening") total += widthOf(at);
   });
+  if ([...laneIndex.values()].includes(stray)) {
+    laneLeft[stray] = total;
+    total += widthOf(stray);
+  }
   const totalCols = hangs ? Math.max(total, sharedWidest) : total;
   const sharedCol = (inRow: number, at: number): number => (hangs ? (totalCols - inRow) / 2 + at : at);
 

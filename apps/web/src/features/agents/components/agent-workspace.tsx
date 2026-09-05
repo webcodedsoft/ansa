@@ -301,6 +301,13 @@ export const AgentWorkspace = ({
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty, saving]);
+  /* Discarding must reset every panel and the canvas to what is live, and the keys they
+     reset on — the configuration, the graph — do not change when the draft the page never
+     heard of (a quiet save's) is thrown away. So a discard bumps this, and it is in every key. */
+  const [generation, setGeneration] = useState(0);
+  useEffect(() => {
+    if (discardState.status === "succeeded") setGeneration((at) => at + 1);
+  }, [discardState]);
   const savedAt = autosavedAt ?? draft?.updatedAt ?? null;
   const hasDraft = draft !== null || autosavedAt !== null;
 
@@ -360,7 +367,7 @@ export const AgentWorkspace = ({
       label: "Overview",
       panel: <OverviewTab stats={stats} attention={attention} recentCalls={recentCalls} />,
     },
-    { id: "conversation", label: "Conversation", problem: problemTabs.has("conversation"), panel: <ConversationTab key={shownAs(config)} agent={staged} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
+    { id: "conversation", label: "Conversation", problem: problemTabs.has("conversation"), panel: <ConversationTab key={shownAs([config, generation])} agent={staged} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
     {
       id: "data",
       label: stagedMode === "flow" ? "Questions" : "Data captured",
@@ -372,9 +379,9 @@ export const AgentWorkspace = ({
       label: "Knowledge",
       panel: <KnowledgeTab key={shownAs(staged.knowledgeSources)} agent={staged} knowledge={knowledge} />,
     },
-    { id: "voice", label: "Voice", problem: problemTabs.has("voice"), panel: <VoiceTab key={shownAs(config)} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
-    { id: "policies", label: "Policies", problem: problemTabs.has("policies"), panel: <PolicyTab key={shownAs(config)} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
-    { id: "routing", label: "Routing & hours", problem: problemTabs.has("routing"), panel: <RoutingTab key={shownAs(config)} agentId={agent.agentId} held={held} config={config} operatorManaged={operatorManaged} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
+    { id: "voice", label: "Voice", problem: problemTabs.has("voice"), panel: <VoiceTab key={shownAs([config, generation])} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
+    { id: "policies", label: "Policies", problem: problemTabs.has("policies"), panel: <PolicyTab key={shownAs([config, generation])} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
+    { id: "routing", label: "Routing & hours", problem: problemTabs.has("routing"), panel: <RoutingTab key={shownAs([config, generation])} agentId={agent.agentId} held={held} config={config} operatorManaged={operatorManaged} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
     { id: "versions", label: "Versions", panel: <VersionsTab agentId={agent.agentId} versions={versions} liveVersion={agent.configVersion} liveShape={stagedMode} liveBranches={liveBranches} /> },
   ];
 
@@ -578,7 +585,7 @@ export const AgentWorkspace = ({
           <>
             <SettingsStrip items={stripItems} active={openSetting} onSelect={setOpenSetting} />
             <FlowCanvas
-              key={shownAs([stagedFlow, stagedMode])}
+              key={shownAs([stagedFlow, stagedMode, generation])}
               flow={stagedFlow}
               publishForm={PUBLISH_FORM}
               authoringMode={stagedMode}
