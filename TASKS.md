@@ -4231,6 +4231,21 @@ steps, or nothing yet), its step count and Remove; and with a link picked, a ste
 palette goes *on* the link (`insertOn`), joining the service the link arrives in — a step on
 a fork's arm is that service's new first step. Eight layout tests added.
 
+**No line of business in the furniture (2026-09-05).** Asked to find fields and values that
+belonged to one kind of organisation. The builder had few — a Branch condition's placeholders
+were `renewal` / `renewal, claim` / `5000`, one insurer's words — but the agent UI around it
+had an insurer's wardrobe: "Could you read me your policy number" as the example prompt on
+every field, `lookup_policy` / `/policies/{policyNumber}` / "Your policy renews on" in the
+tool form, "Motor policy FAQ" in knowledge, "policy number" in the routing note. Two fixes.
+Where the agent's own data can supply the example, it does: a Branch on a choice offers that
+choice's answers as a list (with a typed value kept and marked if it is not one of them), "is
+one of" takes its example from the first two answers, "is over" from whether the field is an
+amount; an empty "How it asks" shows an example for the field's kind (`PROMPT_EXAMPLE` in
+`capture-vocabulary`, shared by the field builder and the canvas). Everywhere else the
+wording belongs to no sector — a customer, a reference, a status. Nothing records an
+organisation's sector, and inventing a field to hold one for the sake of placeholders would
+be the wrong trade.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and

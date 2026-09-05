@@ -259,7 +259,7 @@ export const HttpToolForm = ({
                   rows={3}
                   value={curl}
                   onChange={(event: { target: { value: string } }) => setCurl(event.target.value)}
-                  placeholder="curl -X POST https://api.example.com/policies -H 'Accept: application/json'"
+                  placeholder="curl -X POST https://api.example.com/customers -H 'Accept: application/json'"
                 />
                 {imported.length > 0 && (
                   <Notice tone="warn">
@@ -283,7 +283,7 @@ export const HttpToolForm = ({
                 onChange={(event) => edit({ name: event.target.value })}
                 error={problem("name")}
                 hint="Lowercase, underscores. The model refers to it by this."
-                placeholder="lookup_policy"
+                placeholder="look_up_customer"
               />
               <TextAreaField
                 label="When should the agent use it?"
@@ -292,7 +292,7 @@ export const HttpToolForm = ({
                 error={problem("description")}
                 rows={2}
                 hint="Written for the model, not for a person. A vague sentence gets the wrong tool called."
-                placeholder="Look up a motor policy by its policy number."
+                placeholder="Look up a customer by their reference number."
               />
             </Stack>
           </Card>
@@ -316,7 +316,7 @@ export const HttpToolForm = ({
                   value={draft.url}
                   onChange={(event) => edit({ url: event.target.value })}
                   error={problem("url")}
-                  placeholder="https://api.acme.ng/policies/{policyNumber}"
+                  placeholder="https://api.example.ng/customers/{reference}"
                   hint="Put {curly braces} around any part of the path or query string that is an argument."
                 />
               </div>
@@ -489,7 +489,7 @@ export const HttpToolForm = ({
                           className={`${CELL} font-mono`}
                           value={param.name}
                           onChange={(event) => setParam(index, { name: event.target.value })}
-                          placeholder="policyNumber"
+                          placeholder="reference"
                           aria-label={`Parameter ${index + 1} name`}
                         />
                         <select
@@ -625,7 +625,7 @@ export const HttpToolForm = ({
                   value={draft.speechTemplate}
                   onChange={(event) => edit({ speechTemplate: event.target.value })}
                   error={problem("speechTemplate")}
-                  placeholder="Your policy renews on {renewsOn}."
+                  placeholder="Your reference is {reference}, and the status is {status}."
                   hint="Use {placeholders} for fields from the response."
                 />
 
@@ -659,7 +659,7 @@ export const HttpToolForm = ({
                   value={draft.speechFallback}
                   onChange={(event) => edit({ speechFallback: event.target.value })}
                   error={problem("speechFallback")}
-                  placeholder="I couldn't find a policy with that number."
+                  placeholder="I couldn't find anything under that reference."
                   hint="Also used when the endpoint answers 404 — which means the lookup worked and found nothing."
                 />
                 {draft.riskTier === "write" && (

@@ -21,6 +21,7 @@ import {
   FIELD_TYPES,
   heardAs,
   readBackOf,
+  PROMPT_EXAMPLE,
   RISKY_UNCONFIRMED,
   spokenValue,
 } from "../capture-vocabulary";
@@ -287,7 +288,7 @@ export const FieldBuilder = ({
                   <input
                     value={current.prompt}
                     onChange={(event) => edit({ prompt: event.target.value })}
-                    placeholder="Could you read me your policy number, one digit at a time?"
+                    placeholder={PROMPT_EXAMPLE[current.type]}
                     className={CONTROL}
                   />
                   <span className="mt-1.5 block text-[12.5px] text-[var(--ink-3)]">

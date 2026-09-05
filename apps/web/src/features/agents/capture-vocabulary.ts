@@ -20,7 +20,7 @@ export const FIELD_TYPES: readonly {
   readonly label: string;
 }[] = [
   { value: "name", label: "Name — spoken, spelled back if unclear" },
-  { value: "reference", label: "Reference or policy number" },
+  { value: "reference", label: "Reference number — an order, a policy, a ticket, a booking" },
   { value: "phone", label: "Phone number" },
   { value: "date", label: "Date" },
   { value: "time", label: "Time of day" },
@@ -56,6 +56,29 @@ export const SAMPLE: Readonly<Record<CapturedField["type"], string>> = {
   quantity: "three",
   choice: "the first one",
   text: "a short answer",
+};
+
+/**
+ * An example of how a question of each kind is asked, for a prompt field with nothing in
+ * it yet. Said the way any front desk would say it, in no line of business in particular:
+ * the one field that used to carry "Could you read me your policy number" showed every
+ * hospital, school and estate agent an insurer's question.
+ */
+export const PROMPT_EXAMPLE: Readonly<Record<CapturedField["type"], string>> = {
+  name: "And who am I speaking with?",
+  reference: "Could you read me your reference number, one digit at a time?",
+  phone: "What's the best number to reach you on?",
+  email: "What email address should we use?",
+  address: "What's the address?",
+  date: "What date would suit you?",
+  time: "What time of day works for you?",
+  amount: "How much are we talking about?",
+  nin: "Could you read me your NIN, one digit at a time?",
+  bvn: "Could you read me your BVN, one digit at a time?",
+  otp: "Please read me the code we just sent you.",
+  quantity: "How many would that be?",
+  choice: "Is this about the first thing, or the second?",
+  text: "How can I help you today?",
 };
 
 /**

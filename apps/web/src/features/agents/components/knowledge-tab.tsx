@@ -421,7 +421,7 @@ const AddSource = ({ onDone }: { readonly onDone: () => void }) => {
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 error={problem("name")}
-                placeholder="Motor policy FAQ"
+                placeholder="Front-desk FAQ"
                 hint="How somebody tells this apart from the others later."
               />
               <SelectField

@@ -92,7 +92,7 @@ export const RoutingTab = ({ agentId, held, config, operatorManaged, errors, pub
               <Td>{operatorManaged.audioRetentionDays} days</Td>
             </tr>
             {/* Two windows, not one, and worth showing separately: the recording of somebody
-                reading their policy number aloud is deleted on the first clock, the
+                reading a reference number aloud is deleted on the first clock, the
                 transcript of them reading it on the second. The words are kept longer on
                 purpose — the review loop corrects transcripts and the eval corpus is built
                 from those corrections — and a reader who saw only the audio number would

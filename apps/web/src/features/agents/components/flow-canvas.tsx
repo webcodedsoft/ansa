@@ -42,6 +42,7 @@ import {
   samePlaces, serviceOf, tidied, TOP, withServiceTags, type Lane,
 } from "../flow-layout";
 import { useToastStore } from "@/stores/toast.store";
+import { PROMPT_EXAMPLE } from "../capture-vocabulary";
 
 import {
   FLOW_FIELD_TYPES,
@@ -617,12 +618,34 @@ const BranchRow = ({
   when,
   onChange,
   onRemove,
+  answers,
+  numeric,
 }: {
   readonly when: FlowCondition;
   readonly onChange: (next: FlowCondition) => void;
   readonly onRemove: () => void;
+  /** The answers the field this branch reads can take, when it is a choice — offered as a list. */
+  readonly answers: readonly string[];
+  /** Whether the field is a number, so "is over" has an example that is one. */
+  readonly numeric: boolean;
 }) => {
   const operator = operatorOf(when);
+  const value = valueOf(when);
+  /* A choice's answers are the only values a branch on it can match, so they are a list;
+     the typed value stays available while it is not one of them, so nothing typed is lost.
+     Examples otherwise come from the answers themselves, or say what kind of thing goes
+     there, rather than one line of business's words. */
+  const listed = operator === "equals" && answers.length > 0;
+  const example =
+    operator === "oneOf"
+      ? answers.length > 1
+        ? `${answers[0]}, ${answers[1]}`
+        : "one answer, another"
+      : operator === "greaterThan"
+        ? numeric
+          ? "50000"
+          : "a number"
+        : answers[0] ?? "an answer";
   return (
     <div className="flex items-center gap-1.5">
       <select
@@ -637,12 +660,28 @@ const BranchRow = ({
           </option>
         ))}
       </select>
-      {operator !== "isEmpty" && (
+      {operator !== "isEmpty" && listed && (
+        <select
+          aria-label="What this branch matches"
+          className={cn(CONTROL, "min-w-0 px-2 py-1 text-[12px]")}
+          value={value}
+          onChange={(event) => onChange(conditionFrom(operator, event.target.value))}
+        >
+          <option value="">— an answer —</option>
+          {answers.map((answer) => (
+            <option key={answer} value={answer}>
+              {answer}
+            </option>
+          ))}
+          {value !== "" && !answers.includes(value) && <option value={value}>{value} (not one of the answers)</option>}
+        </select>
+      )}
+      {operator !== "isEmpty" && !listed && (
         <input
           aria-label="What this branch matches"
           className={cn(CONTROL, "min-w-0 px-2 py-1 text-[12px]")}
-          value={valueOf(when)}
-          placeholder={operator === "oneOf" ? "renewal, claim" : operator === "greaterThan" ? "5000" : "renewal"}
+          value={value}
+          placeholder={example}
           onChange={(event) => onChange(conditionFrom(operator, event.target.value))}
         />
       )}
@@ -1793,6 +1832,9 @@ export const FlowCanvas = ({
     .flatMap((n) => (n.kind === "collect" && n.field !== undefined && n.field.key !== "" ? [n.field] : []))
     // Two services may each ask the same thing; the key is one field either way.
     .filter((field, at, all) => all.findIndex((other) => other.key === field.key) === at);
+  const collectedField = (key: string | undefined) => (key === undefined || key === "" ? undefined : collected.find((field) => field.key === key));
+  /** The field the selected fork reads, when it reads one: its answers are what the arms can match. */
+  const branchedField = selectedNode?.kind === "decide" ? collectedField(selectedNode.on) : undefined;
   const branches = selectedNode === null ? [] : edges.filter(conditional(selectedNode.id));
   const waiting = selectedNode === null ? [] : (pending[selectedNode.id] ?? []);
 
@@ -2684,6 +2726,7 @@ export const FlowCanvas = ({
                     label="How it asks"
                     value={selectedNode.field?.prompt ?? ""}
                     onChange={(e) => updateField({ prompt: e.target.value }, "prompt")}
+                    placeholder={PROMPT_EXAMPLE[selectedNode.field?.type ?? "text"]}
                   />
                   <SelectField
                     label="Captured by"
@@ -2790,6 +2833,8 @@ export const FlowCanvas = ({
                     {branches.map((edge, at) => (
                       <BranchRow
                         key={`when:${at}`}
+                        answers={branchedField?.type === "choice" ? branchedField.options : []}
+                        numeric={branchedField?.type === "amount" || branchedField?.type === "quantity"}
                         when={edge.when}
                         onChange={(when) =>
                           edit(
@@ -2803,6 +2848,8 @@ export const FlowCanvas = ({
                     {waiting.map((when, at) => (
                       <BranchRow
                         key={`pending:${at}`}
+                        answers={branchedField?.type === "choice" ? branchedField.options : []}
+                        numeric={branchedField?.type === "amount" || branchedField?.type === "quantity"}
                         when={when}
                         onChange={(next) =>
                           setPending((all) => ({
