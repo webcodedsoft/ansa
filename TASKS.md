@@ -4126,6 +4126,15 @@ not the press, so a drag that begins on a link is still a pan.
 link leaves by fill accent while the step is selected; a dot nothing is wired to stays hollow,
 which is how it says so — the "+" arm on a fork included.
 
+**The link click that never arrived (2026-09-05).** "User can still not select flow line." It
+had been proved with a synthetic click dispatched straight at the path, which is not what a
+mouse does: a press on the canvas captures the pointer for panning, and once the canvas holds
+the capture the browser aims the click at the canvas, so the link's own `onClick` never fires.
+Same trap as the lane label's double-click. A click is decided on release now — a press that
+never moved, and whatever `elementFromPoint` finds there carrying `data-edge` is the link
+picked (`onCanvasPointerUp`). Proved with the extension's own click this time, dashes seen
+moving between two samples 130ms apart.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and

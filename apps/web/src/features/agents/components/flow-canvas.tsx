@@ -1172,8 +1172,20 @@ export const FlowCanvas = ({
     if (!p) return;
     applyPan({ x: p.panX + (e.clientX - p.startX), y: p.panY + (e.clientY - p.startY) });
   };
-  const onCanvasPointerUp = () => {
+  /**
+   * A press on the canvas that never moved is a click, and a click on a link picks it out.
+   *
+   * Decided here, on release, and not by the link's own `onClick`: the press captured the
+   * pointer for panning, and once the canvas holds the capture the browser aims the click at
+   * the canvas, so the link never hears one. What is under the pointer at release is the
+   * question, and `elementFromPoint` answers it whoever holds the capture.
+   */
+  const onCanvasPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const p = panRef.current;
     panRef.current = null;
+    if (p === null || Math.hypot(e.clientX - p.startX, e.clientY - p.startY) > 4) return;
+    const link = document.elementFromPoint(e.clientX, e.clientY)?.closest("[data-edge]")?.getAttribute("data-edge");
+    if (link !== null && link !== undefined) chooseEdge(link);
   };
 
   /* The wheel pans the drawing while the pointer is over it, and scrolls the page otherwise;
@@ -1949,13 +1961,11 @@ export const FlowCanvas = ({
                       fill="none"
                       stroke="transparent"
                       strokeWidth={10}
-                      /* Only the click, not the press: a press that turns into a drag is a
-                         pan, whether it began on a link or beside one. */
+                      /* Only a click, not a press: a press that turns into a drag is a pan,
+                         whether it began on a link or beside one. The canvas reads the click
+                         off this attribute on release — see `onCanvasPointerUp`. */
+                      data-edge={p.edge}
                       style={{ pointerEvents: "stroke", cursor: "pointer" }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        chooseEdge(p.edge);
-                      }}
                     />
                     <path
                       d={p.d}
