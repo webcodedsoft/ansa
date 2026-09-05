@@ -9,6 +9,7 @@ import type { CalendarView as ViewKind } from "../appointments.range";
 import type { BookingView, DayColumn, DraftSpan, MonthCell } from "../appointments.view";
 import { AppointmentDialog, type DialogTarget } from "./appointment-dialog";
 import { MonthGrid } from "./month-grid";
+import { ScheduleList } from "./schedule-list";
 import { TimeGrid } from "./time-grid";
 
 /**
@@ -67,7 +68,8 @@ export const CalendarBoard = ({
 
   /* "Add appointment" needs a day, and in the month view the anchor day is the honest choice —
      the first day of the period on screen that is actually in it. */
-  const firstDay = view === "month" ? (cells.flat().find((cell) => cell.inMonth)?.iso ?? null) : (days[0]?.iso ?? null);
+  const firstDay =
+    view === "month" ? (cells.flat().find((cell) => cell.inMonth)?.iso ?? null) : (days[0]?.iso ?? null);
 
   return (
     <div className="flex flex-col gap-3">
@@ -80,7 +82,14 @@ export const CalendarBoard = ({
         </div>
       )}
 
-      {view === "month" ? (
+      {view === "schedule" ? (
+        <ScheduleList
+          days={days}
+          canWrite={canWrite}
+          onOpenBooking={openBooking}
+          onAddOn={addOn}
+        />
+      ) : view === "month" ? (
         <MonthGrid
           weeks={cells}
           canWrite={canWrite}

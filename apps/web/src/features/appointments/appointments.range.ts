@@ -28,10 +28,10 @@ import {
   type PlainDate,
 } from "./appointments.time";
 
-/** The three ways the calendar can be read. Anything else in the URL falls back to `week`. */
-export type CalendarView = "day" | "week" | "month";
+/** The four ways the calendar can be read. Anything else in the URL falls back to `week`. */
+export type CalendarView = "day" | "week" | "month" | "schedule";
 
-export const CALENDAR_VIEWS: readonly CalendarView[] = ["day", "week", "month"];
+export const CALENDAR_VIEWS: readonly CalendarView[] = ["day", "week", "month", "schedule"];
 
 export const DEFAULT_VIEW: CalendarView = "week";
 
@@ -39,11 +39,33 @@ export const VIEW_LABELS: Readonly<Record<CalendarView, string>> = {
   day: "Day",
   week: "Week",
   month: "Month",
+  schedule: "Schedule",
+};
+
+/** The single-key shortcuts, the same letters Google uses, so muscle memory carries over. */
+export const VIEW_KEYS: Readonly<Record<string, CalendarView>> = {
+  d: "day",
+  w: "week",
+  m: "month",
+  a: "schedule",
 };
 
 /** Read `?view=`. Unknown and missing both mean the week, which is the working default. */
 export const parseView = (raw: string | undefined): CalendarView =>
-  raw === "day" || raw === "week" || raw === "month" ? raw : DEFAULT_VIEW;
+  raw === "day" || raw === "week" || raw === "month" || raw === "schedule" ? raw : DEFAULT_VIEW;
+
+/**
+ * How far the schedule looks ahead.
+ *
+ * Four weeks and change: far enough that "what is coming up" is genuinely answered, short
+ * enough that it is one query and one scroll rather than a year of empty days.
+ */
+export const SCHEDULE_DAYS = 30;
+
+/** Read `?weekends=`. Absent means shown, because hiding days is the unusual choice. */
+export const parseWeekends = (raw: string | undefined): boolean => raw !== "0";
+
+const isWeekend = (weekday: number): boolean => weekday === 0 || weekday === 6;
 
 /**
  * The month grid is always six rows.
@@ -101,6 +123,7 @@ export const startOfMonth = (date: PlainDate): PlainDate => ({ ...date, day: 1 }
  */
 export const stepAnchor = (view: CalendarView, anchor: PlainDate, delta: number): PlainDate => {
   if (view === "day") return addDays(anchor, delta);
+  if (view === "schedule") return addDays(anchor, delta * SCHEDULE_DAYS);
   if (view === "week") return addDays(mondayOf(anchor), delta * DAYS_IN_WEEK);
   return addMonths(anchor, delta);
 };
@@ -163,6 +186,7 @@ const weekTitle = (first: PlainDate, last: PlainDate): string => {
 export const rangeTitle = (view: CalendarView, anchor: PlainDate): string => {
   if (view === "day") return dayTitle(anchor);
   if (view === "month") return `${MONTH_NAMES[anchor.month - 1] ?? ""} ${anchor.year}`;
+  if (view === "schedule") return weekTitle(anchor, addDays(anchor, SCHEDULE_DAYS - 1));
   const monday = mondayOf(anchor);
   return weekTitle(monday, addDays(monday, DAYS_IN_WEEK - 1));
 };
@@ -170,6 +194,11 @@ export const rangeTitle = (view: CalendarView, anchor: PlainDate): string => {
 /** The plain dates a view draws, in order, before they are dressed as `RangeDay`s. */
 const datesFor = (view: CalendarView, anchor: PlainDate): readonly PlainDate[] => {
   if (view === "day") return [anchor];
+  /* The schedule runs from the anchor forward, not from its Monday: "what is coming up"
+     starts today, and rewinding to Monday would open it on days already gone. */
+  if (view === "schedule") {
+    return Array.from({ length: SCHEDULE_DAYS }, (_unused, index) => addDays(anchor, index));
+  }
   if (view === "week") {
     const monday = mondayOf(anchor);
     return Array.from({ length: DAYS_IN_WEEK }, (_unused, index) => addDays(monday, index));
@@ -182,10 +211,10 @@ const datesFor = (view: CalendarView, anchor: PlainDate): readonly PlainDate[] =
   );
 };
 
-const chunkByWeek = (days: readonly RangeDay[]): readonly (readonly RangeDay[])[] => {
+const chunkBy = (days: readonly RangeDay[], width: number): readonly (readonly RangeDay[])[] => {
   const rows: RangeDay[][] = [];
-  for (let index = 0; index < days.length; index += DAYS_IN_WEEK) {
-    rows.push(days.slice(index, index + DAYS_IN_WEEK));
+  for (let index = 0; index < days.length; index += width) {
+    rows.push(days.slice(index, index + width));
   }
   return rows;
 };
@@ -201,14 +230,17 @@ export const calendarRange = (
   view: CalendarView,
   anchor: PlainDate,
   timeZone: string,
-  today: PlainDate = todayIn(timeZone),
+  {
+    today = todayIn(timeZone),
+    showWeekends = true,
+  }: { readonly today?: PlainDate; readonly showWeekends?: boolean } = {},
 ): CalendarRange => {
   const dates = datesFor(view, anchor);
   const first = dates[0] ?? anchor;
   const last = dates[dates.length - 1] ?? anchor;
   const todayIso = isoDate(today);
 
-  const days: readonly RangeDay[] = dates.map((date) => {
+  const all: readonly RangeDay[] = dates.map((date) => {
     const weekday = weekdayOf(date);
     const iso = isoDate(date);
     return {
@@ -222,8 +254,15 @@ export const calendarRange = (
     };
   });
 
-  /* Bounded by wall-clock midnights in the calendar's zone, converted per instant. A week
-     across a DST change is deliberately not 168 hours, and the query has to agree. */
+  /* Hiding weekends drops the *columns*, never the query: `from`/`to` still bound the whole
+     span. A Saturday booking that is not drawn is still a booking, and narrowing the fetch to
+     match the view would mean the same URL returned different data depending on a display
+     preference. Day and schedule views are unaffected — asking for a Saturday and being shown
+     nothing would be absurd, and an agenda lists what is there. */
+  const hide = !showWeekends && (view === "week" || view === "month");
+  const days = hide ? all.filter((day) => !isWeekend(day.weekday)) : all;
+  const width = hide ? DAYS_IN_WEEK - 2 : DAYS_IN_WEEK;
+
   const from = zonedTimeToUtc(first, 0, timeZone).toISOString();
   const to = zonedTimeToUtc(addDays(last, 1), 0, timeZone).toISOString();
 
@@ -233,7 +272,7 @@ export const calendarRange = (
     from,
     to,
     days,
-    weeks: chunkByWeek(days),
+    weeks: chunkBy(days, width),
     title: rangeTitle(view, anchor),
   };
 };

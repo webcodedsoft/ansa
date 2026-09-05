@@ -11,7 +11,15 @@ import type { BookingView, MonthCell } from "../appointments.view";
 /** How many appointments a cell shows before it stops and counts the rest. */
 const VISIBLE_PER_DAY = 3;
 
-const WEEKDAY_HEADS: readonly string[] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+/**
+ * How many columns the grid has, read off the data rather than assumed.
+ *
+ * A month is seven columns until weekends are hidden, when it is five. Hard-coding seven and
+ * then feeding it five-day rows does not draw a narrower grid — it wraps the cells every
+ * seventh one and silently shifts every date into the wrong weekday.
+ */
+const columns = (weeks: readonly (readonly MonthCell[])[]): string =>
+  `repeat(${weeks[0]?.length ?? 7}, minmax(0, 1fr))`;
 
 /**
  * The month: six weeks of cells, each listing what is in that day.
@@ -40,18 +48,21 @@ export const MonthGrid = ({
   readonly onAddOn: (dayIso: string) => void;
 }) => (
   <div className="surface overflow-hidden rounded-xl">
-    <div className="grid border-b border-[var(--hairline)] bg-[var(--surface-solid)] grid-cols-7">
-      {WEEKDAY_HEADS.map((label) => (
+    <div
+      className="grid border-b border-[var(--hairline)] bg-[var(--surface-solid)]"
+      style={{ gridTemplateColumns: columns(weeks) }}
+    >
+      {(weeks[0] ?? []).map((cell) => (
         <div
-          key={label}
+          key={cell.iso}
           className="border-l border-[var(--surface-line)] px-2 py-1.5 text-[11px] font-medium tracking-wide text-[var(--ink-3)] uppercase first:border-l-0"
         >
-          {label}
+          {cell.shortLabel}
         </div>
       ))}
     </div>
 
-    <div className="grid grid-cols-7">
+    <div className="grid" style={{ gridTemplateColumns: columns(weeks) }}>
       {weeks.flat().map((cell) => {
         const shown = cell.bookings.slice(0, VISIBLE_PER_DAY);
         const hidden = cell.bookings.length - shown.length;

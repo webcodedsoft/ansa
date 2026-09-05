@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  SCHEDULE_DAYS,
   addMonths,
   calendarRange,
   daysInMonth,
   parseView,
+  parseWeekends,
   rangeTitle,
   stepAnchor,
   bookingLabel,
@@ -103,12 +105,12 @@ describe("the days a view draws", () => {
   });
 
   it("marks today only on today, in the calendar's zone", () => {
-    const week = calendarRange("week", date(2026, 3, 4), zone, date(2026, 3, 5));
+    const week = calendarRange("week", date(2026, 3, 4), zone, { today: date(2026, 3, 5) });
     expect(week.days.filter((day) => day.isToday).map((day) => day.iso)).toEqual(["2026-03-05"]);
   });
 
   it("marks no day today when today is outside the range drawn", () => {
-    const week = calendarRange("week", date(2026, 3, 4), zone, date(2026, 9, 5));
+    const week = calendarRange("week", date(2026, 3, 4), zone, { today: date(2026, 9, 5) });
     expect(week.days.some((day) => day.isToday)).toBe(false);
   });
 });
@@ -161,5 +163,71 @@ describe("what an appointment is called on the grid", () => {
     expect(bookingLabel({ status: "booked", title: null, notes: "bring keys" })).toBe("bring keys");
     expect(bookingLabel({ status: "booked", title: "   ", notes: null })).toBe("Booked");
     expect(bookingLabel({ status: "held", title: null, notes: "  " })).toBe("Held");
+  });
+});
+
+
+describe("the schedule looks forward, not around", () => {
+  const zone = "Africa/Lagos";
+
+  it("starts on the anchor rather than rewinding to its Monday", () => {
+    // "What is coming up" starts today; opening on Monday would show days already gone.
+    const schedule = calendarRange("schedule", date(2026, 3, 4), zone);
+    expect(schedule.days[0]?.iso).toBe("2026-03-04");
+    expect(schedule.days).toHaveLength(SCHEDULE_DAYS);
+  });
+
+  it("steps a whole span at a time and crosses the month end", () => {
+    expect(isoDate(stepAnchor("schedule", date(2026, 3, 4), 1))).toBe("2026-04-03");
+    expect(isoDate(stepAnchor("schedule", date(2026, 3, 4), -1))).toBe("2026-02-02");
+  });
+
+  it("is named by the span it covers", () => {
+    expect(rangeTitle("schedule", date(2026, 3, 4))).toBe("4 March – 2 April 2026");
+  });
+
+  it("takes its shortcut key and survives an unknown view", () => {
+    expect(parseView("schedule")).toBe("schedule");
+    expect(parseView("year")).toBe("week");
+  });
+});
+
+describe("hiding weekends drops columns, never the query", () => {
+  const zone = "Africa/Lagos";
+
+  it("is on unless the URL says otherwise", () => {
+    expect(parseWeekends(undefined)).toBe(true);
+    expect(parseWeekends("1")).toBe(true);
+    expect(parseWeekends("0")).toBe(false);
+  });
+
+  it("draws five weekdays instead of seven", () => {
+    const week = calendarRange("week", date(2026, 3, 4), zone, { showWeekends: false });
+    expect(week.days).toHaveLength(5);
+    expect(week.days.map((day) => day.shortLabel)).toEqual(["Mon", "Tue", "Wed", "Thu", "Fri"]);
+    expect(week.weeks[0]).toHaveLength(5);
+  });
+
+  it("still fetches the whole span, so a Saturday booking is not silently unfetched", () => {
+    const shown = calendarRange("week", date(2026, 3, 4), zone, { showWeekends: false });
+    const all = calendarRange("week", date(2026, 3, 4), zone);
+    expect(shown.from).toBe(all.from);
+    expect(shown.to).toBe(all.to);
+  });
+
+  it("keeps the month grid in whole five-day rows", () => {
+    const month = calendarRange("month", date(2026, 3, 1), zone, { showWeekends: false });
+    expect(month.weeks).toHaveLength(6);
+    expect(month.weeks.every((week) => week.length === 5)).toBe(true);
+    expect(month.days.every((day) => day.weekday !== 0 && day.weekday !== 6)).toBe(true);
+  });
+
+  it("leaves the day and schedule views alone — a Saturday asked for is a Saturday shown", () => {
+    const saturday = calendarRange("day", date(2026, 3, 7), zone, { showWeekends: false });
+    expect(saturday.days).toHaveLength(1);
+    expect(saturday.days[0]?.iso).toBe("2026-03-07");
+
+    const schedule = calendarRange("schedule", date(2026, 3, 4), zone, { showWeekends: false });
+    expect(schedule.days).toHaveLength(SCHEDULE_DAYS);
   });
 });

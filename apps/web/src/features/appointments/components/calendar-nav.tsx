@@ -29,14 +29,17 @@ export const CalendarNav = ({
   view,
   anchor,
   timeZone,
+  showWeekends,
 }: {
   readonly calendarId: string;
   readonly view: CalendarView;
   readonly anchor: PlainDate;
   readonly timeZone: string;
+  readonly showWeekends: boolean;
 }) => {
+  const weekendSuffix = showWeekends ? "" : "&weekends=0";
   const href = (next: CalendarView, date: PlainDate): string =>
-    `/appointments?calendar=${encodeURIComponent(calendarId)}&view=${next}&date=${isoDate(date)}`;
+    `/appointments?calendar=${encodeURIComponent(calendarId)}&view=${next}&date=${isoDate(date)}${weekendSuffix}`;
 
   return (
     <div className="flex flex-wrap items-center gap-3">
@@ -62,6 +65,17 @@ export const CalendarNav = ({
       </Link>
 
       <div className="text-[13.5px] font-medium tabular-nums">{rangeTitle(view, anchor)}</div>
+
+      {/* Only the grid views have weekend columns to hide; offering the switch on a day or an
+          agenda would be a control that does nothing. */}
+      {(view === "week" || view === "month") && (
+        <Link
+          href={`/appointments?calendar=${encodeURIComponent(calendarId)}&view=${view}&date=${isoDate(anchor)}${showWeekends ? "&weekends=0" : ""}`}
+          className={buttonClass("secondary", "sm")}
+        >
+          {showWeekends ? "Hide weekends" : "Show weekends"}
+        </Link>
+      )}
 
       {/* The segmented control keeps the anchor, so switching view stays on the day you were
           looking at rather than jumping back to today. */}

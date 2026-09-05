@@ -15,7 +15,13 @@ import { CreateCalendarDialog } from "@/features/appointments/components/create-
 import { EditCalendarPanel } from "@/features/appointments/components/edit-calendar-panel";
 import { CalendarBoard } from "@/features/appointments/components/calendar-view";
 import { CalendarNav } from "@/features/appointments/components/calendar-nav";
-import { calendarRange, parseView } from "@/features/appointments/appointments.range";
+import {
+  calendarRange,
+  parseView,
+  parseWeekends,
+} from "@/features/appointments/appointments.range";
+import { CalendarKeys } from "@/features/appointments/components/calendar-keys";
+import { MiniMonth } from "@/features/appointments/components/mini-month";
 import type {
   BookingView,
   DayColumn,
@@ -25,6 +31,7 @@ import {
   groupBookingsByDay,
   groupSlotsByDay,
   dayWindow,
+  isoDate,
   parseIsoDate,
   todayIn,
   type PlainDate,
@@ -50,6 +57,8 @@ type AppointmentsSearch = {
   readonly calendar?: string;
   readonly view?: string;
   readonly date?: string;
+  /** `0` hides Saturday and Sunday from the grid views. Absent means shown. */
+  readonly weekends?: string;
   /** The old name for `date`, from when the page only had a week view. Still honoured. */
   readonly week?: string;
 };
@@ -94,17 +103,21 @@ const AppointmentsPage = async ({
     calendars.find((calendar) => calendar.id === search.calendar) ?? calendars[0]!;
 
   const view = parseView(search.view);
+  const showWeekends = parseWeekends(search.weekends);
+  const today = todayIn(selected.timezone);
   const anchor: PlainDate =
-    parseIsoDate(search.date) ?? parseIsoDate(search.week) ?? todayIn(selected.timezone);
-  const range = calendarRange(view, anchor, selected.timezone);
+    parseIsoDate(search.date) ?? parseIsoDate(search.week) ?? today;
+  const range = calendarRange(view, anchor, selected.timezone, { today, showWeekends });
 
-  /* A month draws appointments as a list per day, not by the minute, so it has no use for free
-     slots — and asking for six weeks of them is a large query to throw away. */
+  /* Only the time grids place free slots by the minute. A month is a list per day and the
+     schedule has no clock at all, so asking for six weeks of slots would be a large query
+     thrown away on arrival. */
+  const drawsSlots = view === "day" || view === "week";
   const [availability, slots, bookings] = await Promise.all([
     readAvailability(selected.id),
-    view === "month"
-      ? Promise.resolve({ slots: [] as Awaited<ReturnType<typeof listSlots>>["slots"] })
-      : listSlots(selected.id, range.from, range.to),
+    drawsSlots
+      ? listSlots(selected.id, range.from, range.to)
+      : Promise.resolve({ slots: [] as Awaited<ReturnType<typeof listSlots>>["slots"] }),
     listBookings(selected.id, range.from, range.to),
   ]);
 
@@ -179,6 +192,7 @@ const AppointmentsPage = async ({
               view={view}
               anchor={anchor}
               timeZone={selected.timezone}
+              showWeekends={showWeekends}
             />
             <div className="text-[12px] text-[var(--ink-3)]">
               Times shown in{" "}
@@ -202,18 +216,37 @@ const AppointmentsPage = async ({
             )
           )}
 
-          <CalendarBoard
-            key={`${selected.id}:${view}`}
+          {/* The little month sits beside the grid on a wide screen and above it on a narrow
+              one, where a sidebar would push the calendar off the edge. */}
+          <div className="flex flex-col gap-3.5 lg:grid lg:grid-cols-[196px_minmax(0,1fr)] lg:items-start">
+            <MiniMonth
+              calendarId={selected.id}
+              view={view}
+              anchor={anchor}
+              timeZone={selected.timezone}
+              todayIso={isoDate(today)}
+            />
+
+            <CalendarBoard
+              key={`${selected.id}:${view}`}
+              calendarId={selected.id}
+              view={view}
+              days={days}
+              cells={cells}
+              startMinute={dayBounds.startMinute}
+              endMinute={dayBounds.endMinute}
+              timeZone={selected.timezone}
+              slotMinutes={selected.slotMinutes}
+              hasHours={!noAvailability}
+              canWrite={canWrite}
+            />
+          </div>
+
+          <CalendarKeys
             calendarId={selected.id}
             view={view}
-            days={days}
-            cells={cells}
-            startMinute={dayBounds.startMinute}
-            endMinute={dayBounds.endMinute}
+            anchor={anchor}
             timeZone={selected.timezone}
-            slotMinutes={selected.slotMinutes}
-            hasHours={!noAvailability}
-            canWrite={canWrite}
           />
         </div>
       ),
