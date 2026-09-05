@@ -243,6 +243,13 @@
 
 .ansa-enter { animation: ansa-rise 300ms cubic-bezier(0.32, 0.72, 0, 1); }
 
+/* A picked-out link on the flow canvas: the dashes travel the way the call goes. The
+   offset runs one dash-period (7 + 5) per cycle so the pattern loops without a jump. */
+@keyframes ansa-flow {
+  to { stroke-dashoffset: -12; }
+}
+.ansa-flow-line { animation: ansa-flow 0.5s linear infinite; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.001ms !important;

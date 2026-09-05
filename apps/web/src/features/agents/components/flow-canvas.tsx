@@ -424,8 +424,10 @@ const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 1.6;
 const ZOOM_STEP = 1.15;
 const clampScale = (scale: number): number => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, scale));
-/** The toolbar's height along the top of the viewport, which the drawing must stay under. */
+/** The toolbar's height along the top of the viewport, which Fit keeps the drawing under. */
 const TOOLBAR_CLEAR = 60;
+/** How much of the drawing must stay on screen, whichever way it is pushed. */
+const KEEP = 96;
 
 interface Point {
   readonly x: number;
@@ -468,6 +470,16 @@ const elbow = (p1: Point, p2: Point, busY: number): string => {
     `V${p2.y}`,
   ].join(" ");
 };
+
+/**
+ * A link's identity for picking it out: where it is from and to and by which way out. Two
+ * links between the same steps by the same port are the same link, and nothing else is.
+ */
+const edgeKey = (edge: FlowEdge): string => `${edge.from}→${edge.to}|${edge.port ?? ""}|${edge.otherwise === true ? "otherwise" : edge.when === undefined ? "" : JSON.stringify(edge.when)}`;
+
+/** What a link is, in the words on the drawing: the answer or the port that takes it. */
+const describeEdge = (edge: FlowEdge): string =>
+  edge.otherwise === true ? "anything else" : edge.when !== undefined ? conditionLabel(edge.when) : edge.port === undefined ? "then" : edge.port.replace("-", " ");
 
 /** A path through the given corners, each turn rounded. Every segment is horizontal or vertical. */
 const orthogonal = (points: readonly Point[], r: number): string => {
@@ -725,6 +737,12 @@ export const FlowCanvas = ({
   const [pending, setPending] = useState<Readonly<Record<string, readonly FlowCondition[]>>>({});
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1 });
   const [selected, setSelected] = useState<string | null>(null);
+  /**
+   * The link the reader has picked out, by `edgeKey`. Picking one dims the rest and runs the
+   * dashes along it from the step it leaves to the step it lands on, and fills the dot at each
+   * end — so a link across a busy drawing can be followed with the eye and not just found.
+   */
+  const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
   const [temp, setTemp] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   // Bumped whenever the canvas needs its port positions re-read from the DOM — after a tab
   // that was hidden becomes visible, chiefly, since `offsetTop` is 0 until then.
@@ -855,6 +873,13 @@ export const FlowCanvas = ({
   /** Select a step, and give it the right-hand pane if a setting had taken it. */
   const chooseStep = (id: string) => {
     setSelected(id);
+    setSelectedEdge(null);
+    onChooseStep?.();
+  };
+  /** Pick a link out, and put down whatever step was picked: the inspector shows one thing. */
+  const chooseEdge = (key: string) => {
+    setSelectedEdge(key);
+    setSelected(null);
     onChooseStep?.();
   };
 
@@ -920,8 +945,8 @@ export const FlowCanvas = ({
       const boxTop = { x, y: frame.top - LANE_HEAD };
       const boxBottom = { x, y: frame.top + BODY_H + 8 };
       return [
-        { key: `${at}`, d: elbow(p1, boxTop, boxTop.y - 12), jump: false, label: "", mid: boxTop },
-        { key: `${at}b`, d: elbow(boxBottom, p2, p2.y - 16), jump: false, label: "", mid: p2 },
+        { key: `${at}`, edge: edgeKey(edge), d: elbow(p1, boxTop, boxTop.y - 12), jump: false, label: "", mid: boxTop },
+        { key: `${at}b`, edge: edgeKey(edge), d: elbow(boxBottom, p2, p2.y - 16), jump: false, label: "", mid: p2 },
       ];
     }
 
@@ -932,6 +957,7 @@ export const FlowCanvas = ({
       return [
         {
           key: `${at}`,
+          edge: edgeKey(edge),
           d: jumpPath(p1, { x: p2.x, y: p2.y - 5 }, side),
           jump: true,
           label: ports[index]?.label ?? "",
@@ -951,7 +977,7 @@ export const FlowCanvas = ({
     const fansOut = from.id === laneFork && (intoLane || lanes.some((lane) => lane.head === to.id));
     const rejoins = inService.has(from.id) && !inService.has(to.id);
     const d = fansOut ? elbow(p1, p2, p2.y - LANE_HEAD - 12) : rejoins ? elbow(p1, p2, p2.y - 16) : bezier(p1, p2);
-    return [{ key: `${at}`, d, jump: false, label: splits && !intoLane ? (ports[index]?.label ?? "") : "", mid }];
+    return [{ key: `${at}`, edge: edgeKey(edge), d, jump: false, label: splits && !intoLane ? (ports[index]?.label ?? "") : "", mid }];
   });
 
   const localPoint = (e: ReactPointerEvent): Point => {
@@ -1033,16 +1059,26 @@ export const FlowCanvas = ({
    * drawing is kept below the toolbar: at 100% the layout's own margin clears it, and when
    * zoomed out that margin shrinks with everything else, so the room is made up here.
    */
+  /**
+   * A view that never loses the drawing, and otherwise goes where it is pushed.
+   *
+   * The canvas is free: the drawing can be scrolled almost entirely off any edge, so there is
+   * room to work beside it and beneath it. What it cannot do is vanish — a corner of it stays
+   * on screen, `KEEP` pixels of it, so there is always something to grab and Fit is never the
+   * only way back.
+   */
   const clampView = (next: View): View => {
     const port = canvasRef.current;
     const scale = clampScale(next.scale);
     if (port === null) return { ...next, scale };
     const { right, bottom } = extent();
-    const topClear = Math.max(0, TOOLBAR_CLEAR - (TOP - LANE_HEAD) * scale);
     const between = (low: number, high: number, value: number): number => Math.min(Math.max(low, high), Math.max(Math.min(low, high), value));
+    /* Measured against the cards, not the drawing's margins: the first card sits `LEFT` in
+       and a header's height below `TOP`, and a sliver of empty margin is not something to
+       grab. `extent` pads the right by `LEFT` too. */
     return {
-      x: between(0, port.clientWidth - right * scale, next.x),
-      y: between(topClear, port.clientHeight - bottom * scale, next.y),
+      x: between(KEEP - (right - LEFT) * scale, port.clientWidth - KEEP - LEFT * scale, next.x),
+      y: between(KEEP - (bottom - 40) * scale, port.clientHeight - KEEP - (TOP - LANE_HEAD) * scale, next.y),
       scale,
     };
   };
@@ -1129,6 +1165,7 @@ export const FlowCanvas = ({
     panRef.current = { startX: e.clientX, startY: e.clientY, panX: viewLive.current.x, panY: viewLive.current.y };
     e.currentTarget.setPointerCapture(e.pointerId);
     setSelected(null);
+    setSelectedEdge(null);
   };
   const onCanvasPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const p = panRef.current;
@@ -1446,7 +1483,7 @@ export const FlowCanvas = ({
     if (port === null || nodes.length === 0) return applyView({ x: 0, y: 0, scale: 1 });
     const { right, bottom } = extent();
     const scale = clampScale(Math.min(1, (port.clientWidth - 16) / right, (port.clientHeight - TOOLBAR_CLEAR) / bottom));
-    applyView({ x: (port.clientWidth - right * scale) / 2, y: 0, scale });
+    applyView({ x: (port.clientWidth - right * scale) / 2, y: Math.max(0, TOOLBAR_CLEAR - (TOP - LANE_HEAD) * scale), scale });
   };
 
   const updateSelected = (patch: Partial<FlowNode>, what: string) => {
@@ -1560,6 +1597,7 @@ export const FlowCanvas = ({
      fork's dots and runs along the gap, and needs no box to start from. */
 
   const selectedNode = selected === null ? null : (byId(selected) ?? null);
+  const pickedEdge = selectedEdge === null ? null : (edges.find((edge) => edgeKey(edge) === selectedEdge) ?? null);
   const branches = selectedNode === null ? [] : edges.filter(conditional(selectedNode.id));
   const waiting = selectedNode === null ? [] : (pending[selectedNode.id] ?? []);
 
@@ -1894,33 +1932,53 @@ export const FlowCanvas = ({
                 <marker id="ansa-jump-head" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto">
                   <path d="M0 0 L8 4 L0 8 Z" fill="color-mix(in srgb, var(--accent) 70%, transparent)" />
                 </marker>
+                <marker id="ansa-picked-head" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto">
+                  <path d="M0 0 L8 4 L0 8 Z" fill="var(--accent)" />
+                </marker>
               </defs>
-              {edgePaths.map((p) => (
-                  <g key={p.key}>
-                    {/* Inert. A click on the link used to remove it, and a hairline that
-                        deletes on contact is a trap on a drawing that is mostly hairlines:
-                        it took the press meant for the lane behind it, and a slip left a dead
-                        end. A link is changed by moving the step, or from the inspector. */}
+              {edgePaths.map((p) => {
+                const picked = selectedEdge === p.edge;
+                const dimmed = selectedEdge !== null && !picked;
+                return (
+                  <g key={p.key} className="transition-opacity" style={{ opacity: dimmed ? 0.22 : 1 }}>
+                    {/* A click on a link picks it out; it used to remove it, and a hairline
+                        that deletes on contact is a trap. The wide invisible stroke is what
+                        takes the click — a line a pixel and a half wide cannot be aimed at. */}
                     <path
                       d={p.d}
                       fill="none"
-                      stroke={p.jump ? "color-mix(in srgb, var(--accent) 70%, transparent)" : "color-mix(in srgb, var(--ink-3) 60%, transparent)"}
-                      strokeWidth={1.5}
-                      strokeDasharray={p.jump ? "4 3" : undefined}
-                      markerEnd={p.jump ? "url(#ansa-jump-head)" : undefined}
+                      stroke="transparent"
+                      strokeWidth={10}
+                      /* Only the click, not the press: a press that turns into a drag is a
+                         pan, whether it began on a link or beside one. */
+                      style={{ pointerEvents: "stroke", cursor: "pointer" }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        chooseEdge(p.edge);
+                      }}
                     />
-                    {p.label !== "" && (
+                    <path
+                      d={p.d}
+                      fill="none"
+                      stroke={picked ? "var(--accent)" : p.jump ? "color-mix(in srgb, var(--accent) 70%, transparent)" : "color-mix(in srgb, var(--ink-3) 60%, transparent)"}
+                      strokeWidth={picked ? 2.25 : 1.5}
+                      strokeDasharray={picked ? "7 5" : p.jump ? "4 3" : undefined}
+                      markerEnd={picked ? "url(#ansa-picked-head)" : p.jump ? "url(#ansa-jump-head)" : undefined}
+                      className={picked ? "ansa-flow-line" : undefined}
+                    />
+                    {(p.label !== "" || picked) && (
                       <text
                         x={p.mid.x}
                         y={p.mid.y}
                         textAnchor="middle"
-                        className={cn("pointer-events-none font-mono text-[9.5px]", p.jump ? "fill-[var(--accent)]" : "fill-[var(--ink-3)]")}
+                        className={cn("pointer-events-none font-mono text-[9.5px]", picked || p.jump ? "fill-[var(--accent)]" : "fill-[var(--ink-3)]")}
                       >
                         {p.label}
                       </text>
                     )}
                   </g>
-              ))}
+                );
+              })}
               {temp !== null && (
                 <path
                   d={bezier({ x: temp.x1, y: temp.y1 }, { x: temp.x2, y: temp.y2 })}
@@ -2049,7 +2107,10 @@ export const FlowCanvas = ({
                     <span
                       aria-hidden
                       className={cn(
-                        "absolute top-[-5px] left-[calc(50%-4.5px)] size-[9px] rounded-full border-[1.5px] border-[var(--ink-3)] bg-[var(--surface-solid)] transition-opacity",
+                        "absolute top-[-5px] left-[calc(50%-4.5px)] size-[9px] rounded-full border-[1.5px] transition-opacity",
+                        selectedEdge !== null && edges.some((edge) => edge.to === n.id && edgeKey(edge) === selectedEdge)
+                          ? "border-[var(--accent)] bg-[var(--accent)]"
+                          : "border-[var(--ink-3)] bg-[var(--surface-solid)]",
                         n.id === selected || edges.some((edge) => edge.to === n.id) ? "opacity-100" : "opacity-0 group-hover:opacity-100",
                       )}
                     />
@@ -2071,6 +2132,7 @@ export const FlowCanvas = ({
                         n.id === selected || edges.some((edge) => port.holds(edge))
                           ? "border-[var(--ink-3)] opacity-100"
                           : "border-[var(--ink-3)] opacity-0 group-hover:opacity-100",
+                        selectedEdge !== null && edges.some((edge) => port.holds(edge) && edgeKey(edge) === selectedEdge) && "border-[var(--accent)] bg-[var(--accent)] opacity-100",
                       )}
                       style={{ left: `calc(${portAlong(at, ports.length, n.kind) * 100}% - 4.5px)` }}
                       onPointerDown={(e) => onOutPortPointerDown(e, n, port)}
@@ -2138,9 +2200,33 @@ export const FlowCanvas = ({
               covers the call it speaks. Kept in the tree while hidden — see `settingsPane`. */}
           {settingsPane !== undefined && <div hidden={openSetting === null}>{settingsPane}</div>}
           <div hidden={openSetting !== null}>
-          {selectedNode === null ? (
+          {selectedNode === null && pickedEdge !== null ? (
+            <div className="flex flex-col gap-3">
+              <div>
+                <p className="mb-0.5 font-mono text-[9.5px] tracking-[0.13em] text-[var(--ink-3)] uppercase">Link</p>
+                <h3 className="text-[14px] font-[640] tracking-[-0.018em]">{describeEdge(pickedEdge)}</h3>
+                <p className="mt-1 text-[12px] leading-relaxed text-[var(--ink-3)]">
+                  From <b className="font-medium text-[var(--ink-2)]">{cardLine(byId(pickedEdge.from) ?? blankNode("", "say", 0, 0), edges).title || "an unnamed step"}</b> to{" "}
+                  <b className="font-medium text-[var(--ink-2)]">{cardLine(byId(pickedEdge.to) ?? blankNode("", "say", 0, 0), edges).title || "an unnamed step"}</b>. The dashes run the way the call goes.
+                </p>
+              </div>
+              {/* Removing a link is deliberate now: pick it, then remove it. Whatever led by it
+                  leads nowhere afterwards, which the drawing then says. */}
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  const gone = pickedEdge;
+                  setSelectedEdge(null);
+                  edit((f) => ({ ...f, edges: f.edges.filter((edge) => edgeKey(edge) !== edgeKey(gone)) }));
+                }}
+              >
+                Remove this link
+              </Button>
+            </div>
+          ) : selectedNode === null ? (
             <p className="py-6 text-center text-[12.5px] leading-relaxed text-[var(--ink-3)]">
-              Select a node to edit what it says and how it behaves.
+              Select a step to edit what it says and how it behaves, or a link to follow it.
             </p>
           ) : (
             <div className="flex flex-col gap-3">

@@ -4110,6 +4110,18 @@ as the answer and, from the fork, as an option on the choice. 44 layout tests. V
 Oakhaven: load names rent/buy; add a service → unattached lane; "+" dot onto it → `new service
 → n14`, option added, fork "3 ways".
 
+**A free canvas, and a link you can follow (2026-09-05).** The pan clamp held the drawing to
+the viewport; it holds `KEEP` (96px) of the *cards* on screen now and nothing more, so there is
+room beside and beneath the drawing and it still cannot be lost. Fit keeps the drawing under
+the toolbar; the clamp no longer insists. A click on a link picks it out (`selectedEdge`, keyed
+by `edgeKey`): it turns accent, the dashes run along it the way the call goes (`ansa-flow`,
+half a second a cycle, honouring reduced motion), it gets a head, the dot it leaves from and
+the dot it lands on fill, and every other link dims to a fifth. The inspector names it — "is
+rent, from Branch to Which area are you looking at?" — and offers Remove this link, which is
+how a link is deleted now: picked, then removed, never by a slip. The click is taken by a wide
+invisible stroke, since a line a pixel and a half wide cannot be aimed at; only the click,
+not the press, so a drag that begins on a link is still a pan.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and
