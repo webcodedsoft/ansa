@@ -20,6 +20,8 @@ export interface OutboundRequest {
   readonly mediaStreamUrl: string;
   readonly statusCallbackUrl?: string;
   readonly amdCallbackUrl?: string;
+  /** Echoed back on the media socket. Carries the campaign, so the call knows why it rang. */
+  readonly parameters?: Readonly<Record<string, string>>;
   readonly earliestHour?: number;
   readonly latestHour?: number;
 }
@@ -91,6 +93,10 @@ export const placeOutboundCall = async (deps: {
     from: request.from,
     mediaStreamUrl: request.mediaStreamUrl,
     parameters: {
+      /* The caller's own values first, so the four below cannot be overwritten by them.
+         `organizationId` in particular is the one the whole tenancy layer rests on: a caller
+         that could replace it would be handing the socket somebody else's organisation. */
+      ...(request.parameters ?? {}),
       organizationId: request.organizationId,
       direction: "outbound",
       // The number we dialled and the number we dialled from, so the call record does

@@ -134,6 +134,12 @@ export const API_CONTROLLERS = [
     { provide: APP_INTERCEPTOR, useClass: EndpointInterceptor },
     { provide: APP_FILTER, useClass: ProblemFilter },
   ],
+  /* The one door that places a call, for the dialler.
+   *
+   * Exported rather than rebuilt there, and that is the whole point: `placeOutboundCall` is
+   * where the consent gate lives, and a module that constructed its own way to the carrier
+   * would be the second origination path `origination.ts` warns about. */
+  exports: [ORIGINATION],
 })
 export class ApiModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

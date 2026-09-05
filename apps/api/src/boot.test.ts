@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { AppModule } from "./app.module";
 import { EventDeliverySweeper } from "./events/delivery.sweeper";
+import { OutboundDialer } from "./outbound/dialer.sweeper";
 import { AudioRetentionSweeper } from "./retention/audio-retention";
 import { MediaGateway } from "./telephony/media.gateway";
 import { APP_CONFIG, DATA_SOURCE, LOGGER, ORGANIZATION_REGISTRY, TTS_PROVIDER } from "./telephony/tokens";
@@ -100,6 +101,8 @@ describe("the application boots", () => {
       // TelephonyModule purely for what it exports, which is the seam that broke.
       expect(app.get(MediaGateway)).toBeInstanceOf(MediaGateway);
       expect(app.get(EventDeliverySweeper)).toBeInstanceOf(EventDeliverySweeper);
+        // The dialler resolves too: without it a campaign fills a queue nothing drains.
+        expect(app.get(OutboundDialer)).toBeInstanceOf(OutboundDialer);
       expect(app.get(AudioRetentionSweeper)).toBeInstanceOf(AudioRetentionSweeper);
       expect(app.get(ORGANIZATION_REGISTRY)).toBeDefined();
       expect(app.get(LOGGER)).toBeDefined();
@@ -123,6 +126,8 @@ describe("the application boots", () => {
       expect(app.get<Db | null>(DATA_SOURCE)).toBeNull();
       expect(app.get(MediaGateway)).toBeInstanceOf(MediaGateway);
       expect(app.get(EventDeliverySweeper)).toBeInstanceOf(EventDeliverySweeper);
+        // The dialler resolves too: without it a campaign fills a queue nothing drains.
+        expect(app.get(OutboundDialer)).toBeInstanceOf(OutboundDialer);
     } finally {
       await app.close();
     }
@@ -194,6 +199,8 @@ describe("the application boots", () => {
         expect(dataSource?.isInitialized).toBe(true);
         expect(app.get(MediaGateway)).toBeInstanceOf(MediaGateway);
         expect(app.get(EventDeliverySweeper)).toBeInstanceOf(EventDeliverySweeper);
+        // The dialler resolves too: without it a campaign fills a queue nothing drains.
+        expect(app.get(OutboundDialer)).toBeInstanceOf(OutboundDialer);
       } finally {
         await app.close();
       }

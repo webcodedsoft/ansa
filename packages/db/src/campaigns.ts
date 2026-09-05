@@ -1,3 +1,6 @@
+import type { OrganizationId } from "@ansa/shared";
+
+import type { Db } from "./data-source";
 import type { OrganizationScope } from "./organization-scope";
 import { pageOrder, pageParams, TOTAL_COLUMN, toSlice, type PageRequest, type PageSlice, type WithTotal }
   from "./paging";
@@ -424,13 +427,65 @@ export const readScheduledCalls = async (
  * Read inside the scheduler's transaction and claimed with `claimScheduledCall`; this alone
  * does not take a row.
  */
+/**
+ * A row ready to dial, with everything the dialler needs to decide about it.
+ *
+ * The campaign's own fields travel with it rather than being fetched per row: a sweep of
+ * twenty would otherwise be twenty-one queries, and the window and the retry policy are the
+ * two things it cannot dial without.
+ */
+export interface DueCall extends ScheduledCall {
+  /**
+   * The number to ring from: the one routed to this campaign's agent.
+   *
+   * Null when the agent has no number, which is a campaign that cannot dial — the caller ID
+   * has to be a number the person can ring back, and a call from a number that goes nowhere is
+   * the shape of a nuisance call whatever is said on it.
+   */
+  readonly fromNumber: string | null;
+  readonly campaignPurpose: string | null;
+  readonly campaignOpening: string | null;
+  readonly campaignOutcomes: readonly string[] | null;
+  readonly campaignFlow: Record<string, unknown> | null;
+  readonly campaignVoicemail: Record<string, unknown> | null;
+  readonly callingWindow: Record<string, unknown> | null;
+  readonly maxAttempts: number;
+  readonly retryAfterMinutes: number;
+}
+
+/**
+ * Which organisations have a call waiting.
+ *
+ * Not organisation-scoped, and it cannot be: the question spans tenants by definition. It goes
+ * through `app.organizations_with_due_calls`, a `security definer` function with a pinned
+ * search path, exactly as the event sweeper's own cross-tenant claim does — and it returns ids
+ * and nothing else, so the widest thing this can leak is which tenants are busy. The dialler
+ * then opens a proper scope per organisation and reads the queue through the policies.
+ */
+export const organizationsWithDueCalls = async (
+  dataSource: Db,
+): Promise<readonly OrganizationId[]> => {
+  const rows = (await dataSource.query(
+    "select organization_id from app.organizations_with_due_calls()",
+  )) as Record<string, unknown>[];
+  return rows.map((row) => String(row["organization_id"]) as OrganizationId);
+};
+
 export const readDueScheduledCalls = async (
   scope: OrganizationScope,
   now: Date,
   limit: number,
-): Promise<readonly ScheduledCall[]> => {
+): Promise<readonly DueCall[]> => {
   const rows = await scope.query<Record<string, unknown>>(
-    `select ${SCHEDULED_COLUMNS}
+    `select ${SCHEDULED_COLUMNS},
+            cp.purpose as campaign_purpose, cp.opening as campaign_opening,
+            cp.outcomes as campaign_outcomes, cp.flow as campaign_flow,
+            cp.voicemail as campaign_voicemail, cp.calling_window,
+            cp.max_attempts, cp.retry_after_minutes,
+            (select r.number from organization_number_routing r
+              where r.agent_id = cp.agent_id
+              order by r.created_at
+              limit 1) as from_number
        from scheduled_calls s
        join contacts ct on ct.id = s.contact_id
        join campaigns cp on cp.id = s.campaign_id
@@ -438,11 +493,28 @@ export const readDueScheduledCalls = async (
         and s.next_attempt_at is not null
         and s.next_attempt_at <= $1
         and cp.status = 'running'
+        /* Nothing past its own ceiling is due. The dialler checks this too, and both are
+           deliberate: this keeps a spent row out of every sweep, and that one is what
+           decides whether a failed attempt earns another. */
+        and s.attempts < cp.max_attempts
       order by s.next_attempt_at, s.id
       limit $2`,
     [now, limit],
   );
-  return rows.map(asScheduled);
+  return rows.map((row) => ({
+    ...asScheduled(row),
+    fromNumber: row["from_number"] == null ? null : String(row["from_number"]),
+    campaignPurpose: row["campaign_purpose"] === null ? null : String(row["campaign_purpose"]),
+    campaignOpening: row["campaign_opening"] === null ? null : String(row["campaign_opening"]),
+    campaignOutcomes: Array.isArray(row["campaign_outcomes"])
+      ? (row["campaign_outcomes"] as string[]).map(String)
+      : null,
+    campaignFlow: (row["campaign_flow"] ?? null) as Record<string, unknown> | null,
+    campaignVoicemail: (row["campaign_voicemail"] ?? null) as Record<string, unknown> | null,
+    callingWindow: (row["calling_window"] ?? null) as Record<string, unknown> | null,
+    maxAttempts: Number(row["max_attempts"] ?? 3),
+    retryAfterMinutes: Number(row["retry_after_minutes"] ?? 240),
+  }));
 };
 
 /**

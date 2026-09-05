@@ -88,6 +88,15 @@ export const callbackUrls = (
 
 export interface TestCallRequest {
   /**
+   * Values echoed back on the media socket when the call is answered.
+   *
+   * How an outbound call tells the orchestrator what it is: the campaign whose brief says why
+   * it rang, and the queue row the outcome belongs to. CLAUDE.md describes the same mechanism
+   * for the organisation on an outbound call — it travels out with the origination and comes
+   * back as a stream parameter, because there is no dialled number to resolve it from.
+   */
+  readonly parameters?: Readonly<Record<string, string>>;
+  /**
    * Whose call it is. Named `owner` rather than passed positionally for the reason
    * `refusals.ts` gives — `routes.test.ts` is blunt about a organization id in an argument list,
    * and rightly, because that is the shape of the mistake this whole layer removes.
@@ -148,6 +157,7 @@ export const createOrigination = (deps: {
           organizationId: request.owner,
           to: request.to,
           from: request.from,
+          ...(request.parameters === undefined ? {} : { parameters: request.parameters }),
           ...callbackUrls(environment.publicBaseUrl),
         },
       );
