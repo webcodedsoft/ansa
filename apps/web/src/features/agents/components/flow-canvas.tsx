@@ -1980,8 +1980,11 @@ export const FlowCanvas = ({
                 </marker>
               </defs>
               {edgePaths.map((p) => {
-                const picked = selectedEdge === p.edge;
-                const dimmed = selectedEdge !== null && !picked;
+                /* Lit when it is the picked link, or a link of the picked step — every link
+                   in and out of it, so what a step connects to reads at once; the rest dim. */
+                const ofStep = selected !== null && (p.edge.startsWith(`${selected}→`) || p.edge.includes(`→${selected}|`));
+                const picked = selectedEdge === p.edge || (selectedEdge === null && ofStep);
+                const dimmed = (selectedEdge !== null || selected !== null) && !picked;
                 return (
                   <g key={p.key} className="transition-opacity" style={{ opacity: dimmed ? 0.22 : 1 }}>
                     {/* A click on a link picks it out; it used to remove it, and a hairline

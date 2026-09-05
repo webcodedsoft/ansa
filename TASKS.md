@@ -4143,6 +4143,10 @@ inspector offers the same as a list, "Leads to", every step and then every servi
 keyboard and for a drawing too wide to drag across. One path for making, moving and leading
 a link; `onOutPortPointerUp` is now a hit-test and a call.
 
+**A picked step lights its links (2026-09-05).** Every link in and out of the selected step
+runs the way a picked link does — accent, dashes travelling, a head — and the rest dim, so
+what a step connects to reads at a glance. A picked link still wins when there is one.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and
