@@ -457,4 +457,59 @@ describe("the published flow", () => {
   it("blocks a flow agent with no graph at all", () => {
     expect(stateOf("flow", { authoringMode: "flow", flow: null })).toBe("blocked");
   });
+
+  /**
+   * Whether anything on the call can dial the crisis number.
+   *
+   * `transfer_urgently` is gated on the drawing naming it and has no node shape of its own,
+   * so a graph can be valid, publishable and complete — `flow` says "ok" on every case below
+   * — and still leave a distressed caller with nowhere to go. Nothing else in the product
+   * would say so, which is the whole reason for the check.
+   */
+  describe("and whether a caller in crisis can reach the urgent handover", () => {
+    const withCrisis = {
+      ...sound,
+      nodes: [...sound.nodes, { id: "sos", kind: "tool", tool: "transfer_urgently", x: 2, y: 0 }],
+    };
+
+    it("is satisfied when a step uses it", () => {
+      expect(stateOf("crisis.reachable", { authoringMode: "flow", flow: withCrisis })).toBe("ok");
+    });
+
+    it("wants attention when the graph is otherwise sound but names it nowhere", () => {
+      // The graph itself is fine — that is exactly what makes the absence easy to miss.
+      expect(stateOf("flow", { authoringMode: "flow", flow: sound })).toBe("ok");
+      expect(stateOf("crisis.reachable", { authoringMode: "flow", flow: sound })).toBe("attention");
+    });
+
+    it("says plainly when the number is set and nothing can dial it", () => {
+      /* The worst of the two, because somebody answered the crisis question at onboarding and
+         has every reason to believe it is handled. */
+      expect(
+        detailOf("crisis.reachable", {
+          authoringMode: "flow",
+          flow: sound,
+          crisisHandoffConfigured: true,
+        }),
+      ).toContain("configured and unreachable");
+    });
+
+    it("leaves a form-authored agent alone, because it gates nothing", () => {
+      expect(stateOf("crisis.reachable", { authoringMode: "form", flow: null })).toBe("ok");
+    });
+
+    it("does not repeat the no-graph complaint that `flow` already blocks on", () => {
+      expect(stateOf("crisis.reachable", { authoringMode: "flow", flow: null })).toBe("unknown");
+    });
+
+    it("does not count an ordinary transfer step as the urgent one", () => {
+      /* A `transfer` node names `transfer_to_human`, which keeps office hours. Treating it as
+         the crisis handover would report "ok" for the case this check exists to catch. */
+      const ordinary = {
+        ...sound,
+        nodes: [...sound.nodes, { id: "human", kind: "transfer", x: 2, y: 0 }],
+      };
+      expect(stateOf("crisis.reachable", { authoringMode: "flow", flow: ordinary })).toBe("attention");
+    });
+  });
 });

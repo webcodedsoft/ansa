@@ -7372,6 +7372,7 @@
                               "events",
                               "escalation",
                               "crisis",
+                              "crisis.reachable",
                               "flow"
                             ]
                           },

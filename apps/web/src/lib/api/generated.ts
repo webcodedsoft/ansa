@@ -3153,7 +3153,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly checkedAt: string;
         readonly configVersion: number;
         readonly checks: readonly ({
-        readonly id: "number.attached" | "number.carrier_webhook" | "number.traffic" | "greeting" | "voice" | "consent_policy" | "business_hours" | "tools" | "credentials" | "events" | "escalation" | "crisis" | "flow";
+        readonly id: "number.attached" | "number.carrier_webhook" | "number.traffic" | "greeting" | "voice" | "consent_policy" | "business_hours" | "tools" | "credentials" | "events" | "escalation" | "crisis" | "crisis.reachable" | "flow";
         readonly title: string;
         readonly state: "ok" | "attention" | "blocked" | "unknown";
         readonly detail: string;

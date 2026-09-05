@@ -1,4 +1,4 @@
-import { validateFlow, type Flow } from "@ansa/shared";
+import { namedInternalTools, validateFlow, type Flow } from "@ansa/shared";
 import type { OnboardingFacts } from "@ansa/db";
 import { parseConnectorConfig, parseEventConfig } from "@ansa/tools";
 
@@ -47,6 +47,7 @@ export const CHECK_IDS = [
   "events",
   "escalation",
   "crisis",
+  "crisis.reachable",
   "flow",
 ] as const;
 
@@ -256,6 +257,70 @@ const flowCheck = (facts: OnboardingFacts): ReadinessCheck => {
     "blocked",
     `The published graph no longer passes ${blocking.length === 1 ? "a rule" : `${blocking.length} rules`} that a call needs, so calls are being conducted as a form until it is fixed: ${blocking.map((problem) => problem.message).join(" ")}`,
     "Open the Flow tab, fix the steps the problems panel names, and publish again.",
+  );
+};
+
+/**
+ * Whether the drawing gives a distressed caller a way out.
+ *
+ * `transfer_urgently` is one of the four internal tools a flow has to name before a call
+ * gets it, and it is the one with no node shape of its own — a `transfer` step names the
+ * ordinary handover, not this. So a graph can be complete, valid, publishable and still
+ * leave `callerInCrisis` with nothing that reaches it, because that trigger has exactly one
+ * caller: the tool. Nothing else in the product would say so.
+ *
+ * That silence is the reason this check exists. The sibling `crisisCheck` asks whether a
+ * number is set; this asks whether anything on the call can dial it. Both can be true
+ * separately, and the combination worth shouting about is a crisis number configured and
+ * unreachable — somebody answered that question at onboarding and has every reason to think
+ * it is handled.
+ *
+ * "attention" rather than "blocked", deliberately: an agent that never draws the handover
+ * still answers calls correctly, and blocking a whole organisation's readiness on it would
+ * push people to draw a step they do not route anywhere. Matching `crisisCheck`, which is
+ * "attention" for the same absence expressed the other way.
+ */
+const crisisReachCheck = (facts: OnboardingFacts): ReadinessCheck => {
+  const title = "A caller in crisis can reach the urgent handover";
+
+  if (facts.authoringMode !== "flow") {
+    /* A form-authored agent names nothing and gates nothing, so it always holds the tool.
+       Whether the number behind it is set is `crisisCheck`'s question, not this one. */
+    return check(
+      "crisis.reachable",
+      title,
+      "ok",
+      "This agent is built as a form, so transfer_urgently is always available to it.",
+    );
+  }
+
+  if (facts.flow === null || typeof facts.flow !== "object") {
+    // `flowCheck` already blocks on this and says what to do; saying it twice helps nobody.
+    return check(
+      "crisis.reachable",
+      title,
+      "unknown",
+      "This agent is set to run as a flow and has no published graph, so there is nothing to read.",
+    );
+  }
+
+  if (namedInternalTools(facts.flow as Flow)?.has("transfer_urgently") === true) {
+    return check(
+      "crisis.reachable",
+      title,
+      "ok",
+      "The published graph has a step that uses transfer_urgently, so a caller at risk of harm can be handed over.",
+    );
+  }
+
+  return check(
+    "crisis.reachable",
+    title,
+    "attention",
+    facts.crisisHandoffConfigured
+      ? "A crisis number is set, and no step in the published graph uses transfer_urgently — so nothing on a call can dial it. The number is configured and unreachable."
+      : "No step in the published graph uses transfer_urgently, so a caller who says they are at risk of harm has no urgent handover on this agent.",
+    "Add a Tool step on the Flow tab, choose transfer_urgently, and route the steps that follow a distressed caller into it.",
   );
 };
 
@@ -633,6 +698,9 @@ export const evaluateReadiness = (input: ReadinessInput): ReadinessReport => {
     eventsCheck(facts, parsed),
     escalationCheck(facts, environment),
     crisisCheck(facts),
+    /* After the number and before the graph: it is the bridge between them, and reads as the
+       follow-up question to the one above rather than as a fact about the drawing. */
+    crisisReachCheck(facts),
     flowCheck(facts),
   ];
 

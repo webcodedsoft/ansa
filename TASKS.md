@@ -4767,9 +4767,18 @@ rather than landed as inventory — the wave that needs them adds them wired.
       no way to name `transfer_urgently` at all, so a flow could not have had it even
       deliberately. It is now an option on a tool step.
 
-      Worth doing next and not done: a readiness warning for a published flow that draws no
-      crisis handover. `readiness.ts` already reports on the crisis number, so it is the
-      natural home, and a silent absence is the thing most likely to go unnoticed.
+      **And the warning that absence needed** (`crisis.reachable` in `readiness.ts`). The
+      sibling `crisis` check asks whether a crisis number is set; this asks whether anything
+      on the call can dial it. Both can be true separately, and the combination worth shouting
+      about is a number configured and unreachable — somebody answered that question at
+      onboarding and has every reason to think it is handled.
+
+      A graph with no crisis step is valid, publishable and complete: `flow` reports "ok" on
+      every case the new tests cover, which is exactly what makes the absence easy to miss.
+      "attention" rather than "blocked", matching `crisis` — an agent that never draws the
+      handover still answers calls correctly, and blocking readiness on it would push people
+      to draw a step they route nowhere. An ordinary `transfer` step does not satisfy it: that
+      names `transfer_to_human`, which keeps office hours.
 
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The queue drains, the consent gate is in the path, and a call can now offer and take a time,
