@@ -4270,6 +4270,20 @@ The test harness now plays every sentence out, as a carrier does.
 Still owed, by Rule 1: a phone. The Oakhaven template has no confirm step; add one on `area`
 in the builder, publish, and place the call.
 
+**Reviewed (2026-09-05).** Read the wiring back end to end and hunted edges. Found: the shared
+validator still said the old thing — that a confirm step on a question set "never read back"
+could only take "no" — which is now exactly the step's purpose; flipped to the true warning
+(`confirm-already-read-back`: a value the engine reads back is confirmed before the step, so
+it could only take "yes"), with the message on the missing-field case reworded to what the
+step does. A choice with no answers was refused nowhere — the model was steered to "one of ."
+before the free-text fix and to free text after it, but a branch reading it can match
+nothing — so it warns now (`choice-without-answers`). Checked and left alone: platform tools
+are derived from `CALL_CONTROL_DEFINITIONS` in the prompt's tool list, the publication check
+and the refusals registry, so `confirm_answer` reached all three by construction; a skipped
+question feeds its confirm step a "no" without stopping to read back nothing; the engine's
+own confirmation cannot be undone by a model-recorded "no"; a denied readback is in memory
+only, so a reconnected call reads the value back once more, which is the safe way round.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and

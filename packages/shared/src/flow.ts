@@ -137,7 +137,8 @@ export interface FlowProblem {
     /** An earlier branch out of the same `decide` catches everything this one would. Warns. */
     | "shadowed-branch"
     /** A `confirm` reads a field configured never to be read back, so it can only say no. Warns. */
-    | "confirm-on-unconfirmed-field";
+    | "confirm-already-read-back"
+    | "choice-without-answers";
   readonly message: string;
   /** Blocking problems refuse a publish. Non-blocking ones are shown and allowed. */
   readonly blocking: boolean;

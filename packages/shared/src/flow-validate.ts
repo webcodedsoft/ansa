@@ -219,6 +219,22 @@ export const validateFlow = (flow: Flow): readonly FlowProblem[] => {
     }
   }
 
+  /* A choice with nothing to choose from. The call survives it — the model takes the answer
+     in the caller's own words — but a branch reading it has nothing to match, and "one of"
+     nothing is not what the operator drew. Said here rather than left to a branch to find,
+     since a choice may be asked and never branched on. */
+  for (const node of reachableNodes(flow)) {
+    if (node.kind !== "collect" || node.field === undefined || node.field.type !== "choice") continue;
+    if (node.field.options.length === 0) {
+      problems.push(problem(
+        node.id,
+        "choice-without-answers",
+        `"${node.field.key}" is a choice, but lists no answers to choose from. Add the answers, or make it a free-text question.`,
+        false,
+      ));
+    }
+  }
+
   for (const node of flow.nodes) {
     if (node.kind !== "decide") continue;
 
@@ -314,26 +330,29 @@ export const validateFlow = (flow: Flow): readonly FlowProblem[] => {
     }
   }
 
-  /* A confirm step splits on whether the caller agreed to a read-back of an answer. A question
-     configured `confirm: "none"` is never read back, so nothing ever confirms it and the step
-     can only say no. That is not a broken graph — it may be the operator's intent — but it is
-     a step that looks like a decision and is not one. */
+  /* A confirm step reads an answer back to the caller and splits on whether they agree. It
+     is for the answers nothing else reads back — a choice, a free-text answer, or a value the
+     operator chose not to have read back when it was heard. A value the engine already read
+     back and confirmed is confirmed by the time the step is reached, so the step passes
+     straight through on "yes" and its "no" arm is never taken: not a broken graph, but a
+     decision that is not one, and an arm somebody drew that nobody will ever walk. */
   for (const node of flow.nodes) {
     if (node.kind !== "confirm" || !reachable.has(node.id)) continue;
     if (node.on === undefined || node.on === "") {
       problems.push(problem(
         node.id,
         "decide-on-missing-field",
-        "This step checks whether the caller confirmed an answer, but never says which answer.",
+        "This step reads an answer back to the caller, but never says which answer.",
       ));
       continue;
     }
     const question = questionByKey.get(node.on);
-    if (question !== undefined && question.confirm === "none") {
+    const heardByEngine = question !== undefined && question.type !== "choice" && question.type !== "text";
+    if (question !== undefined && heardByEngine && question.confirm !== "none") {
       problems.push(problem(
         node.id,
-        "confirm-on-unconfirmed-field",
-        `This step checks whether the caller confirmed "${node.on}", but that question is set never to be read back, so it can only ever take its "no" branch. Set the question to read back, or branch on something else.`,
+        "confirm-already-read-back",
+        `"${node.on}" is already read back and confirmed when it is heard, so this step will always take its "yes" branch. Set the question not to read back, or read back something else.`,
         false,
       ));
     }

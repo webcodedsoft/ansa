@@ -646,6 +646,20 @@ describe("nodes that are not questions", () => {
     // Nothing to have agreed to: a key with no value cannot be decided, and the step says no.
     const empty = createFlowForm(confirming());
     expect(empty.decide("policyNumber", true)).toBe(false);
+
+    // A question the caller gave up on has no value either, so the step it feeds says no
+    // rather than reading back nothing — and the walk does not stop to ask.
+    const gaveUp = createFlowForm(confirming());
+    gaveUp.skip("policyNumber");
+    expect(gaveUp.outstanding()?.key).toBe("dateOfBirth");
+    expect(gaveUp.guidance()?.next.kind).toBe("ask");
+
+    // A no from the caller cannot undo what the engine already confirmed with them: the
+    // engine's readback is the one that counts, and the step still says yes.
+    const engineConfirmed = createFlowForm(confirming());
+    engineConfirmed.satisfy("policyNumber", "PM8592625", true);
+    expect(engineConfirmed.decide("policyNumber", false)).toBe(true);
+    expect(engineConfirmed.outstanding()?.key).toBe("callerName");
   });
 });
 

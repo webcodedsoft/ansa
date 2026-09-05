@@ -611,6 +611,26 @@ describe("branches that can never be taken", () => {
   });
 });
 
+describe("a choice with no answers", () => {
+  const straight = (options: readonly string[]): Flow => ({
+    version: FLOW_VERSION,
+    nodes: [node("start", "start"), node("ask", "collect", { field: { ...field("intent"), type: "choice", options } }), node("end", "hangup")],
+    edges: [edge("start", "ask"), edge("ask", "end")],
+  });
+
+  it("warns, without blocking, when a choice lists nothing to choose from", () => {
+    const found = validateFlow(straight([])).find((p) => p.code === "choice-without-answers");
+
+    expect(found?.blocking).toBe(false);
+    expect(found?.nodeId).toBe("ask");
+    expect(found?.message).toContain('"intent" is a choice, but lists no answers');
+  });
+
+  it("is quiet once it has answers", () => {
+    expect(codes(straight(["rent", "buy"]))).not.toContain("choice-without-answers");
+  });
+});
+
 describe("a confirm step", () => {
   const confirming = (confirm: FlowField["confirm"]): Flow => ({
     version: FLOW_VERSION,
@@ -632,15 +652,23 @@ describe("a confirm step", () => {
     ],
   });
 
-  it("warns when it reads an answer that is never read back, so it could only say no", () => {
-    const found = validateFlow(confirming("none")).find((p) => p.code === "confirm-on-unconfirmed-field");
+  /* The step reads the answer back itself, so the answers it is for are the ones nothing else
+     reads back: a reference set not to be, a choice, free text. One the engine already read
+     back is confirmed before the step is reached, and the step could only ever say yes. */
+  it("warns when it reads an answer the engine already read back, so it could only say yes", () => {
+    const found = validateFlow(confirming("readback")).find((p) => p.code === "confirm-already-read-back");
 
     expect(found?.blocking).toBe(false);
     expect(found?.nodeId).toBe("c");
   });
 
-  it("is quiet when the answer it reads is read back", () => {
-    expect(codes(confirming("readback"))).not.toContain("confirm-on-unconfirmed-field");
+  it("is quiet when the answer it reads is one nothing else reads back", () => {
+    expect(codes(confirming("none"))).not.toContain("confirm-already-read-back");
+    const onFreeText: Flow = {
+      ...confirming("none"),
+      nodes: confirming("none").nodes.map((n) => (n.id === "ask" ? { ...n, field: { ...field("ref"), type: "text", confirm: "none" } } : n)),
+    };
+    expect(codes(onFreeText)).not.toContain("confirm-already-read-back");
   });
 });
 
