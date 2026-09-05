@@ -33,12 +33,14 @@ export const MiniMonth = ({
   anchor,
   timeZone,
   todayIso,
+  showWeekends,
 }: {
   readonly calendarId: string;
   readonly view: CalendarView;
   readonly anchor: PlainDate;
   readonly timeZone: string;
   readonly todayIso: string;
+  readonly showWeekends: boolean;
 }) => {
   const [shown, setShown] = useState<PlainDate>(anchor);
   const today = parseIsoDate(todayIso) ?? anchor;
@@ -46,7 +48,7 @@ export const MiniMonth = ({
   const anchorIso = isoDate(anchor);
 
   const href = (iso: string): string =>
-    `/appointments?calendar=${encodeURIComponent(calendarId)}&view=${view}&date=${iso}`;
+    `/appointments?calendar=${encodeURIComponent(calendarId)}&view=${view}&date=${iso}${showWeekends ? "" : "&weekends=0"}`;
 
   return (
     <div className="surface rounded-xl p-2.5">

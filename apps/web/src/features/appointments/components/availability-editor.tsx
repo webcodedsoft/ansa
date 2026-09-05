@@ -12,7 +12,9 @@ import { replaceAvailabilityAction, type AvailabilityState } from "../appointmen
 import type { AvailabilityWindows } from "../appointments.service";
 import {
   availabilityProblem,
+  endMinutesToTime,
   minutesToTime,
+  timeToEndMinutes,
   timeToMinutes,
   WEEKDAY_LABELS,
   type AvailabilityWindow,
@@ -42,7 +44,7 @@ const rowsFrom = (windows: AvailabilityWindows): EditRow[] =>
     key: nextKey(),
     weekday: window.weekday,
     start: minutesToTime(window.startMinute),
-    end: minutesToTime(window.endMinute),
+    end: endMinutesToTime(window.endMinute),
   }));
 
 /**
@@ -113,7 +115,7 @@ export const AvailabilityEditor = ({
     const parsed: AvailabilityWindow[] = [];
     for (const row of rows) {
       const startMinute = timeToMinutes(row.start);
-      const endMinute = timeToMinutes(row.end);
+      const endMinute = timeToEndMinutes(row.end);
       if (startMinute === null || endMinute === null) {
         setLocalProblem(`${WEEKDAY_LABELS[row.weekday] ?? "A day"}: enter a start and end time.`);
         return;

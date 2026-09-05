@@ -512,6 +512,25 @@ export const rescheduleBooking = async (
   bookingId: string,
   edit: BookingEdit,
 ): Promise<Booking | null> => {
+  /* Release a hold that has already lapsed on the minute being moved onto, exactly as
+     `bookSlot` does. The partial unique index still counts a `held` row until something
+     cancels it, and nothing sweeps unless somebody loads that calendar's grid — so a drag onto
+     a time whose hold died ten minutes ago came back 409 "something else already starts at
+     that time" against an appointment that no longer exists, while booking the same minute
+     outright would have succeeded. The two paths have to agree about what is free. */
+  if (edit.startsAt !== undefined) {
+    await scope.mutate(
+      `update appointment_bookings
+          set status = 'cancelled'
+        where starts_at = $1
+          and status = 'held'
+          and hold_expires_at <= now()
+          and calendar_id = (select calendar_id from appointment_bookings where id = $2)
+        returning id`,
+      [edit.startsAt, bookingId],
+    );
+  }
+
   /* The contact is resolved through a subselect over `contacts` rather than written straight
      in. Referential integrity is checked outside row security, so a bare id would let one
      organisation pin another's contact onto its own appointment — and then deleting that

@@ -26,8 +26,11 @@ describe("the moves a campaign may make", () => {
   });
 
   it("never offers a move the chain does not have", () => {
-    // running goes to paused, not straight to done, and draft cannot jump to running.
-    expect(nextStatuses("running")).not.toContain("done");
+    /* A running campaign may be paused or finished — the API allows both, and this mirror
+       used to offer only Pause, so finishing meant a detour nothing explained. Draft still
+       cannot jump straight to running. */
+    expect(nextStatuses("running")).toContain("paused");
+    expect(nextStatuses("running")).toContain("done");
     expect(nextStatuses("draft")).not.toContain("running");
   });
 

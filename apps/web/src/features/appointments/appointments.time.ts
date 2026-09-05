@@ -454,6 +454,29 @@ export const minutesToTime = (minutes: number): string => {
 };
 
 /**
+ * The same, for the *end* of an open period, where midnight means the close of the day.
+ *
+ * A window may end at 1440 — the schema says so and the migration spells it out — but an
+ * `<input type="time">` has no way to say 24:00, and `minutesToTime` clamps to 23:59. Round
+ * tripping through the editor therefore shortened every midnight close by a minute, silently,
+ * on a save that changed nothing else: open the hours, press Save, lose the last minute of
+ * the day. Rendering it as "00:00" is both what a person writes and what reads back.
+ */
+export const endMinutesToTime = (minutes: number): string =>
+  minutes >= DAY_MINUTES ? "00:00" : minutesToTime(minutes);
+
+/**
+ * Read an end time, where midnight is the close of this day rather than the start of it.
+ *
+ * Unambiguous because a window that ends where it begins is refused anyway: `availabilityProblem`
+ * requires the end to be after the start, so "00:00" as an end can only mean 1440.
+ */
+export const timeToEndMinutes = (value: string): number | null => {
+  const minutes = timeToMinutes(value);
+  return minutes === 0 ? DAY_MINUTES : minutes;
+};
+
+/**
  * A friendly, unambiguous rendering of a booking's start, in the calendar's zone.
  *
  * The zone is spelled out because a time with no zone on a page a colleague in another one

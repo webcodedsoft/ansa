@@ -5,16 +5,20 @@ import type { CampaignStatus } from "./campaigns.service";
  *
  * The API is the enforcer — it refuses an illegal move with a 409 that names it, and this
  * screen shows that message rather than inventing one. This map exists only so the console
- * offers the legal buttons rather than a grid the operator has to try one at a time. A move
- * the API added and this map has not is still reachable through the 409, never silently lost.
+ * offers the legal buttons rather than a grid the operator has to try one at a time.
  *
- * draft → scheduled → running → paused → done, plus scheduled → draft and paused → running.
- * A finished campaign is terminal.
+ * It has to be a faithful mirror. It used to omit `running → done` on the reasoning that a
+ * missing move "is still reachable through the 409" — which is not true: a 409 is a refusal,
+ * not a route, and with no button there was nothing to press. An operator finishing a running
+ * campaign had to Pause first and then Finish, for no reason either screen gave.
+ *
+ * draft → scheduled → running → paused → done, plus scheduled → draft, paused → running and
+ * running → done. A finished campaign is terminal.
  */
 const TRANSITIONS: Record<CampaignStatus, readonly CampaignStatus[]> = {
   draft: ["scheduled"],
   scheduled: ["running", "draft"],
-  running: ["paused"],
+  running: ["paused", "done"],
   paused: ["running", "done"],
   done: [],
 };

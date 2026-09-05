@@ -32,8 +32,9 @@ interface Drag {
  * appointment of exactly that span; press without dragging and you get one of the calendar's
  * usual length starting there. This is the difference between a calendar and a booking form,
  * and it is why free slots are drawn *behind* as tinted ground rather than as the only thing
- * you may click: they say where the agent will offer time on a call, which is worth seeing and
- * is not a limit on what the person at the desk may write down.
+ * you may click: they say which times the calendar's weekly hours leave open — the times an
+ * agent would offer on a call, once a tool exists to book one — and that is worth seeing
+ * without being a limit on what the person at the desk may write down.
  *
  * That leaves the keyboard, which cannot drag. Every appointment is a real button in time
  * order, and each column header carries an add button that opens the same dialog on that day —
@@ -226,7 +227,7 @@ export const TimeGrid = ({
                 onPointerUp={endDrag}
                 onPointerCancel={() => setDrag(null)}
               >
-                {/* Free slots: tinted ground saying where the agent offers time on a call.
+                {/* Free slots: tinted ground saying which times the weekly hours leave open.
                     Not buttons — the whole column is bookable, and a button here would eat
                     the drag that starts on it. */}
                 {day.slots.map((slot) => (

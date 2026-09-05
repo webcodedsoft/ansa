@@ -27,18 +27,24 @@ export const CalendarKeys = ({
   view,
   anchor,
   timeZone,
+  showWeekends,
 }: {
   readonly calendarId: string;
   readonly view: CalendarView;
   readonly anchor: PlainDate;
   readonly timeZone: string;
+  readonly showWeekends: boolean;
 }) => {
   const router = useRouter();
 
   useEffect(() => {
+    /* Carries the weekend preference, as the buttons in `calendar-nav` do. Without it the
+       first arrow key or view key put the weekends back, so mouse and keyboard disagreed
+       about what the operator had asked for. */
     const go = (next: CalendarView, date: PlainDate): void => {
+      const weekends = showWeekends ? "" : "&weekends=0";
       router.push(
-        `/appointments?calendar=${encodeURIComponent(calendarId)}&view=${next}&date=${isoDate(date)}`,
+        `/appointments?calendar=${encodeURIComponent(calendarId)}&view=${next}&date=${isoDate(date)}${weekends}`,
       );
     };
 
@@ -78,7 +84,7 @@ export const CalendarKeys = ({
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [router, calendarId, view, anchor, timeZone]);
+  }, [router, calendarId, view, anchor, timeZone, showWeekends]);
 
   return null;
 };

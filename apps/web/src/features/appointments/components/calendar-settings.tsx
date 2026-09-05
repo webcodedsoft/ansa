@@ -50,7 +50,7 @@ export const CalendarSettings = ({
         open={open === "hours"}
         onClose={() => setOpen(null)}
         title="Weekly hours"
-        description={`The hours ${calendar.name} opens on, read in ${calendar.timezone}. These are the times the agent offers on a call.`}
+        description={`The hours ${calendar.name} opens on, read in ${calendar.timezone}. These decide which times count as free.`}
       >
         <AvailabilityEditor
           key={calendar.id}

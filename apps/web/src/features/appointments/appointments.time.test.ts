@@ -7,6 +7,7 @@ import {
   availabilityProblem,
   clockLabel,
   dayWindow,
+  endMinutesToTime,
   groupBookingsByDay,
   groupSlotsByDay,
   isoDate,
@@ -14,10 +15,11 @@ import {
   minutesToTime,
   mondayOf,
   parseIsoDate,
+  timeToEndMinutes,
   timeToMinutes,
+  weekdayOf,
   weekDays,
   weekRange,
-  weekdayOf,
   zonedParts,
   zonedTimeToUtc,
 } from "./appointments.time";
@@ -301,5 +303,22 @@ describe("a wall time inside a spring-forward gap", () => {
 
     // The exclusive end is the next day's first real instant, not 23:00 on the 7th.
     expect(endsAt.day).toBe(8);
+  });
+});
+
+describe("a window that closes at midnight", () => {
+  it("survives a round trip through the editor", () => {
+    /* 1440 is a legal end — the migration and the API schema both allow it — but a time input
+       cannot say 24:00 and `minutesToTime` clamps to 23:59. Opening the hours editor and
+       pressing Save without touching anything used to shorten every midnight close by a
+       minute, silently. */
+    expect(endMinutesToTime(24 * 60)).toBe("00:00");
+    expect(timeToEndMinutes(endMinutesToTime(24 * 60))).toBe(24 * 60);
+  });
+
+  it("leaves every other time alone", () => {
+    expect(endMinutesToTime(17 * 60)).toBe("17:00");
+    expect(timeToEndMinutes("17:00")).toBe(17 * 60);
+    expect(timeToEndMinutes("nonsense")).toBeNull();
   });
 });

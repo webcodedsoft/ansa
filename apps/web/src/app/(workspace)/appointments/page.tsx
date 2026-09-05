@@ -92,7 +92,7 @@ const AppointmentsPage = async ({
         <PageHeader
           eyebrow="Operate"
           title="Appointments"
-          meta="Calendars, their open hours, and the appointments written against them — including the slots the agent offers on a call."
+          meta="Calendars, their open hours, and the appointments written against them."
           actions={canWrite ? <CreateCalendarDialog /> : undefined}
         />
         <Panel>
@@ -102,7 +102,7 @@ const AppointmentsPage = async ({
           >
             A calendar has a timezone, a slot length and a buffer. Create one and you can write
             appointments into it straight away; set its weekly hours and those same times become
-            the free slots the agent offers on a call.
+            free slots, which the agent will offer on a call once it can book.
             {!canWrite && " Creating one needs the appointments:write permission."}
           </EmptyState>
         </Panel>
@@ -210,9 +210,9 @@ const AppointmentsPage = async ({
 
       {noAvailability ? (
         <Notice tone="info">
-          This calendar has no open hours yet, so the agent offers no slots on a call. You can
-          still write appointments into it here. Set its weekly hours to have the agent offer
-          them.
+          This calendar has no open hours yet, so it computes no free slots. You can still
+          write appointments into it here; set its weekly hours to have it work out the times
+          that are free.
         </Notice>
       ) : (
         selected.source === "connector" && (
@@ -232,6 +232,7 @@ const AppointmentsPage = async ({
           anchor={anchor}
           timeZone={selected.timezone}
           todayIso={isoDate(today)}
+          showWeekends={showWeekends}
         />
 
         <CalendarBoard
@@ -254,6 +255,7 @@ const AppointmentsPage = async ({
         view={view}
         anchor={anchor}
         timeZone={selected.timezone}
+        showWeekends={showWeekends}
       />
     </div>
   );
@@ -295,7 +297,7 @@ const AppointmentsPage = async ({
       <PageHeader
         eyebrow="Operate"
         title="Appointments"
-        meta="One calendar's diary, in its own timezone. Drag on any empty time to write an appointment; the tinted hours are the ones the agent offers on a call."
+        meta="One calendar's diary, in its own timezone. Drag on any empty time to write an appointment; the tinted hours are the ones its weekly hours leave free."
         actions={
           <div className="flex items-center gap-2">
             <CalendarSwitcher calendars={calendars} selectedId={selected.id} />

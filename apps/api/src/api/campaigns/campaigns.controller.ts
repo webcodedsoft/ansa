@@ -403,6 +403,11 @@ export class CampaignsController {
       // cross-organisation contact id attaches to nothing on its own.
       const found = await readCampaign(scope, path.campaignId);
       if (found === null) return null;
+      /* A finished campaign takes no more people. `readDueScheduledCalls` only returns rows
+         under a `running` campaign, so a row added to a `done` one is a call that will never
+         be placed — and the list would then show "200 pending" beside a status the console
+         describes as "nothing more will be dialled". Refused rather than silently accepted. */
+      if (found.status === "done") return { closed: true as const };
       const enqueued = await enqueueScheduledCalls(
         scope,
         path.campaignId,
@@ -412,6 +417,9 @@ export class CampaignsController {
       return { enqueued };
     });
     if (outcome === null) throw new NotFoundException();
+    if ("closed" in outcome) {
+      throw new ConflictException("this campaign is finished, so nothing more can be added to it");
+    }
     return { requested: body.contactIds.length, enqueued: outcome.enqueued };
   }
 
