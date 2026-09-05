@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 
-import { CONTROL } from "@/components/ui";
+import { SelectField } from "@/components/ui";
 
 import type { CalendarSummary } from "../appointments.service";
 
@@ -25,19 +25,18 @@ export const CalendarSwitcher = ({
 }) => {
   const router = useRouter();
   return (
-    <label className="flex items-center gap-2">
-      <span className="sr-only">Calendar</span>
-      <select
-        className={CONTROL}
-        value={selectedId}
-        onChange={(event) => router.push(`/appointments?calendar=${encodeURIComponent(event.target.value)}`)}
-      >
-        {calendars.map((calendar) => (
-          <option key={calendar.id} value={calendar.id}>
-            {calendar.name}
-          </option>
-        ))}
-      </select>
-    </label>
+    <SelectField
+      label="Calendar"
+      hideLabel
+      className="min-w-[168px]"
+      value={selectedId}
+      onChange={(event) => router.push(`/appointments?calendar=${encodeURIComponent(event.target.value)}`)}
+    >
+      {calendars.map((calendar) => (
+        <option key={calendar.id} value={calendar.id}>
+          {calendar.name}
+        </option>
+      ))}
+    </SelectField>
   );
 };

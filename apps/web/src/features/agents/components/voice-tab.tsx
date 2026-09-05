@@ -4,16 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Pause, Play, Search } from "lucide-react";
 
-import {
-  Button,
-  Card,
-  CONTROL,
-  Notice,
-  Stack,
-  Tag,
-  TextField,
-  type Tone,
-} from "@/components/ui";
+import { Button, Card, CONTROL, Notice, SelectField, Stack, Tag, TextField, type Tone } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
 import { loadVoiceCatalogue } from "../agents.actions";
@@ -351,11 +342,12 @@ const Picker = ({
             className={cn(CONTROL, "pl-8")}
           />
         </span>
-        <select
+        <SelectField
+          label="Filter by accent"
+          hideLabel
           value={accent}
           onChange={(event) => setAccent(event.target.value)}
-          aria-label="Filter by accent"
-          className={cn(CONTROL, "h-9 w-auto py-0")}
+          className="min-w-[168px]"
         >
           <option value="all">Every accent</option>
           {accents.map((option) => (
@@ -363,7 +355,7 @@ const Picker = ({
               {readable(option)}
             </option>
           ))}
-        </select>
+        </SelectField>
       </div>
 
       <div className="mt-2.5 max-h-80 overflow-y-auto rounded-lg border border-[var(--hairline)]">

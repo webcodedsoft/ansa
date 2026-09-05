@@ -28,7 +28,6 @@ export {
   Field,
   FieldError,
   NumberField,
-  SelectField,
   SettingRow,
   TextAreaField,
   TextField,
@@ -36,6 +35,7 @@ export {
 } from "./form";
 export { DataTable, type Column, type DataTableProps } from "./data-table";
 export { Modal } from "./modal";
+export { SelectField, type SelectFieldProps } from "./select";
 export { Pagination } from "./pagination";
 export { Segmented, Tabs, Toggle, type TabDef } from "./tabs";
 export { Stepper, type StepDef } from "./stepper";

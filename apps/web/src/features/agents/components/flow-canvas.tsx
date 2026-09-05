@@ -648,9 +648,11 @@ const BranchRow = ({
         : answers[0] ?? "an answer";
   return (
     <div className="flex items-center gap-1.5">
-      <select
-        aria-label="How this branch is chosen"
-        className={cn(CONTROL, "w-[116px] flex-none px-2 py-1 text-[12px]")}
+      <SelectField
+        label="How this branch is chosen"
+        hideLabel
+        size="sm"
+        className="w-[116px] flex-none"
         value={operator}
         onChange={(event) => onChange(conditionFrom(asOperator(event.target.value), valueOf(when)))}
       >
@@ -659,11 +661,13 @@ const BranchRow = ({
             {choice.label}
           </option>
         ))}
-      </select>
+      </SelectField>
       {operator !== "isEmpty" && listed && (
-        <select
-          aria-label="What this branch matches"
-          className={cn(CONTROL, "min-w-0 px-2 py-1 text-[12px]")}
+        <SelectField
+          label="What this branch matches"
+          hideLabel
+          size="sm"
+          className="min-w-0 flex-1"
           value={value}
           onChange={(event) => onChange(conditionFrom(operator, event.target.value))}
         >
@@ -674,7 +678,7 @@ const BranchRow = ({
             </option>
           ))}
           {value !== "" && !answers.includes(value) && <option value={value}>{value} (not one of the answers)</option>}
-        </select>
+        </SelectField>
       )}
       {operator !== "isEmpty" && !listed && (
         <input
@@ -2568,22 +2572,19 @@ export const FlowCanvas = ({
               </div>
               {/* Where it goes, as a list: every step, then every service, for the keyboard
                   and for a drawing too big to drag across. */}
-              <label className="flex flex-col gap-1 text-[12.5px]">
-                <span>Leads to</span>
-                <select
-                  aria-label="Where this link leads"
-                  value={pickedEdge.to}
-                  className={CONTROL}
-                  onChange={(e) => {
+              <SelectField
+                label="Leads to"
+                value={pickedEdge.to}
+                onChange={(e) => {
                     const from = byId(pickedEdge.from);
                     const port = from === undefined ? undefined : portsFor(from).find((one) => one.holds(pickedEdge));
                     if (from === undefined || port === undefined) return;
                     const value = e.target.value;
-                    const lane = lanes.find((one) => `lane:${one.id}` === value);
-                    lead({ from: from.id, port }, lane ?? value);
-                  }}
-                >
-                  <optgroup label="Steps">
+                  const lane = lanes.find((one) => `lane:${one.id}` === value);
+                  lead({ from: from.id, port }, lane ?? value);
+                }}
+              >
+                <optgroup label="Steps">
                     {inGraphOrder
                       .filter((m) => m.id !== pickedEdge.from && m.kind !== "start")
                       .map((m) => (
@@ -2603,8 +2604,7 @@ export const FlowCanvas = ({
                         ))}
                     </optgroup>
                   )}
-                </select>
-              </label>
+              </SelectField>
               {/* Removing a link is deliberate now: pick it, then remove it. Whatever led by it
                   leads nowhere afterwards, which the drawing then says. */}
               <Button
@@ -2646,15 +2646,17 @@ export const FlowCanvas = ({
                   {portsFor(selectedNode).filter((port) => port.key !== "add").map((port) => {
                     const current = edges.find((x) => port.holds(x))?.to ?? "";
                     return (
-                      <label key={port.key} className="flex items-center gap-2 text-[12.5px]">
+                      <div key={port.key} className="flex items-center gap-2 text-[12.5px]">
                         <span className="w-[92px] flex-none truncate font-mono text-[11px] text-[var(--ink-3)]">{port.label}</span>
-                        <select
-                          aria-label={`Where "${port.label}" leads`}
+                        <SelectField
+                          label={`Where "${port.label}" leads`}
+                          hideLabel
+                          size="sm"
+                          className="min-w-0 flex-1"
                           value={current}
                           onChange={(e) => {
                             if (e.target.value !== "") connect(port, e.target.value);
                           }}
-                          className={CONTROL}
                         >
                           <option value="">— nowhere yet —</option>
                           {inGraphOrder
@@ -2664,8 +2666,8 @@ export const FlowCanvas = ({
                                 {NODE_KINDS[m.kind].title}: {m.field?.key ?? m.text?.slice(0, 30) ?? m.tool ?? m.on ?? m.id}
                               </option>
                             ))}
-                        </select>
-                      </label>
+                        </SelectField>
+                      </div>
                     );
                   })}
                 </div>

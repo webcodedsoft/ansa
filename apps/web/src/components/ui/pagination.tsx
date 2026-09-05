@@ -7,6 +7,8 @@ import { useTransition, type ReactNode } from "react";
 
 import { useProgressWhile } from "@/stores/progress.store";
 
+import { SelectField } from "./select";
+
 import { cn } from "@/lib/cn";
 import { DEFAULT_PAGE_SIZE, PAGE_SIZES } from "@/lib/paging";
 
@@ -194,21 +196,25 @@ export const Pagination = ({
       )}
 
       {total > PAGE_SIZES[0] && (
-        <label className="flex items-center gap-2 text-xs text-[var(--ink-3)]">
+        <div className="flex items-center gap-2 text-xs text-[var(--ink-3)]">
           Per page
-          <select
+          <SelectField
+            label="Rows per page"
+            hideLabel
+            size="sm"
+            className="w-[76px]"
             value={perPage}
             disabled={resizing}
+            searchable={false}
             onChange={(event) => changeSize(Number(event.target.value))}
-            className="h-8 rounded-lg border border-[var(--hairline)] bg-[var(--surface-2)] px-2 text-[13px] text-[var(--ink)] tabular-nums disabled:opacity-55"
           >
             {PAGE_SIZES.map((size) => (
               <option key={size} value={size}>
                 {size}
               </option>
             ))}
-          </select>
-        </label>
+          </SelectField>
+        </div>
       )}
     </nav>
   );

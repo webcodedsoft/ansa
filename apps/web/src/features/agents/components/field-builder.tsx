@@ -3,17 +3,7 @@
 import { GripVertical, Plus } from "lucide-react";
 import { useState, useTransition } from "react";
 
-import {
-  Button,
-  CONTROL,
-  Notice,
-  Panel,
-  PanelBody,
-  Segmented,
-  SettingRow,
-  Tag,
-  Toggle,
-} from "@/components/ui";
+import { Button, CONTROL, Notice, Panel, PanelBody, Segmented, SelectField, SettingRow, Tag, Toggle } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
 import { saveCapturedFields } from "../agents.actions";
@@ -265,22 +255,19 @@ export const FieldBuilder = ({
                       How tools receive it.
                     </span>
                   </label>
-                  <label className="block">
-                    <span className="mb-1.5 block text-[13px] font-medium">Type</span>
-                    <select
-                      value={current.type}
-                      onChange={(event) =>
-                        edit({ type: event.target.value as CapturedField["type"] })
-                      }
-                      className={CONTROL}
-                    >
-                      {FIELD_TYPES.map((type) => (
-                        <option key={type.value} value={type.value}>
-                          {type.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <SelectField
+                    label="Type"
+                    value={current.type}
+                    onChange={(event) =>
+                      edit({ type: event.target.value as CapturedField["type"] })
+                    }
+                  >
+                    {FIELD_TYPES.map((type) => (
+                      <option key={type.value} value={type.value}>
+                        {type.label}
+                      </option>
+                    ))}
+                  </SelectField>
                 </div>
 
                 <label className="block">

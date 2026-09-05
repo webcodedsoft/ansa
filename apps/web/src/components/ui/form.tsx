@@ -59,9 +59,23 @@ export const Field = ({
   error,
   required,
   className,
+  as: Shell = "label",
   children,
-}: FieldShell & { readonly className?: string; readonly children: ReactNode }) => (
-  <label className={cn("block", className)}>
+}: FieldShell & {
+  readonly className?: string;
+  /**
+   * The element wrapping the control. A `label` by default, so clicking the caption focuses
+   * the input — which is what you want for every native control.
+   *
+   * `div` exists for the one control that is not native. A `label` around a combobox delivers
+   * the caption's click to the control as well, and for a listbox that means opening the menu
+   * and closing it again in the same gesture. The select passes `div` and labels itself
+   * through `aria-labelledby` instead, which assistive technology reads identically.
+   */
+  readonly as?: "label" | "div";
+  readonly children: ReactNode;
+}) => (
+  <Shell className={cn("block", className)}>
     <span className="mb-1.5 block text-[12.5px] font-medium">
       {label}
       {required === true && (
@@ -71,12 +85,11 @@ export const Field = ({
     {children}
     {error !== undefined && <FieldError>{error}</FieldError>}
     {hint !== undefined && <Hint>{hint}</Hint>}
-  </label>
+  </Shell>
 );
 
 type InputProps = Omit<ComponentPropsWithRef<"input">, "className">;
 type TextAreaProps = Omit<ComponentPropsWithRef<"textarea">, "className">;
-type SelectProps = Omit<ComponentPropsWithRef<"select">, "className">;
 
 export const TextField = ({
   label,
@@ -131,27 +144,6 @@ export const TextAreaField = ({
       className={cn(CONTROL, "resize-y leading-relaxed", tall === true ? "min-h-36" : "min-h-20", error !== undefined && INVALID)}
       {...textarea}
     />
-  </Field>
-);
-
-export const SelectField = ({
-  label,
-  hint,
-  error,
-  required,
-  className,
-  children,
-  ...select
-}: FieldShell & SelectProps & { readonly className?: string }) => (
-  <Field label={label} hint={hint} error={error} required={required} className={className}>
-    <select
-      aria-invalid={error !== undefined}
-      aria-required={required}
-      className={cn(CONTROL, error !== undefined && INVALID)}
-      {...select}
-    >
-      {children}
-    </select>
   </Field>
 );
 

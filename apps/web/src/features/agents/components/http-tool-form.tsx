@@ -492,20 +492,21 @@ export const HttpToolForm = ({
                           placeholder="reference"
                           aria-label={`Parameter ${index + 1} name`}
                         />
-                        <select
-                          className={CELL}
+                        <SelectField
+                          label={`Parameter ${index + 1} type`}
+                          hideLabel
+                          size="sm"
                           value={param.type}
                           onChange={(event) =>
                             setParam(index, { type: event.target.value as ParamType })
                           }
-                          aria-label={`Parameter ${index + 1} type`}
                         >
                           {PARAM_TYPES.map((type) => (
                             <option key={type} value={type}>
                               {type}
                             </option>
                           ))}
-                        </select>
+                        </SelectField>
                         <input
                           className={CELL}
                           value={param.description}

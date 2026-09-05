@@ -6,13 +6,17 @@ import { ianaZones } from "../appointments.time";
  * The IANA-zone picker.
  *
  * The list comes from `Intl.supportedValuesOf`, which answers the same on the server and in
- * the browser, so the rendered `<select>` matches on both sides and hydration is quiet. The
- * home zone is hoisted to the top because almost every calendar here is a Nigerian one, and
- * making somebody scroll past three hundred zones to reach the common one is the small daily
- * cruelty this hoist removes.
+ * the browser, so both sides agree on the options and hydration is quiet. The home zone is
+ * hoisted to the top because almost every calendar here is a Nigerian one.
  *
- * Not a client component: it holds no state, reads `defaultValue`, and the choosing is the
- * native select's own. The form it sits in owns the value.
+ * This is the list that most wanted a select you can type into — three hundred zones is not a
+ * list anybody finds `Africa/Lagos` in by scrolling, and the hoist above was the workaround
+ * for exactly that. `SelectField` filters as you type now, so the hoist is a convenience
+ * rather than the only way through.
+ *
+ * Still not a client component itself: it holds no state and reads `defaultValue`, and the
+ * form it sits in owns the value. The control it renders is a client one, which a server
+ * component may render.
  */
 export const TimezoneSelect = ({
   name = "timezone",

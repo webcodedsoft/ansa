@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 
-import { Card, Notice, Row, Stack, SubmitButton, TextField } from "@/components/ui";
+import { Card, Notice, Row, SelectField, Stack, SubmitButton, TextField } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
 import { invite, type InviteState } from "../org.actions";
@@ -37,18 +37,11 @@ export const InviteForm = () => {
                 error={errors["email"]}
                 className="min-w-64 flex-1"
               />
-              <label className="block">
-                <span className="mb-1.5 block text-[12.5px] font-medium">Role</span>
-                <select
-                  name="role"
-                  defaultValue="member"
-                  className="w-full rounded-lg border border-[var(--hairline)] bg-[var(--surface-2)] px-[11px] py-2 text-[13.5px] text-[var(--ink)] transition-colors hover:border-[var(--ink-3)]"
-                >
-                  <option value="member">Member</option>
-                  <option value="admin">Admin</option>
-                  <option value="owner">Owner</option>
-                </select>
-              </label>
+              <SelectField label="Role" name="role" defaultValue="member" className="min-w-36">
+                <option value="member">Member</option>
+                <option value="admin">Admin</option>
+                <option value="owner">Owner</option>
+              </SelectField>
             </Row>
             <div>
               <SubmitButton pending={pending} idle="Send invitation" busy="Sending…" />

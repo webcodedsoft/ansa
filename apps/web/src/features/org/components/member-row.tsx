@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 
-import { Button, CONTROL, Notice, Row, SubmitButton, Tag, Td, Tr } from "@/components/ui";
+import { Button, Notice, Row, SelectField, SubmitButton, Tag, Td, Tr } from "@/components/ui";
 import { when } from "@/lib/format";
 import { idleForm } from "@/lib/form-state";
 
@@ -59,19 +59,17 @@ export const MemberRow = ({
           <form action={roleAction}>
             <input type="hidden" name="userId" value={member.userId} />
             <Row className="flex-nowrap">
-              <label className="sr-only" htmlFor={`role-${member.userId}`}>
-                Role
-              </label>
-              <select
-                id={`role-${member.userId}`}
+              <SelectField
+                label="Role"
+                hideLabel
                 name="role"
                 defaultValue={member.role}
-                className={CONTROL}
+                className="min-w-32"
               >
                 <option value="owner">Owner</option>
                 <option value="admin">Admin</option>
                 <option value="member">Member</option>
-              </select>
+              </SelectField>
               <SubmitButton pending={rolePending} idle="Save" busy="Saving…" size="sm" />
             </Row>
             {(roleState.status === "failed" || roleState.status === "invalid") && (
