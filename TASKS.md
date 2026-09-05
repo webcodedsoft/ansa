@@ -4147,6 +4147,10 @@ a link; `onOutPortPointerUp` is now a hit-test and a call.
 runs the way a picked link does — accent, dashes travelling, a head — and the rest dim, so
 what a step connects to reads at a glance. A picked link still wins when there is one.
 
+**…and its neighbours (2026-09-05).** The steps a picked step links to and from — and the two
+ends of a picked link — are lit with it, more quietly than the step itself, and every other
+card steps back to just over half, so for a moment the lit part is the drawing.
+
 **Versions, once history has two shapes.** Restore already loads an old snapshot into the
 draft rather than publishing it, which is right and stays. What is new: a converted agent has
 versions that are lists and versions that are graphs, so the list names the shape per row, and

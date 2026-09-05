@@ -2060,6 +2060,13 @@ export const FlowCanvas = ({
               const ports = portsFor(n);
               const line = cardLine(n, edges);
               const isBad = ready.nodes.has(n.id) || marked.get(n.id) === "blocks";
+              /* A neighbour of the picked step, or an end of the picked link: lit with it,
+                 more quietly, so the step reads with what it connects to. */
+              const neighbour =
+                n.id !== selected &&
+                (selected !== null
+                  ? edges.some((edge) => (edge.from === selected && edge.to === n.id) || (edge.to === selected && edge.from === n.id))
+                  : pickedEdge !== null && (pickedEdge.from === n.id || pickedEdge.to === n.id));
               return (
                 <div
                   key={n.id}
@@ -2097,7 +2104,12 @@ export const FlowCanvas = ({
                         ? "border-[var(--warn)]"
                         : n.id === selected
                           ? "border-[var(--accent)] shadow-[0_0_0_2px_var(--accent-soft)]"
-                          : "border-[var(--hairline)]",
+                          : neighbour
+                            ? "border-[color-mix(in_srgb,var(--accent)_65%,var(--hairline))] shadow-[0_0_0_2px_var(--accent-soft)]"
+                            : "border-[var(--hairline)]",
+                    /* Everything the picked step or link does not touch steps back, so the
+                       lit part is the drawing for a moment. */
+                    (selected !== null || pickedEdge !== null) && n.id !== selected && !neighbour && "opacity-55",
                   )}
                   style={{ left: n.x, top: n.y }}
                 >
