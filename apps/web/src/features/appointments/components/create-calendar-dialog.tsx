@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useId, useState } from "react";
 
 import {
   Button,
@@ -42,6 +42,12 @@ export const CreateCalendarDialog = ({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [source, setSource] = useState<"hosted" | "connector">("hosted");
+  /* Unique per instance, not a constant: this dialog is rendered twice on an empty
+     Appointments page — once in the header and once in the empty state — and a `form=`
+     attribute resolves to the *first* element with that id in the document. With a shared id
+     the visible button submitted the hidden dialog's form, so the empty state's "Create
+     calendar" did nothing at all. */
+  const formId = useId();
   const [state, action, pending] = useActionState(createCalendarAction, START);
 
   useFormToast(state, () => "Calendar created.");
@@ -73,7 +79,7 @@ export const CreateCalendarDialog = ({
               Cancel
             </Button>
             <SubmitButton
-              form="create-calendar-form"
+              form={formId}
               pending={pending}
               idle="Create calendar"
               busy="Creating…"
@@ -81,7 +87,7 @@ export const CreateCalendarDialog = ({
           </>
         }
       >
-        <form id="create-calendar-form" action={action} className="flex flex-col gap-3.5">
+        <form id={formId} action={action} className="flex flex-col gap-3.5">
           {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
 
           <TextField

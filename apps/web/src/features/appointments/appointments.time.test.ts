@@ -246,3 +246,22 @@ describe("clock helpers", () => {
     expect(timeToMinutes(minutesToTime(725))).toBe(725);
   });
 });
+
+describe("the drawn day is a canvas, not a summary", () => {
+  it("never shrinks below a working day around what is already booked", () => {
+    // A calendar with no hours and one late-morning appointment must still offer the
+    // afternoon to drag into, or a second appointment cannot be written at all.
+    const window = dayWindow([], [{ startMinute: 10 * 60, endMinute: 11 * 60 + 30 }]);
+    expect(window).toEqual({ startMinute: 8 * 60, endMinute: 18 * 60 });
+  });
+
+  it("still widens for anything outside that day, in both directions", () => {
+    const early = dayWindow([], [{ startMinute: 6 * 60, endMinute: 7 * 60 }]);
+    expect(early.startMinute).toBe(5 * 60);
+    expect(early.endMinute).toBe(18 * 60);
+
+    const late = dayWindow([], [{ startMinute: 20 * 60, endMinute: 21 * 60 }]);
+    expect(late.startMinute).toBe(8 * 60);
+    expect(late.endMinute).toBe(22 * 60);
+  });
+});

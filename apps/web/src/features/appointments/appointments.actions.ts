@@ -11,6 +11,7 @@ import { listContacts } from "@/features/contacts/contacts.service";
 import {
   availabilityWeekSchema,
   createBookingSchema,
+  editBookingSchema,
   createCalendarSchema,
   editCalendarSchema,
 } from "./appointments.schema";
@@ -19,6 +20,7 @@ import {
   confirmBooking,
   createBooking,
   createCalendar,
+  editBooking,
   editCalendar,
   replaceAvailability,
 } from "./appointments.service";
@@ -42,6 +44,13 @@ const stringOrUndefined = (raw: FormDataEntryValue | null): string | undefined =
   if (typeof raw !== "string") return undefined;
   const trimmed = raw.trim();
   return trimmed === "" ? undefined : trimmed;
+};
+
+/** An empty box means "clear this", which the API spells `null`. */
+const stringOrNull = (raw: FormDataEntryValue | null): string | null => {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  return trimmed === "" ? null : trimmed;
 };
 
 export interface CalendarSaved {
@@ -154,6 +163,8 @@ export const createBookingAction = async (
   const holdRaw = form.get("holdMinutes");
   const parsed = createBookingSchema.safeParse({
     startsAt: form.get("startsAt") ?? "",
+    endsAt: stringOrUndefined(form.get("endsAt")),
+    title: stringOrUndefined(form.get("title")),
     status,
     ...(status === "held" ? { holdMinutes: numberOrNaN(holdRaw) } : {}),
     contactId: stringOrUndefined(form.get("contactId")),
@@ -174,6 +185,50 @@ export const createBookingAction = async (
     if (refusedWith(error, 409)) {
       revalidatePath("/appointments");
       return failedForm("That slot was just taken. It has been removed from the grid — pick another.");
+    }
+    return failedForm(failureMessage(error));
+  }
+};
+
+/**
+ * Move, resize, rename or re-attach an appointment.
+ *
+ * What dragging a block on the grid comes down to, and what the details dialog saves. The two
+ * refusals worth naming are named: a 409 means some other live appointment already starts at
+ * that minute, and a 404 means the appointment moved out from under this dialog — cancelled
+ * in another tab, most likely. Both revalidate before answering, because in both cases the
+ * grid on screen is describing a world that has moved on.
+ */
+export const editBookingAction = async (
+  _previous: BookingState,
+  form: FormData,
+): Promise<BookingState> => {
+  const bookingId = String(form.get("bookingId") ?? "");
+  if (bookingId === "") return failedForm("This form does not say which appointment it is for.");
+
+  const parsed = editBookingSchema.safeParse({
+    startsAt: form.get("startsAt") ?? "",
+    endsAt: form.get("endsAt") ?? "",
+    title: stringOrNull(form.get("title")),
+    notes: stringOrNull(form.get("notes")),
+    contactId: stringOrNull(form.get("contactId")),
+  });
+  if (!parsed.success) return invalidForm(parsed.error);
+
+  try {
+    const booking = await editBooking(bookingId, parsed.data);
+    revalidatePath("/appointments");
+    return succeededForm({ bookingId: booking.id, status: booking.status }, "Appointment saved.");
+  } catch (error) {
+    if (refusedWith(error, 409)) {
+      revalidatePath("/appointments");
+      return failedForm(
+        "Something else already starts at that time. Pick another time, or move that one first.",
+      );
+    }
+    if (refusedWith(error, 404)) {
+      revalidatePath("/appointments");
+      return failedForm("That appointment is no longer there — it may have been cancelled.");
     }
     return failedForm(failureMessage(error));
   }

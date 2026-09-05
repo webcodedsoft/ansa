@@ -13,18 +13,20 @@ import { AvailabilityEditor } from "@/features/appointments/components/availabil
 import { CalendarSwitcher } from "@/features/appointments/components/calendar-switcher";
 import { CreateCalendarDialog } from "@/features/appointments/components/create-calendar-dialog";
 import { EditCalendarPanel } from "@/features/appointments/components/edit-calendar-panel";
-import { WeekGrid, type DayColumn } from "@/features/appointments/components/week-grid";
-import type { BookingView } from "@/features/appointments/components/booking-details";
-import { WeekNav } from "@/features/appointments/components/week-nav";
+import { CalendarBoard } from "@/features/appointments/components/calendar-view";
+import { CalendarNav } from "@/features/appointments/components/calendar-nav";
+import { calendarRange, parseView } from "@/features/appointments/appointments.range";
+import type {
+  BookingView,
+  DayColumn,
+  MonthCell,
+} from "@/features/appointments/appointments.view";
 import {
   groupBookingsByDay,
   groupSlotsByDay,
   dayWindow,
-  isoDate,
   parseIsoDate,
   todayIn,
-  weekDays,
-  weekRange,
   type PlainDate,
 } from "@/features/appointments/appointments.time";
 
@@ -34,18 +36,21 @@ export const dynamic = "force-dynamic";
 /**
  * The appointments workspace.
  *
- * One page over one calendar at a time: which calendar and which week both live in the URL
- * (`?calendar=&week=`), so a view is a link and the back button behaves, exactly like the
- * calls filter and the contacts search. Everything below is read for that calendar in *its*
- * timezone — the reader's zone never enters into it — which is the whole reason a booking made
- * here is never ambiguous about when it is.
+ * One page over one calendar at a time: which calendar, which view and which day all live in
+ * the URL (`?calendar=&view=&date=`), so a view is a link and the back button behaves, exactly
+ * like the calls filter and the contacts search. Everything below is read for that calendar in
+ * *its* timezone — the reader's zone never enters into it — which is the whole reason an
+ * appointment made here is never ambiguous about when it is.
  *
- * The three tabs are the three things an operator does with a calendar: look at the week and
- * book into it, set the recurring hours it opens on, and edit the calendar itself. They are
- * one entity's views, not navigation, which is what `Tabs` is for.
+ * The three tabs are the three things an operator does with a calendar: look at the diary and
+ * write in it, set the recurring hours it opens on, and edit the calendar itself. They are one
+ * entity's views, not navigation, which is what `Tabs` is for.
  */
 type AppointmentsSearch = {
   readonly calendar?: string;
+  readonly view?: string;
+  readonly date?: string;
+  /** The old name for `date`, from when the page only had a week view. Still honoured. */
   readonly week?: string;
 };
 
@@ -67,7 +72,7 @@ const AppointmentsPage = async ({
         <PageHeader
           eyebrow="Operate"
           title="Appointments"
-          meta="Calendars, their open hours, and the bookings taken against them — the same slots the agent offers on a call."
+          meta="Calendars, their open hours, and the appointments written against them — including the slots the agent offers on a call."
           actions={canWrite ? <CreateCalendarDialog /> : undefined}
         />
         <Panel>
@@ -75,8 +80,9 @@ const AppointmentsPage = async ({
             title="No calendars yet"
             action={canWrite ? <CreateCalendarDialog /> : undefined}
           >
-            A calendar has a timezone, a slot length and a buffer. Create one, set its weekly
-            hours, and its free slots appear here for booking — and for the agent to offer.
+            A calendar has a timezone, a slot length and a buffer. Create one and you can write
+            appointments into it straight away; set its weekly hours and those same times become
+            the free slots the agent offers on a call.
             {!canWrite && " Creating one needs the appointments:write permission."}
           </EmptyState>
         </Panel>
@@ -87,19 +93,23 @@ const AppointmentsPage = async ({
   const selected: CalendarSummary =
     calendars.find((calendar) => calendar.id === search.calendar) ?? calendars[0]!;
 
-  const anchor: PlainDate = parseIsoDate(search.week) ?? todayIn(selected.timezone);
-  const { from, to } = weekRange(anchor, selected.timezone);
+  const view = parseView(search.view);
+  const anchor: PlainDate =
+    parseIsoDate(search.date) ?? parseIsoDate(search.week) ?? todayIn(selected.timezone);
+  const range = calendarRange(view, anchor, selected.timezone);
 
+  /* A month draws appointments as a list per day, not by the minute, so it has no use for free
+     slots — and asking for six weeks of them is a large query to throw away. */
   const [availability, slots, bookings] = await Promise.all([
     readAvailability(selected.id),
-    listSlots(selected.id, from, to),
-    listBookings(selected.id, from, to),
+    view === "month"
+      ? Promise.resolve({ slots: [] as Awaited<ReturnType<typeof listSlots>>["slots"] })
+      : listSlots(selected.id, range.from, range.to),
+    listBookings(selected.id, range.from, range.to),
   ]);
 
-  const days = weekDays(anchor);
-  const todayIso = isoDate(todayIn(selected.timezone));
-  const slotsByDay = groupSlotsByDay(slots.slots, days, selected.timezone);
-  const bookingsByDay = groupBookingsByDay(bookings.items, days, selected.timezone);
+  const slotsByDay = groupSlotsByDay(slots.slots, range.days, selected.timezone);
+  const bookingsByDay = groupBookingsByDay(bookings.items, range.days, selected.timezone);
 
   /* The vertical window the grid draws: the open hours, widened to hold anything booked or
      offered outside them, so a calendar's real day is on screen without a silent empty cliff. */
@@ -113,36 +123,47 @@ const AppointmentsPage = async ({
   ].map((placed) => ({ startMinute: placed.startMinute, endMinute: placed.endMinute }));
   const dayBounds = dayWindow(availabilityMinutes, occupiedMinutes);
 
-  const columns: DayColumn[] = days.map((day) => {
-    const daySlots = slotsByDay.get(day.iso) ?? [];
-    const dayBookings = bookingsByDay.get(day.iso) ?? [];
-    return {
+  const bookingsOn = (iso: string): readonly BookingView[] =>
+    (bookingsByDay.get(iso) ?? []).map(({ booking, startMinute, endMinute }): BookingView => ({
+      id: booking.id,
+      status: booking.status === "held" ? "held" : "booked",
+      startsAt: booking.startsAt,
+      endsAt: booking.endsAt,
+      startMinute,
+      endMinute,
+      contactId: booking.contactId,
+      title: booking.title,
+      notes: booking.notes,
+      holdExpiresAt: booking.holdExpiresAt,
+      source: booking.source,
+    }));
+
+  const days: readonly DayColumn[] = range.days.map((day) => ({
+    iso: day.iso,
+    weekday: day.weekday,
+    shortLabel: day.shortLabel,
+    dayNumber: day.dayNumber,
+    isToday: day.isToday,
+    slots: (slotsByDay.get(day.iso) ?? []).map((slot) => ({
+      start: slot.start,
+      end: slot.end,
+      startMinute: slot.startMinute,
+      endMinute: slot.endMinute,
+      label: slot.label,
+    })),
+    bookings: bookingsOn(day.iso),
+  }));
+
+  const cells: readonly (readonly MonthCell[])[] = range.weeks.map((week) =>
+    week.map((day) => ({
       iso: day.iso,
-      weekday: day.weekday,
+      dayNumber: day.dayNumber,
       shortLabel: day.shortLabel,
-      dayNumber: day.date.day,
-      isToday: day.iso === todayIso,
-      slots: daySlots.map((slot) => ({
-        start: slot.start,
-        end: slot.end,
-        startMinute: slot.startMinute,
-        endMinute: slot.endMinute,
-        label: slot.label,
-      })),
-      bookings: dayBookings.map(({ booking, startMinute, endMinute }): BookingView => ({
-        id: booking.id,
-        status: booking.status === "held" ? "held" : "booked",
-        startsAt: booking.startsAt,
-        endsAt: booking.endsAt,
-        startMinute,
-        endMinute,
-        contactId: booking.contactId,
-        notes: booking.notes,
-        holdExpiresAt: booking.holdExpiresAt,
-        source: booking.source,
-      })),
-    };
-  });
+      inMonth: day.inPeriod,
+      isToday: day.isToday,
+      bookings: bookingsOn(day.iso),
+    })),
+  );
 
   const noAvailability = availability.windows.length === 0;
 
@@ -153,32 +174,45 @@ const AppointmentsPage = async ({
       panel: (
         <div className="flex flex-col gap-3.5">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <WeekNav calendarId={selected.id} anchor={anchor} timeZone={selected.timezone} />
+            <CalendarNav
+              calendarId={selected.id}
+              view={view}
+              anchor={anchor}
+              timeZone={selected.timezone}
+            />
             <div className="text-[12px] text-[var(--ink-3)]">
-              Times shown in <span className="font-medium text-[var(--ink-2)]">{selected.timezone}</span>
+              Times shown in{" "}
+              <span className="font-medium text-[var(--ink-2)]">{selected.timezone}</span>
             </div>
           </div>
 
           {noAvailability ? (
-            <Notice tone="warn">
-              This calendar has no open hours yet, so it offers no slots. Set its weekly hours on
-              the Weekly hours tab, then bookings can be taken here.
+            <Notice tone="info">
+              This calendar has no open hours yet, so the agent offers no slots on a call. You can
+              still write appointments into it here. Set its weekly hours on the Weekly hours tab
+              to have the agent offer them.
             </Notice>
           ) : (
             selected.source === "connector" && (
               <Notice tone="info">
-                This is a connector calendar, mirroring an outside diary. Its slots and bookings
-                are shown here and can be booked against; the diary remains the source of truth.
+                This is a connector calendar, mirroring an outside diary. Its slots and
+                appointments are shown here and can be written against; the diary remains the
+                source of truth.
               </Notice>
             )
           )}
 
-          <WeekGrid
+          <CalendarBoard
+            key={`${selected.id}:${view}`}
             calendarId={selected.id}
-            days={columns}
+            view={view}
+            days={days}
+            cells={cells}
             startMinute={dayBounds.startMinute}
             endMinute={dayBounds.endMinute}
             timeZone={selected.timezone}
+            slotMinutes={selected.slotMinutes}
+            hasHours={!noAvailability}
             canWrite={canWrite}
           />
         </div>
@@ -208,7 +242,7 @@ const AppointmentsPage = async ({
       <PageHeader
         eyebrow="Operate"
         title="Appointments"
-        meta="The week for one calendar, in its own timezone. Free slots are the ones the agent offers on a call; book, hold, confirm and cancel them here."
+        meta="One calendar's diary, in its own timezone. Drag on any empty time to write an appointment; the tinted hours are the ones the agent offers on a call."
         actions={
           <div className="flex items-center gap-2">
             <CalendarSwitcher calendars={calendars} selectedId={selected.id} />

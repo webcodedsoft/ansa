@@ -3,6 +3,7 @@ import { api } from "@/lib/api/server";
 import type {
   AvailabilityWeekInput,
   CreateBookingInput,
+  EditBookingInput,
   CreateCalendarInput,
   EditCalendarInput,
 } from "./appointments.schema";
@@ -72,11 +73,34 @@ export const createBooking = async (calendarId: string, input: CreateBookingInpu
       startsAt: input.startsAt,
       source: "manual",
       status: input.status,
+      /* Absent means one slot long, which is what a booking taken from a free slot is. Only a
+         span somebody actually drew sends an end. */
+      ...(input.endsAt !== undefined ? { endsAt: input.endsAt } : {}),
+      ...(input.title !== undefined && input.title !== "" ? { title: input.title } : {}),
       ...(input.status === "held" && input.holdMinutes !== undefined
         ? { holdMinutes: input.holdMinutes }
         : {}),
       ...(input.contactId !== undefined ? { contactId: input.contactId } : {}),
       ...(input.notes !== undefined && input.notes !== "" ? { notes: input.notes } : {}),
+    },
+  });
+
+/**
+ * Move, resize, rename or re-attach an appointment.
+ *
+ * Every field goes every time, `null` where the form was left empty, because the dialog edits
+ * a whole appointment. The API reads absent as "leave alone" and null as "clear it", and a
+ * form cannot say "absent" — so this says exactly what the boxes say.
+ */
+export const editBooking = async (bookingId: string, input: EditBookingInput) =>
+  (await api()).appointments.editBooking({
+    path: { bookingId },
+    body: {
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+      title: input.title === "" ? null : input.title,
+      notes: input.notes === "" ? null : input.notes,
+      contactId: input.contactId,
     },
   });
 

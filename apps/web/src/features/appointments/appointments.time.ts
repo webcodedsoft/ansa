@@ -353,12 +353,15 @@ export const groupBookingsByDay = <
  * silent midnight-to-midnight cliff. Falls back to a plain working day when a calendar has no
  * hours and nothing booked yet, so the empty grid still looks like a calendar.
  */
+/** The least a day ever draws: an ordinary office day, widened by whatever else is on it. */
+const WORKING_DAY = { startMinute: 8 * 60, endMinute: 18 * 60 };
+
 export const dayWindow = (
   availabilityMinutes: readonly { readonly startMinute: number; readonly endMinute: number }[],
   occupiedMinutes: readonly { readonly startMinute: number; readonly endMinute: number }[],
 ): { readonly startMinute: number; readonly endMinute: number } => {
   const spans = [...availabilityMinutes, ...occupiedMinutes];
-  if (spans.length === 0) return { startMinute: 8 * 60, endMinute: 18 * 60 };
+  if (spans.length === 0) return { startMinute: WORKING_DAY.startMinute, endMinute: WORKING_DAY.endMinute };
 
   let earliest = DAY_MINUTES;
   let latest = 0;
@@ -369,7 +372,15 @@ export const dayWindow = (
   // Round out to whole hours and give a little air top and bottom, without leaving the day.
   const startMinute = Math.max(0, Math.floor(earliest / 60) * 60 - 60);
   const endMinute = Math.min(DAY_MINUTES, Math.ceil(latest / 60) * 60 + 60);
-  return { startMinute, endMinute: Math.max(endMinute, startMinute + 60) };
+
+  /* Never narrower than a working day, only ever wider. The window is a canvas to write on,
+     not a summary of what is already written — shrinking it around the day's one booking
+     leaves nowhere to drag a second one, which is how a calendar with a single 10am
+     appointment ends up drawing four hours and refusing the afternoon. */
+  return {
+    startMinute: Math.min(startMinute, WORKING_DAY.startMinute),
+    endMinute: Math.max(Math.max(endMinute, startMinute + 60), WORKING_DAY.endMinute),
+  };
 };
 
 /** A weekly availability window, as the editor holds and the API stores it. */

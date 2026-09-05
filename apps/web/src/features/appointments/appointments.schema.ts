@@ -86,17 +86,75 @@ export const availabilityWeekSchema = z.object({
 export type AvailabilityWeekInput = z.infer<typeof availabilityWeekSchema>;
 
 /**
- * Booking or holding a free slot.
+ * Writing an appointment into the diary.
  *
- * `startsAt` is the slot's own start, carried back verbatim from the slots endpoint, so it is
- * only checked for being a non-empty ISO string rather than re-derived. A held slot needs the
- * minutes it is held for; a booked one takes the chair outright.
+ * `startsAt` and `endsAt` are ISO instants the grid computed from the calendar's own clock,
+ * so they are checked for being present rather than re-derived — the browser's zone must not
+ * get a vote, and the dialog already resolved the wall time through `zonedTimeToUtc`.
+ *
+ * `endsAt` is optional because a booking taken from a free slot is exactly one slot long and
+ * the API supplies that length; a person dragging out a span sends both. When both are here
+ * the order is checked, so a backwards span is refused against the End field rather than
+ * coming back as a body error the form has nowhere to put.
+ *
+ * A held appointment needs the minutes it is held for; a booked one takes the chair outright.
  */
-export const createBookingSchema = z.object({
-  startsAt: z.string().min(1, "This booking has no start time."),
-  status: z.enum(["held", "booked"]),
-  holdMinutes: z.number().int().min(1).max(24 * 60).optional(),
-  contactId: z.uuid().optional(),
-  notes: z.string().trim().max(2000, "That note is too long.").optional(),
-});
+const isoInstant = z.string().min(1, "This appointment has no start time.");
+
+const appointmentTitle = z
+  .string()
+  .trim()
+  .max(200, "That title is too long.")
+  .optional();
+
+export const createBookingSchema = z
+  .object({
+    startsAt: isoInstant,
+    endsAt: z.string().min(1).optional(),
+    title: appointmentTitle,
+    status: z.enum(["held", "booked"]),
+    holdMinutes: z.number().int().min(1).max(24 * 60).optional(),
+    contactId: z.uuid().optional(),
+    notes: z.string().trim().max(2000, "That note is too long.").optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.endsAt !== undefined && Date.parse(value.endsAt) <= Date.parse(value.startsAt)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["endsAt"],
+        message: "An appointment has to end after it starts.",
+      });
+    }
+  });
 export type CreateBookingInput = z.infer<typeof createBookingSchema>;
+
+/**
+ * Moving, resizing or renaming an appointment already in the diary.
+ *
+ * The dialog edits a whole appointment rather than one field of it, so every field is sent
+ * every time and an empty box means "clear this" — `null` rather than absent. That is the one
+ * place this differs from the API, which distinguishes the two so a caller can touch a single
+ * field; a form has no way to express the difference and pretending otherwise would make an
+ * emptied note silently keep its old text.
+ *
+ * Times still travel together, as the API insists, because a start moved without its end is a
+ * length nobody chose.
+ */
+export const editBookingSchema = z
+  .object({
+    startsAt: isoInstant,
+    endsAt: z.string().min(1, "This appointment has no end time."),
+    title: z.string().trim().max(200, "That title is too long.").nullable(),
+    notes: z.string().trim().max(2000, "That note is too long.").nullable(),
+    contactId: z.uuid().nullable(),
+  })
+  .superRefine((value, ctx) => {
+    if (Date.parse(value.endsAt) <= Date.parse(value.startsAt)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["endsAt"],
+        message: "An appointment has to end after it starts.",
+      });
+    }
+  });
+export type EditBookingInput = z.infer<typeof editBookingSchema>;
