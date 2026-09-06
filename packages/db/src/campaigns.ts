@@ -97,6 +97,10 @@ export interface Campaign {
   readonly voicemail: Record<string, unknown> | null;
   readonly maxAttempts: number;
   readonly retryAfterMinutes: number;
+  /** How many may be on the phone at once. Null is no cap beyond the dialler's batch. */
+  readonly maxConcurrentCalls: number | null;
+  /** How many may be placed in any rolling hour. Null is no cap. */
+  readonly maxCallsPerHour: number | null;
   readonly createdBy: string | null;
   /**
    * When a scheduled campaign begins dialling, or null to start it by hand.
@@ -129,6 +133,7 @@ const CAMPAIGN_COLUMNS = `
   cp.id, cp.agent_id, cp.name, cp.status, cp.calling_window, cp.created_by,
   cp.purpose, cp.opening, cp.flow, cp.outcomes, cp.voicemail,
   cp.max_attempts, cp.retry_after_minutes, cp.starts_at, cp.ends_at, cp.pause_reason,
+  cp.max_concurrent_calls, cp.max_calls_per_hour,
   cp.created_at, cp.updated_at,
   (select count(*) from scheduled_calls s where s.campaign_id = cp.id)::int as total,
   (select count(*) from scheduled_calls s
@@ -152,6 +157,8 @@ const asCampaign = (row: Record<string, unknown>): CampaignSummary => ({
      figures rather than with NaN. */
   maxAttempts: Number(row["max_attempts"] ?? 3),
   retryAfterMinutes: Number(row["retry_after_minutes"] ?? 240),
+  maxConcurrentCalls: row["max_concurrent_calls"] == null ? null : Number(row["max_concurrent_calls"]),
+  maxCallsPerHour: row["max_calls_per_hour"] == null ? null : Number(row["max_calls_per_hour"]),
   createdBy: row["created_by"] === null ? null : String(row["created_by"]),
   /* Absent against a database without 0069, and null is the right reading of that: a
      campaign that cannot hold a start time is one nobody scheduled. */
@@ -355,6 +362,13 @@ export interface CampaignEdit {
   readonly endsAt?: Date | null;
   /** Null clears it back to the default window; undefined leaves it alone. */
   readonly callingWindow?: Record<string, unknown> | null;
+  /**
+   * The pace (0073). Null lifts the cap; undefined leaves it alone. Editable for the whole
+   * life of a campaign like the window, and for the same reason: "slow this down" is a thing
+   * somebody decides while it is dialling.
+   */
+  readonly maxConcurrentCalls?: number | null;
+  readonly maxCallsPerHour?: number | null;
 }
 
 export const updateCampaign = async (
@@ -368,6 +382,8 @@ export const updateCampaign = async (
             calling_window = case when $3 then $4::jsonb else calling_window end,
             starts_at      = case when $5 then $6::timestamptz else starts_at end,
             ends_at        = case when $7 then $8::timestamptz else ends_at end,
+            max_concurrent_calls = case when $9 then $10::int else max_concurrent_calls end,
+            max_calls_per_hour   = case when $11 then $12::int else max_calls_per_hour end,
             /* Giving a draft a start time schedules it, in the same statement.
                start_due_campaigns only promotes a scheduled campaign, so without this a
                start time set on a draft would sit in the column and never fire: a setting
@@ -391,6 +407,10 @@ export const updateCampaign = async (
       edit.startsAt ?? null,
       edit.endsAt !== undefined,
       edit.endsAt ?? null,
+      edit.maxConcurrentCalls !== undefined,
+      edit.maxConcurrentCalls ?? null,
+      edit.maxCallsPerHour !== undefined,
+      edit.maxCallsPerHour ?? null,
     ],
   );
   return rows.length > 0;
@@ -895,33 +915,71 @@ export const finishExpiredCampaigns = async (
   }));
 };
 
+/**
+ * What is due, at the pace each campaign set.
+ *
+ * Per campaign rather than per sweep: the dialler's batch bounds the machine, and this bounds
+ * the organisation. Each campaign's due rows are ranked by when they fell due, and a row is
+ * offered only while its place in line fits under both caps — the calls it already has in
+ * progress, and the calls it has placed in the last hour. Null on a cap is no cap, which is
+ * what every campaign did before 0073.
+ *
+ * "In progress" is a `placing` row the carrier has not yet settled, and it is counted only
+ * for the last thirty minutes: a callback that never arrives would otherwise leave a row
+ * holding a slot forever, and no call this product places lasts half an hour. The hourly
+ * count reads `last_attempt_at`, which every claim bumps — so a call that was suppressed at
+ * the gate still spent its place, which is the honest reading of "placed".
+ */
 export const readDueScheduledCalls = async (
   scope: OrganizationScope,
   now: Date,
   limit: number,
 ): Promise<readonly DueCall[]> => {
   const rows = await scope.query<Record<string, unknown>>(
-    `select ${SCHEDULED_COLUMNS},
-            cp.purpose as campaign_purpose, cp.opening as campaign_opening,
-            cp.outcomes as campaign_outcomes, cp.flow as campaign_flow,
-            cp.voicemail as campaign_voicemail, cp.calling_window,
-            cp.max_attempts, cp.retry_after_minutes,
-            (select r.number from organization_number_routing r
-              where r.agent_id = cp.agent_id
-              order by r.created_at
-              limit 1) as from_number
-       from scheduled_calls s
-       join contacts ct on ct.id = s.contact_id
-       join campaigns cp on cp.id = s.campaign_id
-      where s.status = 'pending'
-        and s.next_attempt_at is not null
-        and s.next_attempt_at <= $1
-        and cp.status = 'running'
-        /* Nothing past its own ceiling is due. The dialler checks this too, and both are
-           deliberate: this keeps a spent row out of every sweep, and that one is what
-           decides whether a failed attempt earns another. */
-        and s.attempts < cp.max_attempts
-      order by s.next_attempt_at, s.id
+    `with load as (
+       select x.campaign_id,
+              count(*) filter (where x.status = 'placing'
+                                 and x.last_attempt_at > $1::timestamptz - interval '30 minutes')::int
+                as in_flight,
+              count(*) filter (where x.last_attempt_at > $1::timestamptz - interval '1 hour')::int
+                as placed_last_hour
+         from scheduled_calls x
+         join campaigns c on c.id = x.campaign_id and c.status = 'running'
+        group by x.campaign_id
+     ),
+     due as (
+       select ${SCHEDULED_COLUMNS},
+              cp.purpose as campaign_purpose, cp.opening as campaign_opening,
+              cp.outcomes as campaign_outcomes, cp.flow as campaign_flow,
+              cp.voicemail as campaign_voicemail, cp.calling_window,
+              cp.max_attempts, cp.retry_after_minutes,
+              cp.max_concurrent_calls, cp.max_calls_per_hour,
+              coalesce(l.in_flight, 0) as in_flight,
+              coalesce(l.placed_last_hour, 0) as placed_last_hour,
+              row_number() over (partition by s.campaign_id order by s.next_attempt_at, s.id)
+                as place_in_line,
+              (select r.number from organization_number_routing r
+                where r.agent_id = cp.agent_id
+                order by r.created_at
+                limit 1) as from_number
+         from scheduled_calls s
+         join contacts ct on ct.id = s.contact_id
+         join campaigns cp on cp.id = s.campaign_id
+         left join load l on l.campaign_id = s.campaign_id
+        where s.status = 'pending'
+          and s.next_attempt_at is not null
+          and s.next_attempt_at <= $1
+          and cp.status = 'running'
+          /* Nothing past its own ceiling is due. The dialler checks this too, and both are
+             deliberate: this keeps a spent row out of every sweep, and that one is what
+             decides whether a failed attempt earns another. */
+          and s.attempts < cp.max_attempts
+     )
+     select *
+       from due
+      where (max_concurrent_calls is null or place_in_line <= max_concurrent_calls - in_flight)
+        and (max_calls_per_hour is null or place_in_line <= max_calls_per_hour - placed_last_hour)
+      order by next_attempt_at, id
       limit $2`,
     [now, limit],
   );

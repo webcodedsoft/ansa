@@ -15,6 +15,7 @@ import {
   recordContactImport,
   setCampaignStatus,
   settlePlacedCall,
+  updateCampaign,
   updateCampaignBrief,
 } from "./campaigns";
 import { recordCallStarted } from "./call-log";
@@ -399,6 +400,61 @@ describe.skipIf(url === undefined)("a list of people to ring", () => {
       expect(done?.outcome).toBe("carrier reported voicemail");
       expect(done?.attempts).toBe(2);
       expect(done?.nextAttemptAt).toBeNull();
+    });
+  });
+
+  it("offers only as many due rows as the campaign's pace allows", async () => {
+    /* The caps are enforced in the query the dialler reads, not in anything it could skip.
+       Two people due on a campaign that allows one call at a time: the first sweep gets one,
+       and while that one is in flight the next sweep gets none. Then a rolling-hour budget of
+       one, already spent by the placement just made: nothing until the hour turns.
+       The settle runs outside the scope, as the carrier's callback does — it is a separate
+       connection and would not see an open transaction's rows. */
+    const only = <T extends { readonly campaignId: string }>(rows: readonly T[], id: string): T[] =>
+      rows.filter((q) => q.campaignId === id);
+    let campaignId = "";
+    let takenId = "";
+    await withOrganization(ds, A, async (s) => {
+      const campaign = await createCampaign(s, { agentId: agentA, name: "Paced", createdBy: null });
+      campaignId = campaign.id;
+      await updateCampaignBrief(s, campaign.id, { purpose: "to confirm" });
+      const ids = (await readContacts(s, PAGE)).items.map((p) => p.id);
+      await enqueueScheduledCalls(s, campaign.id, ids, new Date(Date.now() - 1_000));
+      await setCampaignStatus(s, campaign.id, "running");
+
+      expect(await updateCampaign(s, campaign.id, { maxConcurrentCalls: 1 })).toBe(true);
+      const paced = await readCampaign(s, campaign.id);
+      expect(paced?.maxConcurrentCalls).toBe(1);
+      expect(paced?.maxCallsPerHour).toBeNull();
+
+      // One at a time: two are due, one is offered.
+      const first = only(await readDueScheduledCalls(s, new Date(), 10), campaign.id);
+      expect(first).toHaveLength(1);
+      const taken = first[0];
+      if (taken === undefined) throw new Error("nothing was due");
+      takenId = taken.id;
+      expect(await claimScheduledCall(s, taken.id)).toBe(true);
+      await attachPlacedCall(s, taken.id, "CA-paced-1");
+
+      // While it is on the phone, nothing more.
+      expect(only(await readDueScheduledCalls(s, new Date(), 10), campaign.id)).toHaveLength(0);
+    });
+
+    // Rang out: the slot is free again.
+    expect(await settlePlacedCall(ds, "CA-paced-1", { answered: false, status: "no-answer", now: new Date() })).toBe(true);
+
+    await withOrganization(ds, A, async (s) => {
+      const after = only(await readDueScheduledCalls(s, new Date(), 10), campaignId);
+      expect(after).toHaveLength(1);
+      expect(after[0]?.id).not.toBe(takenId);
+
+      // A rolling-hour budget of one, and the hour's one call was the placement just made.
+      await updateCampaign(s, campaignId, { maxConcurrentCalls: null, maxCallsPerHour: 1 });
+      expect(only(await readDueScheduledCalls(s, new Date(), 10), campaignId)).toHaveLength(0);
+
+      // Lifting it offers the other person again.
+      await updateCampaign(s, campaignId, { maxCallsPerHour: null });
+      expect(only(await readDueScheduledCalls(s, new Date(), 10), campaignId)).toHaveLength(1);
     });
   });
 });

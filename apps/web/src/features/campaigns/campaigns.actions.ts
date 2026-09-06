@@ -13,6 +13,7 @@ import {
   callingWindowSchema,
   createCampaignSchema,
   enqueueSchema,
+  paceSchema,
   setStatusSchema,
   type CreateCampaignInput,
   campaignBriefSchema,
@@ -437,6 +438,37 @@ export const setCallingWindowAction = async (
     revalidatePath(`/campaigns/${campaignId}`);
     revalidatePath("/campaigns");
     return succeededForm({ callingWindow });
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+};
+
+/**
+ * Change how fast a campaign dials, from its own page.
+ *
+ * Both caps are sent every time, so clearing one is expressible: the endpoint treats an
+ * omitted field as unchanged, and this form's only way to say "no cap" is an empty box, which
+ * the schema turns into null. Settable while running — "slow this down" is the most likely
+ * moment anybody reaches for it — and the dialler reads the caps on every sweep.
+ */
+export type PaceState = FormState<{
+  readonly maxConcurrentCalls: number | null;
+  readonly maxCallsPerHour: number | null;
+}>;
+
+export const setPaceAction = async (_previous: PaceState, form: FormData): Promise<PaceState> => {
+  const parsed = paceSchema.safeParse({
+    campaignId: form.get("campaignId"),
+    maxConcurrentCalls: form.get("maxConcurrentCalls"),
+    maxCallsPerHour: form.get("maxCallsPerHour"),
+  });
+  if (!parsed.success) return invalidForm(parsed.error, "Check the numbers.");
+  const { campaignId, maxConcurrentCalls, maxCallsPerHour } = parsed.data;
+
+  try {
+    await editCampaign(campaignId, { maxConcurrentCalls, maxCallsPerHour });
+    revalidatePath(`/campaigns/${campaignId}`);
+    return succeededForm({ maxConcurrentCalls, maxCallsPerHour });
   } catch (error) {
     return failedForm(failureMessage(error));
   }

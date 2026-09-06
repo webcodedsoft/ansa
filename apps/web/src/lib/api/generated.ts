@@ -1468,6 +1468,8 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       } | null;
         readonly maxAttempts: number;
         readonly retryAfterMinutes: number;
+        readonly maxConcurrentCalls: number | null;
+        readonly maxCallsPerHour: number | null;
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
         readonly endsAt: string | null;
@@ -1554,6 +1556,8 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       } | null;
         readonly maxAttempts: number;
         readonly retryAfterMinutes: number;
+        readonly maxConcurrentCalls: number | null;
+        readonly maxCallsPerHour: number | null;
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
         readonly endsAt: string | null;
@@ -1628,6 +1632,8 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       } | null;
         readonly maxAttempts: number;
         readonly retryAfterMinutes: number;
+        readonly maxConcurrentCalls: number | null;
+        readonly maxCallsPerHour: number | null;
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
         readonly endsAt: string | null;
@@ -1641,8 +1647,8 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       }>(options, "GET", `/api/v1/campaigns/${encodeURIComponent(input.path.campaignId)}`, input),
 
     /**
-     * Rename a campaign, or change its calling window
-     * Send `name`, `callingWindow`, `startsAt`, `endsAt`, or any combination. An omitted field is left as it was; a null `callingWindow` clears it back to the default window and a null `startsAt` back to starting by hand. The window can only narrow the 08:00–20:00 WAT bound `mayCall` clamps to. A `startsAt` is refused with 422 once the campaign has left draft or scheduled, because a start time for a campaign that has already started is a value nothing would ever read; `endsAt` stays settable throughout, since shortening a run already under way is the ordinary case. An end at or before the start is refused with 422 — a run that finishes before it begins would start and stop on the same sweep and read as a campaign that silently did nothing.
+     * Rename a campaign, or change its calling window, run or pace
+     * Send `name`, `callingWindow`, `startsAt`, `endsAt`, `maxConcurrentCalls`, `maxCallsPerHour`, or any combination. The two pace fields cap how many of the campaign's calls may be in progress at once and how many it may place in any rolling hour; null lifts a cap, and both are read by the dialler on every sweep, so a change takes effect on the next one. An omitted field is left as it was; a null `callingWindow` clears it back to the default window and a null `startsAt` back to starting by hand. The window can only narrow the 08:00–20:00 WAT bound `mayCall` clamps to. A `startsAt` is refused with 422 once the campaign has left draft or scheduled, because a start time for a campaign that has already started is a value nothing would ever read; `endsAt` stays settable throughout, since shortening a run already under way is the ordinary case. An end at or before the start is refused with 422 — a run that finishes before it begins would start and stop on the same sweep and read as a campaign that silently did nothing.
      */
     edit: (input: {
         readonly path: {
@@ -1657,6 +1663,8 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         } | null;
           readonly startsAt?: string | null;
           readonly endsAt?: string | null;
+          readonly maxConcurrentCalls?: number | null;
+          readonly maxCallsPerHour?: number | null;
         };
       }) =>
       send<{
@@ -1713,6 +1721,8 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       } | null;
         readonly maxAttempts: number;
         readonly retryAfterMinutes: number;
+        readonly maxConcurrentCalls: number | null;
+        readonly maxCallsPerHour: number | null;
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
         readonly endsAt: string | null;
@@ -1848,6 +1858,8 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       } | null;
         readonly maxAttempts: number;
         readonly retryAfterMinutes: number;
+        readonly maxConcurrentCalls: number | null;
+        readonly maxCallsPerHour: number | null;
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
         readonly endsAt: string | null;
@@ -1980,6 +1992,8 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       } | null;
         readonly maxAttempts: number;
         readonly retryAfterMinutes: number;
+        readonly maxConcurrentCalls: number | null;
+        readonly maxCallsPerHour: number | null;
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
         readonly endsAt: string | null;
@@ -2099,6 +2113,8 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       } | null;
         readonly maxAttempts: number;
         readonly retryAfterMinutes: number;
+        readonly maxConcurrentCalls: number | null;
+        readonly maxCallsPerHour: number | null;
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
         readonly endsAt: string | null;

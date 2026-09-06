@@ -200,6 +200,14 @@ const campaign = object({
     minimum: CAMPAIGN_LIMITS.retryMinutes.min,
     maximum: CAMPAIGN_LIMITS.retryMinutes.max,
   }),
+  /** How many may be on the phone at once. Null is no cap beyond the dialler's own batch. */
+  maxConcurrentCalls: nullable(
+    integer({ minimum: CAMPAIGN_LIMITS.concurrentCalls.min, maximum: CAMPAIGN_LIMITS.concurrentCalls.max }),
+  ),
+  /** How many may be placed in any rolling hour. Null is no cap. */
+  maxCallsPerHour: nullable(
+    integer({ minimum: CAMPAIGN_LIMITS.callsPerHour.min, maximum: CAMPAIGN_LIMITS.callsPerHour.max }),
+  ),
   /** Whether the brief may still be changed. False once calls can be in flight. */
   briefEditable: flag(),
   /**
@@ -262,6 +270,15 @@ const editBody = object({
   startsAt: optional(nullable(timestamp())),
   /** Null clears the end back to running until the list is exhausted. */
   endsAt: optional(nullable(timestamp())),
+  /** The pace. Null lifts a cap; an omitted one is left alone. Settable while running. */
+  maxConcurrentCalls: optional(
+    nullable(
+      integer({ minimum: CAMPAIGN_LIMITS.concurrentCalls.min, maximum: CAMPAIGN_LIMITS.concurrentCalls.max }),
+    ),
+  ),
+  maxCallsPerHour: optional(
+    nullable(integer({ minimum: CAMPAIGN_LIMITS.callsPerHour.min, maximum: CAMPAIGN_LIMITS.callsPerHour.max })),
+  ),
 });
 
 const duplicateBody = object({ name: text({ minLength: 1, maxLength: 200 }) });
@@ -366,6 +383,8 @@ const asCampaignBody = (summary: CampaignSummary): Infer<typeof campaign> => ({
   voicemail: asVoicemail(summary.voicemail),
   maxAttempts: summary.maxAttempts,
   retryAfterMinutes: summary.retryAfterMinutes,
+  maxConcurrentCalls: summary.maxConcurrentCalls,
+  maxCallsPerHour: summary.maxCallsPerHour,
   briefEditable: briefIsEditable(summary.status),
   startsAt: summary.startsAt === null ? null : summary.startsAt.toISOString(),
   endsAt: summary.endsAt === null ? null : summary.endsAt.toISOString(),
@@ -480,9 +499,9 @@ export class CampaignsController {
 
   @Patch(":campaignId")
   @Endpoint({
-    summary: "Rename a campaign, or change its calling window",
+    summary: "Rename a campaign, or change its calling window, run or pace",
     description:
-      "Send `name`, `callingWindow`, `startsAt`, `endsAt`, or any combination. An omitted field is left as it was; a null `callingWindow` clears it back to the default window and a null `startsAt` back to starting by hand. The window can only narrow the 08:00–20:00 WAT bound `mayCall` clamps to. A `startsAt` is refused with 422 once the campaign has left draft or scheduled, because a start time for a campaign that has already started is a value nothing would ever read; `endsAt` stays settable throughout, since shortening a run already under way is the ordinary case. An end at or before the start is refused with 422 — a run that finishes before it begins would start and stop on the same sweep and read as a campaign that silently did nothing.",
+      "Send `name`, `callingWindow`, `startsAt`, `endsAt`, `maxConcurrentCalls`, `maxCallsPerHour`, or any combination. The two pace fields cap how many of the campaign's calls may be in progress at once and how many it may place in any rolling hour; null lifts a cap, and both are read by the dialler on every sweep, so a change takes effect on the next one. An omitted field is left as it was; a null `callingWindow` clears it back to the default window and a null `startsAt` back to starting by hand. The window can only narrow the 08:00–20:00 WAT bound `mayCall` clamps to. A `startsAt` is refused with 422 once the campaign has left draft or scheduled, because a start time for a campaign that has already started is a value nothing would ever read; `endsAt` stays settable throughout, since shortening a run already under way is the ordinary case. An end at or before the start is refused with 422 — a run that finishes before it begins would start and stop on the same sweep and read as a campaign that silently did nothing.",
     capability: "campaigns:write",
     params: campaignPath,
     body: editBody,
@@ -533,6 +552,8 @@ export class CampaignsController {
         ...(body.endsAt === undefined
           ? {}
           : { endsAt: body.endsAt === null ? null : new Date(body.endsAt) }),
+        ...(body.maxConcurrentCalls === undefined ? {} : { maxConcurrentCalls: body.maxConcurrentCalls }),
+        ...(body.maxCallsPerHour === undefined ? {} : { maxCallsPerHour: body.maxCallsPerHour }),
       });
       if (!changed) return null;
       return readCampaign(scope, path.campaignId);

@@ -90,3 +90,28 @@ export const campaignBriefSchema = z.object({
     .max(CAMPAIGN_LIMITS.retryMinutes.max),
 });
 export type CampaignBriefInput = z.infer<typeof campaignBriefSchema>;
+
+/**
+ * How fast a campaign dials. Empty means no cap, which is what the API's null means and what
+ * every campaign did before the pace existed — so an empty box is a choice, not a mistake.
+ */
+const cap = (min: number, max: number, tooMany: string) =>
+  z.preprocess(
+    (raw) => (raw === "" || raw === null || raw === undefined ? null : raw),
+    z.coerce.number().int().min(min, "At least one.").max(max, tooMany).nullable(),
+  );
+
+export const paceSchema = z.object({
+  campaignId: z.uuid(),
+  maxConcurrentCalls: cap(
+    CAMPAIGN_LIMITS.concurrentCalls.min,
+    CAMPAIGN_LIMITS.concurrentCalls.max,
+    "Nobody can take that many at once.",
+  ),
+  maxCallsPerHour: cap(
+    CAMPAIGN_LIMITS.callsPerHour.min,
+    CAMPAIGN_LIMITS.callsPerHour.max,
+    "That is faster than the dialler goes.",
+  ),
+});
+export type PaceInput = z.infer<typeof paceSchema>;

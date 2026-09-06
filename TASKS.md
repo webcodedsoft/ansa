@@ -5127,6 +5127,28 @@ rather than landed as inventory — the wave that needs them adds them wired.
       clock, not by any code. After 08:00 WAT: run `pnpm tunnel`, put one contact with a real
       handset on a campaign, start it, and the sweeper does the rest within its interval.
 
+- [x] **Pace: how fast a campaign dials, enforced where the dialler picks its batch** (2026-09-06)
+      The dialler placed up to five calls every ten seconds for every campaign alike — eighteen
+      hundred an hour — which is the right ceiling for the machine and the wrong one for an
+      office of two that takes the transfers, or for a number that does not want to be read
+      as a robodialler. Migration 0073 adds `max_concurrent_calls` (1–50) and
+      `max_calls_per_hour` (1–1000) to campaigns, both nullable, null meaning no cap. Enforced
+      in `readDueScheduledCalls`: due rows are ranked per campaign and offered only while the
+      place in line fits under both caps — `placing` rows from the last thirty minutes count
+      as in flight (countable now that 0072 made `placing` true), `last_attempt_at` in the
+      last hour counts as placed. Proven against the real database: one-at-a-time offers one,
+      offers none while it is on the phone, offers the next once the carrier settles it; an
+      hourly budget already spent offers none. Through `PATCH /campaigns/:id`, settable while
+      running (that is when anybody reaches for it), and a "How fast it dials" card on the
+      Schedule tab under the hours. Empty box is no cap, and the schema turns "" into null
+      rather than 0 — tested, because 0 is a cap the API refuses.
+
+- [ ] **Recurring campaigns — sketched, not built.** `docs/CAMPAIGN_RECURRENCE.md`. A
+      campaign runs once; the catalogue is mostly things that repeat. The sketch picks the
+      shape (a series whose runs are ordinary campaigns created by the sweeper, copying the
+      template's list; not a rule engine over contacts) and sizes it at about pace plus the
+      window editor together. Waiting on a decision to build it.
+
 - [x] **The hours a campaign may ring can be changed on its page** (2026-09-06)
       "Hours it may ring" was a drawing with a caption; the only way to narrow a campaign's
       hours after creating it was to create another campaign. The API already took

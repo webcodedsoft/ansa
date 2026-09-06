@@ -39,6 +39,9 @@ export const editCampaign = async (
     readonly startsAt?: string | null;
     /** ISO-8601. Null clears it back to running until the list is exhausted. */
     readonly endsAt?: string | null;
+    /** The pace. Null lifts a cap. */
+    readonly maxConcurrentCalls?: number | null;
+    readonly maxCallsPerHour?: number | null;
   },
 ) => (await api()).campaigns.edit({ path: { campaignId }, body });
 

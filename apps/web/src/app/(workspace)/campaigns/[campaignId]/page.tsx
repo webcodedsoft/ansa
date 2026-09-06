@@ -13,6 +13,7 @@ import { CampaignBrief } from "@/features/campaigns/components/campaign-brief";
 import { CampaignConversation } from "@/features/campaigns/components/campaign-conversation";
 import { CallStatusFilter } from "@/features/campaigns/components/call-status-filter";
 import { CampaignCallingWindow } from "@/features/campaigns/components/campaign-calling-window";
+import { CampaignPace } from "@/features/campaigns/components/campaign-pace";
 import { CampaignBreakdown } from "@/features/campaigns/components/campaign-breakdown";
 import { CampaignProgress } from "@/features/campaigns/components/campaign-progress";
 import { CampaignSchedule } from "@/features/campaigns/components/campaign-schedule";
@@ -318,13 +319,25 @@ const CampaignPage = async ({
      Given the whole width they sit as two columns and each gets room to be legible. */
   const scheduleTab = (
     <div className="grid items-start gap-3.5 lg:grid-cols-2">
-      <Card title="Hours it may ring">
-        <CampaignCallingWindow
-          campaignId={campaign.id}
-          window={campaign.callingWindow}
-          canWrite={canWrite}
-        />
-      </Card>
+      <div className="grid gap-3.5">
+        <Card title="Hours it may ring">
+          <CampaignCallingWindow
+            campaignId={campaign.id}
+            window={campaign.callingWindow}
+            canWrite={canWrite}
+          />
+        </Card>
+        {/* Under the hours rather than beside them: both are about when and how much the
+            phone rings, and the run card on the right is about a single span with two ends. */}
+        <Card title="How fast it dials">
+          <CampaignPace
+            campaignId={campaign.id}
+            maxConcurrentCalls={campaign.maxConcurrentCalls}
+            maxCallsPerHour={campaign.maxCallsPerHour}
+            canWrite={canWrite}
+          />
+        </Card>
+      </div>
 
       <Card title="When it runs">
         <CampaignSchedule

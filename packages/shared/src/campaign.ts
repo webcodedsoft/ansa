@@ -25,6 +25,10 @@ export const CAMPAIGN_LIMITS = {
   attempts: { min: 1, max: 10 },
   /** Fifteen minutes at the least; a week at the most. */
   retryMinutes: { min: 15, max: 10080 },
+  /** On the phone at once. Fifty is more than any organisation on this product can answer. */
+  concurrentCalls: { min: 1, max: 50 },
+  /** In any rolling hour. A thousand is the dialler's own ceiling, near enough. */
+  callsPerHour: { min: 1, max: 1000 },
 } as const;
 
 /**

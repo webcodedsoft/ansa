@@ -362,6 +362,27 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("the campaign en
       expect(cleared.body["callingWindow"]).toBeNull();
     });
 
+    it("takes a pace, refuses one outside the bounds, and lifts it with null", async () => {
+      /* Enforced in the due-calls query (`campaigns.test.ts` proves that); this is the door
+         it arrives through. The bounds are the same on both sides of the wire. */
+      const paced = await call("PATCH", `/api/v1/campaigns/${fresh}`, {
+        maxConcurrentCalls: 2,
+        maxCallsPerHour: 30,
+      });
+      expect(paced.status, JSON.stringify(paced.body)).toBe(200);
+      expect(paced.body["maxConcurrentCalls"]).toBe(2);
+      expect(paced.body["maxCallsPerHour"]).toBe(30);
+
+      const flatOut = await call("PATCH", `/api/v1/campaigns/${fresh}`, { maxConcurrentCalls: 0 });
+      expect(flatOut.status).toBe(422);
+
+      const lifted = await call("PATCH", `/api/v1/campaigns/${fresh}`, { maxConcurrentCalls: null });
+      expect(lifted.status, JSON.stringify(lifted.body)).toBe(200);
+      expect(lifted.body["maxConcurrentCalls"]).toBeNull();
+      // Omitted is unchanged, so the hourly cap is still there.
+      expect(lifted.body["maxCallsPerHour"]).toBe(30);
+    });
+
     it("clearing the start time leaves it scheduled, waiting for a person", async () => {
       // Clearing says "I will start it myself", not "put it back in the drawer".
       const reply = await call("PATCH", `/api/v1/campaigns/${fresh}`, { startsAt: null });
