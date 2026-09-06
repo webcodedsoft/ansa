@@ -89,6 +89,16 @@ export const recordCorrection = async (input: CorrectionInput) =>
  * right for one page and only approximately right if calls are landing fast enough to push
  * an in-progress one off the end of it. Nobody running this product is at that scale yet.
  */
+/**
+ * A short-lived link to one call's audio.
+ *
+ * Called when somebody presses play, never on render. The API writes an access-log row for
+ * every link it mints, so minting one per page view would fill the record that answers "who
+ * has heard my call" with people who only opened the page.
+ */
+export const recordingLink = async (callId: string) =>
+  (await api()).calls.recording({ path: { callId } });
+
 export const listLiveCalls = async () => {
   const { items } = await listCalls();
   return items.filter((call) => call.endedAt === null);

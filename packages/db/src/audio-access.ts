@@ -12,14 +12,6 @@ import type { OrganizationScope } from "./organization-scope";
  * token, because an `<audio>` element cannot send an authorization header. "Was given the
  * ability to listen" is the honest claim and the only attributable one.
  */
-export interface AudioAccess {
-  readonly at: Date;
-  /** Null once the account has been removed. The access still happened. */
-  readonly userId: string | null;
-  /** Whose voice, kept even if the call row is later deleted. */
-  readonly caller: string | null;
-}
-
 /**
  * Note that somebody was handed a recording.
  *
@@ -41,19 +33,11 @@ export const recordAudioAccess = async (
   );
 };
 
-/** Every time this call's audio was handed to somebody, newest first. */
-export const readAudioAccess = async (
-  scope: OrganizationScope,
-  callId: string,
-): Promise<readonly AudioAccess[]> => {
-  const rows = await scope.query<Record<string, unknown>>(
-    `select at, user_id, caller from audio_access_log
-      where call_id = $1 order by at desc limit 200`,
-    [callId],
-  );
-  return rows.map((row) => ({
-    at: new Date(String(row["at"])),
-    userId: row["user_id"] === null ? null : String(row["user_id"]),
-    caller: row["caller"] === null ? null : String(row["caller"]),
-  }));
-};
+/* There is deliberately no reader here yet.
+ *
+ * "Who has heard my call" is the question this table exists to answer, and answering it needs
+ * a screen and a decision about who may see the list — a member of staff looking up who else
+ * listened is a different permission from listening. Writing the reader before either exists
+ * would be a function with no caller, which is what `check-wiring` refuses and what it was
+ * right to refuse: the rows are being written from today, so the history is there when the
+ * screen is built. */

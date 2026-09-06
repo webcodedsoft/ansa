@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { Card, PageHeader } from "@/components/ui";
 import { findCall } from "@/features/calls/calls.service";
 import { CallFlags } from "@/features/calls/components/call-flags";
+import { CallRecording } from "@/features/calls/components/call-recording";
 import { CallStats, computeCallStats } from "@/features/calls/components/call-stats";
 import { linesOf } from "@/features/calls/call-conversation";
 import { CallTimeline, EventTable } from "@/features/calls/components/call-timeline";
@@ -64,6 +65,11 @@ const CallDetailPage = async ({
                 }`
           }`}
         >
+          {/* Above the words, because it is the evidence they are checked against — and a
+              button rather than a player, because asking for the audio is logged. */}
+          <div className="mb-3.5 border-b border-[var(--surface-line)] pb-3.5">
+            <CallRecording callId={call.id} />
+          </div>
           <CallTimeline callId={call.id} lines={lines} />
         </Card>
 

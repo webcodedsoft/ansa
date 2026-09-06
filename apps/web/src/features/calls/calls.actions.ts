@@ -6,7 +6,7 @@ import { failureMessage, refusedWith } from "@/lib/api/server";
 import { failedForm, invalidForm, succeededForm, type FormState } from "@/lib/form-state";
 
 import { correctionSchema, testCallSchema } from "./calls.schema";
-import { placeTestCall, recordCorrection } from "./calls.service";
+import { placeTestCall, recordCorrection, recordingLink } from "./calls.service";
 
 // ---------------------------------------------------------------------------
 // Placing a test call
@@ -87,6 +87,39 @@ export const correctTranscript = async (
     revalidatePath(`/calls/${parsed.data.callId}`);
     return succeededForm({ changed: result.changed, text: result.correctedText });
   } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+};
+
+/**
+ * Ask for a link to this call's audio.
+ *
+ * A server action rather than a fetch from the browser, so the session cookie does the
+ * authorising and the ticket is the only thing that ever reaches the client. It returns a URL
+ * that works once and expires in two minutes; asking again is another row in the access log,
+ * which is correct — it is another person, or the same person, listening again.
+ */
+export type RecordingState = FormState<{
+  readonly url: string;
+  readonly bothLegs: boolean;
+}>;
+
+export const fetchRecording = async (
+  _previous: RecordingState,
+  form: FormData,
+): Promise<RecordingState> => {
+  const callId = String(form.get("callId") ?? "");
+  if (callId === "") return failedForm("This form does not say which call it is for.");
+
+  try {
+    const link = await recordingLink(callId);
+    return succeededForm({ url: link.url, bothLegs: link.bothLegs });
+  } catch (error) {
+    if (refusedWith(error, 404)) {
+      return failedForm(
+        "There is no audio for this call. Either this organisation was not recording when it happened, or the recording has passed its retention window and been deleted.",
+      );
+    }
     return failedForm(failureMessage(error));
   }
 };

@@ -5256,8 +5256,25 @@ rather than landed as inventory — the wave that needs them adds them wired.
       The comment on the corrections endpoint that explained why there was no audio has been
       retired; it had named the exact price, and both halves of it now exist.
 
-      Still to do: the player in the console, and a real call with `record_calls` on. Nothing
-      here has produced or served a byte of real audio yet.
+      **5d: the player, and one design point that mattered.** The link is minted **on click,
+      not on render**. Every mint writes an access-log row, so fetching one when the page loads
+      would fill the record that answers "who has heard my call" with everybody who merely
+      opened it — useless for the one question it exists for. So the card shows a button, and
+      pressing it is the act being recorded. The line under it says so, because somebody should
+      know before they press it.
+
+      A call with no audio is the common case rather than an error, and the message says which:
+      the organisation was not recording then, or it has passed its retention window.
+
+      `check-wiring` caught `readAudioAccess` as dead — a reader with no screen. Deleted rather
+      than kept: "who has heard my call" needs a surface and a decision about who may see the
+      list, which is a different permission from listening. The rows are written from today, so
+      the history is there when that screen is built.
+
+      **Slice 5 is code-complete and entirely unproven.** No organisation has `record_calls`
+      on, so not one byte of real audio has been captured, converted or served. Everything here
+      is tests and typecheck. Turning it on for Oakhaven and placing one call is the next real
+      step, and it is also the first time a caller would hear the disclosure.
 
 - [x] **Slice 4 — the conversation page** (2026-09-06)
       Now that both halves are stored, the screen is only a screen. The call detail page reads
