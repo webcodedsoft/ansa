@@ -188,11 +188,11 @@ const CampaignPage = async ({
         }
       />
 
-      {/* Left column stacks, right column is the time card. The breakdown lives inside the
-          left rather than below the grid so the two columns end near each other — the window
-          card carries a strip, a date picker and two notes, and on its own it towered over a
-          state card that is three lines and some figures. */}
-      <div className="grid items-start gap-3.5 lg:grid-cols-[minmax(0,1fr)_290px]">
+      {/* Both columns stack. The breakdown sits inside the left rather than below the grid so
+          the two end near each other: the right column carries the window, the schedule and
+          their notes, and on a draft — where there is no breakdown yet — it otherwise towered
+          four hundred pixels past a state card that is three lines and some figures. */}
+      <div className="grid items-start gap-3.5 lg:grid-cols-[minmax(0,1fr)_310px]">
         <div className="flex flex-col gap-3.5">
           <Card>
             {/* Status and the moves it can make sit at the top of the card they describe, with
@@ -253,40 +253,96 @@ const CampaignPage = async ({
             </div>
           </Card>
 
-          {campaign.total > 0 && (
+          {campaign.total > 0 ? (
             <Card title="How it is going">
               <CampaignBreakdown
                 byStatus={breakdown.byStatus}
                 byOutcome={breakdown.byOutcome}
               />
             </Card>
+          ) : (
+            /* A campaign that has dialled nothing has no breakdown to show, and without this
+               the left column was a short card beside four hundred pixels of time controls.
+               What goes here instead is the thing a new campaign actually needs: the three
+               steps between a draft and a ringing phone, which nothing else states. */
+            <Card title="Before it can dial">
+              <ol className="flex flex-col gap-3">
+                {[
+                  {
+                    done: campaign.purpose !== null && campaign.purpose.trim() !== "",
+                    title: "Say why it is calling",
+                    detail:
+                      "The agent opens with it. Without one it composes its own, which is the thing an unexpected call can least afford. Brief tab.",
+                  },
+                  {
+                    done: campaign.total > 0,
+                    title: "Add the people it should ring",
+                    detail:
+                      "Each contact becomes a pending call. Consent and do-not-call are still checked per number when it dials.",
+                  },
+                  {
+                    done: campaign.status !== "draft",
+                    title: "Start it, or give it a time",
+                    detail:
+                      "Press Schedule to start it yourself, or set a start above and it moves to running on its own.",
+                  },
+                ].map((step) => (
+                  <li key={step.title} className="flex gap-2.5">
+                    <span
+                      aria-hidden
+                      className={
+                        step.done
+                          ? "mt-[3px] size-4 flex-none rounded-full border-[5px] border-[var(--accent)]"
+                          : "mt-[3px] size-4 flex-none rounded-full border border-[var(--hairline)]"
+                      }
+                    />
+                    <span className="min-w-0">
+                      <span
+                        className={
+                          step.done
+                            ? "block text-[13px] font-medium text-[var(--ink-3)] line-through"
+                            : "block text-[13px] font-medium text-[var(--ink)]"
+                        }
+                      >
+                        {step.title}
+                      </span>
+                      <span className="mt-0.5 block text-[12px] leading-relaxed text-[var(--ink-3)]">
+                        {step.detail}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </Card>
           )}
         </div>
 
-        <Card title="When it may ring">
-          <CallingWindowStrip window={campaign.callingWindow} />
+        <div className="flex flex-col gap-3.5">
+          {/* Two cards, because these are two kinds of thing. The window is a recurring shape
+              — these hours, these weekdays, every week. The schedule is one span with two
+              ends. They were in one card and it read as a pile. */}
+          <Card title="Hours it may ring">
+            <CallingWindowStrip window={campaign.callingWindow} />
+            <p className="mt-3.5 border-t border-[var(--hairline)] pt-3 text-[11.5px] leading-relaxed text-[var(--ink-3)]">
+              Consent and do-not-call are checked per number on every call,
+              whatever this says. A window narrows the permitted hours and never
+              widens them.
+            </p>
+          </Card>
 
-          <div className="mt-4 border-t border-[var(--hairline)] pt-4">
-            <div className="mb-2 text-[11px] tracking-[0.06em] text-[var(--ink-3)] uppercase">
-              Starts
-            </div>
+          <Card title="Schedule">
             <CampaignSchedule
               campaignId={campaign.id}
               startsAt={campaign.startsAt}
-              /* The same freeze the brief is under, and the API refuses a start time on a
-                 campaign past it — so the control is not offered rather than offered and
-                 rejected. */
-              editable={campaign.briefEditable}
+              endsAt={campaign.endsAt}
+              /* The start is refused by the API once a campaign has left draft or scheduled,
+                 so the control goes away rather than being offered and rejected. The end
+                 stays editable for the whole run. */
+              startEditable={campaign.briefEditable}
               canWrite={canWrite}
             />
-          </div>
-
-          <p className="mt-3.5 border-t border-[var(--hairline)] pt-3 text-[11.5px] leading-relaxed text-[var(--ink-3)]">
-            Consent and do-not-call are checked per number on every call,
-            whatever this says. A window can narrow the permitted hours and
-            never widen them.
-          </p>
-        </Card>
+          </Card>
+        </div>
       </div>
 
       <div className="mt-[26px]">

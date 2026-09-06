@@ -12,141 +12,200 @@ const START: ScheduleState = idleForm();
 const pad = (n: number): string => String(n).padStart(2, "0");
 
 /**
- * A local wall-clock reading of an instant, in the shape the two inputs want.
+ * A local wall-clock reading of an instant, in the shape the inputs want.
  *
  * `toISOString` would be the wrong half of the problem: it renders UTC, so an 09:00 start in
  * Lagos comes back as 08:00 and the operator is shown a time they did not set. These read the
  * browser's own zone, which is the zone the person picking the time is standing in.
  */
-const dateValue = (iso: string | null): string => {
-  if (iso === null) return "";
+const parts = (iso: string | null): { readonly date: string; readonly time: string } => {
+  if (iso === null) return { date: "", time: "" };
   const at = new Date(iso);
-  if (Number.isNaN(at.getTime())) return "";
-  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
+  if (Number.isNaN(at.getTime())) return { date: "", time: "" };
+  return {
+    date: `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`,
+    time: `${pad(at.getHours())}:${pad(at.getMinutes())}`,
+  };
 };
 
-const timeValue = (iso: string | null): string => {
-  if (iso === null) return "";
-  const at = new Date(iso);
-  if (Number.isNaN(at.getTime())) return "";
-  return `${pad(at.getHours())}:${pad(at.getMinutes())}`;
-};
+/** Both halves, or nothing. A date without a time would silently mean midnight. */
+const instant = (date: string, time: string): string | null =>
+  date === "" || time === "" ? null : new Date(`${date}T${time}`).toISOString();
+
+const When = ({
+  legend,
+  hint,
+  date,
+  time,
+  disabled,
+  onDate,
+  onTime,
+}: {
+  readonly legend: string;
+  readonly hint: string;
+  readonly date: string;
+  readonly time: string;
+  readonly disabled: boolean;
+  readonly onDate: (value: string) => void;
+  readonly onTime: (value: string) => void;
+}) => (
+  <fieldset>
+    <legend className="mb-1.5 text-[11px] font-semibold tracking-[0.06em] text-[var(--ink-3)] uppercase">
+      {legend}
+    </legend>
+    <div className="flex flex-wrap gap-2">
+      <Field label="Date" className="min-w-[8.5rem] flex-[2]">
+        <input
+          type="date"
+          value={date}
+          disabled={disabled}
+          onChange={(event) => onDate(event.target.value)}
+          className={CONTROL}
+        />
+      </Field>
+      <Field label="Time" className="min-w-[6.5rem] flex-1">
+        <input
+          type="time"
+          value={time}
+          disabled={disabled}
+          onChange={(event) => onTime(event.target.value)}
+          className={CONTROL}
+        />
+      </Field>
+    </div>
+    <p className="mt-1 text-[11.5px] text-[var(--ink-3)]">{hint}</p>
+  </fieldset>
+);
 
 /**
- * When a campaign starts itself.
+ * The span a campaign runs over: when it starts, and when it gives up.
  *
- * `scheduled` was a status that did not mean what its name said: it meant "waiting for
- * somebody to press Start". A campaign for Tuesday morning had to be started on Tuesday
- * morning by a person who remembered. This is the missing half — pick a date and a time and
- * the sweeper starts it.
+ * Both ends carry a time rather than just a date, because both decisions are made to the
+ * hour — "Tuesday first thing" and "stop before the weekend" are different from Tuesday and
+ * Friday, and a date alone would silently mean midnight at each end.
  *
- * Two inputs rather than one `datetime-local`, deliberately. The combined control renders
- * differently in every browser, cannot be styled to match anything else on this page, and has
- * its own keyboard behaviour. Two native inputs are two ordinary controls.
+ * This is not the calling window and must not read as it. The window is a recurring shape —
+ * these hours, these weekdays, every week — and lives beside this as a drawing. This is a
+ * single span with two ends. The two were in one card and the card looked like a pile;
+ * separating them by what kind of thing they are is what makes either legible.
  *
- * They are read in the browser's own timezone and sent as an instant. Somebody in Lagos
- * picking 09:00 means 09:00 where they are standing, and converting here rather than on the
- * server is what makes that true — the server has no idea where they are.
+ * The two ends are not equally editable, which is deliberate rather than an oversight. A
+ * start is meaningless once a campaign has started and the API refuses it, so the control
+ * goes away. An end stays live for the whole run: "stop this by Friday" is an ordinary thing
+ * to decide about a campaign already dialling, and without it pausing by hand is the only way
+ * to end one.
  */
 export const CampaignSchedule = ({
   campaignId,
   startsAt,
-  editable,
+  endsAt,
+  startEditable,
   canWrite,
 }: {
   readonly campaignId: string;
   readonly startsAt: string | null;
-  /** False once the campaign has started; a start time would never be read after that. */
-  readonly editable: boolean;
+  readonly endsAt: string | null;
+  /** False once the campaign has started. The end stays editable regardless. */
+  readonly startEditable: boolean;
   readonly canWrite: boolean;
 }) => {
   const [state, action, pending] = useActionState(setScheduleAction, START);
-  const [date, setDate] = useState(dateValue(startsAt));
-  const [time, setTime] = useState(timeValue(startsAt));
+  const [from, setFrom] = useState(parts(startsAt));
+  const [to, setTo] = useState(parts(endsAt));
 
-  const disabled = !editable || !canWrite || pending;
-  const half = date !== "" && time === "";
-  const chosen = date !== "" && time !== "";
+  const locked = !canWrite || pending;
+  const begins = instant(from.date, from.time);
+  const finishes = instant(to.date, to.time);
 
-  const submit = (clear: boolean): void => {
+  const halfStart = (from.date === "") !== (from.time === "");
+  const halfEnd = (to.date === "") !== (to.time === "");
+  const backwards =
+    begins !== null && finishes !== null && new Date(finishes) <= new Date(begins);
+
+  const save = (): void => {
     const form = new FormData();
     form.set("campaignId", campaignId);
-    if (!clear && chosen) {
-      /* Built from the parts in local time and sent as an instant, so the server stores the
-         moment rather than a string whose zone it would have to guess. */
-      form.set("startsAt", new Date(`${date}T${time}`).toISOString());
-    }
+    if (begins !== null) form.set("startsAt", begins);
+    if (finishes !== null) form.set("endsAt", finishes);
     startTransition(() => action(form));
   };
 
-  if (!editable) {
-    return (
-      <p className="text-[12px] leading-relaxed text-[var(--ink-3)]">
-        {startsAt === null
-          ? "This campaign was started by hand."
-          : `Started automatically at ${new Date(startsAt).toLocaleString()}.`}
-      </p>
-    );
-  }
+  const clear = (): void => {
+    setFrom({ date: "", time: "" });
+    setTo({ date: "", time: "" });
+    const form = new FormData();
+    form.set("campaignId", campaignId);
+    startTransition(() => action(form));
+  };
 
   return (
     <Stack gap="sm">
       {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
       {state.status === "succeeded" && state.data !== null && (
         <Notice tone="ok">
-          {state.data.startsAt === null
-            ? "Cleared. This campaign waits for you to start it."
-            : `Saved. It starts on its own at ${new Date(state.data.startsAt).toLocaleString()}.`}
+          {state.data.startsAt === null && state.data.endsAt === null
+            ? "Cleared. It starts when you start it and runs until the list is done."
+            : "Saved."}
         </Notice>
       )}
 
-      <div className="flex flex-wrap gap-2.5">
-        <Field label="Date" className="min-w-[9.5rem] flex-1">
-          <input
-            type="date"
-            value={date}
-            disabled={disabled}
-            onChange={(event) => setDate(event.target.value)}
-            className={CONTROL}
-          />
-        </Field>
-        <Field label="Time" className="min-w-[7.5rem] flex-1">
-          <input
-            type="time"
-            value={time}
-            disabled={disabled}
-            onChange={(event) => setTime(event.target.value)}
-            className={CONTROL}
-          />
-        </Field>
-      </div>
-
-      {half && (
-        <p className="text-[11.5px] text-[var(--ink-3)]">
-          Pick a time as well — a date on its own would start it at midnight.
+      {startEditable ? (
+        <When
+          legend="Starts"
+          hint="It moves to running on its own at this moment."
+          date={from.date}
+          time={from.time}
+          disabled={locked}
+          onDate={(date) => setFrom((one) => ({ ...one, date }))}
+          onTime={(time) => setFrom((one) => ({ ...one, time }))}
+        />
+      ) : (
+        <p className="text-[12px] leading-relaxed text-[var(--ink-3)]">
+          {startsAt === null
+            ? "Started by hand."
+            : `Started at ${new Date(startsAt).toLocaleString()}.`}
         </p>
       )}
 
-      <div className="flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          variant="primary"
-          disabled={disabled || !chosen}
-          onClick={() => submit(false)}
-        >
-          {pending ? "Saving…" : "Schedule it"}
-        </Button>
-        {startsAt !== null && (
-          <Button size="sm" disabled={disabled} onClick={() => submit(true)}>
-            Start by hand instead
-          </Button>
-        )}
-      </div>
+      <When
+        legend="Stops"
+        hint="Whatever is left on the list is dropped. A call already in progress finishes."
+        date={to.date}
+        time={to.time}
+        disabled={locked}
+        onDate={(date) => setTo((one) => ({ ...one, date }))}
+        onTime={(time) => setTo((one) => ({ ...one, time }))}
+      />
 
-      <p className="text-[11.5px] leading-relaxed text-[var(--ink-3)]">
-        It moves to running on its own at that moment, then dials inside its calling window — a
-        start time cannot buy an hour the window does not allow.
-      </p>
+      {(halfStart || halfEnd) && (
+        <p className="text-[11.5px] text-[var(--ink-3)]">
+          A date needs a time beside it, or it would mean midnight.
+        </p>
+      )}
+      {backwards && (
+        <Notice tone="warn">
+          The stop has to be after the start, or the campaign would finish on the same sweep it
+          began.
+        </Notice>
+      )}
+
+      {canWrite && (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={locked || backwards || halfStart || halfEnd}
+            onClick={save}
+          >
+            {pending ? "Saving…" : "Save schedule"}
+          </Button>
+          {(startsAt !== null || endsAt !== null) && (
+            <Button size="sm" disabled={locked} onClick={clear}>
+              Clear
+            </Button>
+          )}
+        </div>
+      )}
     </Stack>
   );
 };

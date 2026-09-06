@@ -105,6 +105,13 @@ export interface Campaign {
    * nothing starts itself that was not asked to.
    */
   readonly startsAt: Date | null;
+  /**
+   * When it stops dialling, whatever is left on the list. Null runs to exhaustion.
+   *
+   * Unlike `startsAt`, this stays meaningful after a campaign has started — shortening a run
+   * that is under way is the ordinary case, not an edge one.
+   */
+  readonly endsAt: Date | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -119,7 +126,7 @@ export interface CampaignSummary extends Campaign {
 const CAMPAIGN_COLUMNS = `
   cp.id, cp.agent_id, cp.name, cp.status, cp.calling_window, cp.created_by,
   cp.purpose, cp.opening, cp.flow, cp.outcomes, cp.voicemail,
-  cp.max_attempts, cp.retry_after_minutes, cp.starts_at,
+  cp.max_attempts, cp.retry_after_minutes, cp.starts_at, cp.ends_at,
   cp.created_at, cp.updated_at,
   (select count(*) from scheduled_calls s where s.campaign_id = cp.id)::int as total,
   (select count(*) from scheduled_calls s
@@ -150,6 +157,10 @@ const asCampaign = (row: Record<string, unknown>): CampaignSummary => ({
     row["starts_at"] === null || row["starts_at"] === undefined
       ? null
       : new Date(String(row["starts_at"])),
+  endsAt:
+    row["ends_at"] === null || row["ends_at"] === undefined
+      ? null
+      : new Date(String(row["ends_at"])),
   createdAt: new Date(String(row["created_at"])),
   updatedAt: new Date(String(row["updated_at"])),
   total: Number(row["total"]),
@@ -328,6 +339,14 @@ export interface CampaignEdit {
    * already started rather than accepting a value nothing will ever read.
    */
   readonly startsAt?: Date | null;
+  /**
+   * When it stops. Null clears it back to running until the list is exhausted.
+   *
+   * Editable for the whole life of a campaign, which `startsAt` is not: "stop this by Friday"
+   * is a thing somebody decides about a campaign already dialling, and refusing it would
+   * leave pausing by hand as the only way to end a run.
+   */
+  readonly endsAt?: Date | null;
   /** Null clears it back to the default window; undefined leaves it alone. */
   readonly callingWindow?: Record<string, unknown> | null;
 }
@@ -342,6 +361,7 @@ export const updateCampaign = async (
         set name           = coalesce($2, name),
             calling_window = case when $3 then $4::jsonb else calling_window end,
             starts_at      = case when $5 then $6::timestamptz else starts_at end,
+            ends_at        = case when $7 then $8::timestamptz else ends_at end,
             /* Giving a draft a start time schedules it, in the same statement.
                start_due_campaigns only promotes a scheduled campaign, so without this a
                start time set on a draft would sit in the column and never fire: a setting
@@ -363,6 +383,8 @@ export const updateCampaign = async (
         : JSON.stringify(edit.callingWindow),
       edit.startsAt !== undefined,
       edit.startsAt ?? null,
+      edit.endsAt !== undefined,
+      edit.endsAt ?? null,
     ],
   );
   return rows.length > 0;
@@ -720,6 +742,25 @@ export const startDueCampaigns = async (
 ): Promise<readonly { readonly campaignId: string; readonly organizationId: OrganizationId }[]> => {
   const rows = (await dataSource.query(
     "select campaign_id, organization_id from app.start_due_campaigns()",
+  )) as Record<string, unknown>[];
+  return rows.map((row) => ({
+    campaignId: String(row["campaign_id"]),
+    organizationId: String(row["organization_id"]) as OrganizationId,
+  }));
+};
+
+/**
+ * Stop every campaign whose end has passed, across every organisation.
+ *
+ * The mirror of `startDueCampaigns`, and unscoped for the same reason. Returns what it
+ * stopped so the sweeper can say so — "why did this stop dialling on Friday" is a question
+ * with an answer only if somebody wrote it down.
+ */
+export const finishExpiredCampaigns = async (
+  dataSource: Db,
+): Promise<readonly { readonly campaignId: string; readonly organizationId: OrganizationId }[]> => {
+  const rows = (await dataSource.query(
+    "select campaign_id, organization_id from app.finish_expired_campaigns()",
   )) as Record<string, unknown>[];
   return rows.map((row) => ({
     campaignId: String(row["campaign_id"]),

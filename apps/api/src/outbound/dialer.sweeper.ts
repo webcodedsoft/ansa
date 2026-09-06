@@ -1,4 +1,5 @@
 import {
+  finishExpiredCampaigns,
   organizationsWithDueCalls,
   startDueCampaigns,
   type Db,
@@ -86,8 +87,19 @@ export class OutboundDialer implements OnApplicationBootstrap, OnApplicationShut
             organizationId: one.organizationId,
           });
         }
+
+        /* And the other end, before the sweep rather than after it: a campaign whose end has
+           passed must not place one more call on the way out. Calls already in flight are
+           untouched — this stops new ones. */
+        const finished = await finishExpiredCampaigns(dataSource);
+        for (const one of finished) {
+          this.log.info("campaign reached its end time and is now done", {
+            campaignId: one.campaignId,
+            organizationId: one.organizationId,
+          });
+        }
       } catch (error) {
-        this.log.warn("could not start scheduled campaigns", {
+        this.log.warn("could not move scheduled campaigns to their next state", {
           reason: error instanceof Error ? error.message : String(error),
         });
       }

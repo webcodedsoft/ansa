@@ -4938,6 +4938,45 @@ rather than landed as inventory — the wave that needs them adds them wired.
       Not done: the live dev API predates these builds, so the draft-to-scheduled promotion
       could not be confirmed against the running server — the endpoint test is what proves it.
 
+- [x] **A campaign runs over a span, and the page says so once** (this session, migration 0070)
+
+      **The range.** A campaign had a start and no stop: it ran until the list was exhausted
+      or somebody remembered to pause it. That is worse than untidy — a reminder about
+      Friday's viewing is worthless on Saturday, and the default three attempts four hours
+      apart can trail for days on a number that keeps ringing out. `campaigns.ends_at` plus
+      `app.finish_expired_campaigns()`, which the sweeper calls beside its sibling, before it
+      looks for work, so an expired campaign does not place one more call on the way out.
+
+      Finishing is a promotion for the reason starting is: the due query and
+      `organizations_with_due_calls` both require `running`, so moving an expired campaign to
+      `done` removes it from every sweep without either learning a second rule. What it does
+      not do is interrupt a call already in flight — cutting a live conversation off to honour
+      an end time would be the wrong trade by a wide margin.
+
+      **The two ends are not equally editable, deliberately.** A start is meaningless once
+      dialling has begun and the API refuses it. An end stays settable for the whole run,
+      because "stop this by Friday" is an ordinary thing to decide about a campaign already
+      dialling, and without it pausing by hand was the only way to end one. Both are tested.
+      The ordering guard compares against the *stored* other end when only one is sent, which
+      is the case a body-only check would let through, and there is a CHECK constraint behind
+      it.
+
+      **Why the page looked disorganised, which was the same mistake.** A one-off instant had
+      been put inside a card about recurring hours, so "When it may ring" held a weekly strip,
+      a date, a time, and two paragraphs of prose in a 290px column. Two kinds of thing in one
+      box. They are two cards now — "Hours it may ring" is a recurring shape, "Schedule" is
+      one span with two ends — and each end carries a time, because both decisions are made to
+      the hour and a date alone would silently mean midnight.
+
+      The other half of the mess was a hole: on a draft the breakdown card is absent, so the
+      left column was one short card beside four hundred pixels of time controls. It now
+      carries the three steps between a draft and a ringing phone — say why it is calling, add
+      the people, start it or give it a time — which nothing else on the product states.
+
+      Verified against the running server this time: 09:30 and 17:00 picked in Lagos stored as
+      08:30Z and 16:00Z, and the draft was promoted to scheduled — the thing the stale dev API
+      could not confirm last session. The campaign was left exactly as found.
+
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The queue drains, the consent gate is in the path, and a call can now offer and take a time,
 but every one of those is green tests and database round trips. By Rule 1 both slices are open

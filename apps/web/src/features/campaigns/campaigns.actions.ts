@@ -294,7 +294,10 @@ export const saveCampaignFlowAction = async (
  * endpoint's own convention, where omitted means unchanged — so this sends an explicit null
  * rather than letting the omission travel and mean nothing.
  */
-export type ScheduleState = FormState<{ readonly startsAt: string | null }>;
+export type ScheduleState = FormState<{
+  readonly startsAt: string | null;
+  readonly endsAt: string | null;
+}>;
 
 export const setScheduleAction = async (
   _previous: ScheduleState,
@@ -303,22 +306,33 @@ export const setScheduleAction = async (
   const campaignId = String(form.get("campaignId") ?? "");
   if (campaignId === "") return failedForm("This form does not say which campaign it is for.");
 
-  const raw = form.get("startsAt");
-  const startsAt = typeof raw === "string" && raw.trim() !== "" ? raw.trim() : null;
-  if (startsAt !== null && Number.isNaN(new Date(startsAt).getTime())) {
-    return failedForm("That is not a time this can understand.");
+  const instant = (key: string): string | null => {
+    const raw = form.get(key);
+    return typeof raw === "string" && raw.trim() !== "" ? raw.trim() : null;
+  };
+  const startsAt = instant("startsAt");
+  const endsAt = instant("endsAt");
+  for (const at of [startsAt, endsAt]) {
+    if (at !== null && Number.isNaN(new Date(at).getTime())) {
+      return failedForm("That is not a time this can understand.");
+    }
   }
 
   try {
-    await editCampaign(campaignId, { startsAt });
+    /* Both ends every time, so clearing one is expressible. The endpoint treats an omitted
+       field as unchanged, and this form's only way to say "no end" is to leave it empty. */
+    await editCampaign(campaignId, { startsAt, endsAt });
     /* Both trees: the campaign's own page shows the time, and the list shows the status it
        will move to. One write, two screens. */
     revalidatePath(`/campaigns/${campaignId}`);
     revalidatePath("/campaigns");
-    return succeededForm({ startsAt });
+    return succeededForm({ startsAt, endsAt });
   } catch (error) {
     if (refusedWith(error, 422)) {
-      return failedForm("This campaign has already started, so a start time would never be read.");
+      /* Two different 422s share this path: a start on a campaign already running, and an end
+         at or before the start. The API's own wording says which, so it is passed through
+         rather than replaced with a guess. */
+      return failedForm(failureMessage(error));
     }
     return failedForm(failureMessage(error));
   }

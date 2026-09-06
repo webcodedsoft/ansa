@@ -1470,6 +1470,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly retryAfterMinutes: number;
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
+        readonly endsAt: string | null;
         readonly createdBy: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;
@@ -1554,6 +1555,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly retryAfterMinutes: number;
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
+        readonly endsAt: string | null;
         readonly createdBy: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;
@@ -1626,6 +1628,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly retryAfterMinutes: number;
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
+        readonly endsAt: string | null;
         readonly createdBy: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;
@@ -1636,7 +1639,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
 
     /**
      * Rename a campaign, or change its calling window
-     * Send `name`, `callingWindow`, `startsAt`, or any combination. An omitted field is left as it was; a null `callingWindow` clears it back to the default window and a null `startsAt` back to starting by hand. The window can only narrow the 08:00–20:00 WAT bound `mayCall` clamps to. A `startsAt` is refused with 422 once the campaign has left draft or scheduled: a start time for a campaign that has already started is a value nothing would ever read.
+     * Send `name`, `callingWindow`, `startsAt`, `endsAt`, or any combination. An omitted field is left as it was; a null `callingWindow` clears it back to the default window and a null `startsAt` back to starting by hand. The window can only narrow the 08:00–20:00 WAT bound `mayCall` clamps to. A `startsAt` is refused with 422 once the campaign has left draft or scheduled, because a start time for a campaign that has already started is a value nothing would ever read; `endsAt` stays settable throughout, since shortening a run already under way is the ordinary case. An end at or before the start is refused with 422 — a run that finishes before it begins would start and stop on the same sweep and read as a campaign that silently did nothing.
      */
     edit: (input: {
         readonly path: {
@@ -1650,6 +1653,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
           readonly weekdays: readonly (number)[];
         } | null;
           readonly startsAt?: string | null;
+          readonly endsAt?: string | null;
         };
       }) =>
       send<{
@@ -1708,6 +1712,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly retryAfterMinutes: number;
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
+        readonly endsAt: string | null;
         readonly createdBy: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;
@@ -1841,6 +1846,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly retryAfterMinutes: number;
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
+        readonly endsAt: string | null;
         readonly createdBy: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;
@@ -1971,6 +1977,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly retryAfterMinutes: number;
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
+        readonly endsAt: string | null;
         readonly createdBy: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;
@@ -2047,6 +2054,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly retryAfterMinutes: number;
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
+        readonly endsAt: string | null;
         readonly createdBy: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;

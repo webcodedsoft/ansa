@@ -207,6 +207,13 @@ const campaign = object({
    * scheduled for as a record of when it began.
    */
   startsAt: nullable(timestamp()),
+  /**
+   * When it stops dialling, whatever is left on the list. Null runs to exhaustion.
+   *
+   * Stays settable for the whole life of a campaign, which `startsAt` does not: shortening a
+   * run already under way is the ordinary case.
+   */
+  endsAt: nullable(timestamp()),
   createdBy: nullable(uuid()),
   createdAt: timestamp(),
   updatedAt: timestamp(),
@@ -249,6 +256,8 @@ const editBody = object({
   callingWindow: optional(nullable(callingWindow)),
   /** Null clears the start time back to starting by hand; an omitted one is left alone. */
   startsAt: optional(nullable(timestamp())),
+  /** Null clears the end back to running until the list is exhausted. */
+  endsAt: optional(nullable(timestamp())),
 });
 
 const duplicateBody = object({ name: text({ minLength: 1, maxLength: 200 }) });
@@ -270,6 +279,9 @@ const breakdown = object({
 
 /** Distinguishable from `null`, which already means "no such campaign" on this path. */
 const ALREADY_STARTED = Symbol("already started");
+
+/** Also distinguishable from `null`, and from the refusal above. */
+const ENDS_TOO_SOON = Symbol("ends before it starts");
 
 const statusBody = object({ status: choice(CAMPAIGN_STATUSES) });
 
@@ -341,6 +353,7 @@ const asCampaignBody = (summary: CampaignSummary): Infer<typeof campaign> => ({
   retryAfterMinutes: summary.retryAfterMinutes,
   briefEditable: briefIsEditable(summary.status),
   startsAt: summary.startsAt === null ? null : summary.startsAt.toISOString(),
+  endsAt: summary.endsAt === null ? null : summary.endsAt.toISOString(),
   createdBy: summary.createdBy,
   createdAt: summary.createdAt.toISOString(),
   updatedAt: summary.updatedAt.toISOString(),
@@ -453,7 +466,7 @@ export class CampaignsController {
   @Endpoint({
     summary: "Rename a campaign, or change its calling window",
     description:
-      "Send `name`, `callingWindow`, `startsAt`, or any combination. An omitted field is left as it was; a null `callingWindow` clears it back to the default window and a null `startsAt` back to starting by hand. The window can only narrow the 08:00–20:00 WAT bound `mayCall` clamps to. A `startsAt` is refused with 422 once the campaign has left draft or scheduled: a start time for a campaign that has already started is a value nothing would ever read.",
+      "Send `name`, `callingWindow`, `startsAt`, `endsAt`, or any combination. An omitted field is left as it was; a null `callingWindow` clears it back to the default window and a null `startsAt` back to starting by hand. The window can only narrow the 08:00–20:00 WAT bound `mayCall` clamps to. A `startsAt` is refused with 422 once the campaign has left draft or scheduled, because a start time for a campaign that has already started is a value nothing would ever read; `endsAt` stays settable throughout, since shortening a run already under way is the ordinary case. An end at or before the start is refused with 422 — a run that finishes before it begins would start and stop on the same sweep and read as a campaign that silently did nothing.",
     capability: "campaigns:write",
     params: campaignPath,
     body: editBody,
@@ -472,10 +485,27 @@ export class CampaignsController {
       /* Read before writing, only when a start time was sent. `updateCampaign` has no status
          guard of its own — renaming a running campaign is fine — so this is where a start
          time that could never fire is refused rather than stored and ignored. */
-      if (body.startsAt !== undefined) {
+      /* Read first when either end was sent: one to refuse a start time that could never
+         fire, and one to compare the two ends — which needs whichever of them is not in this
+         request, since either may be arriving alone. */
+      if (body.startsAt !== undefined || body.endsAt !== undefined) {
         const existing = await readCampaign(scope, path.campaignId);
         if (existing === null) return null;
-        if (!briefIsEditable(existing.status)) return ALREADY_STARTED;
+        if (body.startsAt !== undefined && !briefIsEditable(existing.status)) return ALREADY_STARTED;
+
+        const from =
+          body.startsAt === undefined
+            ? existing.startsAt
+            : body.startsAt === null
+              ? null
+              : new Date(body.startsAt);
+        const to =
+          body.endsAt === undefined
+            ? existing.endsAt
+            : body.endsAt === null
+              ? null
+              : new Date(body.endsAt);
+        if (from !== null && to !== null && to.getTime() <= from.getTime()) return ENDS_TOO_SOON;
       }
 
       const changed = await updateCampaign(scope, path.campaignId, {
@@ -484,10 +514,18 @@ export class CampaignsController {
         ...(body.startsAt === undefined
           ? {}
           : { startsAt: body.startsAt === null ? null : new Date(body.startsAt) }),
+        ...(body.endsAt === undefined
+          ? {}
+          : { endsAt: body.endsAt === null ? null : new Date(body.endsAt) }),
       });
       if (!changed) return null;
       return readCampaign(scope, path.campaignId);
     });
+    if (updated === ENDS_TOO_SOON) {
+      throw new UnprocessableEntityException(
+        "The end has to be after the start, or the campaign would stop on the same sweep it began.",
+      );
+    }
     if (updated === ALREADY_STARTED) {
       throw new UnprocessableEntityException(
         "This campaign has already started, so a start time would never be read.",

@@ -346,6 +346,8 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("the campaign en
       const reply = await call("PATCH", `/api/v1/campaigns/${fresh}`, { startsAt: null });
       expect(reply.status, JSON.stringify(reply.body)).toBe(200);
       expect(reply.body["startsAt"]).toBeNull();
+      // A run window is something the original did, not something somebody wrote.
+      expect(reply.body["endsAt"]).toBeNull();
       expect(reply.body["status"]).toBe("scheduled");
     });
 
@@ -368,6 +370,47 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("the campaign en
       // The name is still editable on a running campaign; only the start time is refused.
       const renamed = await call("PATCH", `/api/v1/campaigns/${fresh}`, { name: "Renamed while running" });
       expect(renamed.status, JSON.stringify(renamed.body)).toBe(200);
+    });
+
+    it("takes a run window, and refuses one that finishes before it begins", async () => {
+      const second = await call("POST", "/api/v1/campaigns", {
+        name: "Run window fixture",
+        agentId: organizationId,
+      });
+      expect(second.status, JSON.stringify(second.body)).toBe(201);
+      const id = String(second.body["id"]);
+
+      const whole = (offsetMs: number): string =>
+        new Date(Math.floor((Date.now() + offsetMs) / 1000) * 1000).toISOString();
+      const from = whole(86_400_000);
+      const to = whole(5 * 86_400_000);
+
+      const ok = await call("PATCH", `/api/v1/campaigns/${id}`, { startsAt: from, endsAt: to });
+      expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+      expect(ok.body["startsAt"]).toBe(from);
+      expect(ok.body["endsAt"]).toBe(to);
+
+      /* Backwards is refused rather than stored. A run that finishes before it begins would
+         be started and finished on the same sweep and read as a campaign that did nothing. */
+      const backwards = await call("PATCH", `/api/v1/campaigns/${id}`, { endsAt: whole(3600_000) });
+      expect(backwards.status, JSON.stringify(backwards.body)).toBe(422);
+
+      /* Compared against the stored start when only one end is sent, which is the case that
+         would slip through a check that only looked at the request body. */
+      const after = await call("GET", `/api/v1/campaigns/${id}`);
+      expect(after.body["endsAt"]).toBe(to);
+    });
+
+    it("lets a running campaign be given an end, which a start is refused", async () => {
+      /* The two ends are not equally editable. A start is meaningless once dialling has
+         begun; an end is exactly what somebody reaches for then — "stop this by Friday" —
+         and without it pausing by hand is the only way to finish a run. */
+      const ended = await call("PATCH", `/api/v1/campaigns/${fresh}`, {
+        endsAt: new Date(Math.floor((Date.now() + 86_400_000) / 1000) * 1000).toISOString(),
+      });
+      expect(ended.status, JSON.stringify(ended.body)).toBe(200);
+      expect(ended.body["status"]).toBe("running");
+      expect(ended.body["endsAt"]).not.toBeNull();
     });
 
     it("breaks a campaign down by status and by verdict", async () => {

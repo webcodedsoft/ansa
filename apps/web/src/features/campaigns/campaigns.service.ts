@@ -37,6 +37,8 @@ export const editCampaign = async (
     readonly callingWindow?: CampaignWindow | null;
     /** ISO-8601. Null clears it back to starting by hand. */
     readonly startsAt?: string | null;
+    /** ISO-8601. Null clears it back to running until the list is exhausted. */
+    readonly endsAt?: string | null;
   },
 ) => (await api()).campaigns.edit({ path: { campaignId }, body });
 
