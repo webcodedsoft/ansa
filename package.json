@@ -12,7 +12,8 @@
     "lint": "turbo run lint && pnpm check:wiring",
     "test": "turbo run test",
     "dev": "turbo run dev",
-    "check:wiring": "node tools/wiring/check-wiring.mjs"
+    "check:wiring": "node tools/wiring/check-wiring.mjs",
+    "tunnel": "bash scripts/tunnel.sh"
   },
   "devDependencies": {
     "eslint": "10.8.0",

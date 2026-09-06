@@ -12,6 +12,15 @@ allowed to touch. That file is generated; this one is not.
 
 ## The seven steps
 
+**0. Make sure the carrier can reach this machine.** Every call — inbound or a campaign's —
+comes back to `PUBLIC_BASE_URL` for its media stream and its callbacks. On a laptop that is an
+ngrok tunnel, and a tunnel that is not running serves ngrok's own landing page instead: every
+route answers 404, the call connects, hears nothing, and hangs up billed. It has happened
+twice. `pnpm tunnel` starts the tunnel on the reserved domain in `.env`, refuses to continue
+if ngrok hands back a different URL, and proves the loop by checking the telephony routes
+answer through the tunnel the way they do on localhost. Run it before anything below, and
+again at the start of every session.
+
 **1. Buy or assign a number at the carrier**, and point its voice webhook at
 `POST {PUBLIC_BASE_URL}/telephony/voice`. Nothing in this repository does that, and there is
 no check anywhere that it happened: a organization provisioned without it looks completely correct

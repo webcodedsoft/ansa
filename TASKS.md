@@ -5091,7 +5091,45 @@ rather than landed as inventory — the wave that needs them adds them wired.
       test whose list of openers was too narrow. The test was wrong, not the templates. The
       answerphone rule now names all twenty-six private templates rather than the founding six.
 
+- [~] **Wiring the campaign to a real call — traced to the last link** (this session)
+
+      The whole chain was walked rather than assumed, seam by seam: `OutboundModule` is
+      mounted in `app.module`; the sweeper runs on its timer; it goes through `ORIGINATION`,
+      which goes through `placeOutboundCall`, which enforces the consent gate and then calls
+      Twilio with the media, status and AMD callback URLs built from `PUBLIC_BASE_URL`. All
+      three carrier credentials are set. Every link was live except one.
+
+      **The one that was dead, and it was the only one that matters.** `PUBLIC_BASE_URL` is an
+      ngrok domain, and the tunnel was not running. ngrok was serving its own landing page
+      there: every telephony route answered 404 through the tunnel and 403 on localhost.
+      A campaign call placed in that state connects at the carrier, finds no media stream,
+      hears nothing, and hangs up — billed. `TASKS.md:325` records exactly this from the lost
+      build. It rotted again the moment that session ended.
+
+      What was *not* wrong is worth saying, because it changes the fix: `.env` already held the
+      right domain and Twilio's webhooks already pointed at it. It is a reserved domain, so
+      restarting ngrok handed the same URL back and nothing needed re-pointing. The only thing
+      missing was a running process, which is why the fix is not a config change but `pnpm
+      tunnel` — a script that starts ngrok pinned to the reserved domain, refuses to continue
+      if it gets a different URL, and proves the loop by checking that the telephony routes
+      answer through the tunnel the way they do on localhost. Step 0 of the onboarding runbook
+      now says to run it every session.
+
+      Also checked and not stale: the API. I had been carrying "the running server predates
+      these builds" for several passes; it is `nest start --watch` and has been restarting on
+      every change. Worth having checked before bouncing it.
+
+      **Why no handset rang tonight.** It is 04:00 WAT. The consent gate's outer bound is
+      08:00–20:00 and Oakhaven narrows it to 08–19, so any call dialled now is refused by code
+      as outside calling hours — the gate CLAUDE.md says must not be talkable-out-of, and it
+      was not. Oakhaven's policy is `existing_relationship`, so no per-number consent row is
+      needed. Everything up to the carrier is verified live; the last step is gated by the
+      clock, not by any code. After 08:00 WAT: run `pnpm tunnel`, put one contact with a real
+      handset on a campaign, start it, and the sweeper does the rest within its interval.
+
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
+The road is now proven all the way to the carrier; the remaining gap is a phone answered
+inside calling hours.
 The queue drains, the consent gate is in the path, and a call can now offer and take a time,
 but every one of those is green tests and database round trips. By Rule 1 both slices are open
 until a scheduled call rings a real handset and an agent books a slot mid-call.
