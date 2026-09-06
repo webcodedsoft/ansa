@@ -150,6 +150,11 @@ const speaker = (config: AppConfig): TtsProvider => {
     MediaGateway,
   ],
   exports: [MediaGateway, APP_CONFIG, LOGGER, DATA_SOURCE, WHISPER_REGISTRY, HANDOFF_DESTINATION,
+    /* Exported for `SummaryModule`, which summarises finished calls. Sharing the provider is
+       sharing a configured client, not sharing the call path: nothing about a sweep touches a
+       live turn, and the day finished calls deserve a cheaper model this is the one line that
+       changes. */
+    LLM_PROVIDER,
     // EventsModule injects the registry to resolve a call's webhook subscriptions.
     // Providing it without exporting it is a boot failure, not a lint error.
     ORGANIZATION_REGISTRY],

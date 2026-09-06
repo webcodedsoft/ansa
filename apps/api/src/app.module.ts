@@ -5,10 +5,12 @@ import { OutboundModule } from "./outbound/outbound.module";
 import { EventsModule } from "./events/events.module";
 import { HealthController } from "./health.controller";
 import { RetentionModule } from "./retention/retention.module";
+import { SummaryModule } from "./summary/summary.module";
 import { TelephonyModule } from "./telephony/telephony.module";
 
 @Module({
-  imports: [TelephonyModule, RetentionModule, EventsModule, ApiModule, OutboundModule],
+  imports: [TelephonyModule, RetentionModule,
+    SummaryModule, EventsModule, ApiModule, OutboundModule],
   controllers: [HealthController],
 })
 export class AppModule {}
