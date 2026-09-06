@@ -5127,6 +5127,17 @@ rather than landed as inventory — the wave that needs them adds them wired.
       clock, not by any code. After 08:00 WAT: run `pnpm tunnel`, put one contact with a real
       handset on a campaign, start it, and the sweeper does the rest within its interval.
 
+- [x] **Verdicts are offered, not only typed** (2026-09-06)
+      "What counts as done" was the one field on the brief still asking for invented words.
+      The 73 templates hold 168 distinct verdicts in sets that agree with each other, so
+      `suggestVerdicts` (pure, `features/campaigns/verdicts.ts`) ranks the catalogue's sets
+      by overlap with what is chosen and offers the rest: pick "already paid" and it offers
+      "will pay", "cannot pay", "disputes"; pick nothing and it starts from "confirmed" and
+      "cancelled". A row of one-click "+ verdict" chips under the box; typing stays, because a
+      clinic's verdicts are not a garage's. The page passes only the sets down, not the
+      catalogue. Tested against the real templates so a template edit that breaks the
+      vocabulary shows here.
+
 - [x] **Every number typed into a box is now chosen from options** (2026-09-06)
       Asked for on the pace card and then for the whole console. `ChoiceChips` in
       `components/ui`: a number picked from a few sensible values, a "Default"/"No cap"/"None"

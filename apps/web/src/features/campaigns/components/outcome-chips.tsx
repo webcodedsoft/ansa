@@ -5,6 +5,8 @@ import { useState, type KeyboardEvent } from "react";
 import { CONTROL, Field } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
+import { suggestVerdicts } from "../verdicts";
+
 /**
  * The verdicts an agent may record, as chips.
  *
@@ -19,6 +21,12 @@ import { cn } from "@/lib/cn";
  * duplicates are ignored rather than refused, because typing one twice is a slip and not an
  * error worth a message.
  *
+ * Below the box, a row of verdicts to add with one click, drawn from the catalogue's own sets
+ * and ranked by what is already chosen (`suggestVerdicts`): choose "already paid" and it offers
+ * "will pay" and "cannot pay" next. Typing stays, because a clinic's verdicts are not a
+ * garage's — but nobody should have to invent "rescheduled" when seventy-three campaigns
+ * already agree on the word.
+ *
  * `as="div"` on the field, because a `<label>` wrapping the remove buttons would send every
  * click on them to the text input instead.
  */
@@ -30,6 +38,7 @@ export const OutcomeChips = ({
   maxLength,
   error,
   label,
+  suggestFrom,
 }: {
   readonly name: string;
   readonly initial: readonly string[];
@@ -39,15 +48,21 @@ export const OutcomeChips = ({
   readonly error?: string;
   /** The field's caption. The card it sits in already says what it is, so this can be terse. */
   readonly label: string;
+  /** Verdict sets to suggest from — the catalogue's, passed in so the client bundle need not carry it. */
+  readonly suggestFrom?: readonly (readonly string[])[];
 }) => {
   const [chips, setChips] = useState<readonly string[]>(initial);
   const [draft, setDraft] = useState("");
 
-  const add = (): void => {
-    const value = draft.trim();
-    setDraft("");
+  const put = (raw: string): void => {
+    const value = raw.trim();
     if (value === "" || chips.includes(value) || chips.length >= max) return;
     setChips([...chips, value.slice(0, maxLength)]);
+  };
+
+  const add = (): void => {
+    put(draft);
+    setDraft("");
   };
 
   const remove = (which: string): void => setChips(chips.filter((chip) => chip !== which));
@@ -62,6 +77,8 @@ export const OutcomeChips = ({
   };
 
   const full = chips.length >= max;
+  const suggested =
+    disabled || full || suggestFrom === undefined ? [] : suggestVerdicts(chips, suggestFrom);
 
   return (
     <Field
@@ -119,6 +136,22 @@ export const OutcomeChips = ({
           <span className="text-[13px] text-[var(--ink-3)]">None — the call is only made.</span>
         )}
       </div>
+
+      {suggested.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <span className="text-[11.5px] text-[var(--ink-3)]">Add:</span>
+          {suggested.map((verdict) => (
+            <button
+              key={verdict}
+              type="button"
+              onClick={() => put(verdict)}
+              className="rounded-full border border-dashed border-[var(--hairline)] px-2.5 py-0.5 text-[12px] text-[var(--ink-2)] transition-colors hover:border-[var(--accent)] hover:text-[var(--ink)]"
+            >
+              + {verdict}
+            </button>
+          ))}
+        </div>
+      )}
     </Field>
   );
 };

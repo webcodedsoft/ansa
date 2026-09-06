@@ -14,6 +14,7 @@ import { CampaignConversation } from "@/features/campaigns/components/campaign-c
 import { CallStatusFilter } from "@/features/campaigns/components/call-status-filter";
 import { CampaignCallingWindow } from "@/features/campaigns/components/campaign-calling-window";
 import { CampaignPace } from "@/features/campaigns/components/campaign-pace";
+import { CAMPAIGN_TEMPLATES } from "@/features/campaigns/campaign-templates";
 import { CampaignBreakdown } from "@/features/campaigns/components/campaign-breakdown";
 import { CampaignProgress } from "@/features/campaigns/components/campaign-progress";
 import { CampaignSchedule } from "@/features/campaigns/components/campaign-schedule";
@@ -34,6 +35,10 @@ import {
 } from "@/features/campaigns/campaigns.service";
 import { refusedWith } from "@/lib/api/server";
 import { readPaging } from "@/lib/paging";
+
+/* The catalogue's verdict sets, and only those — a few kilobytes the brief's suggestions
+   rank from, rather than the whole catalogue shipped to the client. */
+const VERDICT_SETS: readonly (readonly string[])[] = CAMPAIGN_TEMPLATES.map((template) => template.outcomes);
 
 export const metadata: Metadata = { title: "Campaign · Ansa" };
 export const dynamic = "force-dynamic";
@@ -447,6 +452,7 @@ const CampaignPage = async ({
                         campaignId={campaign.id}
                         editable={campaign.briefEditable}
                         canWrite={canWrite}
+                        verdictSets={VERDICT_SETS}
                         values={{
                           purpose: campaign.purpose,
                           opening: campaign.opening,

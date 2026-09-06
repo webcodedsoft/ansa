@@ -86,11 +86,14 @@ export const CampaignBrief = ({
   values,
   editable,
   canWrite,
+  verdictSets,
 }: {
   readonly campaignId: string;
   readonly values: BriefValues;
   readonly editable: boolean;
   readonly canWrite: boolean;
+  /** The catalogue's verdict sets, for the suggestions under the verdicts box. */
+  readonly verdictSets?: readonly (readonly string[])[];
 }) => {
   const [state, action, pending] = useActionState(saveBriefAction, START);
   const [mode, setMode] = useState(values.voicemail?.mode ?? "hang_up");
@@ -159,6 +162,7 @@ export const CampaignBrief = ({
                 max={CAMPAIGN_LIMITS.outcomes}
                 maxLength={CAMPAIGN_LIMITS.outcomeLength}
                 error={state.fieldErrors["outcomes"]}
+                suggestFrom={verdictSets}
               />
             </Section>
 
