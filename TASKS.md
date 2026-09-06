@@ -4977,6 +4977,50 @@ rather than landed as inventory — the wave that needs them adds them wired.
       08:30Z and 16:00Z, and the draft was promoted to scheduled — the thing the stale dev API
       could not confirm last session. The campaign was left exactly as found.
 
+- [x] **The campaign page, composed for what it is doing** (this session, migration 0071)
+
+      Four passes had each fixed a symptom. The fault under all of them: a campaign page has
+      three different jobs and the layout treated them as one. A draft is being *set up*, a
+      running campaign is being *watched*, a finished one is being *read*, and the same cards
+      at the same weight in every state is why it never looked right whatever was moved.
+
+      `phaseOf(status)` decides what is prominent; the API still decides what is possible.
+      **Setup** leads with the checklist and the brief, because writing them is the work.
+      **Watching** leads with a live strip, a feed of the last ten calls and the breakdown, and
+      re-renders itself every fifteen seconds through the `AutoRefresh` the calls page already
+      had — nothing is polled for a campaign that is not dialling. The frozen brief drops to a
+      read-only "What it says" panel in the sidebar. **Reading** is watching with the verdicts
+      on top, because the answer the campaign existed to produce is the first thing to show.
+      The sidebar — hours strip and schedule — is constant, since both are true of a campaign
+      in every state.
+
+      **Four of the seven suggestions landed with it**, chosen because they only make sense once
+      the watching view exists. The feed (`GET …/recent`, newest attempt first, unattempted
+      rows left out because a pending row has not happened yet). A pause reason
+      (`campaigns.pause_reason`, asked in a small dialog on Pause, shown beside the badge,
+      cleared in the same statement that resumes — so a campaign is never paused with last
+      month's reason or resumed with this one attached). Retry (`POST …/retry`, resetting
+      `no_answer`, `busy` and `failed` and nothing else: answered is done, suppressed would be
+      refused again). And a projected finish — pending spread across the window at the retry
+      interval, honest about what actually bounds a campaign, and rough on purpose because
+      "around Thursday" is what somebody wants and a minute figure would claim a certainty the
+      estimate does not have; an `endsAt` earlier than the projection wins and the sentence
+      says so.
+
+      Verified against a throwaway paused campaign seeded straight into Postgres — six
+      contacts, mixed statuses, two verdicts — and removed afterwards, thirteen rows, with the
+      real October Campaign checked untouched before and after. The retry button turned out to
+      be gated correctly by accident of naming: paused is a watching state, and a paused
+      campaign is exactly where somebody decides to retry the tail before resuming.
+
+      One test assumption was wrong and the fix is worth keeping: the feed test expected an
+      empty list, but the real sweeper in the test app claims rows while the suite runs, so the
+      count depends on timing. It asserts the properties instead — every row attempted, newest
+      first, ten at most.
+
+      Not done, deliberately: CSV export and free-text notes. Both are real and both are
+      independent of the layout, so they wait for their own pass.
+
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The queue drains, the consent gate is in the path, and a call can now offer and take a time,
 but every one of those is green tests and database round trips. By Rule 1 both slices are open

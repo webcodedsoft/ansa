@@ -13562,6 +13562,13 @@
                             ],
                             "format": "date-time"
                           },
+                          "pauseReason": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 200
+                          },
                           "createdBy": {
                             "type": [
                               "string",
@@ -13607,6 +13614,7 @@
                           "briefEditable",
                           "startsAt",
                           "endsAt",
+                          "pauseReason",
                           "createdBy",
                           "createdAt",
                           "updatedAt",
@@ -14110,6 +14118,13 @@
                       ],
                       "format": "date-time"
                     },
+                    "pauseReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 200
+                    },
                     "createdBy": {
                       "type": [
                         "string",
@@ -14155,6 +14170,7 @@
                     "briefEditable",
                     "startsAt",
                     "endsAt",
+                    "pauseReason",
                     "createdBy",
                     "createdAt",
                     "updatedAt",
@@ -14587,6 +14603,13 @@
                       ],
                       "format": "date-time"
                     },
+                    "pauseReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 200
+                    },
                     "createdBy": {
                       "type": [
                         "string",
@@ -14632,6 +14655,7 @@
                     "briefEditable",
                     "startsAt",
                     "endsAt",
+                    "pauseReason",
                     "createdBy",
                     "createdAt",
                     "updatedAt",
@@ -15139,6 +15163,13 @@
                       ],
                       "format": "date-time"
                     },
+                    "pauseReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 200
+                    },
                     "createdBy": {
                       "type": [
                         "string",
@@ -15184,6 +15215,7 @@
                     "briefEditable",
                     "startsAt",
                     "endsAt",
+                    "pauseReason",
                     "createdBy",
                     "createdAt",
                     "updatedAt",
@@ -16025,6 +16057,13 @@
                       ],
                       "format": "date-time"
                     },
+                    "pauseReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 200
+                    },
                     "createdBy": {
                       "type": [
                         "string",
@@ -16070,6 +16109,7 @@
                     "briefEditable",
                     "startsAt",
                     "endsAt",
+                    "pauseReason",
                     "createdBy",
                     "createdAt",
                     "updatedAt",
@@ -16942,6 +16982,13 @@
                       ],
                       "format": "date-time"
                     },
+                    "pauseReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 200
+                    },
                     "createdBy": {
                       "type": [
                         "string",
@@ -16987,12 +17034,323 @@
                     "briefEditable",
                     "startsAt",
                     "endsAt",
+                    "pauseReason",
                     "createdBy",
                     "createdAt",
                     "updatedAt",
                     "total",
                     "pending",
                     "answered"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold campaigns:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/campaigns/{campaignId}/recent": {
+      "get": {
+        "operationId": "campaigns.recent",
+        "tags": [
+          "campaigns"
+        ],
+        "summary": "The last few calls that happened",
+        "description": "The most recently attempted rows first — the call that just finished at the top. Rows never attempted are left out, because a pending row has not happened yet. Ten at most; the paged list is `calls`. This is the feed a running campaign's page polls.",
+        "x-ansa-capability": "campaigns:read",
+        "parameters": [
+          {
+            "name": "campaignId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                          },
+                          "campaignId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                          },
+                          "contactId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                          },
+                          "phone": {
+                            "type": "string",
+                            "maxLength": 32
+                          },
+                          "displayName": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 200
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pending",
+                              "placing",
+                              "answered",
+                              "no_answer",
+                              "busy",
+                              "voicemail",
+                              "failed",
+                              "suppressed"
+                            ]
+                          },
+                          "attempts": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "nextAttemptAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time"
+                          },
+                          "lastAttemptAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time"
+                          },
+                          "outcome": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 256
+                          },
+                          "callId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "uuid",
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "updatedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "campaignId",
+                          "contactId",
+                          "phone",
+                          "displayName",
+                          "status",
+                          "attempts",
+                          "nextAttemptAt",
+                          "lastAttemptAt",
+                          "outcome",
+                          "callId",
+                          "createdAt",
+                          "updatedAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold campaigns:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/campaigns/{campaignId}/retry": {
+      "post": {
+        "operationId": "campaigns.retry",
+        "tags": [
+          "campaigns"
+        ],
+        "summary": "Try the calls that did not connect again",
+        "description": "Puts every `no_answer`, `busy` and `failed` row back to pending with its attempts reset, due now. Nothing else is touched: an answered call is done, a suppressed one was refused by the consent gate and would be refused again, and a pending one is already waiting. Returns how many were reset. The campaign still has to be running for them to dial.",
+        "x-ansa-capability": "campaigns:write",
+        "parameters": [
+          {
+            "name": "campaignId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "reset": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "reset"
                   ],
                   "additionalProperties": false
                 }
@@ -17099,6 +17457,13 @@
                       "paused",
                       "done"
                     ]
+                  },
+                  "reason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 200
                   }
                 },
                 "required": [
@@ -17456,6 +17821,13 @@
                       ],
                       "format": "date-time"
                     },
+                    "pauseReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 200
+                    },
                     "createdBy": {
                       "type": [
                         "string",
@@ -17501,6 +17873,7 @@
                     "briefEditable",
                     "startsAt",
                     "endsAt",
+                    "pauseReason",
                     "createdBy",
                     "createdAt",
                     "updatedAt",

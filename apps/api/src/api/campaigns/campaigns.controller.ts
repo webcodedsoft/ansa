@@ -5,6 +5,8 @@ import {
   readCampaign,
   duplicateCampaign,
   readCampaignBreakdown,
+  readRecentCalls,
+  retryUnreached,
   readCampaigns,
   readScheduledCalls,
   setCampaignStatus,
@@ -214,6 +216,8 @@ const campaign = object({
    * run already under way is the ordinary case.
    */
   endsAt: nullable(timestamp()),
+  /** Why it is paused, in the operator's words. Null unless it is paused and somebody said. */
+  pauseReason: nullable(text({ maxLength: CAMPAIGN_LIMITS.pauseReasonLength })),
   createdBy: nullable(uuid()),
   createdAt: timestamp(),
   updatedAt: timestamp(),
@@ -269,6 +273,13 @@ const callsQuery = object({
   status: optional(choice(SCHEDULED_STATUSES)),
 });
 
+/** Enough to answer "is it working right now"; the paged list is for everything else. */
+const RECENT_LIMIT = 10;
+
+const recent = object({ items: list(scheduledCall) });
+
+const retried = object({ reset: integer({ minimum: 0 }) });
+
 /* A record rather than a fixed shape. A status or verdict nothing reached is absent, which
    is not the same as zero — "nobody was suppressed" and "suppression was never possible on
    this campaign" read differently, and the caller decides which to draw. */
@@ -283,7 +294,11 @@ const ALREADY_STARTED = Symbol("already started");
 /** Also distinguishable from `null`, and from the refusal above. */
 const ENDS_TOO_SOON = Symbol("ends before it starts");
 
-const statusBody = object({ status: choice(CAMPAIGN_STATUSES) });
+const statusBody = object({
+  status: choice(CAMPAIGN_STATUSES),
+  /** Read only on a move to `paused`; one line on why, for whoever opens it tomorrow. */
+  reason: optional(nullable(text({ maxLength: CAMPAIGN_LIMITS.pauseReasonLength }))),
+});
 
 /**
  * The largest set of contacts one enqueue request may carry.
@@ -354,6 +369,7 @@ const asCampaignBody = (summary: CampaignSummary): Infer<typeof campaign> => ({
   briefEditable: briefIsEditable(summary.status),
   startsAt: summary.startsAt === null ? null : summary.startsAt.toISOString(),
   endsAt: summary.endsAt === null ? null : summary.endsAt.toISOString(),
+  pauseReason: summary.pauseReason,
   createdBy: summary.createdBy,
   createdAt: summary.createdAt.toISOString(),
   updatedAt: summary.updatedAt.toISOString(),
@@ -641,7 +657,10 @@ export class CampaignsController {
           return { kind: "unsound" as const, why: blocking[0]?.message ?? "the flow is not valid" };
         }
       }
-      if (from !== to) await setCampaignStatus(scope, path.campaignId, to);
+      if (from !== to) {
+        const reason = body.reason === undefined || body.reason === null ? null : body.reason.trim();
+        await setCampaignStatus(scope, path.campaignId, to, reason === "" ? null : reason);
+      }
       const after = await readCampaign(scope, path.campaignId);
       return { kind: "ok" as const, campaign: after };
     });
@@ -725,6 +744,44 @@ export class CampaignsController {
     });
     if (found === null) throw new NotFoundException();
     return toPageBody({ items: found.items.map(asScheduledBody), total: found.total }, query);
+  }
+
+  @Get(":campaignId/recent")
+  @Endpoint({
+    summary: "The last few calls that happened",
+    description:
+      "The most recently attempted rows first — the call that just finished at the top. Rows never attempted are left out, because a pending row has not happened yet. Ten at most; the paged list is `calls`. This is the feed a running campaign's page polls.",
+    capability: "campaigns:read",
+    params: campaignPath,
+    response: recent,
+  })
+  async recent(@FromPath() path: Infer<typeof campaignPath>): Promise<Infer<typeof recent>> {
+    const found = await this.db.tx(async (scope) => {
+      const campaignRow = await readCampaign(scope, path.campaignId);
+      if (campaignRow === null) return null;
+      return readRecentCalls(scope, path.campaignId, RECENT_LIMIT);
+    });
+    if (found === null) throw new NotFoundException();
+    return { items: found.map(asScheduledBody) };
+  }
+
+  @Post(":campaignId/retry")
+  @Endpoint({
+    summary: "Try the calls that did not connect again",
+    description:
+      "Puts every `no_answer`, `busy` and `failed` row back to pending with its attempts reset, due now. Nothing else is touched: an answered call is done, a suppressed one was refused by the consent gate and would be refused again, and a pending one is already waiting. Returns how many were reset. The campaign still has to be running for them to dial.",
+    capability: "campaigns:write",
+    params: campaignPath,
+    response: retried,
+  })
+  async retry(@FromPath() path: Infer<typeof campaignPath>): Promise<Infer<typeof retried>> {
+    const found = await this.db.tx(async (scope) => {
+      const campaignRow = await readCampaign(scope, path.campaignId);
+      if (campaignRow === null) return null;
+      return retryUnreached(scope, path.campaignId);
+    });
+    if (found === null) throw new NotFoundException();
+    return { reset: found };
   }
 
   @Get(":campaignId/breakdown")

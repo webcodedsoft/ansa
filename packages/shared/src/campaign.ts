@@ -17,6 +17,8 @@ export const CAMPAIGN_LIMITS = {
   openingLength: 300,
   outcomeLength: 60,
   outcomes: 12,
+  /** One line, not a paragraph: why a campaign is paused, for whoever opens it next. */
+  pauseReasonLength: 200,
   factKeyLength: 40,
   factValueLength: 200,
   facts: 20,

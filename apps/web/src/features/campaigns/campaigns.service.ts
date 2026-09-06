@@ -46,6 +46,14 @@ export const editCampaign = async (
 export const readCampaignBreakdown = async (campaignId: string) =>
   (await api()).campaigns.breakdown({ path: { campaignId } });
 
+/** The last few calls that happened, newest first. What a running campaign's page polls. */
+export const readRecentCalls = async (campaignId: string) =>
+  (await api()).campaigns.recent({ path: { campaignId } });
+
+/** Put the numbers that did not connect back in the queue. Returns how many. */
+export const retryUnreached = async (campaignId: string) =>
+  (await api()).campaigns.retry({ path: { campaignId } });
+
 /** The brief and the flow onto a fresh draft. Nobody comes with it. */
 export const duplicateCampaign = async (campaignId: string, name: string) =>
   (await api()).campaigns.duplicate({ path: { campaignId }, body: { name } });
@@ -63,8 +71,12 @@ export const listCampaignCalls = async (
 export const enqueueContacts = async (campaignId: string, contactIds: readonly string[]) =>
   (await api()).campaigns.enqueue({ path: { campaignId }, body: { contactIds } });
 
-export const setCampaignStatus = async (campaignId: string, status: CampaignStatus) =>
-  (await api()).campaigns.setStatus({ path: { campaignId }, body: { status } });
+export const setCampaignStatus = async (
+  campaignId: string,
+  status: CampaignStatus,
+  /** Read only on a move to paused. */
+  reason: string | null = null,
+) => (await api()).campaigns.setStatus({ path: { campaignId }, body: { status, reason } });
 
 export type CampaignSummary = Awaited<ReturnType<typeof listCampaigns>>["items"][number];
 export type CampaignDetail = Awaited<ReturnType<typeof readCampaign>>;

@@ -3,33 +3,32 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { WidePage } from "@/components/shell/wide-page";
-import {
-  buttonClass,
-  Card,
-  PageHeader,
-  Pagination,
-  Tabs,
-} from "@/components/ui";
+import { buttonClass, Card, PageHeader, Pagination, Tabs } from "@/components/ui";
 import { currentPrincipal } from "@/features/auth/auth.service";
-import { listAgents } from "@/features/agents/agents.service";
+import { listAgents, readTools } from "@/features/agents/agents.service";
+import { AutoRefresh } from "@/features/calls/components/auto-refresh";
 import { listContacts } from "@/features/contacts/contacts.service";
 import { AddContactsButton } from "@/features/campaigns/components/add-contacts-button";
-import { readTools } from "@/features/agents/agents.service";
 import { CampaignBrief } from "@/features/campaigns/components/campaign-brief";
 import { CampaignConversation } from "@/features/campaigns/components/campaign-conversation";
 import { CallStatusFilter } from "@/features/campaigns/components/call-status-filter";
 import { CallingWindowStrip } from "@/features/campaigns/components/calling-window-strip";
 import { CampaignBreakdown } from "@/features/campaigns/components/campaign-breakdown";
-import { CampaignSchedule } from "@/features/campaigns/components/campaign-schedule";
-import { DuplicateCampaignButton } from "@/features/campaigns/components/duplicate-campaign-button";
 import { CampaignProgress } from "@/features/campaigns/components/campaign-progress";
+import { CampaignSchedule } from "@/features/campaigns/components/campaign-schedule";
 import { CampaignStatusControl } from "@/features/campaigns/components/campaign-status-control";
+import { DuplicateCampaignButton } from "@/features/campaigns/components/duplicate-campaign-button";
+import { RecentCallsFeed } from "@/features/campaigns/components/recent-calls-feed";
+import { RetryUnreachedButton } from "@/features/campaigns/components/retry-unreached-button";
 import { ScheduledCallsTable } from "@/features/campaigns/components/scheduled-calls-table";
+import { projectedFinish, windowSummary } from "@/features/campaigns/campaigns.display";
 import {
   listCampaignCalls,
   readCampaign,
   readCampaignBreakdown,
+  readRecentCalls,
   SCHEDULED_STATUSES,
+  type CampaignDetail,
   type ScheduledCallStatus,
 } from "@/features/campaigns/campaigns.service";
 import { refusedWith } from "@/lib/api/server";
@@ -38,20 +37,13 @@ import { readPaging } from "@/lib/paging";
 export const metadata: Metadata = { title: "Campaign · Ansa" };
 export const dynamic = "force-dynamic";
 
-const Figure = ({
-  label,
-  value,
-}: {
-  readonly label: string;
-  readonly value: number;
-}) => (
+/** How often a running campaign's page re-renders itself. */
+const LIVE_REFRESH_MS = 15_000;
+
+const Figure = ({ label, value }: { readonly label: string; readonly value: number }) => (
   <div>
-    <div className="text-[22px] leading-none font-medium tabular-nums text-[var(--ink)]">
-      {value}
-    </div>
-    <div className="mt-1.5 text-[11px] tracking-[0.06em] text-[var(--ink-3)] uppercase">
-      {label}
-    </div>
+    <div className="text-[22px] leading-none font-medium tabular-nums text-[var(--ink)]">{value}</div>
+    <div className="mt-1.5 text-[11px] tracking-[0.06em] text-[var(--ink-3)] uppercase">{label}</div>
   </div>
 );
 
@@ -67,13 +59,17 @@ const Figure = ({
  * Split rather than replaced, so an unmatched brace stays visible as text instead of being
  * silently swallowed.
  */
-const Purpose = ({ text }: { readonly text: string }) => (
-  <p className="text-[17px] leading-[1.45] text-[var(--ink)]">
+const Purpose = ({ text, size = "lg" }: { readonly text: string; readonly size?: "lg" | "sm" }) => (
+  <p className={size === "lg" ? "text-[17px] leading-[1.45] text-[var(--ink)]" : "text-[13.5px] leading-relaxed text-[var(--ink)]"}>
     {text.split(/(\{[^{}]+\})/g).map((part, index) =>
       /^\{[^{}]+\}$/.test(part) ? (
         <span
           key={index}
-          className="rounded bg-[var(--accent-soft)] px-1 py-0.5 text-[15px] text-[var(--accent)]"
+          className={
+            size === "lg"
+              ? "rounded bg-[var(--accent-soft)] px-1 py-0.5 text-[15px] text-[var(--accent)]"
+              : "rounded bg-[var(--accent-soft)] px-1 py-0.5 text-[12.5px] text-[var(--accent)]"
+          }
         >
           {part.slice(1, -1)}
         </span>
@@ -85,21 +81,91 @@ const Purpose = ({ text }: { readonly text: string }) => (
 );
 
 /**
- * One campaign: where it has got to, and the three things you came to change.
+ * Which of the three jobs this page is doing.
  *
- * The page used to be one scroll holding everything — three stat boxes, a control strip, a
- * long brief form, a full flow canvas, and the call list underneath all of it. Two problems
- * with that. The canvas is a work surface and wants the width, which it did not get at the
- * bottom of a column; and the call list, the thing you check while a campaign is running, sat
- * below a form you had already finished with.
+ * A campaign is set up, then watched, then read, and the page has to be composed for
+ * whichever of those it is — the same set of cards at the same weight in every state was
+ * why it never looked right. A draft wants the brief and the checklist; a running campaign
+ * wants the numbers and the feed; a finished one wants the verdicts. What is *possible* on
+ * each is the API's business; this only decides what is *prominent*.
+ */
+const phaseOf = (status: CampaignDetail["status"]): "setup" | "watching" | "reading" =>
+  status === "draft" || status === "scheduled" ? "setup" : status === "done" ? "reading" : "watching";
+
+/**
+ * The three steps between a draft and a ringing phone.
  *
- * So: one panel for the state, and tabs for the work. The panel is what is true right now —
- * status, progress, counts, and the two controls that change any of it, which now sit beside
- * the word they act on rather than a row away from it. The tabs are the three separate jobs,
- * each of which wants the whole width while it is the one being done.
+ * Nothing else in the product states them. Each is ticked from the campaign itself rather
+ * than from anything remembered, so reopening the page a week later shows the truth.
+ */
+const SetupChecklist = ({ campaign }: { readonly campaign: CampaignDetail }) => {
+  const steps = [
+    {
+      done: campaign.purpose !== null && campaign.purpose.trim() !== "",
+      title: "Say why it is calling",
+      detail: "The agent opens with it. Without one it composes its own — the thing an unexpected call can least afford.",
+    },
+    {
+      done: campaign.total > 0,
+      title: "Add the people it should ring",
+      detail: "Each contact becomes a pending call. Consent and do-not-call are still checked per number when it dials.",
+    },
+    {
+      done: campaign.status !== "draft",
+      title: "Start it, or give it a time",
+      detail: "Press Schedule to start it yourself, or set a start in the schedule and it moves to running on its own.",
+    },
+  ];
+  const remaining = steps.filter((step) => !step.done).length;
+
+  return (
+    <Card
+      title="Before it can dial"
+      description={remaining === 0 ? "Everything is in place." : `${remaining} of ${steps.length} to go.`}
+    >
+      <ol className="flex flex-col gap-3">
+        {steps.map((step) => (
+          <li key={step.title} className="flex gap-2.5">
+            <span
+              aria-hidden
+              className={
+                step.done
+                  ? "mt-[3px] size-4 flex-none rounded-full border-[5px] border-[var(--accent)]"
+                  : "mt-[3px] size-4 flex-none rounded-full border border-[var(--hairline)]"
+              }
+            />
+            <span className="min-w-0">
+              <span
+                className={
+                  step.done
+                    ? "block text-[13px] font-medium text-[var(--ink-3)] line-through"
+                    : "block text-[13px] font-medium text-[var(--ink)]"
+                }
+              >
+                {step.title}
+              </span>
+              <span className="mt-0.5 block text-[12px] leading-relaxed text-[var(--ink-3)]">{step.detail}</span>
+            </span>
+          </li>
+        ))}
+      </ol>
+    </Card>
+  );
+};
+
+/**
+ * One campaign, composed for whatever it is doing right now.
  *
- * Progress is drawn by the component the list card uses, so a campaign reads the same way in
- * both places rather than being described twice.
+ * Three phases and three layouts. **Setting up** — a draft or a scheduled campaign — leads
+ * with the brief and the conversation, because writing them is the work; the checklist says
+ * what is left and the schedule sits beside it. **Watching** — running or paused — leads with
+ * the live strip, the breakdown and a feed of what just happened, re-rendering itself every
+ * fifteen seconds; the brief is frozen, so it drops to a read-only panel in the sidebar.
+ * **Reading** — done — is the watching layout with the controls gone and the verdicts on top,
+ * because the answer the campaign existed to produce is the first thing to show.
+ *
+ * The sidebar is constant across all three: the hours strip and the schedule are true of a
+ * campaign whatever state it is in. What changes is what gets the width.
  */
 const CampaignPage = async ({
   params,
@@ -118,8 +184,7 @@ const CampaignPage = async ({
 
   /* A status the API does not know is dropped rather than passed on and refused. Somebody
      editing the query by hand gets the whole list, which is the harmless reading. */
-  const status =
-    SCHEDULED_STATUSES.find((one) => one === search.status) ?? null;
+  const status = SCHEDULED_STATUSES.find((one) => one === search.status) ?? null;
 
   const campaign = await readCampaign(campaignId).catch((error: unknown) => {
     // Another organisation's campaign is a 404 here too, deliberately — it looks exactly like
@@ -129,7 +194,9 @@ const CampaignPage = async ({
   });
   if (campaign === null) notFound();
 
-  const [principal, calls, agentList, tools, breakdown] = await Promise.all([
+  const phase = phaseOf(campaign.status);
+
+  const [principal, calls, agentList, tools, breakdown, recent] = await Promise.all([
     currentPrincipal(),
     listCampaignCalls(campaignId, {
       ...requested,
@@ -142,45 +209,175 @@ const CampaignPage = async ({
     /* Counted rather than derived from `calls`, which is one page of a filtered list and
        would report "3 answered" on a campaign with four hundred. */
     readCampaignBreakdown(campaignId),
+    /* Only when somebody is watching or reading. A draft has nothing to feed. */
+    phase === "setup" ? Promise.resolve({ items: [] }) : readRecentCalls(campaignId),
   ]);
   const canWrite = principal.capabilities.includes("campaigns:write");
 
   const agentName =
-    agentList.items.find((agent) => agent.agentId === campaign.agentId)?.name ??
-    "Unknown agent";
+    agentList.items.find((agent) => agent.agentId === campaign.agentId)?.name ?? "Unknown agent";
 
   // Only fetched when it can be acted on — the picker is the only thing that reads it.
   const contacts = canWrite
-    ? (await listContacts(undefined, { perPage: 100 })).page.items.map(
-        (person) => ({
-          id: person.id,
-          displayName: person.displayName,
-          phone: person.phone,
-        }),
-      )
+    ? (await listContacts(undefined, { perPage: 100 })).page.items.map((person) => ({
+        id: person.id,
+        displayName: person.displayName,
+        phone: person.phone,
+      }))
     : [];
 
-  /* Which tab opens depends on what the campaign is for at this moment, and its status is the
-     honest signal. A draft is being written, so the brief is the work; anything that has been
-     started is being watched, so the calls are. Guessing wrong costs one click; a fixed tab
-     costs one on every visit for whichever half is the more common. */
-  const initialTab = campaign.status === "draft" ? "brief" : "calls";
+  const unreached =
+    (breakdown.byStatus["no_answer"] ?? 0) +
+    (breakdown.byStatus["busy"] ?? 0) +
+    (breakdown.byStatus["failed"] ?? 0);
+
+  const hasPurpose = campaign.purpose !== null && campaign.purpose.trim() !== "";
+
+  /* The strip at the top: status and its moves, the reason, the progress, the figures. The
+     same in every phase, because it is what is true right now, and the actions beside it are
+     whatever the API allows from here. */
+  const liveStrip = (
+    <Card>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        <CampaignStatusControl
+          campaignId={campaign.id}
+          status={campaign.status}
+          pauseReason={campaign.pauseReason}
+          canWrite={canWrite}
+        />
+        <div className="flex flex-wrap gap-2">
+          {canWrite && phase !== "reading" && (
+            <AddContactsButton campaignId={campaign.id} contacts={contacts} />
+          )}
+          {canWrite && <DuplicateCampaignButton campaignId={campaign.id} name={campaign.name} />}
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-6 lg:grid-cols-2">
+        <div className="border-l-2 border-[var(--accent)] pl-3.5">
+          <div className="mb-1.5 text-[11px] tracking-[0.06em] text-[var(--ink-3)] uppercase">Why it rings</div>
+          {hasPurpose ? (
+            <Purpose text={campaign.purpose ?? ""} />
+          ) : (
+            <p className="text-[14px] text-[var(--ink-3)]">
+              No reason written yet. It is the first field in the brief below.
+            </p>
+          )}
+        </div>
+
+        <div>
+          <CampaignProgress
+            pending={campaign.pending}
+            total={campaign.total}
+            empty="Nobody on it yet. Add contacts and each one becomes a pending call."
+          />
+          <div className="mt-4 flex gap-8">
+            <Figure label="Pending" value={campaign.pending} />
+            <Figure label="Answered" value={campaign.answered} />
+            <Figure label="On the campaign" value={campaign.total} />
+          </div>
+          {/* Two numbers turned into a sentence, only while there is something to project.
+              Rough on purpose; the reasoning is on `projectedFinish`. */}
+          {phase === "watching" && projectedFinish(campaign) !== null && (
+            <p className="mt-3 text-[12px] text-[var(--ink-3)]">{projectedFinish(campaign)}</p>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+
+  /* The sidebar: true of a campaign in every phase. */
+  const sidebar = (
+    <div className="flex flex-col gap-3.5">
+      <Card title="Hours it may ring">
+        <CallingWindowStrip window={campaign.callingWindow} />
+        <p className="mt-3.5 border-t border-[var(--hairline)] pt-3 text-[11.5px] leading-relaxed text-[var(--ink-3)]">
+          Consent and do-not-call are checked per number on every call, whatever this says. A
+          window narrows the permitted hours and never widens them.
+        </p>
+      </Card>
+
+      <Card title="Schedule">
+        <CampaignSchedule
+          campaignId={campaign.id}
+          startsAt={campaign.startsAt}
+          endsAt={campaign.endsAt}
+          startEditable={campaign.briefEditable}
+          canWrite={canWrite}
+        />
+      </Card>
+
+      {phase !== "setup" && (
+        /* Frozen, so read-only, so a panel rather than a form. What it says is still the
+           first thing to check when a call sounds wrong. */
+        <Card title="What it says">
+          {hasPurpose ? (
+            <Purpose text={campaign.purpose ?? ""} size="sm" />
+          ) : (
+            <p className="text-[12.5px] text-[var(--ink-3)]">No purpose was written.</p>
+          )}
+          {campaign.opening !== null && campaign.opening.trim() !== "" && (
+            <p className="mt-2.5 border-t border-[var(--hairline)] pt-2.5 text-[12.5px] leading-relaxed text-[var(--ink-2)]">
+              <span className="text-[var(--ink-3)]">Opens with: </span>
+              {campaign.opening}
+            </p>
+          )}
+          {campaign.outcomes !== null && campaign.outcomes.length > 0 && (
+            <p className="mt-2.5 border-t border-[var(--hairline)] pt-2.5 text-[12px] leading-relaxed text-[var(--ink-3)]">
+              Records one of: {campaign.outcomes.join(", ")}.
+            </p>
+          )}
+          <p className="mt-2.5 text-[11.5px] text-[var(--ink-3)]">
+            Fixed since it started. To say something different, duplicate it.
+          </p>
+        </Card>
+      )}
+    </div>
+  );
+
+  const callsTab = (
+    <>
+      <div className="mb-3.5 flex flex-wrap items-center justify-between gap-3">
+        <CallStatusFilter
+          basePath={`/campaigns/${campaign.id}`}
+          active={status as ScheduledCallStatus | null}
+          byStatus={breakdown.byStatus}
+          total={campaign.total}
+        />
+        {canWrite && phase === "watching" && (
+          <RetryUnreachedButton campaignId={campaign.id} unreached={unreached} />
+        )}
+      </div>
+      <ScheduledCallsTable calls={calls.items} />
+      <Pagination
+        basePath={`/campaigns/${campaign.id}`}
+        /* Carried through every page link. Without it, page two of the failures is page two
+           of everything, and the filter silently falls off. */
+        {...(status === null ? {} : { params: { status } })}
+        page={calls.page}
+        perPage={calls.perPage}
+        totalPages={calls.totalPages}
+        total={calls.total}
+        unit="calls"
+      />
+    </>
+  );
 
   return (
     <>
-      {/* The same 1600px the agent workspace takes, and for the same reason: the Conversation
-          tab is a drawing surface, and a drawing inside 1080 pixels is a drawing nobody can
-          see. Claimed for the whole page rather than for that tab alone — reflowing the shell
-          under somebody as they switch tabs is worse than the width being unused on two of
-          the three. */}
+      {/* The same 1600px the agent workspace takes: the conversation canvas is a drawing
+          surface, and a drawing inside 1080 pixels is a drawing nobody can see. */}
       <WidePage />
+
+      {/* A page somebody is watching has to move. `router.refresh()` re-runs this component
+          in place, so the strip, the breakdown and the feed all advance together without a
+          reload, and nothing is polled for a campaign that is not dialling. */}
+      {phase === "watching" && <AutoRefresh intervalMs={LIVE_REFRESH_MS} />}
 
       <PageHeader
         eyebrow="Outbound"
         title={campaign.name}
-        /* Just the agent. The calling window used to be appended here and is now drawn in
-           its own card, and saying it twice made the header the longer, worse copy of it. */
-        meta={`Placed by ${agentName}`}
+        meta={`${agentName} · ${windowSummary(campaign.callingWindow)}`}
         actions={
           <Link href="/campaigns" className={buttonClass()}>
             All campaigns
@@ -188,230 +385,106 @@ const CampaignPage = async ({
         }
       />
 
-      {/* Both columns stack. The breakdown sits inside the left rather than below the grid so
-          the two end near each other: the right column carries the window, the schedule and
-          their notes, and on a draft — where there is no breakdown yet — it otherwise towered
-          four hundred pixels past a state card that is three lines and some figures. */}
       <div className="grid items-start gap-3.5 lg:grid-cols-[minmax(0,1fr)_310px]">
         <div className="flex flex-col gap-3.5">
-          <Card>
-            {/* Status and the moves it can make sit at the top of the card they describe, with
-              the numbers under them — the order somebody reads the page in. */}
-            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
-              <CampaignStatusControl
-                campaignId={campaign.id}
-                status={campaign.status}
-                canWrite={canWrite}
+          {liveStrip}
+
+          {phase === "setup" ? (
+            <>
+              <SetupChecklist campaign={campaign} />
+              <Tabs
+                initial="brief"
+                tabs={[
+                  {
+                    id: "brief",
+                    label: "Brief",
+                    panel: (
+                      <CampaignBrief
+                        campaignId={campaign.id}
+                        editable={campaign.briefEditable}
+                        canWrite={canWrite}
+                        values={{
+                          purpose: campaign.purpose,
+                          opening: campaign.opening,
+                          outcomes: campaign.outcomes,
+                          voicemail: campaign.voicemail,
+                          maxAttempts: campaign.maxAttempts,
+                          retryAfterMinutes: campaign.retryAfterMinutes,
+                        }}
+                      />
+                    ),
+                  },
+                  {
+                    id: "conversation",
+                    label: "Conversation",
+                    panel: (
+                      <CampaignConversation
+                        campaignId={campaign.id}
+                        flow={campaign.flow}
+                        editable={campaign.briefEditable}
+                        canWrite={canWrite}
+                        tools={tools}
+                        transferNumber={null}
+                      />
+                    ),
+                  },
+                  { id: "calls", label: "People", panel: callsTab },
+                ]}
               />
-              <div className="flex flex-wrap gap-2">
-                {canWrite && (
-                  <AddContactsButton
-                    campaignId={campaign.id}
-                    contacts={contacts}
-                  />
-                )}
-                {canWrite && (
-                  <DuplicateCampaignButton
-                    campaignId={campaign.id}
-                    name={campaign.name}
-                  />
-                )}
-              </div>
-            </div>
-
-            {/* Two columns on a wide shell: the reason on the left, the numbers on the right.
-              At 1600px a single column left roughly six hundred pixels of nothing beside the
-              quote, which is the cost of taking the width without spending it. */}
-            <div className="mt-5 grid gap-6 lg:grid-cols-2">
-              <div className="border-l-2 border-[var(--accent)] pl-3.5">
-                <div className="mb-1.5 text-[11px] tracking-[0.06em] text-[var(--ink-3)] uppercase">
-                  Why it rings
-                </div>
-                {campaign.purpose === null || campaign.purpose.trim() === "" ? (
-                  <p className="text-[14px] text-[var(--ink-3)]">
-                    No reason written yet. Until there is one the agent composes
-                    its own, which is the thing an unexpected call can least
-                    afford. It is the first field on the Brief tab.
-                  </p>
-                ) : (
-                  <Purpose text={campaign.purpose} />
-                )}
-              </div>
-
-              <div>
-                <CampaignProgress
-                  pending={campaign.pending}
-                  total={campaign.total}
-                  empty="Nobody on it yet. Add contacts and each one becomes a pending call."
-                />
-                <div className="mt-4 flex gap-8">
-                  <Figure label="Pending" value={campaign.pending} />
-                  <Figure label="Answered" value={campaign.answered} />
-                  <Figure label="On the campaign" value={campaign.total} />
-                </div>
-              </div>
-            </div>
-          </Card>
-
-          {campaign.total > 0 ? (
-            <Card title="How it is going">
-              <CampaignBreakdown
-                byStatus={breakdown.byStatus}
-                byOutcome={breakdown.byOutcome}
-              />
-            </Card>
+            </>
           ) : (
-            /* A campaign that has dialled nothing has no breakdown to show, and without this
-               the left column was a short card beside four hundred pixels of time controls.
-               What goes here instead is the thing a new campaign actually needs: the three
-               steps between a draft and a ringing phone, which nothing else states. */
-            <Card title="Before it can dial">
-              <ol className="flex flex-col gap-3">
-                {[
+            <>
+              {/* Reading leads with the verdicts, because that is the answer the campaign
+                  existed to produce. Watching leads with the feed, because the question then
+                  is whether it is working right now. Same cards, opposite order. */}
+              {phase === "reading" ? (
+                <>
+                  <Card title="How it went">
+                    <CampaignBreakdown byStatus={breakdown.byStatus} byOutcome={breakdown.byOutcome} />
+                  </Card>
+                  <Card title="The last calls">
+                    <RecentCallsFeed calls={recent.items} />
+                  </Card>
+                </>
+              ) : (
+                <>
+                  <Card
+                    title="Happening now"
+                    description="The last ten calls, newest first. This page refreshes itself every fifteen seconds while the campaign is running."
+                  >
+                    <RecentCallsFeed calls={recent.items} />
+                  </Card>
+                  <Card title="How it is going">
+                    <CampaignBreakdown byStatus={breakdown.byStatus} byOutcome={breakdown.byOutcome} />
+                  </Card>
+                </>
+              )}
+
+              <Tabs
+                initial="calls"
+                tabs={[
+                  { id: "calls", label: "Every call", panel: callsTab },
                   {
-                    done: campaign.purpose !== null && campaign.purpose.trim() !== "",
-                    title: "Say why it is calling",
-                    detail:
-                      "The agent opens with it. Without one it composes its own, which is the thing an unexpected call can least afford. Brief tab.",
+                    id: "conversation",
+                    label: "Conversation",
+                    panel: (
+                      <CampaignConversation
+                        campaignId={campaign.id}
+                        flow={campaign.flow}
+                        editable={false}
+                        canWrite={canWrite}
+                        tools={tools}
+                        transferNumber={null}
+                      />
+                    ),
                   },
-                  {
-                    done: campaign.total > 0,
-                    title: "Add the people it should ring",
-                    detail:
-                      "Each contact becomes a pending call. Consent and do-not-call are still checked per number when it dials.",
-                  },
-                  {
-                    done: campaign.status !== "draft",
-                    title: "Start it, or give it a time",
-                    detail:
-                      "Press Schedule to start it yourself, or set a start above and it moves to running on its own.",
-                  },
-                ].map((step) => (
-                  <li key={step.title} className="flex gap-2.5">
-                    <span
-                      aria-hidden
-                      className={
-                        step.done
-                          ? "mt-[3px] size-4 flex-none rounded-full border-[5px] border-[var(--accent)]"
-                          : "mt-[3px] size-4 flex-none rounded-full border border-[var(--hairline)]"
-                      }
-                    />
-                    <span className="min-w-0">
-                      <span
-                        className={
-                          step.done
-                            ? "block text-[13px] font-medium text-[var(--ink-3)] line-through"
-                            : "block text-[13px] font-medium text-[var(--ink)]"
-                        }
-                      >
-                        {step.title}
-                      </span>
-                      <span className="mt-0.5 block text-[12px] leading-relaxed text-[var(--ink-3)]">
-                        {step.detail}
-                      </span>
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            </Card>
+                ]}
+              />
+            </>
           )}
         </div>
 
-        <div className="flex flex-col gap-3.5">
-          {/* Two cards, because these are two kinds of thing. The window is a recurring shape
-              — these hours, these weekdays, every week. The schedule is one span with two
-              ends. They were in one card and it read as a pile. */}
-          <Card title="Hours it may ring">
-            <CallingWindowStrip window={campaign.callingWindow} />
-            <p className="mt-3.5 border-t border-[var(--hairline)] pt-3 text-[11.5px] leading-relaxed text-[var(--ink-3)]">
-              Consent and do-not-call are checked per number on every call,
-              whatever this says. A window narrows the permitted hours and never
-              widens them.
-            </p>
-          </Card>
-
-          <Card title="Schedule">
-            <CampaignSchedule
-              campaignId={campaign.id}
-              startsAt={campaign.startsAt}
-              endsAt={campaign.endsAt}
-              /* The start is refused by the API once a campaign has left draft or scheduled,
-                 so the control goes away rather than being offered and rejected. The end
-                 stays editable for the whole run. */
-              startEditable={campaign.briefEditable}
-              canWrite={canWrite}
-            />
-          </Card>
-        </div>
-      </div>
-
-      <div className="mt-[26px]">
-        <Tabs
-          initial={initialTab}
-          tabs={[
-            {
-              id: "calls",
-              label: "Calls",
-              panel: (
-                <>
-                  <div className="mb-3.5">
-                    <CallStatusFilter
-                      basePath={`/campaigns/${campaign.id}`}
-                      active={status as ScheduledCallStatus | null}
-                      byStatus={breakdown.byStatus}
-                      total={campaign.total}
-                    />
-                  </div>
-                  <ScheduledCallsTable calls={calls.items} />
-                  <Pagination
-                    basePath={`/campaigns/${campaign.id}`}
-                    /* Carried through every page link. Without it, page two of the failures
-                       is page two of everything, and the filter silently falls off. */
-                    {...(status === null ? {} : { params: { status } })}
-                    page={calls.page}
-                    perPage={calls.perPage}
-                    totalPages={calls.totalPages}
-                    total={calls.total}
-                    unit="calls"
-                  />
-                </>
-              ),
-            },
-            {
-              id: "brief",
-              label: "Brief",
-              panel: (
-                <CampaignBrief
-                  campaignId={campaign.id}
-                  editable={campaign.briefEditable}
-                  canWrite={canWrite}
-                  values={{
-                    purpose: campaign.purpose,
-                    opening: campaign.opening,
-                    outcomes: campaign.outcomes,
-                    voicemail: campaign.voicemail,
-                    maxAttempts: campaign.maxAttempts,
-                    retryAfterMinutes: campaign.retryAfterMinutes,
-                  }}
-                />
-              ),
-            },
-            {
-              id: "conversation",
-              label: "Conversation",
-              panel: (
-                <CampaignConversation
-                  campaignId={campaign.id}
-                  flow={campaign.flow}
-                  editable={campaign.briefEditable}
-                  canWrite={canWrite}
-                  tools={tools}
-                  transferNumber={null}
-                />
-              ),
-            },
-          ]}
-        />
+        {sidebar}
       </div>
     </>
   );

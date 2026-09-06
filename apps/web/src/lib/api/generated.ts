@@ -1471,6 +1471,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
         readonly endsAt: string | null;
+        readonly pauseReason: string | null;
         readonly createdBy: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;
@@ -1556,6 +1557,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
         readonly endsAt: string | null;
+        readonly pauseReason: string | null;
         readonly createdBy: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;
@@ -1629,6 +1631,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
         readonly endsAt: string | null;
+        readonly pauseReason: string | null;
         readonly createdBy: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;
@@ -1713,6 +1716,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
         readonly endsAt: string | null;
+        readonly pauseReason: string | null;
         readonly createdBy: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;
@@ -1847,6 +1851,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
         readonly endsAt: string | null;
+        readonly pauseReason: string | null;
         readonly createdBy: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;
@@ -1978,6 +1983,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
         readonly endsAt: string | null;
+        readonly pauseReason: string | null;
         readonly createdBy: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;
@@ -1985,6 +1991,46 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly pending: number;
         readonly answered: number;
       }>(options, "POST", `/api/v1/campaigns/${encodeURIComponent(input.path.campaignId)}/duplicate`, input),
+
+    /**
+     * The last few calls that happened
+     * The most recently attempted rows first — the call that just finished at the top. Rows never attempted are left out, because a pending row has not happened yet. Ten at most; the paged list is `calls`. This is the feed a running campaign's page polls.
+     */
+    recent: (input: {
+        readonly path: {
+          readonly campaignId: string;
+        };
+      }) =>
+      send<{
+        readonly items: readonly ({
+        readonly id: string;
+        readonly campaignId: string;
+        readonly contactId: string;
+        readonly phone: string;
+        readonly displayName: string | null;
+        readonly status: "pending" | "placing" | "answered" | "no_answer" | "busy" | "voicemail" | "failed" | "suppressed";
+        readonly attempts: number;
+        readonly nextAttemptAt: string | null;
+        readonly lastAttemptAt: string | null;
+        readonly outcome: string | null;
+        readonly callId: string | null;
+        readonly createdAt: string;
+        readonly updatedAt: string;
+      })[];
+      }>(options, "GET", `/api/v1/campaigns/${encodeURIComponent(input.path.campaignId)}/recent`, input),
+
+    /**
+     * Try the calls that did not connect again
+     * Puts every `no_answer`, `busy` and `failed` row back to pending with its attempts reset, due now. Nothing else is touched: an answered call is done, a suppressed one was refused by the consent gate and would be refused again, and a pending one is already waiting. Returns how many were reset. The campaign still has to be running for them to dial.
+     */
+    retry: (input: {
+        readonly path: {
+          readonly campaignId: string;
+        };
+      }) =>
+      send<{
+        readonly reset: number;
+      }>(options, "POST", `/api/v1/campaigns/${encodeURIComponent(input.path.campaignId)}/retry`, input),
 
     /**
      * Move a campaign between states
@@ -1996,6 +2042,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         };
         readonly body: {
           readonly status: "draft" | "scheduled" | "running" | "paused" | "done";
+          readonly reason?: string | null;
         };
       }) =>
       send<{
@@ -2055,6 +2102,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
         readonly endsAt: string | null;
+        readonly pauseReason: string | null;
         readonly createdBy: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;

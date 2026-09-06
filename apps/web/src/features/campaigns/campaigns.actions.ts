@@ -19,6 +19,7 @@ import {
   duplicateCampaign,
   editCampaign,
   enqueueContacts,
+  retryUnreached,
   setCampaignStatus,
   type CampaignStatus,
   saveBrief,
@@ -149,7 +150,14 @@ export const setStatusAction = async (
   if (!parsed.success) return invalidForm(parsed.error);
 
   try {
-    const result = await setCampaignStatus(parsed.data.campaignId, parsed.data.status);
+    /* The reason rides only on a pause. The API ignores it otherwise, but sending it on a
+       resume would be sending text that means nothing, so it is dropped here. */
+    const rawReason = form.get("reason");
+    const reason =
+      parsed.data.status === "paused" && typeof rawReason === "string" && rawReason.trim() !== ""
+        ? rawReason.trim()
+        : null;
+    const result = await setCampaignStatus(parsed.data.campaignId, parsed.data.status, reason);
     revalidatePath(`/campaigns/${parsed.data.campaignId}`);
     revalidatePath("/campaigns");
     return succeededForm({ status: result.status }, `Campaign is now ${result.status}.`);
@@ -282,6 +290,30 @@ export const saveCampaignFlowAction = async (
     if (refusedWith(error, 409)) {
       return failedForm("This campaign has started, so its conversation can no longer be changed.");
     }
+    return failedForm(failureMessage(error));
+  }
+};
+
+/**
+ * Give the numbers that did not connect another go.
+ *
+ * Returns the count so the notice can say "12 back in the queue" rather than "done", and
+ * revalidates the campaign page because the breakdown, the filter chips and the feed all
+ * change under it.
+ */
+export type RetryState = FormState<{ readonly reset: number }>;
+
+export const retryUnreachedAction = async (
+  _previous: RetryState,
+  form: FormData,
+): Promise<RetryState> => {
+  const campaignId = String(form.get("campaignId") ?? "");
+  if (campaignId === "") return failedForm("This form does not say which campaign it is for.");
+  try {
+    const result = await retryUnreached(campaignId);
+    revalidatePath(`/campaigns/${campaignId}`);
+    return succeededForm({ reset: result.reset });
+  } catch (error) {
     return failedForm(failureMessage(error));
   }
 };

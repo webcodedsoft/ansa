@@ -1,8 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 
-import { Button, Notice, Row, Tag } from "@/components/ui";
+import { Button, Modal, Notice, Row, Tag, TextField } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 import { useFormToast } from "@/stores/toast.store";
 
@@ -24,21 +24,31 @@ const START: SetStatusState = idleForm();
 export const CampaignStatusControl = ({
   campaignId,
   status,
+  pauseReason,
   canWrite,
 }: {
   readonly campaignId: string;
   readonly status: CampaignStatus;
+  /** Why it is paused, shown beside the badge so the next person does not have to ask. */
+  readonly pauseReason?: string | null;
   readonly canWrite: boolean;
 }) => {
   const [state, dispatch, pending] = useActionState(setStatusAction, START);
   useFormToast(state, (data) => `Campaign is now ${data.status}.`);
 
+  /* Pausing asks one question first. Every other move fires on the click; a pause opens a
+     small dialog for the reason, because "Paused" on a badge answers what and not why, and
+     the why is the only thing the next person needs. Optional — an empty reason still pauses. */
+  const [asking, setAsking] = useState(false);
+  const [reason, setReason] = useState("");
+
   const moves = nextStatuses(status);
 
-  const move = (to: CampaignStatus) => {
+  const move = (to: CampaignStatus, why: string | null = null) => {
     const form = new FormData();
     form.set("campaignId", campaignId);
     form.set("status", to);
+    if (why !== null && why.trim() !== "") form.set("reason", why.trim());
     dispatch(form);
   };
 
@@ -46,6 +56,9 @@ export const CampaignStatusControl = ({
     <div>
       <Row>
         <Tag tone={campaignTone[status]}>{status}</Tag>
+        {status === "paused" && pauseReason !== null && pauseReason !== undefined && (
+          <span className="text-[12.5px] text-[var(--ink-2)]">— {pauseReason}</span>
+        )}
         {canWrite &&
           moves.map((to) => (
             <Button
@@ -53,7 +66,7 @@ export const CampaignStatusControl = ({
               size="sm"
               variant={to === "running" ? "primary" : "secondary"}
               disabled={pending}
-              onClick={() => move(to)}
+              onClick={() => (to === "paused" ? setAsking(true) : move(to))}
             >
               {moveLabel(status, to)}
             </Button>
@@ -70,6 +83,38 @@ export const CampaignStatusControl = ({
           {state.message}
         </Notice>
       )}
+
+      <Modal
+        open={asking}
+        onClose={() => setAsking(false)}
+        title="Pause this campaign"
+        description="Nothing more is dialled until it is resumed. A call already in progress finishes. Say why, in a line, for whoever opens this tomorrow."
+        footer={
+          <>
+            <Button onClick={() => setAsking(false)} disabled={pending}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              disabled={pending}
+              onClick={() => {
+                setAsking(false);
+                move("paused", reason);
+              }}
+            >
+              Pause
+            </Button>
+          </>
+        }
+      >
+        <TextField
+          label="Why"
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          placeholder="e.g. waiting for legal sign-off on the new opening"
+          hint="Optional. Shown beside the badge while it is paused, and cleared when it resumes."
+        />
+      </Modal>
     </div>
   );
 };

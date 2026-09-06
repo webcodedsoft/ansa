@@ -68,3 +68,49 @@ export const windowSummary = (window: CampaignWindow | null): string => {
 
   return `${hour(window.startHour)}–${hour(window.endHour)} WAT, ${label}`;
 };
+
+/**
+ * Roughly when a running campaign will be done, as a sentence or nothing.
+ *
+ * The estimate is the pending count spread across the calling window at the retry interval,
+ * which is honest about what bounds it: not the dialler's speed, but how many hours a day it
+ * is allowed to ring and how long it waits between tries. It is deliberately rough — "around
+ * Thursday afternoon" is what somebody wants, and a minute-precise figure would claim a
+ * certainty the estimate does not have.
+ *
+ * Null when there is nothing to project: no pending calls, or no window to project across.
+ * An `endsAt` earlier than the projection wins, because the campaign stops there whatever is
+ * left, and the sentence says so.
+ */
+export const projectedFinish = (campaign: {
+  readonly pending: number;
+  readonly retryAfterMinutes: number;
+  readonly callingWindow: CampaignWindow | null;
+  readonly endsAt: string | null;
+}): string | null => {
+  if (campaign.pending === 0) return null;
+
+  const window = campaign.callingWindow ?? { startHour: 8, endHour: 20, weekdays: [0, 1, 2, 3, 4, 5, 6] };
+  const hoursPerDay = Math.max(0, window.endHour - window.startHour);
+  const daysPerWeek = new Set(window.weekdays).size;
+  if (hoursPerDay === 0 || daysPerWeek === 0) return null;
+
+  /* One attempt per row per retry interval is the pessimistic reading — the dialler works
+     through pending rows far faster than that, but a row that rings out waits the full
+     interval before its next go, and a campaign's tail is made of exactly those rows. */
+  const hoursNeeded = (campaign.pending * campaign.retryAfterMinutes) / 60;
+  const workingDays = hoursNeeded / hoursPerDay;
+  const calendarDays = workingDays * (7 / daysPerWeek);
+
+  const projected = new Date(Date.now() + calendarDays * 86_400_000);
+  const cutoff = campaign.endsAt === null ? null : new Date(campaign.endsAt);
+
+  const say = (at: Date): string =>
+    at.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" });
+
+  if (cutoff !== null && cutoff.getTime() < projected.getTime()) {
+    return `Stops ${say(cutoff)}, with some of the list likely unreached.`;
+  }
+  if (calendarDays < 1) return "Should finish today.";
+  return `Should finish around ${say(projected)}.`;
+};

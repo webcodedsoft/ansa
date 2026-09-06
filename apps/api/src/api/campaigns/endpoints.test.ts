@@ -413,6 +413,50 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("the campaign en
       expect(ended.body["endsAt"]).not.toBeNull();
     });
 
+    it("keeps the reason a campaign was paused, and drops it on resume", async () => {
+      /* `fresh` is running by now. "Paused" on a badge answers what and not why; the why is
+         what the next person needs, and it must not outlive the pause. */
+      const paused = await call("POST", `/api/v1/campaigns/${fresh}/status`, {
+        status: "paused",
+        reason: "waiting for legal sign-off",
+      });
+      expect(paused.status, JSON.stringify(paused.body)).toBe(200);
+      expect(paused.body["pauseReason"]).toBe("waiting for legal sign-off");
+
+      const resumed = await call("POST", `/api/v1/campaigns/${fresh}/status`, { status: "running" });
+      expect(resumed.status, JSON.stringify(resumed.body)).toBe(200);
+      expect(resumed.body["pauseReason"]).toBeNull();
+    });
+
+    it("feeds the last few calls newest first, leaving out rows never attempted", async () => {
+      const reply = await call("GET", `/api/v1/campaigns/${campaignId}/recent`);
+      expect(reply.status, JSON.stringify(reply.body)).toBe(200);
+      const items = reply.body["items"] as Record<string, unknown>[];
+
+      /* Asserted as properties rather than a count. This campaign is running by now, and the
+         real sweeper in the test app claims rows while the suite is going — so how many have
+         been attempted depends on timing. What does not depend on timing: every row in the
+         feed was attempted, and they arrive newest first. */
+      for (const item of items) expect(item["lastAttemptAt"]).not.toBeNull();
+      const stamps = items.map((item) => new Date(String(item["lastAttemptAt"])).getTime());
+      expect([...stamps].sort((a, b) => b - a)).toEqual(stamps);
+      expect(items.length).toBeLessThanOrEqual(10);
+    });
+
+    it("retries only the calls that did not connect", async () => {
+      const before = await call("GET", `/api/v1/campaigns/${campaignId}/breakdown`);
+      const unreached =
+        Number((before.body["byStatus"] as Record<string, number>)["no_answer"] ?? 0) +
+        Number((before.body["byStatus"] as Record<string, number>)["busy"] ?? 0) +
+        Number((before.body["byStatus"] as Record<string, number>)["failed"] ?? 0);
+
+      const reply = await call("POST", `/api/v1/campaigns/${campaignId}/retry`);
+      expect(reply.status, JSON.stringify(reply.body)).toBe(200);
+      /* Whatever was unreached is exactly what was reset — no more, since answered and
+         suppressed rows are never touched, and no less. */
+      expect(reply.body["reset"]).toBe(unreached);
+    });
+
     it("breaks a campaign down by status and by verdict", async () => {
       const reply = await call("GET", `/api/v1/campaigns/${fresh}/breakdown`);
       expect(reply.status, JSON.stringify(reply.body)).toBe(200);

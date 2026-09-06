@@ -112,6 +112,8 @@ export interface Campaign {
    * that is under way is the ordinary case, not an edge one.
    */
   readonly endsAt: Date | null;
+  /** Why it is paused, in the operator's words. Null unless it is paused and somebody said. */
+  readonly pauseReason: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -126,7 +128,7 @@ export interface CampaignSummary extends Campaign {
 const CAMPAIGN_COLUMNS = `
   cp.id, cp.agent_id, cp.name, cp.status, cp.calling_window, cp.created_by,
   cp.purpose, cp.opening, cp.flow, cp.outcomes, cp.voicemail,
-  cp.max_attempts, cp.retry_after_minutes, cp.starts_at, cp.ends_at,
+  cp.max_attempts, cp.retry_after_minutes, cp.starts_at, cp.ends_at, cp.pause_reason,
   cp.created_at, cp.updated_at,
   (select count(*) from scheduled_calls s where s.campaign_id = cp.id)::int as total,
   (select count(*) from scheduled_calls s
@@ -161,6 +163,10 @@ const asCampaign = (row: Record<string, unknown>): CampaignSummary => ({
     row["ends_at"] === null || row["ends_at"] === undefined
       ? null
       : new Date(String(row["ends_at"])),
+  pauseReason:
+    row["pause_reason"] === null || row["pause_reason"] === undefined
+      ? null
+      : String(row["pause_reason"]),
   createdAt: new Date(String(row["created_at"])),
   updatedAt: new Date(String(row["updated_at"])),
   total: Number(row["total"]),
@@ -401,10 +407,20 @@ export const setCampaignStatus = async (
   scope: OrganizationScope,
   campaignId: string,
   status: CampaignStatus,
+  /** Only read on a move to `paused`. Any other move clears whatever was there. */
+  pauseReason: string | null = null,
 ): Promise<boolean> => {
   const rows = await scope.mutate<Record<string, unknown>>(
-    `update campaigns set status = $2 where id = $1 returning id`,
-    [campaignId, status],
+    /* The reason travels with the pause and leaves with it. Written in the same statement as
+       the status so there is no window in which a campaign is paused with last month's reason
+       or resumed with this one still attached. */
+    `update campaigns
+        set status       = $2,
+            pause_reason = case when $2 = 'paused' then $3 else null end,
+            updated_at   = now()
+      where id = $1
+      returning id`,
+    [campaignId, status, pauseReason],
   );
   return rows.length > 0;
 };
@@ -535,6 +551,60 @@ export const readScheduledCalls = async (
     [campaignId, status ?? null, ...pageParams(page)],
   );
   return toSlice(rows, asScheduled);
+};
+
+/**
+ * The last few things that happened, for a page somebody is watching.
+ *
+ * Ordered by last attempt rather than by creation, which is what makes it a feed: the row at
+ * the top is the call that just finished, not the contact that was added first. Rows never
+ * attempted are excluded — a pending row has not "happened" yet and would only push the real
+ * activity down.
+ *
+ * Deliberately not paged and deliberately small. This is the answer to "is it working right
+ * now", and ten rows answer that; the full paged list is the Calls tab.
+ */
+export const readRecentCalls = async (
+  scope: OrganizationScope,
+  campaignId: string,
+  limit: number,
+): Promise<readonly ScheduledCall[]> => {
+  const rows = await scope.query<Record<string, unknown>>(
+    `select ${SCHEDULED_COLUMNS}
+       from scheduled_calls s
+       join contacts ct on ct.id = s.contact_id
+      where s.campaign_id = $1
+        and s.last_attempt_at is not null
+      order by s.last_attempt_at desc, s.id desc
+      limit $2`,
+    [campaignId, limit],
+  );
+  return rows.map(asScheduled);
+};
+
+/**
+ * Give the numbers that did not connect another go.
+ *
+ * Three statuses and only three. `answered` is done. `suppressed` was refused by the consent
+ * gate and would be refused again, so resetting it would only mean refusing it twice.
+ * `pending` and `placing` are already waiting. What is left is the tail every campaign grows
+ * — rang out, engaged, carrier failure — which today was dead the moment it hit the attempt
+ * ceiling. Due immediately; the sweeper still applies the window and the gate.
+ */
+export const retryUnreached = async (
+  scope: OrganizationScope,
+  campaignId: string,
+): Promise<number> => {
+  const rows = await scope.mutate<{ id: string }>(
+    `update scheduled_calls
+        set status = 'pending', attempts = 0, next_attempt_at = now(), outcome = null,
+            updated_at = now()
+      where campaign_id = $1
+        and status in ('no_answer', 'busy', 'failed')
+      returning id`,
+    [campaignId],
+  );
+  return rows.length;
 };
 
 /**
