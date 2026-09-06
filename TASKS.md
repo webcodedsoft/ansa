@@ -4845,6 +4845,27 @@ rather than landed as inventory — the wave that needs them adds them wired.
       their own helper text was capped at 62 characters — two different measures for the same
       field. The form is held to 70 characters.
 
+      **A second pass, because the first only fixed the structure.** Tabs and one panel made
+      the page navigable and left it looking like nothing. What it needed was the page's own
+      material used as design rather than as fields.
+
+      Two things carry it. The purpose — "to confirm your viewing at {property} on {when}" —
+      was buried in a text input on a tab, and it is the most human thing on the page: what
+      this campaign *says*. It leads now, against an accent rule, with the braces rendered as
+      chips so a glance separates the fixed half of the sentence from the half that arrives
+      per person. That is the failure it guards: a placeholder nobody has a value for is read
+      out with its braces on.
+
+      And the calling window is drawn instead of described. `CallingWindowStrip` gives seven
+      columns of midnight-to-midnight with the permitted hours filled, so "half the day, from
+      mid-morning, not weekends" is a shape rather than a sentence to picture. Days it does
+      not call are drawn empty rather than omitted — the gap is the information.
+
+      Worth keeping: the first version of the strip was 44px tall and *correct* — measured in
+      the DOM at exactly 33.3% offset and 50% height — and still looked wrong, because short
+      wide blocks do not read as a day. The fix was not the maths but an axis: 00/12/24 down
+      the side and a noon line. Checking the numbers proved the bug was in the presentation.
+
       Not done: the canvas column is still narrow inside a ~1010px content width, since the
       builder is three columns. Same as the agent workspace, and not made worse here.
 

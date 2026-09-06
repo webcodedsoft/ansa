@@ -10,10 +10,10 @@ import { AddContactsButton } from "@/features/campaigns/components/add-contacts-
 import { readTools } from "@/features/agents/agents.service";
 import { CampaignBrief } from "@/features/campaigns/components/campaign-brief";
 import { CampaignConversation } from "@/features/campaigns/components/campaign-conversation";
+import { CallingWindowStrip } from "@/features/campaigns/components/calling-window-strip";
 import { CampaignProgress } from "@/features/campaigns/components/campaign-progress";
 import { CampaignStatusControl } from "@/features/campaigns/components/campaign-status-control";
 import { ScheduledCallsTable } from "@/features/campaigns/components/scheduled-calls-table";
-import { windowSummary } from "@/features/campaigns/campaigns.display";
 import { listCampaignCalls, readCampaign } from "@/features/campaigns/campaigns.service";
 import { refusedWith } from "@/lib/api/server";
 import { readPaging } from "@/lib/paging";
@@ -23,11 +23,40 @@ export const dynamic = "force-dynamic";
 
 const Figure = ({ label, value }: { readonly label: string; readonly value: number }) => (
   <div>
-    <div className="text-[19px] leading-none font-medium tabular-nums text-[var(--ink)]">
+    <div className="text-[22px] leading-none font-medium tabular-nums text-[var(--ink)]">
       {value}
     </div>
-    <div className="mt-1 text-[11px] tracking-[0.06em] text-[var(--ink-3)] uppercase">{label}</div>
+    <div className="mt-1.5 text-[11px] tracking-[0.06em] text-[var(--ink-3)] uppercase">{label}</div>
   </div>
+);
+
+/**
+ * The reason it rings, with the parts that change per person marked.
+ *
+ * `{property}` and `{when}` are filled from what is already known about whoever is being
+ * called, and on the brief form they are just braces in a text input. Shown here they are the
+ * most useful thing on the page: one glance says which half of this sentence is fixed and
+ * which half arrives per person, which is exactly the thing that goes wrong — a placeholder
+ * nobody has a value for is read out with its braces on.
+ *
+ * Split rather than replaced, so an unmatched brace stays visible as text instead of being
+ * silently swallowed.
+ */
+const Purpose = ({ text }: { readonly text: string }) => (
+  <p className="text-[17px] leading-[1.45] text-[var(--ink)]">
+    {text.split(/(\{[^{}]+\})/g).map((part, index) =>
+      /^\{[^{}]+\}$/.test(part) ? (
+        <span
+          key={index}
+          className="rounded bg-[var(--accent-soft)] px-1 py-0.5 text-[15px] text-[var(--accent)]"
+        >
+          {part.slice(1, -1)}
+        </span>
+      ) : (
+        part
+      ),
+    )}
+  </p>
 );
 
 /**
@@ -98,7 +127,9 @@ const CampaignPage = async ({
       <PageHeader
         eyebrow="Outbound"
         title={campaign.name}
-        meta={`${agentName} · ${windowSummary(campaign.callingWindow)}`}
+        /* Just the agent. The calling window used to be appended here and is now drawn in
+           its own card, and saying it twice made the header the longer, worse copy of it. */
+        meta={`Placed by ${agentName}`}
         actions={
           <Link href="/campaigns" className={buttonClass()}>
             All campaigns
@@ -106,25 +137,11 @@ const CampaignPage = async ({
         }
       />
 
-      <Card>
-        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
-          <div className="min-w-[240px] flex-1">
-            {/* No status tag here: `CampaignStatusControl` renders its own, beside the button
-                that moves it, and two of them a column apart is the same word twice. */}
-            <CampaignProgress
-              pending={campaign.pending}
-              total={campaign.total}
-              empty="Nobody on it yet. Add contacts and each one becomes a pending call."
-            />
-
-            <div className="mt-4 flex gap-7">
-              <Figure label="Pending" value={campaign.pending} />
-              <Figure label="Answered" value={campaign.answered} />
-              <Figure label="On the campaign" value={campaign.total} />
-            </div>
-          </div>
-
-          <div className="flex flex-col items-start gap-2.5">
+      <div className="grid items-start gap-3.5 lg:grid-cols-[minmax(0,1fr)_270px]">
+        <Card>
+          {/* Status and the moves it can make sit at the top of the card they describe, with
+              the numbers under them — the order somebody reads the page in. */}
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
             <CampaignStatusControl
               campaignId={campaign.id}
               status={campaign.status}
@@ -132,8 +149,44 @@ const CampaignPage = async ({
             />
             {canWrite && <AddContactsButton campaignId={campaign.id} contacts={contacts} />}
           </div>
-        </div>
-      </Card>
+
+          <div className="mt-5 border-l-2 border-[var(--accent)] pl-3.5">
+            <div className="mb-1.5 text-[11px] tracking-[0.06em] text-[var(--ink-3)] uppercase">
+              Why it rings
+            </div>
+            {campaign.purpose === null || campaign.purpose.trim() === "" ? (
+              <p className="text-[14px] text-[var(--ink-3)]">
+                No reason written yet. Until there is one the agent composes its own, which is
+                the thing an unexpected call can least afford. It is the first field on the
+                Brief tab.
+              </p>
+            ) : (
+              <Purpose text={campaign.purpose} />
+            )}
+          </div>
+
+          <div className="mt-6">
+            <CampaignProgress
+              pending={campaign.pending}
+              total={campaign.total}
+              empty="Nobody on it yet. Add contacts and each one becomes a pending call."
+            />
+            <div className="mt-4 flex gap-8">
+              <Figure label="Pending" value={campaign.pending} />
+              <Figure label="Answered" value={campaign.answered} />
+              <Figure label="On the campaign" value={campaign.total} />
+            </div>
+          </div>
+        </Card>
+
+        <Card title="When it may ring">
+          <CallingWindowStrip window={campaign.callingWindow} />
+          <p className="mt-3.5 border-t border-[var(--hairline)] pt-3 text-[11.5px] leading-relaxed text-[var(--ink-3)]">
+            Consent and do-not-call are checked per number on every call, whatever this says.
+            A window can narrow the permitted hours and never widen them.
+          </p>
+        </Card>
+      </div>
 
       <div className="mt-[26px]">
         <Tabs
