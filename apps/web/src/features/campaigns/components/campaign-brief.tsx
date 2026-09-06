@@ -12,10 +12,13 @@ import {
   TextAreaField,
   TextField,
 } from "@/components/ui";
+import { CAMPAIGN_LIMITS } from "@ansa/shared";
+
 import { idleForm } from "@/lib/form-state";
 import { useFormToast } from "@/stores/toast.store";
 
 import { saveBriefAction, type BriefState } from "../campaigns.actions";
+import { OutcomeChips } from "./outcome-chips";
 
 const START: BriefState = idleForm();
 
@@ -63,109 +66,127 @@ export const CampaignBrief = ({
   const disabled = !editable || !canWrite;
 
   return (
-    /* `Card` rather than `Panel` with a section head inside it. `Panel` is an unpadded
-       surface, so the heading and every field sat flush against its border — the same
-       heading band every other card on this page draws, drawn wrong. */
-    <Card
-      title="What this call is about"
-      description="The agent says this in the opening. Everything else — the voice, the manner, the tools — comes from the agent it uses, which is what lets one agent run more than one campaign."
-    >
+    /* Three sections, because these are three different questions. What the agent *says* is
+       the words; what counts as *done* is the list it picks a verdict from; how hard it
+       *tries* is machinery — voicemail, attempts, spacing. Six fields in one stack put "try
+       at most" straight under "if a machine answers" with nothing saying they were different
+       kinds of thing, and the outcomes textarea asked for one-per-line typing for what is a
+       short list of tags. Each section is a card with its own title and its own reason. */
+    <form action={action} className="flex flex-col gap-3.5">
+      <input type="hidden" name="campaignId" value={campaignId} />
+
       {!editable && (
         <Notice tone="info">
           This campaign has started, so what it says is fixed. A call may already be in flight,
           and the reason somebody was rung should not change while they are being rung. To say
-          something different, make a new campaign.
+          something different, duplicate it.
         </Notice>
       )}
 
       {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
 
-      {/* Held to a reading measure. These are sentences somebody writes and then reads back,
-          and a text field stretched across a 1200px page is neither pleasant to write in nor
-          possible to scan — the helper text under each one is already capped, which left the
-          inputs and their explanations on two different widths. */}
-      <form action={action} className="max-w-[70ch]">
-        <input type="hidden" name="campaignId" value={campaignId} />
-        <Stack gap="md">
-          <TextField
-            label="Why we are calling"
-            name="purpose"
-            defaultValue={values.purpose ?? ""}
-            disabled={disabled}
-            required
-            error={state.fieldErrors["purpose"]}
-            placeholder="to confirm your viewing at {property} on {when}"
-            hint="One line, in your words — the agent says it in the first breath. Anything in {braces} is filled in per person from what is already known about them: {name}, and any answer a previous call captured, such as {area} or {lookingFor}."
-          />
+      <Card
+        title="What it says"
+        description="The agent opens with this. Everything else — the voice, the manner, the tools — comes from the agent it uses, which is what lets one agent run more than one campaign."
+      >
+        <div className="max-w-[70ch]">
+          <Stack gap="md">
+            <TextField
+              label="Why we are calling"
+              name="purpose"
+              defaultValue={values.purpose ?? ""}
+              disabled={disabled}
+              required
+              error={state.fieldErrors["purpose"]}
+              placeholder="to confirm your viewing at {property} on {when}"
+              hint="One line, in your words — the agent says it in the first breath. Anything in {braces} is filled in per person from what is already known about them: {name}, and any answer a previous call captured, such as {area} or {lookingFor}."
+            />
 
-          <TextAreaField
-            label="Opening line"
-            name="opening"
-            defaultValue={values.opening ?? ""}
-            disabled={disabled}
-            error={state.fieldErrors["opening"]}
-            placeholder="Leave empty and the agent composes one from the reason above."
-            hint="Only if you want the exact words. The agent always says who it is and which company first, whatever is written here."
-          />
+            <TextAreaField
+              label="Opening line"
+              name="opening"
+              defaultValue={values.opening ?? ""}
+              disabled={disabled}
+              error={state.fieldErrors["opening"]}
+              placeholder="Leave empty and the agent composes one from the reason above."
+              hint="Only if you want the exact words. The agent always says who it is and which company first, whatever is written here."
+            />
+          </Stack>
+        </div>
+      </Card>
 
-          <TextAreaField
-            label="What counts as done"
+      <Card
+        title="What counts as done"
+        description="The verdicts the agent may record at the end of a call. They are what the breakdown on this page counts, so they are the campaign's own measure of whether it worked."
+      >
+        <div className="max-w-[70ch]">
+          <OutcomeChips
+            label="Verdicts"
             name="outcomes"
-            defaultValue={(values.outcomes ?? []).join("\n")}
+            initial={values.outcomes ?? []}
             disabled={disabled}
+            max={CAMPAIGN_LIMITS.outcomes}
+            maxLength={CAMPAIGN_LIMITS.outcomeLength}
             error={state.fieldErrors["outcomes"]}
-            placeholder={"confirmed\nrescheduled\ndeclined\ncall back later"}
-            hint="One per line. The agent records one of these at the end, from what the person actually said. Leave empty if you only want the call made."
           />
+        </div>
+      </Card>
 
-          <SelectField
-            label="If a machine answers"
-            name="voicemailMode"
-            value={mode}
-            onChange={(event) => setMode(event.target.value)}
-            disabled={disabled}
-            hint={
-              mode === "leave_message"
-                ? "Says who rang and the number to call back, and nothing else. Never why — an answerphone plays out loud in a room, and whoever is in it did not agree to hear somebody's business."
-                : "Stays silent. The right choice when the subject alone would embarrass somebody in a room where the machine is played out loud."
-            }
-          >
-            <option value="hang_up">Hang up</option>
-            <option value="leave_message">Leave the standard message</option>
-          </SelectField>
-
-          <div className="flex flex-wrap gap-3">
-            <NumberField
-              label="Try at most"
-              name="maxAttempts"
-              defaultValue={values.maxAttempts}
-              min={1}
-              max={10}
+      <Card
+        title="How hard it tries"
+        description="What happens when nobody picks up. The consent rules and the calling window still apply on every attempt."
+      >
+        <div className="max-w-[70ch]">
+          <Stack gap="md">
+            <SelectField
+              label="If a machine answers"
+              name="voicemailMode"
+              value={mode}
+              onChange={(event) => setMode(event.target.value)}
               disabled={disabled}
-              error={state.fieldErrors["maxAttempts"]}
-              hint="Times, per person, in total."
-              className="w-40"
-            />
-            <NumberField
-              label="Wait between tries"
-              name="retryAfterMinutes"
-              defaultValue={values.retryAfterMinutes}
-              min={15}
-              step={15}
-              disabled={disabled}
-              error={state.fieldErrors["retryAfterMinutes"]}
-              hint="Minutes. Four hours moves a retry to a different part of the day, which is the point — three calls in ten minutes is harassment."
-              className="w-52"
-            />
-          </div>
+              hint={
+                mode === "leave_message"
+                  ? "Says who rang and the number to call back, and nothing else. Never why — an answerphone plays out loud in a room, and whoever is in it did not agree to hear somebody's business."
+                  : "Stays silent. The right choice when the subject alone would embarrass somebody in a room where the machine is played out loud."
+              }
+            >
+              <option value="hang_up">Hang up</option>
+              <option value="leave_message">Leave the standard message</option>
+            </SelectField>
 
-          {!disabled && (
-            <div>
-              <SubmitButton pending={pending} idle="Save" busy="Saving…" />
+            <div className="flex flex-wrap gap-3">
+              <NumberField
+                label="Try at most"
+                name="maxAttempts"
+                defaultValue={values.maxAttempts}
+                min={1}
+                max={10}
+                disabled={disabled}
+                error={state.fieldErrors["maxAttempts"]}
+                hint="Times, per person, in total."
+                className="w-40"
+              />
+              <NumberField
+                label="Wait between tries"
+                name="retryAfterMinutes"
+                defaultValue={values.retryAfterMinutes}
+                min={15}
+                step={15}
+                disabled={disabled}
+                error={state.fieldErrors["retryAfterMinutes"]}
+                hint="Minutes. Four hours moves a retry to a different part of the day, which is the point — three calls in ten minutes is harassment."
+                className="w-52"
+              />
             </div>
-          )}
-        </Stack>
-      </form>
-    </Card>
+          </Stack>
+        </div>
+      </Card>
+
+      {!disabled && (
+        <div>
+          <SubmitButton pending={pending} idle="Save brief" busy="Saving…" />
+        </div>
+      )}
+    </form>
   );
 };
