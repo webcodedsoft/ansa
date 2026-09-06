@@ -1,8 +1,9 @@
 "use client";
 
 import {
-  Activity, Bot, ChevronsUpDown, FileText, KeyRound, Link2, ListChecks, LogOut,
-  Phone, PhoneCall, Plus, ScrollText, ShieldCheck, Table2, Users, Wrench,
+  BarChart3, Bot, CalendarDays, ChevronsUpDown, ClipboardList, Contact, Hash, KeyRound,
+  ListChecks, LogOut, MailPlus, Megaphone, PhoneCall, Plus, Radio, ScrollText, ShieldCheck,
+  Users, Webhook, Wrench,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -13,21 +14,38 @@ import { cn } from "@/lib/cn";
 
 import { NAV_GROUPS, allowedDestinations, type Destination } from "./navigation";
 
-/** One icon per destination, keyed by href so the list stays the single source. */
+/**
+ * One icon per destination, keyed by href so the list stays the single source.
+ *
+ * Every destination has its own, chosen for what the section *is*. Three used to have none
+ * and fell through to the `Bot` fallback, so Contacts, Campaigns and Appointments all wore a
+ * robot — and Members and Invitations shared one, so at a glance they were the same row.
+ * The fallback still exists for a destination added without an icon, but that is a thing
+ * to notice and fix rather than a look to ship.
+ */
 const ICONS: Record<string, ComponentType<{ className?: string }>> = {
   "/calls": PhoneCall,
-  "/live": Activity,
+  // A signal, not a pulse: this is calls in progress, not health.
+  "/live": Radio,
   "/review": ListChecks,
-  "/data": Table2,
-  "/metrics": FileText,
+  // What was collected on calls, as a table of answers.
+  "/data": ClipboardList,
+  "/contacts": Contact,
+  // Ringing a list of people about one thing is an announcement.
+  "/campaigns": Megaphone,
+  "/appointments": CalendarDays,
+  // Metrics are charts, not a document.
+  "/metrics": BarChart3,
   "/agents": Bot,
   "/agents/new": Plus,
   "/tools": Wrench,
-  "/numbers": Phone,
-  "/webhooks": Link2,
+  // A phone number is a number, and the handset already belongs to Calls.
+  "/numbers": Hash,
+  "/webhooks": Webhook,
   "/credentials": KeyRound,
   "/members": Users,
-  "/invitations": Users,
+  // An invitation is a letter not yet answered, which is not the same as a member.
+  "/invitations": MailPlus,
   "/consent": ShieldCheck,
   "/audit": ScrollText,
 };
