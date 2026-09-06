@@ -12,6 +12,11 @@ import {
   setCampaignStatus,
   updateCampaign,
   updateCampaignBrief,
+  createSeries,
+  readSeriesForCampaign,
+  readSeriesRuns,
+  updateSeries,
+  type CampaignSeries,
   type CampaignStatus,
   type CampaignSummary,
   type ScheduledCall,
@@ -19,6 +24,8 @@ import {
 } from "@ansa/db";
 import {
   CAMPAIGN_LIMITS,
+  SERIES_EVERY,
+  SERIES_RUN_FOR,
   VOICEMAIL_MODES,
   briefIsEditable,
   validateFlow,
@@ -208,6 +215,9 @@ const campaign = object({
   maxCallsPerHour: nullable(
     integer({ minimum: CAMPAIGN_LIMITS.callsPerHour.min, maximum: CAMPAIGN_LIMITS.callsPerHour.max }),
   ),
+  /** The series that created this as one of its runs, and which run. Null for a one-off and for a template. */
+  seriesId: nullable(uuid()),
+  runNumber: nullable(integer({ minimum: 1 })),
   /** Whether the brief may still be changed. False once calls can be in flight. */
   briefEditable: flag(),
   /**
@@ -281,6 +291,66 @@ const editBody = object({
   ),
 });
 
+const SERIES_EVERY_KEYS = Object.keys(SERIES_EVERY) as (keyof typeof SERIES_EVERY)[];
+const SERIES_RUN_FOR_KEYS = Object.keys(SERIES_RUN_FOR) as (keyof typeof SERIES_RUN_FOR)[];
+
+const series = object({
+  id: uuid(),
+  /** The campaign whose words, list and settings each run copies. */
+  templateId: uuid(),
+  name: text({ maxLength: 200 }),
+  every: choice(SERIES_EVERY_KEYS),
+  runFor: choice(SERIES_RUN_FOR_KEYS),
+  /** When the first run starts; run n starts at this plus n × every. */
+  anchorAt: timestamp(),
+  nextRunAt: timestamp(),
+  runsCreated: integer({ minimum: 0 }),
+  state: choice(["active", "paused", "ended"] as const),
+  createdAt: timestamp(),
+});
+
+const seriesRun = object({
+  campaignId: uuid(),
+  runNumber: integer({ minimum: 1 }),
+  status: choice(CAMPAIGN_STATUSES),
+  startsAt: nullable(timestamp()),
+  endsAt: nullable(timestamp()),
+  total: integer({ minimum: 0 }),
+  answered: integer({ minimum: 0 }),
+});
+
+const seriesWithRuns = object({
+  series,
+  runs: list(seriesRun),
+});
+
+const createSeriesBody = object({
+  name: optional(text({ minLength: 1, maxLength: 200 })),
+  every: choice(SERIES_EVERY_KEYS),
+  runFor: choice(SERIES_RUN_FOR_KEYS),
+  anchorAt: timestamp(),
+});
+
+const editSeriesBody = object({
+  name: optional(text({ minLength: 1, maxLength: 200 })),
+  every: optional(choice(SERIES_EVERY_KEYS)),
+  runFor: optional(choice(SERIES_RUN_FOR_KEYS)),
+  state: optional(choice(["active", "paused", "ended"] as const)),
+});
+
+const asSeriesBody = (found: CampaignSeries): Infer<typeof series> => ({
+  id: found.id,
+  templateId: found.templateId,
+  name: found.name,
+  every: found.every,
+  runFor: found.runFor,
+  anchorAt: found.anchorAt.toISOString(),
+  nextRunAt: found.nextRunAt.toISOString(),
+  runsCreated: found.runsCreated,
+  state: found.state,
+  createdAt: found.createdAt.toISOString(),
+});
+
 const duplicateBody = object({ name: text({ minLength: 1, maxLength: 200 }) });
 
 /** The page query, plus the one status somebody wants to look at. */
@@ -307,6 +377,10 @@ const breakdown = object({
 
 /** Distinguishable from `null`, which already means "no such campaign" on this path. */
 const ALREADY_STARTED = Symbol("already started");
+const ALREADY_A_RUN = Symbol("already a run");
+const ALREADY_A_SERIES = Symbol("already a series");
+const NO_PURPOSE = Symbol("no purpose");
+const ENDED = Symbol("ended");
 
 /** Also distinguishable from `null`, and from the refusal above. */
 const ENDS_TOO_SOON = Symbol("ends before it starts");
@@ -385,6 +459,8 @@ const asCampaignBody = (summary: CampaignSummary): Infer<typeof campaign> => ({
   retryAfterMinutes: summary.retryAfterMinutes,
   maxConcurrentCalls: summary.maxConcurrentCalls,
   maxCallsPerHour: summary.maxCallsPerHour,
+  seriesId: summary.seriesId,
+  runNumber: summary.runNumber,
   briefEditable: briefIsEditable(summary.status),
   startsAt: summary.startsAt === null ? null : summary.startsAt.toISOString(),
   endsAt: summary.endsAt === null ? null : summary.endsAt.toISOString(),
@@ -824,6 +900,107 @@ export class CampaignsController {
     });
     if (found === null) throw new NotFoundException();
     return { byStatus: { ...found.byStatus }, byOutcome: { ...found.byOutcome } };
+  }
+
+  @Get(":campaignId/series")
+  @Endpoint({
+    summary: "The series a campaign belongs to, and its runs",
+    description:
+      "Found from either end: the campaign is the series' template, or one of the runs the series created. Each run is an ordinary campaign, listed newest first. 404 for a one-off.",
+    capability: "campaigns:read",
+    params: campaignPath,
+    response: seriesWithRuns,
+  })
+  async seriesOf(@FromPath() path: Infer<typeof campaignPath>): Promise<Infer<typeof seriesWithRuns>> {
+    const found = await this.db.tx(async (scope) => {
+      const one = await readSeriesForCampaign(scope, path.campaignId);
+      if (one === null) return null;
+      return { series: one, runs: await readSeriesRuns(scope, one.id) };
+    });
+    if (found === null) throw new NotFoundException();
+    return {
+      series: asSeriesBody(found.series),
+      runs: found.runs.map((run) => ({
+        campaignId: run.campaignId,
+        runNumber: run.runNumber,
+        status: run.status as CampaignStatus,
+        startsAt: run.startsAt === null ? null : run.startsAt.toISOString(),
+        endsAt: run.endsAt === null ? null : run.endsAt.toISOString(),
+        total: run.total,
+        answered: run.answered,
+      })),
+    };
+  }
+
+  @Post(":campaignId/series")
+  @Endpoint({
+    summary: "Run this campaign again on a rhythm",
+    description:
+      "Turns the campaign into a series' template. From `anchorAt`, every `every`, the sweeper creates a run — an ordinary campaign copying the template's words, settings and list, scheduled to start at that beat and stop `runFor` later — and starts it like any scheduled campaign. A person a previous run suppressed is not copied. Edits to the template land on the next run. The template must have a purpose, since a run without one could not open. 409 if the campaign is already a series' template or is itself a run.",
+    capability: "campaigns:write",
+    params: campaignPath,
+    body: createSeriesBody,
+    response: series,
+    status: 201,
+  })
+  async runAgain(
+    @FromPath() path: Infer<typeof campaignPath>,
+    @FromBody() body: Infer<typeof createSeriesBody>,
+  ): Promise<Infer<typeof series>> {
+    const anchorAt = new Date(body.anchorAt);
+    const created = await this.db.tx(async (scope) => {
+      const template = await readCampaign(scope, path.campaignId);
+      if (template === null) return null;
+      if (template.seriesId !== null) return ALREADY_A_RUN;
+      if ((template.purpose ?? "").trim() === "") return NO_PURPOSE;
+      if ((await readSeriesForCampaign(scope, path.campaignId)) !== null) return ALREADY_A_SERIES;
+      return createSeries(scope, {
+        templateId: path.campaignId,
+        name: body.name ?? template.name,
+        every: body.every,
+        runFor: body.runFor,
+        anchorAt,
+        createdBy: this.db.caller.userId,
+      });
+    });
+    if (created === null) throw new NotFoundException();
+    if (created === ALREADY_A_RUN) throw new ConflictException("this campaign is itself a run of a series");
+    if (created === ALREADY_A_SERIES) throw new ConflictException("this campaign already runs again");
+    if (created === NO_PURPOSE) {
+      throw new ValidationFailed([{ path: "purpose", message: "say why it calls before it can run again" }]);
+    }
+    return asSeriesBody(created);
+  }
+
+  @Patch(":campaignId/series")
+  @Endpoint({
+    summary: "Change a series' rhythm, or pause, resume or end it",
+    description:
+      "Any field may be omitted and is left alone. Pausing creates no further runs; a run already created carries on. Resuming lands on the next beat still ahead rather than firing every one missed while paused. Ending is final. The campaign may be the template or any of its runs.",
+    capability: "campaigns:write",
+    params: campaignPath,
+    body: editSeriesBody,
+    response: series,
+  })
+  async editSeries(
+    @FromPath() path: Infer<typeof campaignPath>,
+    @FromBody() body: Infer<typeof editSeriesBody>,
+  ): Promise<Infer<typeof series>> {
+    const updated = await this.db.tx(async (scope) => {
+      const found = await readSeriesForCampaign(scope, path.campaignId);
+      if (found === null) return null;
+      const changed = await updateSeries(scope, found.id, {
+        ...(body.name === undefined ? {} : { name: body.name }),
+        ...(body.every === undefined ? {} : { every: body.every }),
+        ...(body.runFor === undefined ? {} : { runFor: body.runFor }),
+        ...(body.state === undefined ? {} : { state: body.state }),
+      });
+      if (!changed) return ENDED;
+      return readSeriesForCampaign(scope, path.campaignId);
+    });
+    if (updated === null) throw new NotFoundException();
+    if (updated === ENDED) throw new ConflictException("an ended series cannot be changed");
+    return asSeriesBody(updated);
   }
 
   @Post(":campaignId/duplicate")

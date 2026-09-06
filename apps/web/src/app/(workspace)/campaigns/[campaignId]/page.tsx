@@ -14,6 +14,7 @@ import { CampaignConversation } from "@/features/campaigns/components/campaign-c
 import { CallStatusFilter } from "@/features/campaigns/components/call-status-filter";
 import { CampaignCallingWindow } from "@/features/campaigns/components/campaign-calling-window";
 import { CampaignPace } from "@/features/campaigns/components/campaign-pace";
+import { CampaignSeries } from "@/features/campaigns/components/campaign-series";
 import { CAMPAIGN_TEMPLATES } from "@/features/campaigns/campaign-templates";
 import { CampaignBreakdown } from "@/features/campaigns/components/campaign-breakdown";
 import { CampaignProgress } from "@/features/campaigns/components/campaign-progress";
@@ -29,6 +30,7 @@ import {
   readCampaign,
   readCampaignBreakdown,
   readRecentCalls,
+  readSeries,
   SCHEDULED_STATUSES,
   type CampaignDetail,
   type ScheduledCallStatus,
@@ -228,7 +230,7 @@ const CampaignPage = async ({
 
   const phase = phaseOf(campaign.status);
 
-  const [principal, calls, agentList, tools, breakdown, recent] = await Promise.all([
+  const [principal, calls, agentList, tools, breakdown, recent, seriesOf] = await Promise.all([
     currentPrincipal(),
     listCampaignCalls(campaignId, {
       ...requested,
@@ -243,6 +245,12 @@ const CampaignPage = async ({
     readCampaignBreakdown(campaignId),
     /* Only when somebody is watching or reading. A draft has nothing to feed. */
     phase === "setup" ? Promise.resolve({ items: [] }) : readRecentCalls(campaignId),
+    /* The series this belongs to, from either end. A one-off is a 404, which is the ordinary
+       case and not an error. */
+    readSeries(campaignId).catch((error: unknown) => {
+      if (refusedWith(error, 404)) return null;
+      throw error;
+    }),
   ]);
   const canWrite = principal.capabilities.includes("campaigns:write");
 
@@ -344,16 +352,30 @@ const CampaignPage = async ({
         </Card>
       </div>
 
-      <Card title="When it runs">
-        <CampaignSchedule
-          campaignId={campaign.id}
-          startsAt={campaign.startsAt}
-          endsAt={campaign.endsAt}
-          startEditable={campaign.briefEditable}
-          canWrite={canWrite}
-          window={campaign.callingWindow}
-        />
-      </Card>
+      <div className="grid gap-3.5">
+        <Card title="When it runs">
+          <CampaignSchedule
+            campaignId={campaign.id}
+            startsAt={campaign.startsAt}
+            endsAt={campaign.endsAt}
+            startEditable={campaign.briefEditable}
+            canWrite={canWrite}
+            window={campaign.callingWindow}
+          />
+        </Card>
+        <Card title={seriesOf === null ? "Run it again" : campaign.seriesId === null ? "It runs again" : "Part of a series"}>
+          <CampaignSeries
+            campaignId={campaign.id}
+            campaignName={campaign.name}
+            series={seriesOf === null ? null : seriesOf.series}
+            runs={seriesOf === null ? [] : seriesOf.runs}
+            isRun={campaign.seriesId !== null}
+            window={campaign.callingWindow}
+            canWrite={canWrite}
+            hasPurpose={(campaign.purpose ?? "").trim() !== ""}
+          />
+        </Card>
+      </div>
     </div>
   );
 
@@ -428,7 +450,7 @@ const CampaignPage = async ({
       <PageHeader
         eyebrow="Campaigns"
         title={campaign.name}
-        meta={`${agentName} · ${windowSummary(campaign.callingWindow)}`}
+        meta={`${campaign.runNumber === null ? "" : `Run ${campaign.runNumber}, created by its series · `}${agentName} · ${windowSummary(campaign.callingWindow)}`}
         actions={
           <Link href="/campaigns" className={buttonClass()}>
             All campaigns

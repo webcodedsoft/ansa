@@ -101,6 +101,9 @@ export interface Campaign {
   readonly maxConcurrentCalls: number | null;
   /** How many may be placed in any rolling hour. Null is no cap. */
   readonly maxCallsPerHour: number | null;
+  /** The series that created this as one of its runs, and which run. Null for a one-off. */
+  readonly seriesId: string | null;
+  readonly runNumber: number | null;
   readonly createdBy: string | null;
   /**
    * When a scheduled campaign begins dialling, or null to start it by hand.
@@ -133,7 +136,7 @@ const CAMPAIGN_COLUMNS = `
   cp.id, cp.agent_id, cp.name, cp.status, cp.calling_window, cp.created_by,
   cp.purpose, cp.opening, cp.flow, cp.outcomes, cp.voicemail,
   cp.max_attempts, cp.retry_after_minutes, cp.starts_at, cp.ends_at, cp.pause_reason,
-  cp.max_concurrent_calls, cp.max_calls_per_hour,
+  cp.max_concurrent_calls, cp.max_calls_per_hour, cp.series_id, cp.run_number,
   cp.created_at, cp.updated_at,
   (select count(*) from scheduled_calls s where s.campaign_id = cp.id)::int as total,
   (select count(*) from scheduled_calls s
@@ -159,6 +162,8 @@ const asCampaign = (row: Record<string, unknown>): CampaignSummary => ({
   retryAfterMinutes: Number(row["retry_after_minutes"] ?? 240),
   maxConcurrentCalls: row["max_concurrent_calls"] == null ? null : Number(row["max_concurrent_calls"]),
   maxCallsPerHour: row["max_calls_per_hour"] == null ? null : Number(row["max_calls_per_hour"]),
+  seriesId: row["series_id"] == null ? null : String(row["series_id"]),
+  runNumber: row["run_number"] == null ? null : Number(row["run_number"]),
   createdBy: row["created_by"] === null ? null : String(row["created_by"]),
   /* Absent against a database without 0069, and null is the right reading of that: a
      campaign that cannot hold a start time is one nobody scheduled. */

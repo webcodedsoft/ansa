@@ -13561,6 +13561,21 @@
                             "minimum": 1,
                             "maximum": 1000
                           },
+                          "seriesId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "uuid",
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                          },
+                          "runNumber": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ],
+                            "minimum": 1
+                          },
                           "briefEditable": {
                             "type": "boolean"
                           },
@@ -13629,6 +13644,8 @@
                           "retryAfterMinutes",
                           "maxConcurrentCalls",
                           "maxCallsPerHour",
+                          "seriesId",
+                          "runNumber",
                           "briefEditable",
                           "startsAt",
                           "endsAt",
@@ -14135,6 +14152,21 @@
                       "minimum": 1,
                       "maximum": 1000
                     },
+                    "seriesId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "runNumber": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 1
+                    },
                     "briefEditable": {
                       "type": "boolean"
                     },
@@ -14203,6 +14235,8 @@
                     "retryAfterMinutes",
                     "maxConcurrentCalls",
                     "maxCallsPerHour",
+                    "seriesId",
+                    "runNumber",
                     "briefEditable",
                     "startsAt",
                     "endsAt",
@@ -14638,6 +14672,21 @@
                       "minimum": 1,
                       "maximum": 1000
                     },
+                    "seriesId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "runNumber": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 1
+                    },
                     "briefEditable": {
                       "type": "boolean"
                     },
@@ -14706,6 +14755,8 @@
                     "retryAfterMinutes",
                     "maxConcurrentCalls",
                     "maxCallsPerHour",
+                    "seriesId",
+                    "runNumber",
                     "briefEditable",
                     "startsAt",
                     "endsAt",
@@ -15232,6 +15283,21 @@
                       "minimum": 1,
                       "maximum": 1000
                     },
+                    "seriesId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "runNumber": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 1
+                    },
                     "briefEditable": {
                       "type": "boolean"
                     },
@@ -15300,6 +15366,8 @@
                     "retryAfterMinutes",
                     "maxConcurrentCalls",
                     "maxCallsPerHour",
+                    "seriesId",
+                    "runNumber",
                     "briefEditable",
                     "startsAt",
                     "endsAt",
@@ -16144,6 +16212,21 @@
                       "minimum": 1,
                       "maximum": 1000
                     },
+                    "seriesId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "runNumber": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 1
+                    },
                     "briefEditable": {
                       "type": "boolean"
                     },
@@ -16212,6 +16295,8 @@
                     "retryAfterMinutes",
                     "maxConcurrentCalls",
                     "maxCallsPerHour",
+                    "seriesId",
+                    "runNumber",
                     "briefEditable",
                     "startsAt",
                     "endsAt",
@@ -17087,6 +17172,21 @@
                       "minimum": 1,
                       "maximum": 1000
                     },
+                    "seriesId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "runNumber": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 1
+                    },
                     "briefEditable": {
                       "type": "boolean"
                     },
@@ -17155,6 +17255,8 @@
                     "retryAfterMinutes",
                     "maxConcurrentCalls",
                     "maxCallsPerHour",
+                    "seriesId",
+                    "runNumber",
                     "briefEditable",
                     "startsAt",
                     "endsAt",
@@ -17475,6 +17577,659 @@
                   },
                   "required": [
                     "reset"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold campaigns:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/campaigns/{campaignId}/series": {
+      "get": {
+        "operationId": "campaigns.seriesOf",
+        "tags": [
+          "campaigns"
+        ],
+        "summary": "The series a campaign belongs to, and its runs",
+        "description": "Found from either end: the campaign is the series' template, or one of the runs the series created. Each run is an ordinary campaign, listed newest first. 404 for a one-off.",
+        "x-ansa-capability": "campaigns:read",
+        "parameters": [
+          {
+            "name": "campaignId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "series": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                        },
+                        "templateId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                        },
+                        "name": {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        "every": {
+                          "type": "string",
+                          "enum": [
+                            "week",
+                            "two_weeks",
+                            "month",
+                            "quarter"
+                          ]
+                        },
+                        "runFor": {
+                          "type": "string",
+                          "enum": [
+                            "day",
+                            "three_days",
+                            "week",
+                            "two_weeks"
+                          ]
+                        },
+                        "anchorAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "nextRunAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "runsCreated": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "paused",
+                            "ended"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "templateId",
+                        "name",
+                        "every",
+                        "runFor",
+                        "anchorAt",
+                        "nextRunAt",
+                        "runsCreated",
+                        "state",
+                        "createdAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "runs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "campaignId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                          },
+                          "runNumber": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "draft",
+                              "scheduled",
+                              "running",
+                              "paused",
+                              "done"
+                            ]
+                          },
+                          "startsAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time"
+                          },
+                          "endsAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time"
+                          },
+                          "total": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "answered": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "campaignId",
+                          "runNumber",
+                          "status",
+                          "startsAt",
+                          "endsAt",
+                          "total",
+                          "answered"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "series",
+                    "runs"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold campaigns:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "campaigns.runAgain",
+        "tags": [
+          "campaigns"
+        ],
+        "summary": "Run this campaign again on a rhythm",
+        "description": "Turns the campaign into a series' template. From `anchorAt`, every `every`, the sweeper creates a run — an ordinary campaign copying the template's words, settings and list, scheduled to start at that beat and stop `runFor` later — and starts it like any scheduled campaign. A person a previous run suppressed is not copied. Edits to the template land on the next run. The template must have a purpose, since a run without one could not open. 409 if the campaign is already a series' template or is itself a run.",
+        "x-ansa-capability": "campaigns:write",
+        "parameters": [
+          {
+            "name": "campaignId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "every": {
+                    "type": "string",
+                    "enum": [
+                      "week",
+                      "two_weeks",
+                      "month",
+                      "quarter"
+                    ]
+                  },
+                  "runFor": {
+                    "type": "string",
+                    "enum": [
+                      "day",
+                      "three_days",
+                      "week",
+                      "two_weeks"
+                    ]
+                  },
+                  "anchorAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "every",
+                  "runFor",
+                  "anchorAt"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "templateId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "every": {
+                      "type": "string",
+                      "enum": [
+                        "week",
+                        "two_weeks",
+                        "month",
+                        "quarter"
+                      ]
+                    },
+                    "runFor": {
+                      "type": "string",
+                      "enum": [
+                        "day",
+                        "three_days",
+                        "week",
+                        "two_weeks"
+                      ]
+                    },
+                    "anchorAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "nextRunAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "runsCreated": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "paused",
+                        "ended"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "templateId",
+                    "name",
+                    "every",
+                    "runFor",
+                    "anchorAt",
+                    "nextRunAt",
+                    "runsCreated",
+                    "state",
+                    "createdAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold campaigns:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "campaigns.editSeries",
+        "tags": [
+          "campaigns"
+        ],
+        "summary": "Change a series' rhythm, or pause, resume or end it",
+        "description": "Any field may be omitted and is left alone. Pausing creates no further runs; a run already created carries on. Resuming lands on the next beat still ahead rather than firing every one missed while paused. Ending is final. The campaign may be the template or any of its runs.",
+        "x-ansa-capability": "campaigns:write",
+        "parameters": [
+          {
+            "name": "campaignId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "every": {
+                    "type": "string",
+                    "enum": [
+                      "week",
+                      "two_weeks",
+                      "month",
+                      "quarter"
+                    ]
+                  },
+                  "runFor": {
+                    "type": "string",
+                    "enum": [
+                      "day",
+                      "three_days",
+                      "week",
+                      "two_weeks"
+                    ]
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "active",
+                      "paused",
+                      "ended"
+                    ]
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "templateId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "every": {
+                      "type": "string",
+                      "enum": [
+                        "week",
+                        "two_weeks",
+                        "month",
+                        "quarter"
+                      ]
+                    },
+                    "runFor": {
+                      "type": "string",
+                      "enum": [
+                        "day",
+                        "three_days",
+                        "week",
+                        "two_weeks"
+                      ]
+                    },
+                    "anchorAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "nextRunAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "runsCreated": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "paused",
+                        "ended"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "templateId",
+                    "name",
+                    "every",
+                    "runFor",
+                    "anchorAt",
+                    "nextRunAt",
+                    "runsCreated",
+                    "state",
+                    "createdAt"
                   ],
                   "additionalProperties": false
                 }
@@ -17944,6 +18699,21 @@
                       "minimum": 1,
                       "maximum": 1000
                     },
+                    "seriesId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "runNumber": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 1
+                    },
                     "briefEditable": {
                       "type": "boolean"
                     },
@@ -18012,6 +18782,8 @@
                     "retryAfterMinutes",
                     "maxConcurrentCalls",
                     "maxCallsPerHour",
+                    "seriesId",
+                    "runNumber",
                     "briefEditable",
                     "startsAt",
                     "endsAt",

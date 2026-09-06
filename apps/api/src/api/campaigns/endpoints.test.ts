@@ -534,6 +534,60 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("the campaign en
       expect((none.body["items"] as unknown[]).length).toBe(0);
     });
 
+    it("runs a campaign again on a rhythm, once, and lists the runs", async () => {
+      /* The series over HTTP. What the sweeper does with it is `series.test.ts` in
+         @ansa/db; this is the door: a template needs a purpose, one series per template, a
+         run cannot itself become a series, and pause/resume/end move the state. */
+      const bare = await call("POST", "/api/v1/campaigns", { name: "No reason", agentId: organizationId });
+      // Whole seconds, as the timestamptz round-trip elsewhere in this file.
+      const anchorAt = new Date(Math.floor((Date.now() + 3_600_000) / 1000) * 1000).toISOString();
+      const refused = await call("POST", `/api/v1/campaigns/${bare.body["id"]}/series`, {
+        every: "month",
+        runFor: "week",
+        anchorAt,
+      });
+      expect(refused.status).toBe(422);
+
+      const created = await call("POST", `/api/v1/campaigns/${fresh}/series`, {
+        every: "month",
+        runFor: "week",
+        anchorAt,
+      });
+      expect(created.status, JSON.stringify(created.body)).toBe(201);
+      expect(created.body["every"]).toBe("month");
+      expect(created.body["runFor"]).toBe("week");
+      expect(created.body["state"]).toBe("active");
+      expect(created.body["nextRunAt"]).toBe(anchorAt);
+      // The name came from the campaign, since none was sent.
+      const template = await call("GET", `/api/v1/campaigns/${fresh}`);
+      expect(created.body["name"]).toBe(template.body["name"]);
+
+      const twice = await call("POST", `/api/v1/campaigns/${fresh}/series`, {
+        every: "week",
+        runFor: "day",
+        anchorAt,
+      });
+      expect(twice.status).toBe(409);
+
+      const read = await call("GET", `/api/v1/campaigns/${fresh}/series`);
+      expect(read.status, JSON.stringify(read.body)).toBe(200);
+      expect((read.body["series"] as Record<string, unknown>)["id"]).toBe(created.body["id"]);
+      expect(read.body["runs"]).toEqual([]);
+
+      const paused = await call("PATCH", `/api/v1/campaigns/${fresh}/series`, { state: "paused" });
+      expect(paused.status, JSON.stringify(paused.body)).toBe(200);
+      expect(paused.body["state"]).toBe("paused");
+
+      const ended = await call("PATCH", `/api/v1/campaigns/${fresh}/series`, { state: "ended" });
+      expect(ended.body["state"]).toBe("ended");
+      const stuck = await call("PATCH", `/api/v1/campaigns/${fresh}/series`, { state: "active" });
+      expect(stuck.status).toBe(409);
+
+      // A one-off has no series to read.
+      const none = await call("GET", `/api/v1/campaigns/${bare.body["id"]}/series`);
+      expect(none.status).toBe(404);
+    });
+
     it("duplicates the words and none of the people", async () => {
       const reply = await call("POST", `/api/v1/campaigns/${campaignId}/duplicate`, {
         name: "Renewals, again",

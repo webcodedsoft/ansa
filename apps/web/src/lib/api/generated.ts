@@ -1470,6 +1470,8 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly retryAfterMinutes: number;
         readonly maxConcurrentCalls: number | null;
         readonly maxCallsPerHour: number | null;
+        readonly seriesId: string | null;
+        readonly runNumber: number | null;
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
         readonly endsAt: string | null;
@@ -1558,6 +1560,8 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly retryAfterMinutes: number;
         readonly maxConcurrentCalls: number | null;
         readonly maxCallsPerHour: number | null;
+        readonly seriesId: string | null;
+        readonly runNumber: number | null;
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
         readonly endsAt: string | null;
@@ -1634,6 +1638,8 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly retryAfterMinutes: number;
         readonly maxConcurrentCalls: number | null;
         readonly maxCallsPerHour: number | null;
+        readonly seriesId: string | null;
+        readonly runNumber: number | null;
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
         readonly endsAt: string | null;
@@ -1723,6 +1729,8 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly retryAfterMinutes: number;
         readonly maxConcurrentCalls: number | null;
         readonly maxCallsPerHour: number | null;
+        readonly seriesId: string | null;
+        readonly runNumber: number | null;
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
         readonly endsAt: string | null;
@@ -1860,6 +1868,8 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly retryAfterMinutes: number;
         readonly maxConcurrentCalls: number | null;
         readonly maxCallsPerHour: number | null;
+        readonly seriesId: string | null;
+        readonly runNumber: number | null;
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
         readonly endsAt: string | null;
@@ -1994,6 +2004,8 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly retryAfterMinutes: number;
         readonly maxConcurrentCalls: number | null;
         readonly maxCallsPerHour: number | null;
+        readonly seriesId: string | null;
+        readonly runNumber: number | null;
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
         readonly endsAt: string | null;
@@ -2045,6 +2057,95 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       send<{
         readonly reset: number;
       }>(options, "POST", `/api/v1/campaigns/${encodeURIComponent(input.path.campaignId)}/retry`, input),
+
+    /**
+     * The series a campaign belongs to, and its runs
+     * Found from either end: the campaign is the series' template, or one of the runs the series created. Each run is an ordinary campaign, listed newest first. 404 for a one-off.
+     */
+    seriesOf: (input: {
+        readonly path: {
+          readonly campaignId: string;
+        };
+      }) =>
+      send<{
+        readonly series: {
+        readonly id: string;
+        readonly templateId: string;
+        readonly name: string;
+        readonly every: "week" | "two_weeks" | "month" | "quarter";
+        readonly runFor: "day" | "three_days" | "week" | "two_weeks";
+        readonly anchorAt: string;
+        readonly nextRunAt: string;
+        readonly runsCreated: number;
+        readonly state: "active" | "paused" | "ended";
+        readonly createdAt: string;
+      };
+        readonly runs: readonly ({
+        readonly campaignId: string;
+        readonly runNumber: number;
+        readonly status: "draft" | "scheduled" | "running" | "paused" | "done";
+        readonly startsAt: string | null;
+        readonly endsAt: string | null;
+        readonly total: number;
+        readonly answered: number;
+      })[];
+      }>(options, "GET", `/api/v1/campaigns/${encodeURIComponent(input.path.campaignId)}/series`, input),
+
+    /**
+     * Run this campaign again on a rhythm
+     * Turns the campaign into a series' template. From `anchorAt`, every `every`, the sweeper creates a run — an ordinary campaign copying the template's words, settings and list, scheduled to start at that beat and stop `runFor` later — and starts it like any scheduled campaign. A person a previous run suppressed is not copied. Edits to the template land on the next run. The template must have a purpose, since a run without one could not open. 409 if the campaign is already a series' template or is itself a run.
+     */
+    runAgain: (input: {
+        readonly path: {
+          readonly campaignId: string;
+        };
+        readonly body: {
+          readonly name?: string;
+          readonly every: "week" | "two_weeks" | "month" | "quarter";
+          readonly runFor: "day" | "three_days" | "week" | "two_weeks";
+          readonly anchorAt: string;
+        };
+      }) =>
+      send<{
+        readonly id: string;
+        readonly templateId: string;
+        readonly name: string;
+        readonly every: "week" | "two_weeks" | "month" | "quarter";
+        readonly runFor: "day" | "three_days" | "week" | "two_weeks";
+        readonly anchorAt: string;
+        readonly nextRunAt: string;
+        readonly runsCreated: number;
+        readonly state: "active" | "paused" | "ended";
+        readonly createdAt: string;
+      }>(options, "POST", `/api/v1/campaigns/${encodeURIComponent(input.path.campaignId)}/series`, input),
+
+    /**
+     * Change a series' rhythm, or pause, resume or end it
+     * Any field may be omitted and is left alone. Pausing creates no further runs; a run already created carries on. Resuming lands on the next beat still ahead rather than firing every one missed while paused. Ending is final. The campaign may be the template or any of its runs.
+     */
+    editSeries: (input: {
+        readonly path: {
+          readonly campaignId: string;
+        };
+        readonly body: {
+          readonly name?: string;
+          readonly every?: "week" | "two_weeks" | "month" | "quarter";
+          readonly runFor?: "day" | "three_days" | "week" | "two_weeks";
+          readonly state?: "active" | "paused" | "ended";
+        };
+      }) =>
+      send<{
+        readonly id: string;
+        readonly templateId: string;
+        readonly name: string;
+        readonly every: "week" | "two_weeks" | "month" | "quarter";
+        readonly runFor: "day" | "three_days" | "week" | "two_weeks";
+        readonly anchorAt: string;
+        readonly nextRunAt: string;
+        readonly runsCreated: number;
+        readonly state: "active" | "paused" | "ended";
+        readonly createdAt: string;
+      }>(options, "PATCH", `/api/v1/campaigns/${encodeURIComponent(input.path.campaignId)}/series`, input),
 
     /**
      * Move a campaign between states
@@ -2115,6 +2216,8 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly retryAfterMinutes: number;
         readonly maxConcurrentCalls: number | null;
         readonly maxCallsPerHour: number | null;
+        readonly seriesId: string | null;
+        readonly runNumber: number | null;
         readonly briefEditable: boolean;
         readonly startsAt: string | null;
         readonly endsAt: string | null;

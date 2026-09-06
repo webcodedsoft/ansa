@@ -1,4 +1,5 @@
 import {
+  createDueRuns,
   finishExpiredCampaigns,
   organizationsWithDueCalls,
   startDueCampaigns,
@@ -80,6 +81,21 @@ export class OutboundDialer implements OnApplicationBootstrap, OnApplicationShut
          because a campaign failing to start is not a reason to stop dialling every campaign
          that already has. */
       try {
+        /* First of all: a series whose beat has come gets its run created here, as a
+           scheduled campaign with its start set to that beat — so `startDueCampaigns` on
+           the very same tick starts it, and a rent reminder due at eight rings at eight
+           rather than eight plus an interval. Idempotent in the database: two sweepers
+           cannot create the same run, the run number is unique per series. */
+        const created = await createDueRuns(dataSource);
+        for (const one of created) {
+          this.log.info("series reached its next beat and created a run", {
+            campaignId: one.campaignId,
+            seriesId: one.seriesId,
+            runNumber: one.runNumber,
+            organizationId: one.organizationId,
+          });
+        }
+
         const started = await startDueCampaigns(dataSource);
         for (const one of started) {
           this.log.info("campaign reached its start time and is now running", {

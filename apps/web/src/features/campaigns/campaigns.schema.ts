@@ -1,4 +1,4 @@
-import { CAMPAIGN_LIMITS, VOICEMAIL_MODES } from "@ansa/shared/campaign";
+import { CAMPAIGN_LIMITS, SERIES_EVERY, SERIES_RUN_FOR, VOICEMAIL_MODES } from "@ansa/shared/campaign";
 import { z } from "zod";
 
 /**
@@ -115,3 +115,17 @@ export const paceSchema = z.object({
   ),
 });
 export type PaceInput = z.infer<typeof paceSchema>;
+
+/** Run a campaign again: a rhythm, a run length, and when the first run starts. */
+export const runAgainSchema = z.object({
+  campaignId: z.uuid(),
+  every: z.enum(Object.keys(SERIES_EVERY) as [keyof typeof SERIES_EVERY, ...(keyof typeof SERIES_EVERY)[]]),
+  runFor: z.enum(Object.keys(SERIES_RUN_FOR) as [keyof typeof SERIES_RUN_FOR, ...(keyof typeof SERIES_RUN_FOR)[]]),
+  anchorAt: z.string().refine((value) => !Number.isNaN(new Date(value).getTime()), "That is not a time this can understand."),
+});
+export type RunAgainInput = z.infer<typeof runAgainSchema>;
+
+export const seriesStateSchema = z.object({
+  campaignId: z.uuid(),
+  state: z.enum(["active", "paused", "ended"]),
+});

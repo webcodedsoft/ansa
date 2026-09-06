@@ -5180,11 +5180,24 @@ rather than landed as inventory — the wave that needs them adds them wired.
       Schedule tab under the hours. Empty box is no cap, and the schema turns "" into null
       rather than 0 — tested, because 0 is a cap the API refuses.
 
-- [ ] **Recurring campaigns — sketched, not built.** `docs/CAMPAIGN_RECURRENCE.md`. A
-      campaign runs once; the catalogue is mostly things that repeat. The sketch picks the
-      shape (a series whose runs are ordinary campaigns created by the sweeper, copying the
-      template's list; not a rule engine over contacts) and sizes it at about pace plus the
-      window editor together. Waiting on a decision to build it.
+- [x] **Recurring campaigns, on the dialler's own clock** (2026-09-06)
+      Built as sketched in `docs/CAMPAIGN_RECURRENCE.md`. Migration 0074: `campaign_series`
+      (a rhythm as an interval, an anchor, a run length, a template campaign, next_run_at
+      materialised, paused/ended) and `campaigns.series_id/run_number`, unique per series.
+      `app.create_due_runs()` — security definer, `for update skip locked`, idempotent by that
+      key — runs first on every sweep: a series whose beat has come gets a run created as a
+      *scheduled* campaign copying the template's words, settings and list (minus anybody a
+      previous run suppressed), with starts_at at the beat and ends_at a run length later, so
+      `start_due_campaigns` on the same tick starts it. Nothing downstream learns the word
+      series. Resuming a paused series lands on the next beat still ahead, not every beat
+      missed. One series per template; a run cannot become a series; a template needs a
+      purpose. Proven against the real database in `series.test.ts` and over HTTP in
+      `endpoints.test.ts`. Console: "Run it again" on the Schedule tab — how often, how long
+      each run is open, first run — all as options; then the rhythm, the next run, the runs so
+      far as links, and pause/resume/end. A run's header says which run it is and links back.
+      Not done: grouping runs under their series on the campaigns list. Rule 1 for this slice:
+      a series creates a run on its own and that run rings a handset with nobody touching the
+      console — the same handset debt as every campaign slice.
 
 - [x] **The hours a campaign may ring can be changed on its page** (2026-09-06)
       "Hours it may ring" was a drawing with a caption; the only way to narrow a campaign's

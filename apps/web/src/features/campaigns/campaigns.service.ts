@@ -1,3 +1,4 @@
+import type { SeriesEvery, SeriesRunFor } from "@ansa/shared/campaign";
 import { api } from "@/lib/api/server";
 
 /**
@@ -44,6 +45,31 @@ export const editCampaign = async (
     readonly maxCallsPerHour?: number | null;
   },
 ) => (await api()).campaigns.edit({ path: { campaignId }, body });
+
+/** The series a campaign belongs to and its runs, or a 404 for a one-off. */
+export const readSeries = async (campaignId: string) =>
+  (await api()).campaigns.seriesOf({ path: { campaignId } });
+
+export const runAgain = async (
+  campaignId: string,
+  body: {
+    readonly name?: string;
+    readonly every: SeriesEvery;
+    readonly runFor: SeriesRunFor;
+    /** ISO-8601: when the first run starts. */
+    readonly anchorAt: string;
+  },
+) => (await api()).campaigns.runAgain({ path: { campaignId }, body });
+
+export const editSeries = async (
+  campaignId: string,
+  body: {
+    readonly name?: string;
+    readonly every?: SeriesEvery;
+    readonly runFor?: SeriesRunFor;
+    readonly state?: "active" | "paused" | "ended";
+  },
+) => (await api()).campaigns.editSeries({ path: { campaignId }, body });
 
 /** How a campaign turned out: what the dialler did, and what the calls came to. */
 export const readCampaignBreakdown = async (campaignId: string) =>

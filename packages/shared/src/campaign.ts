@@ -169,3 +169,33 @@ export const campaignLayer = (call: CampaignCall): string => {
 
   return lines.join("\n");
 };
+
+/**
+ * How often a series runs, and how long each run is open, as the choices somebody means.
+ *
+ * Keys are what the API speaks; values are the Postgres interval each one is stored as, and
+ * `text` is how Postgres reads that interval back, which is how a stored row finds its key.
+ * An interval rather than a cron: "1 month" from the 31st lands where Postgres puts it, and
+ * nobody on the phone has ever asked for the third Tuesday.
+ */
+export const SERIES_EVERY = {
+  week: { interval: "7 days", text: "7 days", label: "Every week" },
+  two_weeks: { interval: "14 days", text: "14 days", label: "Every two weeks" },
+  month: { interval: "1 month", text: "1 mon", label: "Every month" },
+  quarter: { interval: "3 months", text: "3 mons", label: "Every three months" },
+} as const;
+export type SeriesEvery = keyof typeof SERIES_EVERY;
+
+export const SERIES_RUN_FOR = {
+  day: { interval: "1 day", text: "1 day", label: "One day" },
+  three_days: { interval: "3 days", text: "3 days", label: "Three days" },
+  week: { interval: "7 days", text: "7 days", label: "A week" },
+  two_weeks: { interval: "14 days", text: "14 days", label: "Two weeks" },
+} as const;
+export type SeriesRunFor = keyof typeof SERIES_RUN_FOR;
+
+/** The key whose stored interval reads back as this text, or null for an interval nothing here made. */
+const keyByText = <K extends string>(table: Record<K, { readonly text: string }>, text: string): K | null =>
+  (Object.keys(table) as K[]).find((key) => table[key].text === text) ?? null;
+export const seriesEveryFromText = (text: string): SeriesEvery | null => keyByText(SERIES_EVERY, text);
+export const seriesRunForFromText = (text: string): SeriesRunFor | null => keyByText(SERIES_RUN_FOR, text);

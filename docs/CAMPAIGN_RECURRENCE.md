@@ -1,8 +1,9 @@
 # Recurring campaigns — a sketch
 
-Status: **proposal, not built.** Written 2026-09-06 after pace shipped. The question this
-answers is "should a campaign be able to run again on its own", and the answer is yes, with
-one shape rather than two.
+Status: **built 2026-09-06**, as sketched below (migration 0074, `packages/db/src/series.ts`,
+three endpoints under `/campaigns/:id/series`, `create_due_runs()` on the dialler's sweep,
+and the "Run it again" card on the Schedule tab). Not yet done from the sketch: grouping runs
+under their series on the campaigns list. The sketch is kept as the reasoning.
 
 ## What is missing
 

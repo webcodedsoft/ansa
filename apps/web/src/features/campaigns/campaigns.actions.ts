@@ -14,6 +14,8 @@ import {
   createCampaignSchema,
   enqueueSchema,
   paceSchema,
+  runAgainSchema,
+  seriesStateSchema,
   setStatusSchema,
   type CreateCampaignInput,
   campaignBriefSchema,
@@ -22,6 +24,8 @@ import {
   createCampaign,
   duplicateCampaign,
   editCampaign,
+  editSeries,
+  runAgain,
   enqueueContacts,
   retryUnreached,
   setCampaignStatus,
@@ -469,6 +473,47 @@ export const setPaceAction = async (_previous: PaceState, form: FormData): Promi
     await editCampaign(campaignId, { maxConcurrentCalls, maxCallsPerHour });
     revalidatePath(`/campaigns/${campaignId}`);
     return succeededForm({ maxConcurrentCalls, maxCallsPerHour });
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+};
+
+/**
+ * Run a campaign again on a rhythm, and change the series afterwards.
+ *
+ * The rhythm and the run length are choices from the shared vocabulary, never free text; the
+ * first run's start comes from the same presets the schedule card offers. The API refuses a
+ * template without a purpose and a second series on one template, and its wording says which.
+ */
+export type SeriesState = FormState<{ readonly state: string; readonly nextRunAt: string }>;
+
+export const runAgainAction = async (_previous: SeriesState, form: FormData): Promise<SeriesState> => {
+  const parsed = runAgainSchema.safeParse({
+    campaignId: form.get("campaignId"),
+    every: form.get("every"),
+    runFor: form.get("runFor"),
+    anchorAt: form.get("anchorAt"),
+  });
+  if (!parsed.success) return invalidForm(parsed.error, "Choose a rhythm and a first run.");
+  const { campaignId, ...body } = parsed.data;
+  try {
+    const series = await runAgain(campaignId, body);
+    revalidatePath(`/campaigns/${campaignId}`);
+    revalidatePath("/campaigns");
+    return succeededForm({ state: series.state, nextRunAt: series.nextRunAt });
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+};
+
+export const setSeriesStateAction = async (_previous: SeriesState, form: FormData): Promise<SeriesState> => {
+  const parsed = seriesStateSchema.safeParse({ campaignId: form.get("campaignId"), state: form.get("state") });
+  if (!parsed.success) return invalidForm(parsed.error);
+  try {
+    const series = await editSeries(parsed.data.campaignId, { state: parsed.data.state });
+    revalidatePath(`/campaigns/${parsed.data.campaignId}`);
+    revalidatePath("/campaigns");
+    return succeededForm({ state: series.state, nextRunAt: series.nextRunAt });
   } catch (error) {
     return failedForm(failureMessage(error));
   }
