@@ -4866,8 +4866,23 @@ rather than landed as inventory — the wave that needs them adds them wired.
       wide blocks do not read as a day. The fix was not the maths but an axis: 00/12/24 down
       the side and a noon line. Checking the numbers proved the bug was in the presentation.
 
-      Not done: the canvas column is still narrow inside a ~1010px content width, since the
-      builder is three columns. Same as the agent workspace, and not made worse here.
+      **And the width, which closed the one thing left open.** The shell has two widths —
+      1080px by default, 1600px when a page claims it — and only the agent workspace claimed
+      it, on the argument that a drawing inside 1080 pixels is a drawing nobody can see. The
+      campaign page has the same canvas and the same problem, so it takes the same width.
+      Measured both at exactly 1600px afterwards rather than trusting the look; the first
+      reading said 1080 because it was taken mid-hydration, before the client effect ran.
+
+      `WidePage` exists because `useWidePage` is a hook and this page is server-rendered,
+      where the agent workspace could call it inline. The claim is for the whole page rather
+      than the Conversation tab alone: reflowing the shell under somebody as they switch tabs
+      is worse than the width going unused on two of three.
+
+      Taking width means spending it. At 1600px the state card left about six hundred pixels
+      of nothing beside the quote, so the reason and the numbers are two columns there now.
+
+      The list and the create page are unchanged, matching the agent side exactly: `/agents`
+      and `/agents/new` are not wide either. A form wants a reading measure, not a canvas.
 
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The queue drains, the consent gate is in the path, and a call can now offer and take a time,

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { WidePage } from "@/components/shell/wide-page";
 import { buttonClass, Card, PageHeader, Pagination, Tabs } from "@/components/ui";
 import { currentPrincipal } from "@/features/auth/auth.service";
 import { listAgents } from "@/features/agents/agents.service";
@@ -124,6 +125,13 @@ const CampaignPage = async ({
 
   return (
     <>
+      {/* The same 1600px the agent workspace takes, and for the same reason: the Conversation
+          tab is a drawing surface, and a drawing inside 1080 pixels is a drawing nobody can
+          see. Claimed for the whole page rather than for that tab alone — reflowing the shell
+          under somebody as they switch tabs is worse than the width being unused on two of
+          the three. */}
+      <WidePage />
+
       <PageHeader
         eyebrow="Outbound"
         title={campaign.name}
@@ -150,33 +158,39 @@ const CampaignPage = async ({
             {canWrite && <AddContactsButton campaignId={campaign.id} contacts={contacts} />}
           </div>
 
-          <div className="mt-5 border-l-2 border-[var(--accent)] pl-3.5">
-            <div className="mb-1.5 text-[11px] tracking-[0.06em] text-[var(--ink-3)] uppercase">
-              Why it rings
+          {/* Two columns on a wide shell: the reason on the left, the numbers on the right.
+              At 1600px a single column left roughly six hundred pixels of nothing beside the
+              quote, which is the cost of taking the width without spending it. */}
+          <div className="mt-5 grid gap-6 lg:grid-cols-2">
+            <div className="border-l-2 border-[var(--accent)] pl-3.5">
+              <div className="mb-1.5 text-[11px] tracking-[0.06em] text-[var(--ink-3)] uppercase">
+                Why it rings
+              </div>
+              {campaign.purpose === null || campaign.purpose.trim() === "" ? (
+                <p className="text-[14px] text-[var(--ink-3)]">
+                  No reason written yet. Until there is one the agent composes its own, which is
+                  the thing an unexpected call can least afford. It is the first field on the
+                  Brief tab.
+                </p>
+              ) : (
+                <Purpose text={campaign.purpose} />
+              )}
             </div>
-            {campaign.purpose === null || campaign.purpose.trim() === "" ? (
-              <p className="text-[14px] text-[var(--ink-3)]">
-                No reason written yet. Until there is one the agent composes its own, which is
-                the thing an unexpected call can least afford. It is the first field on the
-                Brief tab.
-              </p>
-            ) : (
-              <Purpose text={campaign.purpose} />
-            )}
+
+            <div>
+              <CampaignProgress
+                pending={campaign.pending}
+                total={campaign.total}
+                empty="Nobody on it yet. Add contacts and each one becomes a pending call."
+              />
+              <div className="mt-4 flex gap-8">
+                <Figure label="Pending" value={campaign.pending} />
+                <Figure label="Answered" value={campaign.answered} />
+                <Figure label="On the campaign" value={campaign.total} />
+              </div>
+            </div>
           </div>
 
-          <div className="mt-6">
-            <CampaignProgress
-              pending={campaign.pending}
-              total={campaign.total}
-              empty="Nobody on it yet. Add contacts and each one becomes a pending call."
-            />
-            <div className="mt-4 flex gap-8">
-              <Figure label="Pending" value={campaign.pending} />
-              <Figure label="Answered" value={campaign.answered} />
-              <Figure label="On the campaign" value={campaign.total} />
-            </div>
-          </div>
         </Card>
 
         <Card title="When it may ring">
