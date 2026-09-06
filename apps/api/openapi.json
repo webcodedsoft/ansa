@@ -11689,6 +11689,45 @@
                         "additionalProperties": false
                       }
                     },
+                    "summary": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "summary": {
+                          "type": "string"
+                        },
+                        "cites": {
+                          "type": "array",
+                          "items": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "maxLength": 19
+                            }
+                          }
+                        },
+                        "model": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 64
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "summary",
+                        "cites",
+                        "model",
+                        "createdAt"
+                      ],
+                      "additionalProperties": false
+                    },
                     "events": {
                       "type": "array",
                       "items": {
@@ -11812,6 +11851,7 @@
                     "responseP50Ms",
                     "turns",
                     "transcripts",
+                    "summary",
                     "events"
                   ],
                   "additionalProperties": false

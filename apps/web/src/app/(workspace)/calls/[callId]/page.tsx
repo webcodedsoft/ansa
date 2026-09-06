@@ -6,6 +6,7 @@ import { findCall } from "@/features/calls/calls.service";
 import { CallFlags } from "@/features/calls/components/call-flags";
 import { CallRecording } from "@/features/calls/components/call-recording";
 import { CallStats, computeCallStats } from "@/features/calls/components/call-stats";
+import { CallSummary } from "@/features/calls/components/call-summary";
 import { linesOf } from "@/features/calls/call-conversation";
 import { CallTimeline, EventTable } from "@/features/calls/components/call-timeline";
 import { CollectedValues } from "@/features/calls/components/collected-values";
@@ -74,6 +75,9 @@ const CallDetailPage = async ({
         </Card>
 
         <div className="flex flex-col gap-3.5">
+          {/* First in the rail: it is the answer, and the conversation beside it is the
+              evidence. Its citations scroll to the line each sentence came from. */}
+          <CallSummary summary={call.summary} />
           <CollectedValues call={call} />
           <CallStats stats={stats} />
         </div>

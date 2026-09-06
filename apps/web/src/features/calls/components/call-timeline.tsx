@@ -42,8 +42,11 @@ export const CallTimeline = ({
         ) : (
           <div
             key={line.key}
+            /* What a summary's citation scrolls to. A React key is not a DOM id, and the
+               difference between them is a click that silently does nothing. */
+            id={line.transcript === null ? undefined : `line-${line.transcript.id}`}
             className={cn(
-              "flex items-end gap-2",
+              "flex scroll-mt-24 items-end gap-2",
               line.speaker === "agent" ? "flex-row-reverse" : "flex-row",
             )}
           >

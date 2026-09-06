@@ -5210,8 +5210,19 @@ rather than landed as inventory — the wave that needs them adds them wired.
       **Cost is not accounted for yet**, per the decision to ship the summary first. The adapter
       still reports no token usage, so per-call spend is invisible. That is the next thing here.
 
-      Left to do: surface it on the call page with the citations clickable, and prove it — no
-      summary has been written, because no call has ended since the sweeper existed.
+      **Surfaced.** `GET /calls/:callId` returns it, read in the same transaction as the
+      transcript so a citation cannot point at a line the same response does not carry. The
+      card leads the rail, because the summary is the answer and the conversation beside it is
+      the evidence; clicking a citation scrolls to the line it came from.
+
+      One bug caught before it shipped: the chat bubbles had React keys and no DOM ids, so
+      every citation would have clicked into nothing. A key is not an id.
+
+      A summary written without a model says so in its own words — the two read differently,
+      and a reader who cannot tell which they have will trust the wrong one.
+
+      Left to do: token accounting, and proof. No summary has been written, because no call has
+      ended since the sweeper existed.
 
 - [~] **Slice 5a — recording becomes a choice, with a disclosure** (2026-09-06)
       Chosen posture: both legs, per organisation, with disclosure. This is the consent half;

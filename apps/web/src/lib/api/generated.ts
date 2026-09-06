@@ -1196,6 +1196,12 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly offsetMs: number;
         readonly provider: string;
       })[];
+        readonly summary: {
+        readonly summary: string;
+        readonly cites: readonly (readonly (string)[])[];
+        readonly model: string | null;
+        readonly createdAt: string;
+      } | null;
         readonly events: readonly ({
         readonly kind: string;
         readonly offsetMs: number | null;

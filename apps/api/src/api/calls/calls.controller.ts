@@ -6,6 +6,7 @@ import {
   listCallPage,
   readCallCaptures,
   readCapturedRows,
+  readCallSummary,
   recordAudioAccess,
   loadCallDetail,
   readCallRecords,
@@ -168,6 +169,21 @@ const transcript = object({
   provider: text({ maxLength: 64 }),
 });
 
+/**
+ * What the call came to, and the lines each sentence rests on.
+ *
+ * `cites` is what makes it checkable: the page highlights the words a claim came from, so a
+ * reader disagrees with the evidence rather than with the prose. `model` is null when the
+ * model was unavailable and the deterministic reducer wrote it — worth showing, because the
+ * two read differently and a reader should know which one they have.
+ */
+const callSummary = object({
+  summary: text(),
+  cites: list(list(text({ maxLength: 19 }))),
+  model: nullable(text({ maxLength: 64 })),
+  createdAt: timestamp(),
+});
+
 const recordingLink = object({
   /** Absolute, because an `<audio src>` in the console is not on the API's origin. */
   url: text({ maxLength: 512 }),
@@ -287,6 +303,8 @@ const callDetail = object({
   responseP50Ms: nullable(integer({ minimum: 0 })),
   turns: list(turn),
   transcripts: list(transcript),
+  /** Null until the sweeper has written one, which is a minute or two after the call ends. */
+  summary: nullable(callSummary),
   events: list(callEvent),
 });
 
@@ -911,10 +929,13 @@ export class CallsController {
     response: callDetail,
   })
   async detail(@FromPath() path: Infer<typeof callPath>): Promise<Infer<typeof callDetail>> {
-    const { detail, captured } = await this.db.tx(async (scope) => ({
+    const { detail, captured, summary } = await this.db.tx(async (scope) => ({
       detail: await loadCallDetail(scope, path.callId),
-      // One transaction, so the call and its values cannot come from different moments.
+      // One transaction, so the call, its values and its summary cannot come from different
+      // moments — a summary citing a transcript line the same response does not carry would
+      // be a citation that cannot be clicked.
       captured: await readCallCaptures(scope, path.callId),
+      summary: await readCallSummary(scope, path.callId),
     }));
     // 404 rather than 403 for another organisation's call, as everywhere else: under RLS
     // "not yours" and "not there" are one query result, and answering differently would
@@ -923,6 +944,15 @@ export class CallsController {
     return {
       ...detail,
       captured: captured.map((c) => ({ ...c, confirmedAt: c.confirmedAt.toISOString() })),
+      summary:
+        summary === null
+          ? null
+          : {
+              summary: summary.summary,
+              cites: summary.cites.map((one) => [...one]),
+              model: summary.model,
+              createdAt: summary.createdAt.toISOString(),
+            },
       transcripts: detail.transcripts.map((t) => ({
         ...t,
         // Postgres `real`, so it arrives as a float. Rendered rather than rounded for the
