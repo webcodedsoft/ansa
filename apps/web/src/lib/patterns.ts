@@ -1,3 +1,4 @@
+import { E164_PATTERN } from "@ansa/shared";
 import { z } from "zod";
 
 /**
@@ -30,8 +31,11 @@ export const emailAddress = z
  * A plus, a non-zero leading digit, then seven to fifteen digits in total. Deliberately not
  * Nigeria-specific: the escalation destination and the test-call target are ordinary
  * international numbers and the product is not restricted to one country's format.
+ *
+ * Compiled from `@ansa/shared` rather than respelled, so the console cannot come to disagree
+ * with the API schema, the CHECK constraint or the converter the call path runs.
  */
-export const E164 = /^\+[1-9][0-9]{6,14}$/;
+export const E164 = new RegExp(E164_PATTERN);
 
 /** What to tell somebody who typed a number in the wrong shape. */
 export const E164_MESSAGE = "Use the full international form, starting with a plus.";

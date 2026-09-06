@@ -5180,6 +5180,28 @@ rather than landed as inventory — the wave that needs them adds them wired.
       Schedule tab under the hours. Empty box is no cap, and the schema turns "" into null
       rather than 0 — tested, because 0 is a cap the API refuses.
 
+- [x] **Slice 1 — one number, one person** (2026-09-06)
+      `packages/shared/src/phone.ts`: `E164_PATTERN`, `toE164`, `asDialled`, `sameNumber`.
+      There were five spellings of the E.164 regex and two converters running in opposite
+      directions; there is one of each now. The two *conventions* stay, because both are
+      right — E.164 is what we store and dial, national `0803…` is what a caller says and what
+      `packages/normalizer` produces for a readback. What was missing was anything converting
+      between them, and any guard on the door a carrier's caller ID comes through.
+
+      `recordCallStarted` now writes `asDialled(caller)`, which canonicalises what it
+      recognises and keeps what it does not exactly as the carrier sent it — a caller ID is
+      evidence, and mangling an odd one would file a call under somebody who was never on it.
+      Withheld stays null.
+
+      **Prevention, not repair.** All 173 calls on record already carry E.164 (`+234…` and
+      `+1…`), so nothing needed fixing and no backfill was written. The day a carrier presents
+      `08030000001`, it resolves to the person we already know instead of minting a second.
+
+      Adopted in `contacts.controller` (its local `toE164` deleted, its skipped-row handling
+      kept and explained), `api/schemas.ts` and `apps/web/src/lib/patterns.ts`. Left alone:
+      `outbound/consent.ts`'s `NIGERIAN_NATIONAL`, which is deciding whether we know a
+      number's local time — a different job.
+
 - [~] **The contact page, rebuilt as a person rather than a call table** (2026-09-06)
       From the clickable prototype. The page was one table answering "when did they ring";
       it is now a timeline answering "what has happened", with a rail carrying what we know

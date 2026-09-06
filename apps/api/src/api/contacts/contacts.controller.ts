@@ -11,6 +11,11 @@ import {
 } from "@ansa/db";
 import { Controller, Get, Inject, NotFoundException, Patch, Post, Put, UnprocessableEntityException } from "@nestjs/common";
 
+/* One converter for the whole system, so the console, the import and the call path
+   agree about what one number is. Null is what this endpoint turns into a skipped row
+   with a count, rather than a failure somewhere downstream. */
+import { toE164 } from "@ansa/shared";
+
 import { Endpoint } from "../http/endpoint";
 import {
   PAGE_PROPS,
@@ -181,28 +186,6 @@ const importResult = object({
   /** Rows whose phone could not be read as a number, and so were left out. */
   skipped: integer({ minimum: 0 }),
 });
-
-/**
- * A number from a list turned into the one form the rest of the system dials.
- *
- * E.164 passes through. A Nigerian national number — `0` then a mobile prefix then nine
- * digits — becomes `+234…`, because there is no other country it could be and refusing it
- * would fail on the commonest input rather than an unusual one; a bare `234…` is the same
- * number missing its plus. Anything else returns null, which the import counts as skipped.
- * This is the same shape `outbound/consent.ts` recognises, kept here as a third small copy
- * rather than a shared one for the reason `schemas.ts` gives about the E.164 pattern: a
- * malformed cell becomes a skipped row with a count, not a failure somewhere downstream.
- */
-const E164 = /^\+[1-9][0-9]{6,14}$/;
-const NIGERIAN_NATIONAL = /^0[789]\d{9}$/;
-
-const toE164 = (raw: string): string | null => {
-  const trimmed = raw.replace(/[\s()-]/g, "");
-  if (E164.test(trimmed)) return trimmed;
-  if (NIGERIAN_NATIONAL.test(trimmed)) return `+234${trimmed.slice(1)}`;
-  if (/^234[789]\d{9}$/.test(trimmed)) return `+${trimmed}`;
-  return null;
-};
 
 @Controller(apiRoute("contacts"))
 export class ContactsController {

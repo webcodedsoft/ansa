@@ -1,4 +1,4 @@
-import type { OrganizationId } from "@ansa/shared";
+import { asDialled, type OrganizationId } from "@ansa/shared";
 
 import type { Db } from "./data-source";
 import { withOrganization } from "./organization-scope";
@@ -54,8 +54,10 @@ export const recordCallStarted = async (
         call.organizationId,
         call.carrierCallId,
         call.direction,
-        call.dialled,
-        call.caller,
+        /* Canonical before anything joins on it. `asDialled` keeps a shape it does not
+           recognise exactly as the carrier sent it, because a caller ID is evidence. */
+        asDialled(call.dialled) ?? call.dialled,
+        asDialled(call.caller),
         call.agentId ?? null,
         call.configVersion,
         call.consentPolicy ?? null,

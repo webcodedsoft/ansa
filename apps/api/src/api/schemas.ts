@@ -1,4 +1,5 @@
 import { MEMBER_ROLES, type MemberRole } from "@ansa/db";
+import { E164_PATTERN } from "@ansa/shared";
 
 import { choice, flag, integer, list, object, text, type Schema } from "./http/schema";
 
@@ -19,13 +20,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  */
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
-/**
- * E.164, as migration 0015's CHECK constraint spells it and as `handoff/destination.ts`
- * spells it for the environment fallback. Those two are a SQL constraint and a
- * module-private constant, so this is a third copy rather than a shared one; what it buys is
- * that a malformed number is a 422 with the field named instead of a 500 from the database.
- */
-const E164 = /^\+[1-9][0-9]{6,14}$/;
+/* E.164 comes from `@ansa/shared`, so this, migration 0015's CHECK constraint and the
+   converter the call path uses cannot drift apart. What this layer adds is the failure mode:
+   a malformed number is a 422 naming the field rather than a 500 from the database. */
+const E164 = new RegExp(E164_PATTERN);
 
 export const uuid = (): Schema<string> => text({ format: "uuid", pattern: UUID });
 
