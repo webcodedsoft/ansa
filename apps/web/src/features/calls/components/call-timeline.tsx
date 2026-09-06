@@ -1,63 +1,10 @@
-import { EmptyState, Table, Tag, Td, Th, Tr } from "@/components/ui";
+import { EmptyState, Table, Td, Th, Tr } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import { humanise, offset } from "@/lib/format";
 
-import type { CallDetail, CallEvent, CallTranscript } from "../calls.service";
+import type { CallEvent } from "../calls.service";
+import { type TimelineLine } from "../call-conversation";
 import { TranscriptLine } from "./transcript-line";
-
-/**
- * One line of the call, from either side.
- *
- * Turns and transcripts arrive as separate arrays because they come from separate places —
- * a turn is what the orchestrator did, a transcript is what a listen provider heard, and the
- * two are correlated by offset rather than by identity. Merging them here, rather than
- * pretending they were ever one stream, is the same decision the orchestrator makes.
- */
-export interface TimelineLine {
-  readonly key: string;
-  readonly at: number;
-  readonly speaker: string;
-  readonly transcript: CallTranscript | null;
-  readonly bargedInAtMs: number | null;
-}
-
-export const linesOf = (call: CallDetail): readonly TimelineLine[] => {
-  /* Both sides come from `transcripts` now (0076). The agent's words used to exist only as a
-     `call_events` payload the API strips, so this merged caller transcripts with bare agent
-     *turns* and rendered the word "spoke" where a reply belonged. */
-  const spoken: readonly TimelineLine[] = call.transcripts.map((transcript) => ({
-    key: `t:${transcript.id}`,
-    at: transcript.offsetMs,
-    speaker: transcript.speaker,
-    transcript,
-    /* An agent turn carries the moment the caller cut in. Matched to its line by the offset
-       it started at, which is the same clock both were stamped from. */
-    bargedInAtMs:
-      call.turns.find(
-        (turn) => turn.speaker === "agent" && turn.startedOffsetMs === transcript.offsetMs,
-      )?.bargedInAtMs ?? null,
-  }));
-
-  /* A turn that made a sound but left no words — cut off before a whole word landed, or its
-     transcript is still in flight. Kept, because a gap in the record reads worse than a line
-     saying only that somebody spoke. */
-  const wordless: readonly TimelineLine[] = call.turns
-    .filter(
-      (turn) =>
-        turn.speaker !== "caller" &&
-        !call.transcripts.some(
-          (t) => t.speaker === "agent" && t.offsetMs === turn.startedOffsetMs,
-        ),
-    )
-    .map((turn) => ({
-      key: `a:${turn.seq}`,
-      at: turn.startedOffsetMs,
-      speaker: turn.speaker,
-      transcript: null,
-      bargedInAtMs: turn.bargedInAtMs,
-    }));
-
-  return [...spoken, ...wordless].sort((left, right) => left.at - right.at);
-};
 
 export const CallTimeline = ({
   callId,
@@ -72,43 +19,88 @@ export const CallTimeline = ({
     );
   }
 
+  /* A chat rather than a table of rows.
+   *
+   * Both sides are stored now (0076), and two columns of alternating text is how a
+   * conversation is read everywhere else. It also earns something a table could not: an
+   * interrupted turn is a bubble with its bottom edge cut, which says "she never heard the
+   * rest" faster than a tag saying so.
+   *
+   * The agent sits on the right in the accent, as the organisation's own voice — the same
+   * side "me" sits on in any messaging app, and the console is read by the organisation.
+   */
   return (
-    <div>
-      {lines.map((line) => (
-        <div
-          key={line.key}
-          className="grid grid-cols-[64px_1fr] gap-3 border-b border-[var(--surface-line)] py-3 last:border-b-0"
-        >
-          <div className="pt-0.5 font-mono text-xs text-[var(--ink-3)] tabular-nums">
-            {offset(line.at)}
+    <div className="flex flex-col gap-3">
+      {lines.map((line) =>
+        line.speaker === "tool" ? (
+          <div key={line.key} className="flex justify-center">
+            <span className="inline-flex items-center gap-2 rounded-full border border-dashed border-[var(--hairline)] bg-[var(--surface-2)] px-2.5 py-1 text-[12px] text-[var(--ink-3)]">
+              <span className="font-mono text-[11px] tabular-nums">{offset(line.at)}</span>
+              {line.aside}
+            </span>
           </div>
-          <div>
-            <div className="mb-0.5 text-xs font-semibold tracking-wide text-[var(--ink-3)] uppercase">
-              {line.speaker}
-            </div>
-            {line.transcript === null ? (
-              /* Rare now: a turn that made a sound and left no words. Before 0076 this was
-                 every agent turn on every call. */
-              <div className="flex flex-wrap items-center gap-2 text-[var(--ink-3)]">
-                spoke, too briefly to transcribe
-                {line.bargedInAtMs !== null && <Tag>interrupted at {offset(line.bargedInAtMs)}</Tag>}
-              </div>
-            ) : (
-              <div className="flex flex-col gap-1">
-                <TranscriptLine callId={callId} transcript={line.transcript} />
-                {/* What the caller never heard. The agent kept speaking into a line the
-                    caller had already taken back, and the words past this point were
-                    dropped from its own history too. */}
-                {line.bargedInAtMs !== null && (
-                  <div>
-                    <Tag>cut off {offset(line.bargedInAtMs)} in</Tag>
-                  </div>
+        ) : (
+          <div
+            key={line.key}
+            className={cn(
+              "flex items-end gap-2",
+              line.speaker === "agent" ? "flex-row-reverse" : "flex-row",
+            )}
+          >
+            <span
+              aria-hidden
+              className={cn(
+                "grid size-7 flex-none place-items-center rounded-full border text-[10px] font-semibold",
+                line.speaker === "agent"
+                  ? "border-transparent bg-[var(--accent)] text-[var(--accent-on)]"
+                  : "border-[var(--hairline)] bg-[var(--surface-2)] text-[var(--ink-3)]",
+              )}
+            >
+              {line.speaker === "agent" ? "AI" : "☏"}
+            </span>
+
+            <div
+              className={cn(
+                "flex min-w-0 flex-col",
+                line.speaker === "agent" ? "items-end" : "items-start",
+              )}
+            >
+              <div
+                className={cn(
+                  "max-w-[min(34rem,78%)] rounded-[14px] border px-3 py-2 shadow-[var(--shadow-s)]",
+                  line.speaker === "agent"
+                    ? "rounded-br-[4px] border-[var(--accent)]/30 bg-[var(--accent-soft)]"
+                    : "rounded-bl-[4px] border-[var(--hairline)] bg-[var(--surface-2)]",
+                  /* The cut edge. Only ever on an agent bubble, because only the agent can
+                     be talked over. */
+                  line.bargedInAtMs !== null && "border-b-2 border-b-dashed border-b-[var(--warn)]",
+                )}
+              >
+                {line.transcript === null ? (
+                  /* Rare now: a turn that made a sound and left no words. Before 0076 this
+                     was every agent turn on every call. */
+                  <span className="text-[13px] text-[var(--ink-3)]">
+                    spoke, too briefly to transcribe
+                  </span>
+                ) : (
+                  <TranscriptLine callId={callId} transcript={line.transcript} />
                 )}
               </div>
-            )}
+
+              <div className="mt-1 flex items-center gap-2 px-1">
+                <span className="font-mono text-[11px] text-[var(--ink-3)] tabular-nums">
+                  {offset(line.at)}
+                </span>
+                {line.bargedInAtMs !== null && (
+                  <span className="text-[11.5px] text-[var(--warn)]">
+                    cut off {offset(line.bargedInAtMs)} in — the rest was never heard
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
-      ))}
+        ),
+      )}
     </div>
   );
 };

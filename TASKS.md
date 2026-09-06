@@ -5180,6 +5180,35 @@ rather than landed as inventory — the wave that needs them adds them wired.
       Schedule tab under the hours. Empty box is no cap, and the schema turns "" into null
       rather than 0 — tested, because 0 is a cap the API refuses.
 
+- [x] **Slice 4 — the conversation page** (2026-09-06)
+      Now that both halves are stored, the screen is only a screen. The call detail page reads
+      as a **chat**: caller left in a neutral bubble, agent right in the accent — the
+      organisation's own voice on the side "me" sits on in any messaging app, and the console
+      is read by the organisation.
+
+      An interrupted turn is a bubble with its bottom edge cut, which says "the rest was never
+      heard" faster than a tag saying so — the one thing this format earns that a table of rows
+      could not. **Tool calls are centred system messages** at their own offset, so a
+      two-second gap reads as "checked the diary, 1210ms" rather than as the agent hesitating;
+      they come from events that already carry `tool` in the allowlisted detail, so nothing new
+      is published.
+
+      **The order changed and the old reasoning was retired, not ignored.** It used to be
+      flags, timings, values, then transcript, because "what did we get" is the question an
+      operator opens a call with. That held while the transcript was one-sided and could not
+      answer anything. The conversation leads now with the values beside it, and the raw event
+      table went behind a disclosure — it is how a call is debugged, not what somebody asking
+      what was said should read past first.
+
+      `linesOf` moved to `call-conversation.ts`, because `vitest.config.mts` says plainly that
+      `jsx: "preserve"` stops a test importing a `.tsx` and that testable logic belongs beside
+      the feature as `.ts`. **The first test written against it caught a real bug**: a caller
+      line sharing an offset with an agent turn inherited the cut marker — precisely the case a
+      barge-in creates, so the interruption would have been drawn on the words that did the
+      interrupting.
+
+      Still unproven on a real call, like slice 3. 1 673 web tests, lint and typecheck pass.
+
 - [x] **Slice 3 — the agent's words become first-class** (2026-09-06)
       The structural one, and the whole reason the conversation view was blocked. Migration
       0076 adds `transcripts.speaker`, backfilled `caller` for all 148 existing rows because

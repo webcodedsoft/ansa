@@ -5,7 +5,8 @@ import { Card, PageHeader } from "@/components/ui";
 import { findCall } from "@/features/calls/calls.service";
 import { CallFlags } from "@/features/calls/components/call-flags";
 import { CallStats, computeCallStats } from "@/features/calls/components/call-stats";
-import { CallTimeline, EventTable, linesOf } from "@/features/calls/components/call-timeline";
+import { linesOf } from "@/features/calls/call-conversation";
+import { CallTimeline, EventTable } from "@/features/calls/components/call-timeline";
 import { CollectedValues } from "@/features/calls/components/collected-values";
 import { directionLabel, duration, humanise, when } from "@/lib/format";
 
@@ -44,28 +45,51 @@ const CallDetailPage = async ({
 
       <CallFlags call={call} />
 
-      <CallStats stats={stats} />
+      {/* The conversation leads, with what it produced beside it.
+       *
+       * The order used to be flags, timings, collected values, then the transcript — on the
+       * reasoning that "what did we get" is the question an operator opens a call with. That
+       * held while the transcript was one-sided and could not answer anything. Now that both
+       * halves are stored (0076) the conversation *is* the answer, and the values read better
+       * as its result than as its preface.
+       */}
+      <div className="grid items-start gap-3.5 lg:grid-cols-[minmax(0,1fr)_19rem]">
+        <Card
+          title="What was said"
+          description={`${lines.length} lines${
+            stats.interruptions === 0
+              ? ""
+              : ` · the caller interrupted ${stats.interruptions} ${
+                  stats.interruptions === 1 ? "time" : "times"
+                }`
+          }`}
+        >
+          <CallTimeline callId={call.id} lines={lines} />
+        </Card>
 
-      {/* Above the transcript: "what did we get" is the question an operator opens a call
-          with, and the transcript is the evidence for it rather than the other way round. */}
-      <CollectedValues call={call} />
+        <div className="flex flex-col gap-3.5">
+          <CollectedValues call={call} />
+          <CallStats stats={stats} />
+        </div>
+      </div>
 
-      <Card
-        title="Transcript"
-        description={`${lines.length} lines${
-          stats.interruptions === 0
-            ? ""
-            : ` · the caller interrupted ${stats.interruptions} ${
-                stats.interruptions === 1 ? "time" : "times"
-              }`
-        }`}
-      >
-        <CallTimeline callId={call.id} lines={lines} />
-      </Card>
-
-      <Card title="Events" description="What the orchestrator did, in order." className="mt-3.5">
-        <EventTable events={call.events} />
-      </Card>
+      {/* Demoted, not deleted. The event log is how a call is debugged; it is not what
+          somebody asking what was said should have to read past to get there. */}
+      <details className="group mt-3.5">
+        <summary className="cursor-pointer list-none rounded-lg border border-[var(--hairline)] bg-[var(--surface-2)] px-3.5 py-2.5 text-[13px] text-[var(--ink-2)] hover:border-[var(--ink-3)]">
+          <span className="group-open:hidden">
+            Show what the orchestrator did — {call.events.length} events
+          </span>
+          <span className="hidden group-open:inline">Hide what the orchestrator did</span>
+        </summary>
+        <Card
+          title="Events"
+          description="Every step, in order, on the media clock."
+          className="mt-3.5"
+        >
+          <EventTable events={call.events} />
+        </Card>
+      </details>
     </>
   );
 };
