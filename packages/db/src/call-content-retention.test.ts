@@ -178,6 +178,6 @@ describe("purging call content past its retention window", () => {
   it("reports nothing when there is nothing left to take", async () => {
     await purgeExpiredCallContent(db);
     const second = await purgeExpiredCallContent(db);
-    expect(second).toEqual({ transcripts: 0, events: 0, invocations: 0 });
+    expect(second).toEqual({ transcripts: 0, events: 0, invocations: 0, summaries: 0 });
   });
 });

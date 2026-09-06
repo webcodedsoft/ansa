@@ -81,6 +81,8 @@ export interface PurgedCallContent {
   readonly transcripts: number;
   readonly events: number;
   readonly invocations: number;
+  /** Summaries of the above, deleted with them (0079). */
+  readonly summaries: number;
 }
 
 /**
@@ -88,17 +90,21 @@ export interface PurgedCallContent {
  *
  * `transcripts`, `call_events` and `tool_invocations`, which between them hold everything
  * that was said — including, since R5.2.4 was withdrawn, identity numbers and one-time codes
- * in full. `calls`, `turns` and `latencies` are untouched: they carry timings and outcomes,
- * so call history and every latency percentile survive a call whose transcript is gone.
+ * in full — and `call_summaries` (0079), which is derived from all of them and no less personal
+ * for being derived: a summary of deleted words is still those words.
+ *
+ * `calls`, `turns` and `latencies` are untouched: they carry timings and outcomes, so call
+ * history and every latency percentile survive a call whose transcript is gone.
  */
 export const purgeExpiredCallContent = async (dataSource: Db): Promise<PurgedCallContent> => {
   const rows = (await dataSource.query(
-    "select transcripts, events, invocations from app.purge_expired_call_content()",
-  )) as { transcripts: number; events: number; invocations: number }[];
+    "select transcripts, events, invocations, summaries from app.purge_expired_call_content()",
+  )) as { transcripts: number; events: number; invocations: number; summaries: number }[];
   const row = rows[0];
   return {
     transcripts: Number(row?.transcripts ?? 0),
     events: Number(row?.events ?? 0),
     invocations: Number(row?.invocations ?? 0),
+    summaries: Number(row?.summaries ?? 0),
   };
 };

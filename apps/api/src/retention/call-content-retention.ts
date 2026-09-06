@@ -63,13 +63,14 @@ export class CallContentRetentionSweeper implements OnApplicationBootstrap, OnAp
    * six hours later deletes whatever this one did not.
    */
   async sweep(): Promise<PurgedCallContent> {
-    const nothing: PurgedCallContent = { transcripts: 0, events: 0, invocations: 0 };
+    const nothing: PurgedCallContent = { transcripts: 0, events: 0, invocations: 0, summaries: 0 };
     const db = this.dataSource;
     if (db === null) return nothing;
 
     try {
       const purged = await purgeExpiredCallContent(db);
-      const total = purged.transcripts + purged.events + purged.invocations;
+      const total =
+        purged.transcripts + purged.events + purged.invocations + purged.summaries;
       if (total > 0) {
         /* Counts only, and that is not incidental: what was in those rows is precisely what
            this exists to stop being kept, so logging a sample would put it straight back
@@ -78,6 +79,7 @@ export class CallContentRetentionSweeper implements OnApplicationBootstrap, OnAp
           transcripts: purged.transcripts,
           events: purged.events,
           invocations: purged.invocations,
+          summaries: purged.summaries,
         });
       }
       return purged;
