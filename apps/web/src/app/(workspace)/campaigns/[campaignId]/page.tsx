@@ -93,62 +93,88 @@ const phaseOf = (status: CampaignDetail["status"]): "setup" | "watching" | "read
   status === "draft" || status === "scheduled" ? "setup" : status === "done" ? "reading" : "watching";
 
 /**
- * The three steps between a draft and a ringing phone.
+ * The three steps between a draft and a ringing phone, as one row.
  *
  * Nothing else in the product states them. Each is ticked from the campaign itself rather
  * than from anything remembered, so reopening the page a week later shows the truth.
+ *
+ * A stepper rather than a list: three titles with a paragraph each took a third of the
+ * viewport to say "two things left", and this is a status somebody glances at, not a guide
+ * they read. The connecting lines carry the order, the fill carries progress, and the one
+ * sentence underneath says what the *next* thing is — which is the only paragraph anybody
+ * actually needed. Titles stay short enough to sit on one line at the narrowest width the
+ * card gets.
  */
 const SetupChecklist = ({ campaign }: { readonly campaign: CampaignDetail }) => {
   const steps = [
     {
       done: campaign.purpose !== null && campaign.purpose.trim() !== "",
-      title: "Say why it is calling",
-      detail: "The agent opens with it. Without one it composes its own — the thing an unexpected call can least afford.",
+      title: "Say why it calls",
+      next: "Write the reason in the brief below. The agent opens with it; without one it composes its own.",
     },
     {
       done: campaign.total > 0,
-      title: "Add the people it should ring",
-      detail: "Each contact becomes a pending call. Consent and do-not-call are still checked per number when it dials.",
+      title: "Add the people",
+      next: "Add contacts and each becomes a pending call. Consent is still checked per number when it dials.",
     },
     {
       done: campaign.status !== "draft",
-      title: "Start it, or give it a time",
-      detail: "Press Schedule to start it yourself, or set a start in the schedule and it moves to running on its own.",
+      title: "Start it",
+      next: "Press Schedule to start it yourself, or give it a start time in the schedule and it runs on its own.",
     },
   ];
-  const remaining = steps.filter((step) => !step.done).length;
+  const upcoming = steps.find((step) => !step.done) ?? null;
 
   return (
-    <Card
-      title="Before it can dial"
-      description={remaining === 0 ? "Everything is in place." : `${remaining} of ${steps.length} to go.`}
-    >
-      <ol className="flex flex-col gap-3">
-        {steps.map((step) => (
-          <li key={step.title} className="flex gap-2.5">
-            <span
-              aria-hidden
-              className={
-                step.done
-                  ? "mt-[3px] size-4 flex-none rounded-full border-[5px] border-[var(--accent)]"
-                  : "mt-[3px] size-4 flex-none rounded-full border border-[var(--hairline)]"
-              }
-            />
-            <span className="min-w-0">
-              <span
-                className={
-                  step.done
-                    ? "block text-[13px] font-medium text-[var(--ink-3)] line-through"
-                    : "block text-[13px] font-medium text-[var(--ink)]"
-                }
-              >
-                {step.title}
-              </span>
-              <span className="mt-0.5 block text-[12px] leading-relaxed text-[var(--ink-3)]">{step.detail}</span>
-            </span>
-          </li>
-        ))}
+    <Card>
+      <ol className="flex items-center">
+        {steps.map((step, index) => {
+          const current = upcoming !== null && step.title === upcoming.title;
+          return (
+            <li key={step.title} className="flex flex-1 items-center last:flex-none">
+              <div className="flex items-center gap-2">
+                <span
+                  aria-hidden
+                  className={
+                    step.done
+                      ? "flex size-6 flex-none items-center justify-center rounded-full bg-[var(--accent)] text-[11px] font-semibold text-[var(--accent-on)]"
+                      : current
+                        ? "flex size-6 flex-none items-center justify-center rounded-full border-2 border-[var(--accent)] text-[11px] font-semibold text-[var(--accent)]"
+                        : "flex size-6 flex-none items-center justify-center rounded-full border border-[var(--hairline)] text-[11px] text-[var(--ink-3)]"
+                  }
+                >
+                  {step.done ? "✓" : index + 1}
+                </span>
+                <span
+                  className={
+                    step.done
+                      ? "text-[12.5px] whitespace-nowrap text-[var(--ink-3)]"
+                      : current
+                        ? "text-[12.5px] font-medium whitespace-nowrap text-[var(--ink)]"
+                        : "text-[12.5px] whitespace-nowrap text-[var(--ink-3)]"
+                  }
+                >
+                  {step.title}
+                </span>
+              </div>
+              {index < steps.length - 1 && (
+                <span
+                  aria-hidden
+                  className={
+                    step.done
+                      ? "mx-3 h-px flex-1 bg-[var(--accent)]"
+                      : "mx-3 h-px flex-1 bg-[var(--hairline)]"
+                  }
+                />
+              )}
+            </li>
+          );
+        })}
       </ol>
+
+      <p className="mt-3 text-[12px] leading-relaxed text-[var(--ink-3)]">
+        {upcoming === null ? "Everything is in place." : upcoming.next}
+      </p>
     </Card>
   );
 };
