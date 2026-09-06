@@ -5180,6 +5180,39 @@ rather than landed as inventory — the wave that needs them adds them wired.
       Schedule tab under the hours. Empty box is no cap, and the schema turns "" into null
       rather than 0 — tested, because 0 is a cap the API refuses.
 
+- [~] **Slice 6 — the grounded summary** (2026-09-06)
+      Migration 0079 stores what a call came to; `summarise.ts` builds the prompt and keeps only
+      what the model can point at; `CallSummarySweeper` writes one per finished call.
+
+      **A sweeper, not a step at hang-up**, for two reasons. A model round trip at hang-up puts
+      a model on the call path, which is the one place this product refuses to put anything
+      avoidable. And transcripts flush in batches, so a summary written the instant a call ended
+      would describe whatever had landed — missing the last exchange, usually the one that says
+      how it turned out. It waits 90 seconds, takes five at a time, and is retryable by
+      construction: a call with no summary row is found again next pass, so a model outage
+      delays summaries rather than losing them.
+
+      **Grounding is code, not prompt.** A sentence citing a line this call does not have is
+      dropped whole — the invented id is the tell and the prose around it cannot be trusted
+      either. One real id does not launder a made-up one beside it. A model that invents a whole
+      call produces nothing, which is the right output for a call it did not read.
+
+      **The fallback is not an apology.** When the model is unavailable, `withoutAModel` writes
+      the caller's first real sentence and their last, both cited, and stores `model: null` so a
+      reader and a re-run can tell the two apart. It is held to the same grounding invariant as
+      the model's output — a fallback exempt from it would be the one place an uncheckable claim
+      could enter.
+
+      Human corrections win over what the transcriber heard: summarising "a barn" instead of
+      "Ibadan" would put a known error into prose somebody reads with no confidence score beside
+      it.
+
+      **Cost is not accounted for yet**, per the decision to ship the summary first. The adapter
+      still reports no token usage, so per-call spend is invisible. That is the next thing here.
+
+      Left to do: surface it on the call page with the citations clickable, and prove it — no
+      summary has been written, because no call has ended since the sweeper existed.
+
 - [~] **Slice 5a — recording becomes a choice, with a disclosure** (2026-09-06)
       Chosen posture: both legs, per organisation, with disclosure. This is the consent half;
       capturing the agent's leg and serving the audio are still to come.
