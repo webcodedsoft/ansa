@@ -5127,6 +5127,20 @@ rather than landed as inventory — the wave that needs them adds them wired.
       clock, not by any code. After 08:00 WAT: run `pnpm tunnel`, put one contact with a real
       handset on a campaign, start it, and the sweeper does the rest within its interval.
 
+- [x] **The hours a campaign may ring can be changed on its page** (2026-09-06)
+      "Hours it may ring" was a drawing with a caption; the only way to narrow a campaign's
+      hours after creating it was to create another campaign. The API already took
+      `callingWindow` on `PATCH /campaigns/:id` (null clears to the default bound) and the
+      dialler reads `calling_window` on every sweep, so this was the console alone. The
+      create form's window controls were lifted into `calling-window-fields.tsx` and both
+      screens use them, so a window offered on the page is one the create form would have
+      offered. `campaign-calling-window.tsx` keeps the strip as the drawing and redraws it
+      live as the draft changes; "Change hours" opens the controls, Save posts the same field
+      names `windowFromForm` reads through `setCallingWindowAction`. Allowed while running,
+      on purpose — "stop ringing after five" is an ordinary decision about a campaign already
+      dialling. Endpoint test added for narrowing, refusing a backwards span, and clearing
+      with null. Seen in the browser on the real campaign and cancelled without saving.
+
 - [x] **Review of the AI call on an outbound campaign — three defects fixed** (2026-09-06)
       Reviewed the path from `place()` to the first spoken line and found three things a
       handset would have exposed the moment it rang. All three fixed, tested, gates green.

@@ -12,7 +12,7 @@ import { AddContactsButton } from "@/features/campaigns/components/add-contacts-
 import { CampaignBrief } from "@/features/campaigns/components/campaign-brief";
 import { CampaignConversation } from "@/features/campaigns/components/campaign-conversation";
 import { CallStatusFilter } from "@/features/campaigns/components/call-status-filter";
-import { CallingWindowStrip } from "@/features/campaigns/components/calling-window-strip";
+import { CampaignCallingWindow } from "@/features/campaigns/components/campaign-calling-window";
 import { CampaignBreakdown } from "@/features/campaigns/components/campaign-breakdown";
 import { CampaignProgress } from "@/features/campaigns/components/campaign-progress";
 import { CampaignSchedule } from "@/features/campaigns/components/campaign-schedule";
@@ -319,11 +319,11 @@ const CampaignPage = async ({
   const scheduleTab = (
     <div className="grid items-start gap-3.5 lg:grid-cols-2">
       <Card title="Hours it may ring">
-        <CallingWindowStrip window={campaign.callingWindow} />
-        <p className="mt-3.5 border-t border-[var(--hairline)] pt-3 text-[11.5px] leading-relaxed text-[var(--ink-3)]">
-          Consent and do-not-call are checked per number on every call, whatever this says. A
-          window narrows the permitted hours and never widens them.
-        </p>
+        <CampaignCallingWindow
+          campaignId={campaign.id}
+          window={campaign.callingWindow}
+          canWrite={canWrite}
+        />
       </Card>
 
       <Card title="When it runs">

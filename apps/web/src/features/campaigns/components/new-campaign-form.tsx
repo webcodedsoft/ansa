@@ -13,12 +13,19 @@ import {
   SubmitButton,
   TextField,
 } from "@/components/ui";
-import { cn } from "@/lib/cn";
 import { idleForm } from "@/lib/form-state";
 
 import { createCampaignAction, type CreateCampaignState } from "../campaigns.actions";
 import { campaignTemplateById } from "../campaign-templates";
 import { windowSummary } from "../campaigns.display";
+import {
+  CallingWindowFields,
+  DEFAULT_DRAFT,
+  WindowChoice,
+  draftToWindow,
+  windowToDraft,
+  type WindowDraft,
+} from "./calling-window-fields";
 import {
   BrowseTemplatesButton,
   CampaignTemplateGallery,
@@ -28,96 +35,10 @@ import {
 
 const START: CreateCampaignState = idleForm();
 
-/** Monday first, because a working week reads that way; the value is the API's own 0–6. */
-const DAYS: readonly { readonly value: number; readonly label: string; readonly full: string }[] = [
-  { value: 1, label: "M", full: "Monday" },
-  { value: 2, label: "T", full: "Tuesday" },
-  { value: 3, label: "W", full: "Wednesday" },
-  { value: 4, label: "T", full: "Thursday" },
-  { value: 5, label: "F", full: "Friday" },
-  { value: 6, label: "S", full: "Saturday" },
-  { value: 0, label: "S", full: "Sunday" },
-];
-
-const WEEKDAYS = [1, 2, 3, 4, 5];
-
-const hourOptions = (from: number, to: number) =>
-  Array.from({ length: to - from + 1 }, (_, i) => from + i).map((hour) => (
-    <option key={hour} value={hour}>
-      {`${String(hour).padStart(2, "0")}:00`}
-    </option>
-  ));
-
 export interface AgentChoice {
   readonly agentId: string;
   readonly name: string;
 }
-
-/**
- * One of two ways the phone may ring, as a choice rather than a checkbox.
- *
- * A checkbox called "only call within set hours" reads as though leaving it off means *no*
- * limit, which is the opposite of true — the consent rules bound every campaign to
- * 08:00–20:00 WAT whatever this says. Two cards that both state their hours make the real
- * choice visible: keep the bound, or narrow it.
- */
-const WindowChoice = ({
-  chosen,
-  onChoose,
-}: {
-  readonly chosen: "default" | "custom";
-  readonly onChoose: (next: "default" | "custom") => void;
-}) => (
-  <div className="grid gap-2.5 sm:grid-cols-2" role="radiogroup" aria-label="Calling hours">
-    {(
-      [
-        {
-          id: "default" as const,
-          title: "Default hours",
-          detail: "08:00–20:00 WAT, any day. What the consent rules already allow.",
-        },
-        {
-          id: "custom" as const,
-          title: "A narrower window",
-          detail: "Pick the hours and days. It can only tighten the bound, never widen it.",
-        },
-      ]
-    ).map((option) => {
-      const active = chosen === option.id;
-      return (
-        <button
-          key={option.id}
-          type="button"
-          role="radio"
-          aria-checked={active}
-          onClick={() => onChoose(option.id)}
-          className={cn(
-            "rounded-lg border p-3.5 text-left transition-colors",
-            active
-              ? "border-[var(--accent)] bg-[var(--accent-soft)]"
-              : "border-[var(--hairline)] hover:border-[var(--ink-3)]",
-          )}
-        >
-          <span className="flex items-center gap-2">
-            <span
-              aria-hidden
-              className={cn(
-                "size-3.5 flex-none rounded-full border",
-                active
-                  ? "border-[5px] border-[var(--accent)]"
-                  : "border-[var(--hairline)] bg-[var(--surface-2)]",
-              )}
-            />
-            <span className="text-[13.5px] font-medium">{option.title}</span>
-          </span>
-          <span className="mt-1.5 block text-[12px] leading-relaxed text-[var(--ink-3)]">
-            {option.detail}
-          </span>
-        </button>
-      );
-    })}
-  </div>
-);
 
 /**
  * Start a campaign, on its own page.
@@ -145,22 +66,13 @@ export const NewCampaignForm = ({ agents }: { readonly agents: readonly AgentCho
   const [browsing, setBrowsing] = useState(false);
   const template = campaignTemplateById(templateId);
   const [agentId, setAgentId] = useState("");
-  const [mode, setMode] = useState<"default" | "custom">("default");
-  const [startHour, setStartHour] = useState(8);
-  const [endHour, setEndHour] = useState(20);
-  const [days, setDays] = useState<ReadonlySet<number>>(new Set(WEEKDAYS));
+  const [draft, setDraft] = useState<WindowDraft>(DEFAULT_DRAFT);
 
   const agentName = agents.find((agent) => agent.agentId === agentId)?.name ?? null;
 
   /* Built from the same shape the API stores, so the sentence below is the one the campaign
      page will show once this is saved rather than a second description of it. */
-  const summary = useMemo(
-    () =>
-      mode === "default"
-        ? windowSummary(null)
-        : windowSummary({ startHour, endHour, weekdays: [...days] }),
-    [mode, startHour, endHour, days],
-  );
+  const summary = useMemo(() => windowSummary(draftToWindow(draft)), [draft]);
 
   /* A template suggests a name and brings its window, and neither is forced: a name already
      typed is kept, and the window can be narrowed afterwards. Picking "scratch" clears only
@@ -170,29 +82,12 @@ export const NewCampaignForm = ({ agents }: { readonly agents: readonly AgentCho
     const next = campaignTemplateById(id);
     if (next !== null) {
       if (name.trim() === "" || name === template?.name) setName(next.name);
-      if (next.callingWindow !== null) {
-        setMode("custom");
-        setStartHour(next.callingWindow.startHour);
-        setEndHour(next.callingWindow.endHour);
-        setDays(new Set(next.callingWindow.weekdays));
-      } else {
-        setMode("default");
-      }
+      setDraft(windowToDraft(next.callingWindow));
     } else if (name === template?.name) {
       setName("");
     }
   };
 
-  const toggleDay = (value: number): void =>
-    setDays((current) => {
-      const next = new Set(current);
-      if (next.has(value)) next.delete(value);
-      else next.add(value);
-      return next;
-    });
-
-  const orderWrong = mode === "custom" && endHour <= startHour;
-  const noDays = mode === "custom" && days.size === 0;
 
   if (agents.length === 0) {
     return (
@@ -294,86 +189,8 @@ export const NewCampaignForm = ({ agents }: { readonly agents: readonly AgentCho
           description="Nigerian rules bound every outbound call to 08:00–20:00 WAT. This decides whether to narrow that further."
         >
           <Stack>
-            <WindowChoice chosen={mode} onChoose={setMode} />
-
-            {mode === "custom" && (
-              <Stack gap="sm" className="rounded-lg border border-[var(--hairline)] p-3.5">
-                {/* What `windowFromForm` reads. A hidden input rather than a checkbox, because
-                    the choice above is already the control and two of them would disagree. */}
-                <input type="hidden" name="windowEnabled" value="on" />
-
-                <div className="flex flex-wrap items-end gap-3">
-                  <SelectField
-                    label="From"
-                    name="startHour"
-                    value={startHour}
-                    onChange={(event) => setStartHour(Number(event.target.value))}
-                    error={errors["startHour"]}
-                    className="min-w-28"
-                  >
-                    {hourOptions(0, 23)}
-                  </SelectField>
-                  <SelectField
-                    label="Until"
-                    name="endHour"
-                    value={endHour}
-                    onChange={(event) => setEndHour(Number(event.target.value))}
-                    error={errors["endHour"]}
-                    className="min-w-28"
-                  >
-                    {hourOptions(1, 24)}
-                  </SelectField>
-                </div>
-
-                <fieldset>
-                  <legend className="mb-1.5 text-[11px] font-semibold tracking-[0.11em] text-[var(--ink-3)] uppercase">
-                    Days
-                  </legend>
-                  <div className="flex flex-wrap gap-1.5">
-                    {DAYS.map((day) => {
-                      const on = days.has(day.value);
-                      return (
-                        <button
-                          key={day.value}
-                          type="button"
-                          aria-pressed={on}
-                          aria-label={day.full}
-                          title={day.full}
-                          onClick={() => toggleDay(day.value)}
-                          className={cn(
-                            "size-9 rounded-full border text-[12.5px] font-medium transition-colors",
-                            on
-                              ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-on)]"
-                              : "border-[var(--hairline)] text-[var(--ink-3)] hover:border-[var(--ink-3)]",
-                          )}
-                        >
-                          {day.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {/* The pills are the control; these carry their values to the action under
-                      the name it already reads. */}
-                  {[...days].map((day) => (
-                    <input key={day} type="hidden" name="weekdays" value={day} />
-                  ))}
-                </fieldset>
-
-                {noDays && (
-                  <Notice tone="warn">
-                    No days are selected, so this campaign would never place a call.
-                  </Notice>
-                )}
-                {orderWrong && (
-                  <Notice tone="warn">
-                    &ldquo;Until&rdquo; is not after &ldquo;from&rdquo;, so the window is empty.
-                  </Notice>
-                )}
-                {errors["weekdays"] !== undefined && (
-                  <Notice tone="error">{errors["weekdays"]}</Notice>
-                )}
-              </Stack>
-            )}
+            <WindowChoice chosen={draft.mode} onChoose={(mode) => setDraft({ ...draft, mode })} />
+            <CallingWindowFields draft={draft} errors={errors} onChange={setDraft} />
           </Stack>
         </Card>
 

@@ -341,6 +341,27 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("the campaign en
       expect(reply.body["status"]).toBe("scheduled");
     });
 
+    it("narrows the hours it may ring after creation, and widens back to the bound with null", async () => {
+      /* The campaign page's "Change hours" card lives on this. Null is how it says "default
+         hours": an omitted field is unchanged, so the only way to clear a window is to send
+         nothing-shaped explicitly. And the window is refused when it does not describe a span,
+         the same as at creation — the card cannot post one the create page would not accept. */
+      const narrowed = await call("PATCH", `/api/v1/campaigns/${fresh}`, {
+        callingWindow: { startHour: 10, endHour: 16, weekdays: [1, 3, 5] },
+      });
+      expect(narrowed.status, JSON.stringify(narrowed.body)).toBe(200);
+      expect(narrowed.body["callingWindow"]).toEqual({ startHour: 10, endHour: 16, weekdays: [1, 3, 5] });
+
+      const backwards = await call("PATCH", `/api/v1/campaigns/${fresh}`, {
+        callingWindow: { startHour: 16, endHour: 10, weekdays: [1] },
+      });
+      expect(backwards.status).toBe(422);
+
+      const cleared = await call("PATCH", `/api/v1/campaigns/${fresh}`, { callingWindow: null });
+      expect(cleared.status, JSON.stringify(cleared.body)).toBe(200);
+      expect(cleared.body["callingWindow"]).toBeNull();
+    });
+
     it("clearing the start time leaves it scheduled, waiting for a person", async () => {
       // Clearing says "I will start it myself", not "put it back in the drawer".
       const reply = await call("PATCH", `/api/v1/campaigns/${fresh}`, { startsAt: null });

@@ -10,6 +10,7 @@ import { failedForm, invalidForm, succeededForm, type FormState } from "@/lib/fo
 
 import { campaignTemplateById } from "./campaign-templates";
 import {
+  callingWindowSchema,
   createCampaignSchema,
   enqueueSchema,
   setStatusSchema,
@@ -396,6 +397,47 @@ export const setScheduleAction = async (
          rather than replaced with a guess. */
       return failedForm(failureMessage(error));
     }
+    return failedForm(failureMessage(error));
+  }
+};
+
+/**
+ * Change the hours a campaign may ring, from its own page.
+ *
+ * Reads the same fields the create form posts (`windowFromForm`), so the two screens cannot
+ * disagree about what a window is. "Default hours" arrives as no window at all and is sent as
+ * an explicit null — the endpoint treats an omitted field as unchanged, and this form's only
+ * way to say "back to the default bound" is to choose it.
+ *
+ * Allowed while the campaign is running, on purpose: "stop ringing after five" is an ordinary
+ * thing to decide about a campaign already dialling, and the dialler reads the window on every
+ * sweep, so it bites on the next one. The API holds it to the 08:00–20:00 WAT bound whatever
+ * is sent.
+ */
+export type CallingWindowState = FormState<{
+  readonly callingWindow: CreateCampaignInput["callingWindow"] | null;
+}>;
+
+export const setCallingWindowAction = async (
+  _previous: CallingWindowState,
+  form: FormData,
+): Promise<CallingWindowState> => {
+  const campaignId = String(form.get("campaignId") ?? "");
+  if (campaignId === "") return failedForm("This form does not say which campaign it is for.");
+
+  const raw = windowFromForm(form);
+  const parsed = raw === undefined ? null : callingWindowSchema.safeParse(raw);
+  if (parsed !== null && !parsed.success) {
+    return invalidForm(parsed.error, "Check the hours and days.");
+  }
+  const callingWindow = parsed === null ? null : parsed.data;
+
+  try {
+    await editCampaign(campaignId, { callingWindow });
+    revalidatePath(`/campaigns/${campaignId}`);
+    revalidatePath("/campaigns");
+    return succeededForm({ callingWindow });
+  } catch (error) {
     return failedForm(failureMessage(error));
   }
 };
