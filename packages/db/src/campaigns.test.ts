@@ -3,6 +3,7 @@ import type { DataSource } from "typeorm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  attachPlacedCall,
   claimScheduledCall,
   createCampaign,
   enqueueScheduledCalls,
@@ -13,8 +14,10 @@ import {
   recordAttempt,
   recordContactImport,
   setCampaignStatus,
+  settlePlacedCall,
   updateCampaignBrief,
 } from "./campaigns";
+import { recordCallStarted } from "./call-log";
 import { addContacts, readContacts } from "./contacts";
 import { createDataSource } from "./data-source";
 import { withOrganization } from "./organization-scope";
@@ -323,4 +326,79 @@ describe.skipIf(url === undefined)("a list of people to ring", () => {
     expect(queued.items[0]?.facts).not.toBeNull();
   });
 
+
+  it("lets the carrier settle a placed call, without an organisation in hand", async () => {
+    /* The dialler leaves a placed row at `placing` with the carrier's id on it. What happens
+       next is the carrier's status callback, which arrives with no organisation — so the
+       settle runs unscoped through a security-definer function (0072). This is asserted
+       against the real database because RLS is exactly the thing that would make a plain
+       update return zero rows and look like success. Three verdicts: rang out with a retry
+       left, rang out on the last attempt, and answered. */
+    let campaignId = "";
+    let rowIds: string[] = [];
+    await withOrganization(ds, A, async (s) => {
+      const campaign = await createCampaign(s, { agentId: agentA, name: "Settle", createdBy: null });
+      campaignId = campaign.id;
+      await updateCampaignBrief(s, campaign.id, { purpose: "to confirm", maxAttempts: 2, retryAfterMinutes: 30 });
+      const ids = (await readContacts(s, PAGE)).items.map((p) => p.id);
+      await enqueueScheduledCalls(s, campaign.id, ids, new Date(Date.now() - 1_000));
+      await setCampaignStatus(s, campaign.id, "running");
+      rowIds = (await readDueScheduledCalls(s, new Date(), 10)).map((q) => q.id);
+      for (const [i, id] of rowIds.entries()) {
+        expect(await claimScheduledCall(s, id)).toBe(true);
+        expect(await attachPlacedCall(s, id, `CA-settle-${i}`)).toBe(true);
+      }
+    });
+    const [first, second] = rowIds;
+    if (first === undefined || second === undefined) throw new Error("expected two rows");
+    const at = new Date(Math.floor(Date.now() / 1000) * 1000);
+
+    // Rang out, one attempt used of two: back to pending, due after the campaign's interval.
+    expect(await settlePlacedCall(ds, "CA-settle-0", { answered: false, status: "no-answer", now: at })).toBe(true);
+    // Twice is harmless: the row is no longer `placing`.
+    expect(await settlePlacedCall(ds, "CA-settle-0", { answered: false, status: "no-answer", now: at })).toBe(false);
+    // An id nobody placed touches nothing.
+    expect(await settlePlacedCall(ds, "CA-nobody", { answered: false, status: "busy", now: at })).toBe(false);
+
+    // Answered: a `calls` row exists by then (the media socket opened), and the row links to it.
+    const callRowId = await recordCallStarted(ds, {
+      organizationId: A,
+      carrierCallId: "CA-settle-1",
+      direction: "outbound",
+      dialled: "+2348000000002",
+      caller: "+2348148592625",
+      agentId: agentA,
+      configVersion: 1,
+    });
+    expect(await settlePlacedCall(ds, "CA-settle-1", { answered: true, status: "completed", now: at })).toBe(true);
+
+    await withOrganization(ds, A, async (s) => {
+      const rows = (await readScheduledCalls(s, campaignId, PAGE)).items;
+      const retried = rows.find((r) => r.id === first);
+      expect(retried?.status).toBe("pending");
+      expect(retried?.attempts).toBe(1);
+      expect(retried?.outcome).toBe("carrier reported no-answer");
+      expect(retried?.nextAttemptAt?.getTime()).toBe(at.getTime() + 30 * 60_000);
+
+      const answered = rows.find((r) => r.id === second);
+      expect(answered?.status).toBe("answered");
+      expect(answered?.callId).toBe(callRowId);
+      expect(answered?.nextAttemptAt).toBeNull();
+
+      // Second and last attempt rings out: terminal, no further date.
+      expect(await claimScheduledCall(s, first)).toBe(true);
+      await attachPlacedCall(s, first, "CA-settle-0b");
+    });
+    // A machine picked up: settled as voicemail by the AMD webhook, and the `completed` that
+    // the carrier sends afterwards finds the row no longer `placing`.
+    expect(await settlePlacedCall(ds, "CA-settle-0b", { answered: false, status: "voicemail", now: at })).toBe(true);
+    expect(await settlePlacedCall(ds, "CA-settle-0b", { answered: true, status: "completed", now: at })).toBe(false);
+    await withOrganization(ds, A, async (s) => {
+      const done = (await readScheduledCalls(s, campaignId, PAGE)).items.find((r) => r.id === first);
+      expect(done?.status).toBe("voicemail");
+      expect(done?.outcome).toBe("carrier reported voicemail");
+      expect(done?.attempts).toBe(2);
+      expect(done?.nextAttemptAt).toBeNull();
+    });
+  });
 });

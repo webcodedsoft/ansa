@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { forSpeech, GREETING_TEXT, outboundOpener } from "./greeting";
+import { campaignCallCannotOpen, forSpeech, GREETING_TEXT, outboundOpener } from "./greeting";
 
 describe("the greeting", () => {
   it("hands over to the caller, so they know it is their turn", () => {
@@ -56,6 +56,58 @@ describe("what an outbound call opens with", () => {
   });
 });
 
+describe("what a campaign call opens with", () => {
+  /* The rule in `prompts/outbound.ts` is who, which company and why, before anything else.
+     The first line is synthesised before the model has a turn, so if the reason is not in it
+     the person is asked "is now a good time?" for something they have not been told, and the
+     model invents the wording a turn later. */
+  const reason = {
+    purpose: "to confirm your viewing at {property} on {date}",
+    opening: null,
+    facts: { property: "14 Adeola Odeku", date: "Tuesday at two" },
+  };
+
+  it("says who, that we rang, and why, in the first line", () => {
+    const spoken = outboundOpener("Oakhaven Properties", reason);
+    expect(spoken).toBe(
+      "Good day, this is Oakhaven Properties calling to confirm your viewing at 14 Adeola Odeku on Tuesday at two. Is now a good time?",
+    );
+  });
+
+  it("still offers the way out, on a question", () => {
+    const spoken = outboundOpener("Oakhaven Properties", reason);
+    expect(spoken).toContain("good time");
+    expect(spoken.trimEnd().endsWith("?")).toBe(true);
+  });
+
+  it("does not stack a full stop from the purpose against its own", () => {
+    const spoken = outboundOpener("Oakhaven Properties", { ...reason, purpose: "to confirm your viewing." });
+    expect(spoken).not.toContain("..");
+    expect(spoken).toContain("viewing. Is now");
+  });
+
+  it("speaks the operator's own first line verbatim when they wrote one", () => {
+    const spoken = outboundOpener("Oakhaven Properties", {
+      ...reason,
+      opening: "Hello, it's Oakhaven here about {property} — have you got a minute?",
+    });
+    expect(spoken).toBe("Hello, it's Oakhaven here about 14 Adeola Odeku — have you got a minute?");
+  });
+
+  it("falls back to the generic line when the reason is empty, rather than 'calling . Is'", () => {
+    const spoken = outboundOpener("Oakhaven Properties", { purpose: "  ", opening: null, facts: null });
+    expect(spoken).toBe("Good day, this is Oakhaven Properties calling. Is now a good time?");
+  });
+
+  it("leaves a fact it does not have in braces rather than dropping the clause", () => {
+    /* The braces are audible and wrong, and that is the point: a list missing a column should
+       be heard on the first test call, not silently spoken around. `mergeFacts` decides this;
+       the opener must not undo it. */
+    const spoken = outboundOpener("Oakhaven Properties", { ...reason, facts: null });
+    expect(spoken).toContain("{property}");
+  });
+});
+
 describe("forSpeech", () => {
   // Confirmed on a real call: at 8kHz μ-law "Ansa" is heard as "Anza", because /s/ lives
   // above the telephony passband. The respelling is what makes it survive.
@@ -100,5 +152,36 @@ describe("forSpeech markdown stripping", () => {
     expect(forSpeech("It's 1.5 million naira, isn't it?")).toBe(
       "It's one point five million naira, isn't it?",
     );
+  });
+});
+
+describe("a campaign call with nothing to say", () => {
+  /* Before this, a null brief on a campaign call went ahead with no campaign layer at all: the
+     agent rang a member of the public and the model made up why. Hanging up is the least bad
+     thing that can happen, and it must never catch a test call or an inbound one. */
+  it("is hung up when the brief could not be read", () => {
+    expect(campaignCallCannotOpen({ direction: "outbound", campaignId: "cp-1", brief: null })).toBe(
+      "brief unreadable or not this organisation's",
+    );
+  });
+
+  it("is hung up when the purpose is blank", () => {
+    expect(
+      campaignCallCannotOpen({ direction: "outbound", campaignId: "cp-1", brief: { purpose: "   " } }),
+    ).toBe("purpose is empty");
+  });
+
+  it("goes ahead when there is a reason", () => {
+    expect(
+      campaignCallCannotOpen({ direction: "outbound", campaignId: "cp-1", brief: { purpose: "to confirm" } }),
+    ).toBeNull();
+  });
+
+  it("never touches a test call, which has no campaign", () => {
+    expect(campaignCallCannotOpen({ direction: "outbound", campaignId: null, brief: null })).toBeNull();
+  });
+
+  it("never touches an inbound call", () => {
+    expect(campaignCallCannotOpen({ direction: "inbound", campaignId: null, brief: null })).toBeNull();
   });
 });

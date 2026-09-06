@@ -583,6 +583,63 @@ export const readRecentCalls = async (
 };
 
 /**
+ * What the carrier said became of a placed call, onto the row that placed it.
+ *
+ * The dialler used to write `answered` the moment the carrier accepted a call, which is the
+ * moment it is *queued* — nothing has rung. Every call was answered, `no_answer` and `busy`
+ * could never occur, and the retry policy on every campaign was unreachable. The dialler now
+ * leaves the row at `placing` with the carrier's id on it (`attachPlacedCall`), and this is
+ * where the truth lands, from two webhooks:
+ *
+ * - the status callback, once per call with a terminal state — answered, rang out, busy,
+ *   failed;
+ * - answering-machine detection, when a machine picked up. It fires while the call is still
+ *   up, so it settles the row first and the later `completed` finds nothing left to settle.
+ *   Without this a voicemail is an answered call, which is the one thing a voicemail is not.
+ *
+ * Unscoped by organisation on purpose, and through the carrier's id rather than ours. The
+ * webhook arrives with no organisation in hand — it is the carrier calling us — so the match
+ * is `scheduled_calls.carrier_call_id`, and a carrier id that matches nothing (an inbound
+ * call, a test call) updates nothing. The `placing` guard is what makes it safe to run twice:
+ * a second callback for the same call, or one that arrives after the agent already recorded
+ * a verdict, changes nothing. `call_id` is filled from `calls` when a row exists, which is
+ * exactly when the call was answered and the media socket opened.
+ *
+ * Retry arithmetic is read from the campaign row here rather than passed in, so the webhook
+ * and the dialler cannot disagree about whether a number has another go. A row that has hit
+ * its ceiling is left at its terminal status with no next attempt; one that has not goes back
+ * to `pending`, due after the campaign's own interval.
+ */
+export const settlePlacedCall = async (
+  dataSource: Db,
+  carrierCallId: string,
+  verdict: {
+    readonly answered: boolean;
+    /** The carrier's own word for it, kept as the outcome so the table can say why. */
+    readonly status: string;
+    readonly now: Date;
+  },
+): Promise<boolean> => {
+  const status = verdict.answered
+    ? "answered"
+    : verdict.status === "busy"
+      ? "busy"
+      : verdict.status === "voicemail"
+        ? "voicemail"
+        : verdict.status === "no-answer" || verdict.status === "completed"
+          ? "no_answer"
+          : "failed";
+
+  /* Through a security-definer function rather than a raw update, because the callback
+     carries no organisation and RLS would silently update nothing. Migration 0072. */
+  const rows = (await dataSource.query(
+    "select scheduled_call_id from app.settle_placed_call($1, $2, $3, $4)",
+    [carrierCallId, status, `carrier reported ${verdict.status}`, verdict.now],
+  )) as Record<string, unknown>[];
+  return rows.length > 0;
+};
+
+/**
  * Give the numbers that did not connect another go.
  *
  * Three statuses and only three. `answered` is done. `suppressed` was refused by the consent
@@ -901,6 +958,30 @@ export const claimScheduledCall = async (
       where id = $1 and status = 'pending'
       returning id`,
     [scheduledCallId],
+  );
+  return rows.length > 0;
+};
+
+/**
+ * The carrier has the call; remember its name for it.
+ *
+ * Not a verdict. The row stays `placing` — `claimScheduledCall` put it there — until the
+ * carrier's status callback says what happened (`settlePlacedCall`), and the carrier's own id
+ * is what that callback arrives with. `call_id` is not set here because there is nothing to
+ * set it to: a `calls` row is born when the media socket opens, which a call that rings out
+ * never reaches.
+ */
+export const attachPlacedCall = async (
+  scope: OrganizationScope,
+  scheduledCallId: string,
+  carrierCallId: string,
+): Promise<boolean> => {
+  const rows = await scope.mutate<Record<string, unknown>>(
+    `update scheduled_calls
+        set carrier_call_id = $2, updated_at = now()
+      where id = $1 and status = 'placing'
+      returning id`,
+    [scheduledCallId, carrierCallId],
   );
   return rows.length > 0;
 };

@@ -5127,6 +5127,53 @@ rather than landed as inventory — the wave that needs them adds them wired.
       clock, not by any code. After 08:00 WAT: run `pnpm tunnel`, put one contact with a real
       handset on a campaign, start it, and the sweeper does the rest within its interval.
 
+- [x] **Review of the AI call on an outbound campaign — three defects fixed** (2026-09-06)
+      Reviewed the path from `place()` to the first spoken line and found three things a
+      handset would have exposed the moment it rang. All three fixed, tested, gates green.
+
+      **1. Every placed call was `answered`, and underneath that, every placed call was
+      `failed`.** `dialer.ts` wrote `status: "answered"` the moment `place()` returned — which
+      is when the carrier has *queued* the call, before anything rings. So `no_answer` and
+      `busy` could never occur and the retry policy on every campaign was dead. Worse, it put
+      the returned id into `call_id`, which is a uuid referencing `calls` — and the returned id
+      is the carrier's SID, and a `calls` row is not born until the media socket opens, which a
+      call that rings out never reaches. The `::uuid` cast would have thrown, the surrounding
+      catch would have called it a failure, and every placed call would have been re-dialled.
+      Fixed with migration 0072: `scheduled_calls.carrier_call_id`, written by the dialler
+      (`attachPlacedCall`) with the row left at `placing`; and `app.settle_placed_call`, a
+      `security definer` function like `close_call_by_carrier_id` beside it, called from the
+      status webhook with the carrier's terminal verdict and from the AMD webhook with
+      `voicemail` (which fires first, so the later `completed` finds nothing left to settle).
+      Retry arithmetic lives in the function, read from the campaign row, so the webhook and
+      the dialler cannot disagree. `call_id` is filled from `calls` when one exists. Tested
+      against the real database as `ansa_app`, because RLS is exactly what would make a plain
+      update return zero rows and look like success.
+
+      **2. The first line never said why.** `outboundOpener` said "this is X calling. Is now a
+      good time?" — no company beyond the agent's name, no reason — while `prompts/outbound.ts`
+      told the model to say who, which company and why *before anything else*. The line is
+      synthesised before the model has a turn, so the person was asked whether now was a good
+      time for something they had not been told, and the model composed the reason a turn
+      later in its own words. Now `outboundOpener(name, reason)` speaks the campaign's purpose
+      in the first line ("…calling to confirm your viewing at 14 Adeola Odeku on Tuesday. Is
+      now a good time?"), with this person's facts merged in; an operator who wrote the exact
+      first line gets it verbatim. The campaign layer was also telling the model to *open*
+      with that line, which would have produced it twice — it now says the line has already
+      been said. The generic opener remains for the warm at ingress and for a test call.
+
+      **3. A campaign call with no brief went ahead and improvised.** `campaignBriefFor`
+      returns null on a failed read or on ids that are not this organisation's, and the
+      gateway then ran the call with no campaign layer at all — the agent ringing a member of
+      the public with no idea why, and the model inventing a pretext. `campaignCallCannotOpen`
+      now decides, and the gateway hangs up with a log line naming the campaign. Only a
+      campaign call: a test call has no campaign id and the person answering is the operator.
+
+      **Not done, noted.** The campaign opener is synthesised when the socket opens rather
+      than warmed at dial time, so the first line pays cold TTS latency where the generic one
+      was cached. The sweeper knows the purpose and facts when it dials and the call rings for
+      seconds before it is answered; warming there needs the gateway reachable from
+      `OutboundModule`. Worth doing once a handset has proven the words are right.
+
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

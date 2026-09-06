@@ -1,6 +1,7 @@
 import {
   claimScheduledCall,
   readDueScheduledCalls,
+  attachPlacedCall,
   recordAttempt,
   withOrganization,
   type Db,
@@ -126,14 +127,17 @@ export const sweepOrganization = async (
     try {
       const outcome = await deps.place(organizationId, row);
       placed += 1;
-      await withOrganization(dataSource, organizationId, (scope) =>
-        recordAttempt(scope, row.id, {
-          status: "answered",
-          outcome: "placed",
-          callId: outcome.callId,
-          nextAttemptAt: null,
-        }),
-      );
+      /* Attach, do not settle. A returned call id means the carrier has queued the call;
+         nothing has rung. This used to write `answered` here, which made every call answered,
+         made `no_answer` and `busy` unreachable, and left the retry policy on every campaign
+         dead. The row stays `placing` (claimScheduledCall put it there) and the carrier's
+         status callback settles it — `settlePlacedCall` — once it knows what happened. */
+      if (outcome.callId !== null) {
+        const carrierCallId = outcome.callId;
+        await withOrganization(dataSource, organizationId, (scope) =>
+          attachPlacedCall(scope, row.id, carrierCallId),
+        );
+      }
     } catch (error) {
       const at = now();
       /* A refusal is terminal and a failure is not, and telling them apart is the whole point

@@ -14,6 +14,7 @@ import {
   claimNumberWithToken,
   closeCallByCarrierId,
   recordCallEventByCarrierId,
+  settlePlacedCall,
   type Db,
 } from "@ansa/db";
 import { asCallId } from "@ansa/shared";
@@ -263,6 +264,22 @@ export class VoiceController {
     // lost customer — so the doubt resolves in the caller's favour.
     if (!answeredBy.startsWith("machine") && answeredBy !== "fax") return;
 
+    /* Onto the campaign row before the call ends. The status callback that follows will say
+       `completed` with a duration, which is what an answered call looks like — and a
+       voicemail is the one thing an answered call is not. Settling here first means the row
+       says `voicemail`, gets its retry, and the later callback finds nothing left to settle. */
+    if (this.dataSource !== null) {
+      void settlePlacedCall(this.dataSource, callSid, {
+        answered: false,
+        status: "voicemail",
+        now: new Date(),
+      }).catch((error: unknown) => {
+        log.error("could not settle the campaign row as a voicemail", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
+
     /**
      * Leave one short message, then hang up — and never converse.
      *
@@ -343,6 +360,22 @@ export class VoiceController {
 
     if (missed) log.warn("outbound call reached nobody", line);
     else log.info("call status", line);
+
+    /* And onto the campaign row that placed it. The dialler leaves a placed call at
+       `placing`; this is the only thing that moves it on, so a callback that never arrives
+       is a row that stays `placing` — visible, and honest, rather than a guess. A carrier id
+       that matches no placed row (inbound, a test call) updates nothing and that is fine. */
+    if (terminal && event.direction === "outbound" && this.dataSource !== null) {
+      void settlePlacedCall(this.dataSource, event.callId, {
+        answered: wasAnswered(event),
+        status: event.status,
+        now: new Date(),
+      }).catch((error: unknown) => {
+        log.error("could not settle the campaign row for this call", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
 
     // Stored, not just logged. The callback was firing correctly and carrier_status stayed
     // null on every call, because logging it is not recording it.

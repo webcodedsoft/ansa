@@ -51,7 +51,7 @@ import { ALL_GREETING_LEADS, chooseGreetingLead } from "./greeting-lead";
 /* The same clock the situation block reads. Asking it here rather than deriving the hour
    again keeps one definition of what "morning" means on a call. */
 import { describeSituation } from "../conversation/situation";
-import { forSpeech, GREETING_TEXT, outboundOpener } from "./greeting";
+import { campaignCallCannotOpen, forSpeech, GREETING_TEXT, outboundOpener } from "./greeting";
 import { cacheKey, createAudioCache, type AudioCache } from "./prerender";
 import { createWarmScheduler } from "./warm-scheduler";
 import { openIntronSession, type IntronLanguage } from "@ansa/intron-listen";
@@ -862,10 +862,31 @@ export class MediaGateway implements OnApplicationShutdown {
       direction === "outbound" && campaignId !== null && scheduledCallId !== null && organizationId !== undefined
         ? await this.campaignBriefFor(organizationId as OrganizationId, campaignId, scheduledCallId)
         : null;
+
+    /* A campaign call with nothing to say is hung up, not improvised. `campaignCallCannotOpen`
+       says why; the carrier's status callback still settles the row, so the attempt counts. */
+    const cannotOpen = campaignCallCannotOpen({ direction, campaignId, brief: campaignBrief });
+    if (cannotOpen !== null) {
+      log.error("campaign call has no brief to speak from, hanging up", {
+        campaignId,
+        scheduledCallId,
+        reason: cannotOpen,
+      });
+      stream.hangUp();
+      return;
+    }
+
     const campaignFlow = runnableFlow(campaignBrief?.flow ?? null, this.log);
 
     const opening =
-      direction === "outbound" ? outboundOpener(settings.name) : settings.greeting;
+      direction === "outbound"
+        ? outboundOpener(
+            settings.name,
+            campaignBrief === null
+              ? null
+              : { purpose: campaignBrief.purpose, opening: campaignBrief.opening, facts: campaignBrief.facts },
+          )
+        : settings.greeting;
 
     // Keyed on the text, so the two openings are two entries and neither evicts the other.
     const warm = this.warmed(settings.voiceId, opening, settings.speakingRate);

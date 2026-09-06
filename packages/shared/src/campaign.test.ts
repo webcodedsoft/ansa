@@ -38,13 +38,17 @@ describe("what this call is about, as a prompt layer", () => {
     expect(layer).toContain("That is the whole reason you rang");
   });
 
-  it("carries an opening when one was written, with facts merged into it too", () => {
+  it("tells the model the opening it wrote has already been spoken, facts merged", () => {
+    /* The opener is synthesised before the model has a turn, so the layer must say "this was
+       said", never "say this" — the second produced the line twice on a real call. */
     const layer = campaignLayer({ ...base, opening: "I'm ringing about {property}." });
     expect(layer).toContain("I'm ringing about 14 Adeola Odeku.");
+    expect(layer).toContain("already opened with this");
+    expect(layer).not.toContain("Open with this");
   });
 
   it("says nothing about an opening when none was written", () => {
-    expect(campaignLayer(base)).not.toContain("Open with this");
+    expect(campaignLayer(base)).not.toContain("already opened with this");
   });
 
   it("lists the outcomes and refuses to let the agent flatter them", () => {

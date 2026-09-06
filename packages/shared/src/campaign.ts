@@ -134,10 +134,14 @@ export const campaignLayer = (call: CampaignCall): string => {
     `Why you are calling: ${purpose}`,
   ];
 
+  /* Already said, not to be said. The first line is synthesised before the model has a turn
+     (`outboundOpener`), and when the operator wrote one that is what was spoken. Telling the
+     model to open with it here produced the line twice: once from the cache, once from the
+     model after the person had answered. */
   if (opening !== null && opening !== "") {
     lines.push(
       "",
-      "Open with this, in your own voice but keeping its meaning and its facts:",
+      "You have already opened with this, word for word; carry on from it and do not repeat it:",
       opening,
     );
   }

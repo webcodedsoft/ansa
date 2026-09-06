@@ -10,15 +10,18 @@ import { ConsentError } from "./place";
    and whether a refusal ever does — are exercised through `sweepOrganization` with the database
    calls stubbed. What is being asserted is the policy, which is the part that would hurt
    somebody if it were wrong. */
-const { claimed, recorded, reset } = vi.hoisted(() => {
+const { claimed, recorded, attached, reset } = vi.hoisted(() => {
   const claimed: string[] = [];
   const recorded: { id: string; status: string; outcome: string | null; next: Date | null }[] = [];
+  const attached: { id: string; carrierCallId: string }[] = [];
   return {
     claimed,
     recorded,
+    attached,
     reset: (): void => {
       claimed.length = 0;
       recorded.length = 0;
+      attached.length = 0;
     },
   };
 });
@@ -45,6 +48,10 @@ vi.mock("@ansa/db", () => ({
       outcome: result.outcome ?? null,
       next: result.nextAttemptAt ?? null,
     });
+    return true;
+  },
+  attachPlacedCall: async (_scope: unknown, id: string, carrierCallId: string) => {
+    attached.push({ id, carrierCallId });
     return true;
   },
 }));
@@ -143,11 +150,16 @@ describe("what it does with a failure", () => {
 });
 
 describe("what it does when the call goes out", () => {
-  it("records the call it placed against the row", async () => {
-    const report = await run([due()], async () => ({ callId: "call-77" }));
+  it("attaches the carrier's id to the row and leaves the verdict to the carrier", async () => {
+    /* A returned id means the carrier has queued the call; nobody has picked up. The row stays
+       `placing` and the status callback settles it. This used to write `answered` here, which
+       made every call answered and every retry policy unreachable — and tried to put the
+       carrier's id in a uuid column, which threw, so every placed call was retried. */
+    const report = await run([due()], async () => ({ callId: "CA77" }));
 
-    expect(report).toMatchObject({ considered: 1, placed: 1 });
-    expect(recorded[0]).toMatchObject({ status: "answered", next: null });
+    expect(report).toMatchObject({ considered: 1, placed: 1, failed: 0 });
+    expect(attached).toEqual([{ id: "row-1", carrierCallId: "CA77" }]);
+    expect(recorded).toEqual([]);
   });
 
   it("claims before it dials, so two sweeps cannot both place the same call", async () => {
