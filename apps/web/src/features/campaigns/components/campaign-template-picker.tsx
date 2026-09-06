@@ -1,9 +1,9 @@
 "use client";
 
-import { Check } from "lucide-react";
+import { Check, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { CONTROL } from "@/components/ui";
+import { Button, CONTROL, Modal } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
 import { CAMPAIGN_SECTORS, CAMPAIGN_TEMPLATES, type CampaignTemplate } from "../campaign-templates";
@@ -26,23 +26,28 @@ const hours = (template: CampaignTemplate): string =>
     ? "08–20"
     : `${pad(template.callingWindow.startHour)}–${pad(template.callingWindow.endHour)}`;
 
+const facts = (template: CampaignTemplate): readonly string[] => [
+  policy(template),
+  `${hours(template)} WAT`,
+  template.voicemail === "hang_up" ? "no voicemail" : "leaves a message",
+];
+
 /**
- * Pick a campaign to start from, or none.
+ * The template gallery, in the same modal the agent gallery uses.
  *
- * Inline rather than behind a modal, because seventeen cards is a choice and not a page —
- * the agent gallery hides seventy behind a button for the opposite reason. The cards are
- * deliberately dense: name, one line, and three facts that decide whether it fits (how many
- * tries, what hours, whether it leaves a message). The reasoning behind each is on the
- * chosen card only, so it reads as the explanation of a decision rather than as seventeen
- * paragraphs competing for attention.
- *
- * "Start from scratch" is a real card and the first one, so the blank path is a choice made
- * rather than the absence of one.
+ * The same shape on purpose — search, sector chips, a scrolling grid, pick-closes — so
+ * somebody who has built an agent already knows how to start a campaign. Picking closes:
+ * the pick is the act, and a second button would make the card an inert border around a
+ * footer.
  */
-export const CampaignTemplatePicker = ({
+export const CampaignTemplateGallery = ({
+  open,
+  onClose,
   selectedId,
   onSelect,
 }: {
+  readonly open: boolean;
+  readonly onClose: () => void;
   readonly selectedId: string;
   readonly onSelect: (id: string) => void;
 }) => {
@@ -60,146 +65,112 @@ export const CampaignTemplatePicker = ({
     });
   }, [query, sector]);
 
-  const chosen = CAMPAIGN_TEMPLATES.find((template) => template.id === selectedId) ?? null;
-
-  const chip = (on: boolean): string =>
-    cn(
-      "rounded-full border px-3 py-1 text-[12px] whitespace-nowrap transition-colors",
-      on
-        ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--ink)]"
-        : "border-[var(--hairline)] text-[var(--ink-3)] hover:border-[var(--ink-3)]",
-    );
-
   return (
-    <div className="flex flex-col gap-3.5">
-      {/* The pick, carried to the action under its own name. */}
-      <input type="hidden" name="templateId" value={selectedId} />
+    <Modal
+      open={open}
+      onClose={onClose}
+      size="wide"
+      title="Choose a starting point"
+      description="Every template is a campaign somebody actually runs — the reason the agent opens with, the verdicts it records, the conversation it has when the person says something back, and a retry policy that suits the subject. Pick one, give it a name, add the people, and it can start."
+    >
+      <div className="flex flex-col gap-3">
+        <label className="relative block">
+          <Search
+            aria-hidden
+            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-[var(--ink-3)]"
+          />
+          <input
+            autoFocus
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search — rent, appointment, delivery, fees…"
+            aria-label="Search templates"
+            className={cn(CONTROL, "pl-9")}
+          />
+        </label>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          type="search"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search — rent, appointment, delivery…"
-          aria-label="Search templates"
-          className={cn(CONTROL, "max-w-[18rem]")}
-        />
-        <div className="flex flex-wrap gap-1.5">
-          <button type="button" className={chip(sector === null)} onClick={() => setSector(null)}>
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Kind of organisation">
+          <Chip on={sector === null} onClick={() => setSector(null)}>
             All
-          </button>
+          </Chip>
           {CAMPAIGN_SECTORS.map((one) => (
-            <button
-              key={one}
-              type="button"
-              className={chip(sector === one)}
-              onClick={() => setSector(sector === one ? null : one)}
-            >
+            <Chip key={one} on={sector === one} onClick={() => setSector(sector === one ? null : one)}>
               {one}
-            </button>
+            </Chip>
           ))}
         </div>
-      </div>
 
-      <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3" role="radiogroup" aria-label="Template">
-        {sector === null && query.trim() === "" && (
-          <TemplateCard
-            selected={selectedId === ""}
-            onSelect={() => onSelect("")}
-            name="Start from scratch"
-            sector="Blank"
-            summary="A name and an agent, nothing filled in. Write the brief yourself on the next screen."
-          />
-        )}
-        {shown.map((template) => (
-          <TemplateCard
-            key={template.id}
-            selected={selectedId === template.id}
-            onSelect={() => onSelect(template.id)}
-            name={template.name}
-            sector={template.sector}
-            summary={template.summary}
-            facts={[
-              policy(template),
-              `${hours(template)} WAT`,
-              template.voicemail === "hang_up" ? "no voicemail" : "leaves a message",
-            ]}
-          />
-        ))}
-        {shown.length === 0 && (
-          <p className="col-span-full py-6 text-center text-[12.5px] text-[var(--ink-3)]">
-            Nothing matches. Try a different word, or start from scratch.
-          </p>
-        )}
-      </div>
-
-      {chosen !== null && (
-        /* The chosen one, opened up: what the agent will say, what it records, what the list
-           has to carry, and why it is shaped this way. This is where the template teaches. */
-        <div className="rounded-lg border border-[var(--accent)] bg-[var(--accent-soft)] p-4">
-          <div className="grid gap-x-8 gap-y-4 lg:grid-cols-2">
-            <div>
-              <div className="text-[11px] tracking-[0.06em] text-[var(--ink-3)] uppercase">
-                It opens by saying it is calling
-              </div>
-              <p className="mt-1 text-[14px] leading-relaxed text-[var(--ink)]">…{chosen.purpose}</p>
-              {chosen.facts.length > 0 && (
-                <div className="mt-3">
-                  <div className="text-[11px] tracking-[0.06em] text-[var(--ink-3)] uppercase">
-                    Each contact needs
-                  </div>
-                  <ul className="mt-1 flex flex-col gap-0.5 text-[12.5px] text-[var(--ink-2)]">
-                    {chosen.facts.map((fact) => (
-                      <li key={fact.key}>
-                        <code className="rounded bg-[var(--surface)] px-1 py-0.5 text-[11.5px] text-[var(--accent)]">
-                          {`{${fact.key}}`}
-                        </code>{" "}
-                        <span className="text-[var(--ink-3)]">e.g. {fact.example}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+        <div className="max-h-[56vh] overflow-y-auto pr-1">
+          {shown.length === 0 ? (
+            <p className="py-10 text-center text-[13px] text-[var(--ink-3)]">Nothing matches that.</p>
+          ) : (
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+              {shown.map((template) => (
+                <TemplateCard
+                  key={template.id}
+                  template={template}
+                  selected={template.id === selectedId}
+                  onPick={() => {
+                    onSelect(template.id);
+                    onClose();
+                  }}
+                />
+              ))}
             </div>
-            <div>
-              <div className="text-[11px] tracking-[0.06em] text-[var(--ink-3)] uppercase">It records one of</div>
-              <p className="mt-1 text-[12.5px] leading-relaxed text-[var(--ink-2)]">
-                {chosen.outcomes.join(" · ")}
-              </p>
-              <div className="mt-3 text-[11px] tracking-[0.06em] text-[var(--ink-3)] uppercase">
-                Why it is shaped this way
-              </div>
-              <p className="mt-1 text-[12.5px] leading-relaxed text-[var(--ink-2)]">{chosen.rationale}</p>
-            </div>
-          </div>
+          )}
         </div>
-      )}
-    </div>
+
+        <p className="text-[12px] text-[var(--ink-3)]">
+          {shown.length} of {CAMPAIGN_TEMPLATES.length} templates
+        </p>
+      </div>
+    </Modal>
   );
 };
 
-const TemplateCard = ({
-  selected,
-  onSelect,
-  name,
-  sector,
-  summary,
-  facts = [],
+const Chip = ({
+  on,
+  onClick,
+  children,
 }: {
-  readonly selected: boolean;
-  readonly onSelect: () => void;
-  readonly name: string;
-  readonly sector: string;
-  readonly summary: string;
-  readonly facts?: readonly string[];
+  readonly on: boolean;
+  readonly onClick: () => void;
+  readonly children: string;
 }) => (
   <button
     type="button"
-    role="radio"
-    aria-checked={selected}
-    onClick={onSelect}
+    aria-pressed={on}
+    onClick={onClick}
     className={cn(
-      "flex flex-col gap-2 rounded-lg border p-3.5 text-left transition-colors",
+      "rounded-full border px-2.5 py-1 text-[12px] transition-colors",
+      on
+        ? "border-transparent bg-[var(--accent)] text-[var(--accent-on)]"
+        : "border-[var(--hairline)] text-[var(--ink-2)] hover:border-[var(--ink-3)]",
+    )}
+  >
+    {children}
+  </button>
+);
+
+/**
+ * What a template does, on a card: the name, the sector, one line, and the three facts that
+ * decide whether it fits — how many tries, what hours, whether it leaves a message.
+ */
+export const TemplateCard = ({
+  template,
+  selected,
+  onPick,
+}: {
+  readonly template: CampaignTemplate;
+  readonly selected: boolean;
+  readonly onPick: () => void;
+}) => (
+  <button
+    type="button"
+    aria-pressed={selected}
+    onClick={onPick}
+    className={cn(
+      "flex h-full flex-col gap-2 rounded-lg border p-3.5 text-left transition-colors",
       selected
         ? "border-[var(--accent)] bg-[var(--accent-soft)]"
         : "border-[var(--hairline)] hover:border-[var(--ink-3)]",
@@ -207,14 +178,61 @@ const TemplateCard = ({
   >
     <div className="flex items-start justify-between gap-2">
       <div className="min-w-0">
-        <div className="text-[13.5px] leading-tight font-medium text-[var(--ink)]">{name}</div>
-        <div className="mt-0.5 text-[11px] text-[var(--ink-3)]">{sector}</div>
+        <div className="text-[13.5px] leading-tight font-medium text-[var(--ink)]">{template.name}</div>
+        <div className="mt-0.5 text-[11px] text-[var(--ink-3)]">{template.sector}</div>
       </div>
       {selected && <Check className="size-4 flex-none text-[var(--accent)]" aria-hidden />}
     </div>
-    <p className="text-[12px] leading-relaxed text-[var(--ink-2)]">{summary}</p>
-    {facts.length > 0 && (
-      <p className="mt-auto text-[11px] tabular-nums text-[var(--ink-3)]">{facts.join(" · ")}</p>
-    )}
+    <p className="text-[12px] leading-relaxed text-[var(--ink-2)]">{template.summary}</p>
+    <p className="mt-auto text-[11px] tabular-nums text-[var(--ink-3)]">{facts(template).join(" · ")}</p>
   </button>
+);
+
+export const BrowseTemplatesButton = ({ onClick }: { readonly onClick: () => void }) => (
+  <Button variant="secondary" onClick={onClick}>
+    <Search className="size-3.5" />
+    Browse {CAMPAIGN_TEMPLATES.length} templates
+  </Button>
+);
+
+/**
+ * The chosen template, opened up: what the agent will say, what the list has to carry, what
+ * it records, and why it is shaped this way. This is where a template teaches, and it is on
+ * the page rather than in the modal because it is read *after* the pick, when the modal has
+ * closed and the person is deciding whether they meant it.
+ */
+export const ChosenTemplate = ({ template }: { readonly template: CampaignTemplate }) => (
+  <div className="rounded-lg border border-[var(--hairline)] p-4">
+    <div className="grid gap-x-8 gap-y-4 lg:grid-cols-2">
+      <div>
+        <div className="text-[11px] tracking-[0.06em] text-[var(--ink-3)] uppercase">
+          It opens by saying it is calling
+        </div>
+        <p className="mt-1 text-[14px] leading-relaxed text-[var(--ink)]">…{template.purpose}</p>
+        {template.facts.length > 0 && (
+          <div className="mt-3">
+            <div className="text-[11px] tracking-[0.06em] text-[var(--ink-3)] uppercase">Each contact needs</div>
+            <ul className="mt-1 flex flex-col gap-0.5 text-[12.5px] text-[var(--ink-2)]">
+              {template.facts.map((fact) => (
+                <li key={fact.key}>
+                  <code className="rounded bg-[var(--accent-soft)] px-1 py-0.5 text-[11.5px] text-[var(--accent)]">
+                    {`{${fact.key}}`}
+                  </code>{" "}
+                  <span className="text-[var(--ink-3)]">e.g. {fact.example}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+      <div>
+        <div className="text-[11px] tracking-[0.06em] text-[var(--ink-3)] uppercase">It records one of</div>
+        <p className="mt-1 text-[12.5px] leading-relaxed text-[var(--ink-2)]">{template.outcomes.join(" · ")}</p>
+        <div className="mt-3 text-[11px] tracking-[0.06em] text-[var(--ink-3)] uppercase">
+          Why it is shaped this way
+        </div>
+        <p className="mt-1 text-[12.5px] leading-relaxed text-[var(--ink-2)]">{template.rationale}</p>
+      </div>
+    </div>
+  </div>
 );

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useActionState, useMemo, useState } from "react";
 
 import {
+  Button,
   buttonClass,
   Card,
   Notice,
@@ -18,7 +19,12 @@ import { idleForm } from "@/lib/form-state";
 import { createCampaignAction, type CreateCampaignState } from "../campaigns.actions";
 import { campaignTemplateById } from "../campaign-templates";
 import { windowSummary } from "../campaigns.display";
-import { CampaignTemplatePicker } from "./campaign-template-picker";
+import {
+  BrowseTemplatesButton,
+  CampaignTemplateGallery,
+  ChosenTemplate,
+  TemplateCard,
+} from "./campaign-template-picker";
 
 const START: CreateCampaignState = idleForm();
 
@@ -136,6 +142,7 @@ export const NewCampaignForm = ({ agents }: { readonly agents: readonly AgentCho
 
   const [name, setName] = useState("");
   const [templateId, setTemplateId] = useState("");
+  const [browsing, setBrowsing] = useState(false);
   const template = campaignTemplateById(templateId);
   const [agentId, setAgentId] = useState("");
   const [mode, setMode] = useState<"default" | "custom">("default");
@@ -209,7 +216,41 @@ export const NewCampaignForm = ({ agents }: { readonly agents: readonly AgentCho
           title="Start from"
           description="A campaign somebody actually runs, with its reason, its verdicts and its retry policy written for the subject — or a blank one. Everything it fills in can be changed on the next screen."
         >
-          <CampaignTemplatePicker selectedId={templateId} onSelect={pick} />
+          {/* The pick, carried to the action under its own name. */}
+          <input type="hidden" name="templateId" value={templateId} />
+
+          {/* The same shape as the agent create page: the chosen card on the page, the grid
+              behind a Browse button. Somebody who has built an agent already knows this. */}
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+            {template === null ? (
+              <p className="text-[12.5px] text-[var(--ink-3)]">
+                Starting from scratch — a name and an agent, nothing filled in.
+              </p>
+            ) : (
+              <TemplateCard template={template} selected onPick={() => setBrowsing(true)} />
+            )}
+            <div className="flex flex-col gap-1.5">
+              <BrowseTemplatesButton onClick={() => setBrowsing(true)} />
+              {template !== null && (
+                <Button variant="ghost" onClick={() => pick("")}>
+                  Start from nothing
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {template !== null && (
+            <div className="mt-3.5">
+              <ChosenTemplate template={template} />
+            </div>
+          )}
+
+          <CampaignTemplateGallery
+            open={browsing}
+            onClose={() => setBrowsing(false)}
+            selectedId={templateId}
+            onSelect={pick}
+          />
         </Card>
 
         <Card
