@@ -41,6 +41,14 @@ export interface Contact {
   readonly notes: string | null;
   /** The `contact_imports` batch this came in on, or null for anyone who was not imported. */
   readonly importId: string | null;
+  /**
+   * Whether this person has ever told us anything.
+   *
+   * False is a real caller we hold a number for and nothing else — a wrong number, a misdial,
+   * somebody who hung up. They are remembered, and the directory keeps them behind a filter
+   * rather than in front of the customers.
+   */
+  readonly identified: boolean;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -60,6 +68,7 @@ const asContact = (row: Record<string, unknown>): Contact => ({
   source: String(row["source"]) as ContactSource,
   notes: row["notes"] === null ? null : String(row["notes"]),
   importId: row["import_id"] === null ? null : String(row["import_id"]),
+  identified: row["identified"] === true,
   createdAt: new Date(String(row["created_at"])),
   updatedAt: new Date(String(row["updated_at"])),
 });
@@ -75,12 +84,15 @@ const asValue = (row: Record<string, unknown>): ContactValue => ({
 /**
  * Fold one call's confirmed values onto the person who gave them.
  *
- * Driven from the call rather than from a caller string handed in, which is what keeps the
- * number honest: the insert reads `calls.caller` in the same statement, so a contact can
- * only ever be created for a call this organisation actually holds. A call with a withheld
- * number selects no row and writes nothing — correctly, because there is nobody to file it
- * under, and one contact per anonymous call would be a list of strangers who are all the
- * same stranger.
+ * It no longer creates the person. `recordCallStarted` resolves them when the call record
+ * opens (0075), so this follows the link the call already carries — which is also what makes
+ * it right for outbound, where the old insert would have read `calls.caller` and made a
+ * contact for our own number. A call with a withheld number carries no link and writes
+ * nothing, correctly: there is nobody to file it under, and one contact per anonymous call
+ * would be a list of strangers who are all the same stranger.
+ *
+ * Confirming a value is also what marks somebody `identified`, which is the difference
+ * between a person the directory leads with and a misdial behind its filter.
  *
  * Called after `recordCaptures` and inside the same organisation scope. Not a trigger: a
  * trigger would put this on the call path's write, and it belongs to the console's read.
@@ -89,20 +101,21 @@ export const mergeCapturesIntoContact = async (
   scope: OrganizationScope,
   callRowId: string,
 ): Promise<void> => {
-  const created = await scope.query<Record<string, unknown>>(
-    `insert into contacts (organization_id, phone)
-     select c.organization_id, c.caller
+  /* The person already exists: `recordCallStarted` resolved them when the call record
+     opened (0075). This reads that link rather than minting a second one from `caller`,
+     which on an outbound call is our own number and would have created a contact for
+     ourselves. Confirming a value is also what makes somebody `identified` — they have now
+     told us something, so they belong in the directory rather than behind its filter. */
+  const linked = await scope.mutate<Record<string, unknown>>(
+    `update contacts ct
+        set identified = true, updated_at = now()
        from calls c
-      where c.id = $1
-        and c.caller is not null
-        and c.caller <> ''
-     on conflict (organization_id, phone) do update
-       set updated_at = now()
-     returning id`,
+      where c.id = $1 and ct.id = c.contact_id
+      returning ct.id`,
     [callRowId],
   );
 
-  const contactId = created[0]?.["id"];
+  const contactId = linked[0]?.["id"];
   if (contactId === undefined) return;
 
   /* Last confirmation wins, and only forwards. The guard on `updated_at` matters because
@@ -128,6 +141,14 @@ export const mergeCapturesIntoContact = async (
 export interface ContactQuery {
   /** Matches the number or any stored value, so searching a name finds the person. */
   readonly search?: string | null;
+  /**
+   * True for the people who have told us something, false for the ones who have not, and
+   * undefined for everybody.
+   *
+   * The directory leads with the identified, because everyone being remembered is only useful
+   * if the customers are not buried under the misdials.
+   */
+  readonly identified?: boolean | null;
 }
 
 /**
@@ -143,28 +164,30 @@ export const readContacts = async (
   query: ContactQuery = {},
 ): Promise<PageSlice<ContactSummary>> => {
   const search = query.search?.trim() ?? "";
+  const identified = query.identified ?? null;
 
   /* `count(*) over()` counts groups, not rows, because window functions are evaluated after
      GROUP BY — so the total is the number of people matching, which is what the pager needs,
      and not the number of their calls. */
   const rows = await scope.query<Record<string, unknown> & WithTotal>(
-    `select ct.id, ct.phone, ct.display_name, ct.source, ct.notes, ct.import_id,
+    `select ct.id, ct.phone, ct.display_name, ct.source, ct.notes, ct.import_id, ct.identified,
             ct.created_at, ct.updated_at,
             count(c.id)::int          as call_count,
             min(c.created_at)         as first_call_at,
             max(c.created_at)         as last_call_at,
             ${TOTAL_COLUMN}
        from contacts ct
-       left join calls c on c.caller = ct.phone
+       left join calls c on c.contact_id = ct.id
       where ($1 = ''
              or ct.phone ilike '%' || $1 || '%'
              or coalesce(ct.display_name, '') ilike '%' || $1 || '%'
              or exists (select 1 from contact_values v
                          where v.contact_id = ct.id and v.value ilike '%' || $1 || '%'))
+        and ($4::boolean is null or ct.identified = $4::boolean)
       group by ct.id
       order by max(c.created_at) desc nulls last, ct.updated_at desc
       limit $2 offset $3`,
-    [search, page.limit, page.offset],
+    [search, page.limit, page.offset, identified],
   );
   if (rows.length === 0) return { items: [], total: 0 };
 
@@ -195,6 +218,8 @@ export const readContacts = async (
 
 export interface ContactStats {
   readonly total: number;
+  /** How many of them have ever told us anything. The rest are numbers and nothing else. */
+  readonly identified: number;
   /** People who have rung more than once — the ones a callback list is actually about. */
   readonly repeatCallers: number;
   /** First heard from in the last seven days. */
@@ -211,12 +236,13 @@ export interface ContactStats {
 export const readContactStats = async (scope: OrganizationScope): Promise<ContactStats> => {
   const rows = await scope.query<Record<string, unknown>>(
     `with per as (
-       select ct.id, ct.created_at, count(c.id)::int as calls
+       select ct.id, ct.created_at, ct.identified, count(c.id)::int as calls
          from contacts ct
-         left join calls c on c.caller = ct.phone
+         left join calls c on c.contact_id = ct.id
         group by ct.id
      )
      select count(*)::int                                                    as total,
+            count(*) filter (where identified)::int                          as identified,
             count(*) filter (where calls > 1)::int                           as repeat_callers,
             count(*) filter (where created_at >= now() - interval '7 days')::int as new_this_week
        from per`,
@@ -224,6 +250,7 @@ export const readContactStats = async (scope: OrganizationScope): Promise<Contac
   const row = rows[0];
   return {
     total: Number(row?.["total"] ?? 0),
+    identified: Number(row?.["identified"] ?? 0),
     repeatCallers: Number(row?.["repeat_callers"] ?? 0),
     newThisWeek: Number(row?.["new_this_week"] ?? 0),
   };
@@ -235,13 +262,13 @@ export const readContact = async (
   contactId: string,
 ): Promise<ContactSummary | null> => {
   const rows = await scope.query<Record<string, unknown>>(
-    `select ct.id, ct.phone, ct.display_name, ct.source, ct.notes, ct.import_id,
+    `select ct.id, ct.phone, ct.display_name, ct.source, ct.notes, ct.import_id, ct.identified,
             ct.created_at, ct.updated_at,
             count(c.id)::int  as call_count,
             min(c.created_at) as first_call_at,
             max(c.created_at) as last_call_at
        from contacts ct
-       left join calls c on c.caller = ct.phone
+       left join calls c on c.contact_id = ct.id
       where ct.id = $1
       group by ct.id`,
     [contactId],
@@ -279,10 +306,15 @@ export interface ContactCall {
 /**
  * Every call this person has made or been made, newest first.
  *
- * Matched on the number rather than through a foreign key, because a call belongs to a
- * caller before any contact exists for them — the contact is created by the first confirmed
- * value, and the calls before that one are still theirs. A key would have to be backfilled
- * and would go stale the moment a number was re-used.
+ * Through `calls.contact_id` (0075), not the number. It used to match on the string, on the
+ * reasoning that a call belongs to a caller before any contact exists for them — which was
+ * true while the contact was created by the first confirmed value. It is not true now: the
+ * person is resolved when the call record opens, so every call has its key from the start,
+ * and the old ones were backfilled.
+ *
+ * The string join also had a defect the reasoning hid. It matched `calls.caller`, and on an
+ * outbound call `caller` is *our* number — so a person a campaign rang could never appear in
+ * their own history. The key is resolved from the counterparty and both directions land here.
  */
 export const readContactCalls = async (
   scope: OrganizationScope,
@@ -296,8 +328,7 @@ export const readContactCalls = async (
     `select c.id, c.carrier_call_id, c.agent_id, c.created_at, c.end_reason,
             c.duration_seconds, c.direction, ${TOTAL_COLUMN}
        from calls c
-       join contacts ct on ct.phone = c.caller
-      where ct.id = $1
+      where c.contact_id = $1
       ${pageOrder("c.created_at", "c.id", 2)}`,
     [contactId, ...pageParams(page)],
   );
@@ -378,14 +409,18 @@ export const addContacts = async (
 ): Promise<readonly AddedContact[]> => {
   if (contacts.length === 0) return [];
   const rows = await scope.query<Record<string, unknown>>(
-    `insert into contacts (organization_id, phone, display_name, notes, source, import_id)
-     select app.current_organization(), p.phone, p.display_name, p.notes, $3, $4::uuid
+    /* `identified` is true for everyone who arrives this way: an operator typed them in, or
+       they came off a list of people somebody already knew. It is only a caller who has told
+       us nothing that stays behind the directory's filter. */
+    `insert into contacts (organization_id, phone, display_name, notes, source, import_id, identified)
+     select app.current_organization(), p.phone, p.display_name, p.notes, $3, $4::uuid, true
        from (select distinct on (phone) phone, display_name, notes
                from unnest($1::text[], $2::text[], $5::text[]) as u(phone, display_name, notes)
               order by phone, display_name nulls last) as p
      on conflict (organization_id, phone) do update
        set display_name = coalesce(contacts.display_name, excluded.display_name),
-           notes        = coalesce(contacts.notes, excluded.notes)
+           notes        = coalesce(contacts.notes, excluded.notes),
+           identified   = true
      returning id, phone, (xmax = 0) as created`,
     [
       contacts.map((c) => c.phone),

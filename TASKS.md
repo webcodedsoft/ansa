@@ -5180,6 +5180,37 @@ rather than landed as inventory — the wave that needs them adds them wired.
       Schedule tab under the hours. Empty box is no cap, and the schema turns "" into null
       rather than 0 — tested, because 0 is a cap the API refuses.
 
+- [x] **Slice 2 — every call files itself under a person** (2026-09-06)
+      Migration 0075: `calls.contact_id` and `contacts.identified`.
+
+      **The counterparty, not the caller.** `recordCallStarted` resolves the person in the same
+      statement that opens the call record — inbound that is `caller`, outbound it is
+      `dialled`, because on a call we placed `caller` is our own number. That one line is what
+      fixes the bug where somebody a campaign rang showed "0 calls" on a page promising every
+      call from their number. All four string joins on `contacts.phone = calls.caller` are
+      gone; the relationship is real.
+
+      **The contact is minted when the call opens, not when a value is confirmed.** So a call
+      that captured nothing still leaves a person behind — the literal ask. `identified` is the
+      answer to what that does to the directory: everyone is remembered, the directory leads
+      with the people who have told us something, and "Everyone" is one link away with a
+      "told us nothing" marker on the rows it adds. Manual and imported people are identified
+      by definition; a caller becomes identified the moment a value is confirmed.
+
+      `mergeCapturesIntoContact` no longer creates anybody — it follows the link the call
+      carries, which is also what stops it making a contact for our own number on outbound.
+
+      **Two bugs found while doing it.** The counterparty parameter needed an explicit
+      `::text` cast, since it appears only in a `where` clause and Postgres could not infer it.
+      And the `identified` update used `scope.query`, which returns `[rows, count]` for an
+      `UPDATE … RETURNING` — that is what `scope.mutate` exists for, and what
+      `mutate-not-query.test.ts` guards.
+
+      **No historical backfill of people.** The migration links calls to contacts that already
+      exist, and `contacts` is empty in every organisation, so it linked nothing. Minting
+      contacts for 173 historical calls would fill the real directory with development test
+      calls, which is a decision for the operator and not a migration.
+
 - [x] **Slice 1 — one number, one person** (2026-09-06)
       `packages/shared/src/phone.ts`: `E164_PATTERN`, `toE164`, `asDialled`, `sameNumber`.
       There were five spellings of the E.164 regex and two converters running in opposite

@@ -11,9 +11,12 @@ import { api } from "@/lib/api/server";
 export const listContacts = async (
   search: string | undefined,
   paging: { readonly page?: number; readonly perPage?: number } = {},
+  /** True for the people who have told us something; undefined for everybody. */
+  identified?: boolean,
 ) => {
-  const query: Record<string, string | number> = { ...paging };
+  const query: Record<string, string | number | boolean> = { ...paging };
   if (search !== undefined && search.trim() !== "") query["search"] = search.trim();
+  if (identified !== undefined) query["identified"] = identified;
   return (await api()).contacts.list({ query });
 };
 

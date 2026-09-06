@@ -2738,6 +2738,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
           readonly page?: number;
           readonly perPage?: number;
           readonly search?: string;
+          readonly identified?: boolean;
         };
       }) =>
       send<{
@@ -2747,6 +2748,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly phone: string;
         readonly displayName: string | null;
         readonly callCount: number;
+        readonly identified: boolean;
         readonly firstCallAt: string | null;
         readonly lastCallAt: string | null;
         readonly values: readonly ({
@@ -2766,6 +2768,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       };
         readonly stats: {
         readonly people: number;
+        readonly identified: number;
         readonly repeatCallers: number;
         readonly newThisWeek: number;
       };
@@ -2807,6 +2810,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly phone: string;
         readonly displayName: string | null;
         readonly callCount: number;
+        readonly identified: boolean;
         readonly firstCallAt: string | null;
         readonly lastCallAt: string | null;
         readonly values: readonly ({
@@ -2872,6 +2876,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly phone: string;
         readonly displayName: string | null;
         readonly callCount: number;
+        readonly identified: boolean;
         readonly firstCallAt: string | null;
         readonly lastCallAt: string | null;
         readonly values: readonly ({

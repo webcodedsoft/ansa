@@ -122,8 +122,15 @@ export const ContactsDirectory = ({ people }: { readonly people: readonly Contac
                       {initialsOf(person)}
                     </span>
                     <span className="min-w-0">
-                      <span className="block truncate text-[13.5px] font-medium">
-                        {nameOf(person)}
+                      <span className="flex items-center gap-1.5">
+                        <span className="truncate text-[13.5px] font-medium">{nameOf(person)}</span>
+                        {/* Only ever seen under "Everyone", where it is the reason a row with
+                            no name is in the list at all. */}
+                        {!person.identified && (
+                          <span className="flex-none rounded border border-[var(--hairline)] px-1 py-px text-[10px] font-semibold tracking-[0.04em] text-[var(--ink-3)] uppercase">
+                            told us nothing
+                          </span>
+                        )}
                       </span>
                       {/* The number under the name rather than in a column of its own: it is
                           how you recognise somebody, not a field you sort by. */}

@@ -38,17 +38,45 @@ export interface StartedCall {
   readonly consentBasis?: string | null;
 }
 
-/** Returns the row id, which everything else in the call hangs off. */
+/**
+ * Open the call record, and file it under the person on the other end.
+ *
+ * **The counterparty, not the caller.** Inbound the other end is `caller`; outbound it is
+ * `dialled`, because on a call we placed `caller` is our own number. Resolving the wrong one
+ * is what made a campaign's calls invisible on the contact page they belonged to.
+ *
+ * The contact is minted here rather than when a value is confirmed, so a call where the agent
+ * captured nothing still leaves a person behind. `identified` stays false until they tell us
+ * something — everyone is remembered, and the directory can still lead with the people who
+ * are actually customers.
+ *
+ * One statement, so a call cannot exist without its person having been resolved and no second
+ * path can appear later. A withheld number resolves to nothing and the call keeps a null
+ * `contact_id`, which is legal and meaningful rather than a gap.
+ *
+ * Returns the row id, which everything else in the call hangs off.
+ */
 export const recordCallStarted = async (
   dataSource: Db,
   call: StartedCall,
 ): Promise<string | null> =>
   withOrganization(dataSource, call.organizationId, async (scope) => {
+    const dialled = asDialled(call.dialled) ?? call.dialled;
+    const caller = asDialled(call.caller);
+    const counterparty = call.direction === "outbound" ? dialled : caller;
+
     const rows = await scope.query<{ id: string }>(
-      `insert into calls
+      `with person as (
+         insert into contacts (organization_id, phone, source)
+         select app.current_organization(), $10::text, 'call'
+          where $10::text is not null and $10::text <> ''
+         on conflict (organization_id, phone) do update set updated_at = now()
+         returning id
+       )
+       insert into calls
          (organization_id, carrier_call_id, direction, dialled, caller, agent_id, config_version,
-          consent_policy, consent_basis, answered_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
+          consent_policy, consent_basis, answered_at, contact_id)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), (select id from person))
        returning id`,
       [
         call.organizationId,
@@ -56,18 +84,17 @@ export const recordCallStarted = async (
         call.direction,
         /* Canonical before anything joins on it. `asDialled` keeps a shape it does not
            recognise exactly as the carrier sent it, because a caller ID is evidence. */
-        asDialled(call.dialled) ?? call.dialled,
-        asDialled(call.caller),
+        dialled,
+        caller,
         call.agentId ?? null,
         call.configVersion,
         call.consentPolicy ?? null,
         call.consentBasis ?? null,
+        counterparty,
       ],
     );
     return rows[0]?.id ?? null;
   });
-
-
 
 /** Batched, because a call produces far more events than it does round trips worth spending. */
 export const recordCallEvents = async (

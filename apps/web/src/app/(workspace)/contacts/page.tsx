@@ -1,5 +1,6 @@
 import { Search } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { Button, PageHeader, Pagination, Stat } from "@/components/ui";
 import { CONTROL } from "@/components/ui";
@@ -35,15 +36,21 @@ const ContactsPage = async ({
 }: {
   readonly searchParams: Promise<{
     readonly q?: string;
+    /** `everyone` lifts the identified filter. Absent means the default, identified only. */
+    readonly who?: string;
     readonly page?: string;
     readonly perPage?: string;
   }>;
 }) => {
   const search = await searchParams;
   const requested = readPaging(search);
+  /* Identified by default. Everyone is remembered — a wrong number is still a person we hold
+     a number for — but the directory leads with the ones who have told us something, or the
+     customers sit underneath the misdials. */
+  const everyone = search.who === "everyone";
   const [principal, { page, stats }] = await Promise.all([
     currentPrincipal(),
-    listContacts(search.q, requested),
+    listContacts(search.q, requested, everyone ? undefined : true),
   ]);
   const canWrite = principal.capabilities.includes("contacts:write");
 
@@ -53,11 +60,18 @@ const ContactsPage = async ({
         eyebrow="Operate"
         title="Contacts"
         actions={canWrite ? <ContactsActions /> : undefined}
-        meta="Everyone who has called, and every call they have made. A caller becomes a contact the first time they confirm something."
+        meta="Everyone who has called, and everyone you have called. A person is created on the first call that carries a number, and is identified once they tell you something."
       />
 
-      <div className="grid gap-3.5 sm:grid-cols-3">
+      <div className="grid gap-3.5 sm:grid-cols-4">
         <Stat label="People" value={stats.people} />
+        <Stat
+          label="Identified"
+          value={stats.identified}
+          trend={
+            stats.people === 0 ? undefined : `${stats.people - stats.identified} told us nothing`
+          }
+        />
         <Stat
           label="Rang more than once"
           value={stats.repeatCallers}
@@ -87,10 +101,33 @@ const ContactsPage = async ({
             className={cn(CONTROL, "pl-9")}
           />
         </label>
+        {/* Carried through the form so searching does not silently drop the filter. */}
+        {everyone && <input type="hidden" name="who" value="everyone" />}
         <Button type="submit" variant="primary">
           Search
         </Button>
       </form>
+
+      {/* Links rather than a toggle: the filter is in the URL like the search and the page, so
+          a filtered list is one somebody can send to a colleague. */}
+      <div className="mb-3.5 flex items-center gap-2 text-[12.5px]">
+        <Link
+          href={search.q === undefined || search.q === "" ? "/contacts" : `/contacts?q=${encodeURIComponent(search.q)}`}
+          className={cn("rounded-full border px-2.5 py-1", everyone
+            ? "border-[var(--hairline)] text-[var(--ink-3)] hover:border-[var(--ink-3)]"
+            : "border-transparent bg-[var(--accent)] text-[var(--accent-on)]")}
+        >
+          Identified
+        </Link>
+        <Link
+          href={`/contacts?who=everyone${search.q === undefined || search.q === "" ? "" : `&q=${encodeURIComponent(search.q)}`}`}
+          className={cn("rounded-full border px-2.5 py-1", everyone
+            ? "border-transparent bg-[var(--accent)] text-[var(--accent-on)]"
+            : "border-[var(--hairline)] text-[var(--ink-3)] hover:border-[var(--ink-3)]")}
+        >
+          Everyone
+        </Link>
+      </div>
 
       <ContactsDirectory people={page.items} />
 

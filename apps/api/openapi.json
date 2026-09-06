@@ -18900,6 +18900,14 @@
               "type": "string",
               "maxLength": 200
             }
+          },
+          {
+            "name": "identified",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -18937,6 +18945,9 @@
                               "callCount": {
                                 "type": "integer",
                                 "minimum": 0
+                              },
+                              "identified": {
+                                "type": "boolean"
                               },
                               "firstCallAt": {
                                 "type": [
@@ -19006,6 +19017,7 @@
                               "phone",
                               "displayName",
                               "callCount",
+                              "identified",
                               "firstCallAt",
                               "lastCallAt",
                               "values",
@@ -19048,6 +19060,10 @@
                           "type": "integer",
                           "minimum": 0
                         },
+                        "identified": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
                         "repeatCallers": {
                           "type": "integer",
                           "minimum": 0
@@ -19059,6 +19075,7 @@
                       },
                       "required": [
                         "people",
+                        "identified",
                         "repeatCallers",
                         "newThisWeek"
                       ],
@@ -19317,6 +19334,9 @@
                           "type": "integer",
                           "minimum": 0
                         },
+                        "identified": {
+                          "type": "boolean"
+                        },
                         "firstCallAt": {
                           "type": [
                             "string",
@@ -19385,6 +19405,7 @@
                         "phone",
                         "displayName",
                         "callCount",
+                        "identified",
                         "firstCallAt",
                         "lastCallAt",
                         "values",
@@ -19766,6 +19787,9 @@
                       "type": "integer",
                       "minimum": 0
                     },
+                    "identified": {
+                      "type": "boolean"
+                    },
                     "firstCallAt": {
                       "type": [
                         "string",
@@ -19834,6 +19858,7 @@
                     "phone",
                     "displayName",
                     "callCount",
+                    "identified",
                     "firstCallAt",
                     "lastCallAt",
                     "values",

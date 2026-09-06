@@ -57,6 +57,8 @@ const contact = object({
   /** An operator's correction. Null means the captured name still stands. */
   displayName: nullable(text({ maxLength: 200 })),
   callCount: integer({ minimum: 0 }),
+  /** Whether they have ever told us anything. False is a number and nothing else. */
+  identified: flag(),
   firstCallAt: nullable(timestamp()),
   lastCallAt: nullable(timestamp()),
   values: list(contactValue),
@@ -68,6 +70,9 @@ const contactsQuery = object({
   ...PAGE_PROPS,
   /** Matches the number, the corrected name, or any value they gave. */
   search: optional(text({ maxLength: 200 })),
+  /* Absent means everybody. The console sends `true` by default, so the people who have told
+     us nothing are one toggle away rather than in front of the customers. */
+  identified: optional(flag()),
 });
 
 /**
@@ -79,6 +84,8 @@ const contactsQuery = object({
  */
 const contactStats = object({
   people: integer({ minimum: 0 }),
+  /** Of those, how many have ever told us anything. The rest are a number and nothing else. */
+  identified: integer({ minimum: 0 }),
   /** People who have rung more than once — what a callback list is actually about. */
   repeatCallers: integer({ minimum: 0 }),
   newThisWeek: integer({ minimum: 0 }),
@@ -204,13 +211,17 @@ export class ContactsController {
     @FromQuery() query: Infer<typeof contactsQuery>,
   ): Promise<Infer<typeof contactsResponse>> {
     const { slice, stats } = await this.db.tx(async (scope) => ({
-      slice: await readContacts(scope, toPageRequest(query), { search: query.search ?? null }),
+      slice: await readContacts(scope, toPageRequest(query), {
+        search: query.search ?? null,
+        identified: query.identified ?? null,
+      }),
       stats: await readContactStats(scope),
     }));
     return {
       page: toPageBody({ items: slice.items.map(asBody), total: slice.total }, query),
       stats: {
         people: stats.total,
+        identified: stats.identified,
         repeatCallers: stats.repeatCallers,
         newThisWeek: stats.newThisWeek,
       },
@@ -387,6 +398,7 @@ const asBody = (person: Awaited<ReturnType<typeof readContact>> & object): Infer
   phone: person.phone,
   displayName: person.displayName,
   callCount: person.callCount,
+  identified: person.identified,
   firstCallAt: person.firstCallAt?.toISOString() ?? null,
   lastCallAt: person.lastCallAt?.toISOString() ?? null,
   values: person.values.map((value) => ({

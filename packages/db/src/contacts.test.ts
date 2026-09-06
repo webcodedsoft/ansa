@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { recordCaptures } from "./call-captures";
 import { readContact, readContacts, renameContact, setContactValue } from "./contacts";
+import { recordCallStarted } from "./call-log";
 import { createDataSource } from "./data-source";
 import { withOrganization } from "./organization-scope";
 import { loadDotEnv } from "./test-env";
@@ -33,28 +34,34 @@ const CALLER = "+2348138178550";
 
 let ds: DataSource;
 
-/** One call from `caller`, returning its row id. */
+/**
+ * One call from `caller`, returning its row id.
+ *
+ * Through `recordCallStarted` rather than a hand-written insert, because resolving the person
+ * is now part of opening a call record (0075) and a fixture that inserts around it would test
+ * a path production does not take.
+ */
 const placeCall = async (
   organization: typeof A,
   carrierId: string,
   caller: string | null,
 ): Promise<string> => {
-  let id = "";
   await withOrganization(ds, organization, async (s) => {
     await s.query("insert into organizations (id, name) values ($1, $2) on conflict do nothing", [
       organization,
       `Organization ${organization.slice(0, 4)}`,
     ]);
-    const rows = await s.query<{ id: string }>(
-      `insert into calls (organization_id, carrier_call_id, dialled, caller)
-       values ($1, $2, '+18148592625', $3)
-       on conflict (organization_id, carrier_call_id) do update set caller = excluded.caller
-       returning id`,
-      [organization, carrierId, caller],
-    );
-    id = String(rows[0]?.id);
   });
-  return id;
+  const id = await recordCallStarted(ds, {
+    organizationId: organization,
+    carrierCallId: carrierId,
+    direction: "inbound",
+    dialled: "+18148592625",
+    caller,
+    agentId: null,
+    configVersion: 1,
+  });
+  return String(id);
 };
 
 /** A page big enough that these tests never have to think about paging. */
