@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 
-import { Card, Notice, SubmitButton } from "@/components/ui";
+import { Notice, SubmitButton } from "@/components/ui";
 import type { ToolsDocument } from "@/features/agents/agents.service";
 import { FlowCanvas } from "@/features/agents/components/flow-canvas";
 import { registryTools } from "@/features/agents/components/tools-tab";
@@ -67,12 +67,11 @@ export const CampaignConversation = ({
   const available = registryTools(tools).map((tool) => ({ name: tool.name, enabled: true }));
 
   return (
-    /* `Card`, not `Panel` with a section head inside it — `Panel` is an unpadded surface, so
-       the heading and the canvas sat flush against its border. Same fix as the brief. */
-    <Card
-      title="The conversation"
-      description="Optional. A campaign that only confirms something needs no drawing — the agent says why it rang, listens, and records how it went. Draw one when the call has to collect something: a new date, a reason, a number to ring back on."
-    >
+    /* No card around the canvas. It draws its own three panels — the palette, the drawing
+       and the step editor — and a titled frame around all three was a fourth box saying
+       "the conversation" above a thing that plainly is one. The notices sit above it bare,
+       as they do on the agent workspace. */
+    <div className="flex flex-col gap-3.5">
       {!editable && (
         <Notice tone="info">
           This campaign has started, so its conversation is fixed. It is shown here to read.
@@ -111,15 +110,13 @@ export const CampaignConversation = ({
         onOpenSettings={() => undefined}
       />
 
-      {!disabled && (
-        <div className="mt-3.5">
-          {/* Hidden rather than disabled until something changes: a button that does nothing
-              invites the press that finds that out. */}
-          {dirty && (
-            <SubmitButton form={FORM} pending={pending} idle="Save conversation" busy="Saving…" />
-          )}
+      {!disabled && dirty && (
+        /* Hidden rather than disabled until something changes: a button that does nothing
+           invites the press that finds that out. */
+        <div>
+          <SubmitButton form={FORM} pending={pending} idle="Save conversation" busy="Saving…" />
         </div>
       )}
-    </Card>
+    </div>
   );
 };
