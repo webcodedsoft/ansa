@@ -278,20 +278,22 @@ const CampaignPage = async ({
      whatever the API allows from here. */
   const liveStrip = (
     <Card>
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
-        <CampaignStatusControl
-          campaignId={campaign.id}
-          status={campaign.status}
-          pauseReason={campaign.pauseReason}
-          canWrite={canWrite}
-        />
-        <div className="flex flex-wrap gap-2">
-          {canWrite && phase !== "reading" && (
-            <AddContactsButton campaignId={campaign.id} contacts={contacts} />
-          )}
-          {canWrite && <DuplicateCampaignButton campaignId={campaign.id} name={campaign.name} />}
-        </div>
-      </div>
+      {/* One row, owned by the status control: the badge on the left, and every button —
+          its own moves and these two — as one group on the right at one size. */}
+      <CampaignStatusControl
+        campaignId={campaign.id}
+        status={campaign.status}
+        pauseReason={campaign.pauseReason}
+        canWrite={canWrite}
+        trailing={
+          <>
+            {canWrite && phase !== "reading" && (
+              <AddContactsButton campaignId={campaign.id} contacts={contacts} />
+            )}
+            {canWrite && <DuplicateCampaignButton campaignId={campaign.id} name={campaign.name} />}
+          </>
+        }
+      />
 
       <div className="mt-5 grid gap-6 lg:grid-cols-2">
         <div className="border-l-2 border-[var(--accent)] pl-3.5">
