@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { Card, CheckboxField, Notice, NumberField, Stack, Td, TextField } from "@/components/ui";
+import { Card, CheckboxField, ChoiceChips, Notice, secondsLabel, Stack, Td, TextField } from "@/components/ui";
 
 import type { LiveConfiguration } from "../agents.service";
 import { DiaryCard, type PickableCalendar } from "./diary-card";
@@ -74,15 +74,15 @@ export const RoutingTab = ({ agentId, held, calendars, appointmentCalendarId, co
             <TextField label="Calling from" name="fromNumber" defaultValue={escalation?.fromNumber ?? ""} placeholder="+2348000000000" error={errors["fromNumber"]} />
           </div>
 
-          <NumberField
+          <ChoiceChips
             label="Ring for"
             name="ringSeconds"
-            min={5}
-            max={120}
-            defaultValue={escalation?.ringSeconds ?? ""}
-            className="max-w-50"
+            presets={[15, 20, 30, 45, 60]}
+            format={secondsLabel}
+            none="Default"
+            defaultValue={escalation?.ringSeconds ?? null}
             error={errors["ringSeconds"]}
-            hint="Seconds. Empty uses the default."
+            hint="Before the transfer gives up and the agent says so."
           />
 
           <Notice tone="warn">Irreversible tools never execute. They transfer here instead, and no configuration changes that.</Notice>

@@ -5127,6 +5127,21 @@ rather than landed as inventory — the wave that needs them adds them wired.
       clock, not by any code. After 08:00 WAT: run `pnpm tunnel`, put one contact with a real
       handset on a campaign, start it, and the sweeper does the rest within its interval.
 
+- [x] **Every number typed into a box is now chosen from options** (2026-09-06)
+      Asked for on the pace card and then for the whole console. `ChoiceChips` in
+      `components/ui`: a number picked from a few sensible values, a "Default"/"No cap"/"None"
+      chip where a blank used to mean that silently, and a saved value outside the presets
+      shown as its own chip so the page never displays a choice the row does not hold. Posts
+      under the same field name the box did, so no action or schema changed. Applied to the
+      campaign pace and brief (attempts; wait between tries reads 4h, not 240), the agent's
+      transfer ring time, an appointment's hold, a calendar's slot and buffer, a webhook's
+      timeout and attempts, an HTTP tool's timeout, and a capture field's attempts before
+      escalating. The organisation's opening hours became clock pickers like the campaign
+      window. No `NumberField` is used anywhere outside the ui package now. Left as free
+      text on purpose: phone numbers, names, URLs, the words an agent says — those have no
+      options to offer. Still a box that should be a list: the voice tab's "Provider voice
+      id", which needs the provider's catalogue fetched before it can be a choice.
+
 - [x] **Pace: how fast a campaign dials, enforced where the dialler picks its batch** (2026-09-06)
       The dialler placed up to five calls every ten seconds for every campaign alike — eighteen
       hundred an hour — which is the right ceiling for the machine and the wrong one for an

@@ -33,6 +33,7 @@ export {
   TextField,
   type FieldShell,
 } from "./form";
+export { ChoiceChips, millisLabel, minutesLabel, secondsLabel, type ChoiceChipsProps } from "./choice-chips";
 export { DataTable, type Column, type DataTableProps } from "./data-table";
 export { Modal } from "./modal";
 export { SELECT_MENU_CLASS, SelectField, type SelectFieldProps } from "./select";

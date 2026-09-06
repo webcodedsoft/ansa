@@ -2,8 +2,7 @@
 
 import { useActionState, useState } from "react";
 
-import { Button, Notice, Stack } from "@/components/ui";
-import { cn } from "@/lib/cn";
+import { Button, ChoiceChips, Notice, Stack } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
 import { setPaceAction, type PaceState } from "../campaigns.actions";
@@ -20,68 +19,9 @@ export const paceSummary = (concurrent: number | null, perHour: number | null): 
   return `${joined.charAt(0).toUpperCase()}${joined.slice(1)}.`;
 };
 
-/**
- * The choices offered, as chips. A saved value that is not one of these is shown as its own
- * chip, so the page tells the truth about a cap the API accepted from elsewhere.
- */
+/** The choices offered. `ChoiceChips` shows a saved value outside these as its own chip. */
 const AT_ONCE: readonly number[] = [1, 2, 3, 5, 10];
 const AN_HOUR: readonly number[] = [10, 20, 30, 60, 120, 300];
-
-const Choice = ({
-  legend,
-  hint,
-  name,
-  presets,
-  value,
-  disabled,
-  onChange,
-}: {
-  readonly legend: string;
-  readonly hint: string;
-  readonly name: string;
-  readonly presets: readonly number[];
-  readonly value: number | null;
-  readonly disabled: boolean;
-  readonly onChange: (next: number | null) => void;
-}) => {
-  const options: readonly (number | null)[] = [
-    null,
-    ...(value !== null && !presets.includes(value) ? [...presets, value].sort((a, b) => a - b) : presets),
-  ];
-  return (
-    <fieldset>
-      <legend className="mb-1.5 text-[11px] font-semibold tracking-[0.11em] text-[var(--ink-3)] uppercase">
-        {legend}
-      </legend>
-      <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={legend}>
-        {options.map((option) => {
-          const on = option === value;
-          return (
-            <button
-              key={option ?? "none"}
-              type="button"
-              role="radio"
-              aria-checked={on}
-              disabled={disabled}
-              onClick={() => onChange(option)}
-              className={cn(
-                "rounded-full border px-3 py-1.5 text-[12.5px] tabular-nums transition-colors disabled:opacity-60",
-                on
-                  ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-on)]"
-                  : "border-[var(--hairline)] text-[var(--ink-2)] hover:border-[var(--ink-3)]",
-              )}
-            >
-              {option === null ? "No cap" : option}
-            </button>
-          );
-        })}
-      </div>
-      {/* The chips are the control; this carries the choice under the name the action reads. */}
-      <input type="hidden" name={name} value={value ?? ""} />
-      <p className="mt-1.5 text-[11.5px] text-[var(--ink-3)]">{hint}</p>
-    </fieldset>
-  );
-};
 
 /**
  * How fast a campaign dials.
@@ -130,20 +70,22 @@ export const CampaignPace = ({
           <Notice tone="ok">Saved. It takes effect on the next sweep.</Notice>
         )}
 
-        <Choice
-          legend="At once"
+        <ChoiceChips
+          label="At once"
           hint="Calls in progress at the same time."
           name="maxConcurrentCalls"
           presets={AT_ONCE}
+          none="No cap"
           value={atOnce}
           disabled={disabled}
           onChange={setAtOnce}
         />
-        <Choice
-          legend="An hour"
+        <ChoiceChips
+          label="An hour"
           hint="Placed in any rolling hour."
           name="maxCallsPerHour"
           presets={AN_HOUR}
+          none="No cap"
           value={anHour}
           disabled={disabled}
           onChange={setAnHour}

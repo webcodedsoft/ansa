@@ -2,20 +2,7 @@
 
 import { useActionState, useState } from "react";
 
-import {
-  Button,
-  Card,
-  CheckboxField,
-  CheckboxGroup,
-  FieldError,
-  Notice,
-  NumberField,
-  Row,
-  Stack,
-  SubmitButton,
-  TextAreaField,
-  TextField,
-} from "@/components/ui";
+import { Button, Card, CheckboxField, CheckboxGroup, ChoiceChips, FieldError, millisLabel, Notice, Row, Stack, SubmitButton, TextAreaField, TextField } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 import { useFormToast } from "@/stores/toast.store";
 
@@ -216,23 +203,30 @@ export const WebhooksForm = ({ document }: { readonly document: SubscriptionDocu
                       hint="Optional. A stored credential this receiver authenticates with."
                       className="min-w-40 flex-1"
                     />
-                    <NumberField
-                      label="Timeout (ms)"
-                      min={1}
-                      value={subscription.timeoutMs}
-                      onChange={(event) => updateSubscription(index, { timeoutMs: event.target.value })}
+                    <ChoiceChips
+                      label="Timeout"
+                      presets={[1000, 3000, 5000, 10000, 30000]}
+                      format={millisLabel}
+                      none="Default"
+                      name={`subscriptions.${index}.timeoutMs`}
+                      value={subscription.timeoutMs === "" ? null : Number(subscription.timeoutMs)}
+                      onChange={(next) =>
+                        updateSubscription(index, { timeoutMs: next === null ? "" : String(next) })
+                      }
                       error={errors[`subscriptions.${index}.timeoutMs`]}
-                      className="w-32"
+                      hint="Before a delivery is given up on and retried."
                     />
-                    <NumberField
+                    <ChoiceChips
                       label="Max attempts"
-                      min={1}
-                      value={subscription.maxAttempts}
-                      onChange={(event) =>
-                        updateSubscription(index, { maxAttempts: event.target.value })
+                      presets={[1, 3, 5, 10]}
+                      none="Default"
+                      name={`subscriptions.${index}.maxAttempts`}
+                      value={subscription.maxAttempts === "" ? null : Number(subscription.maxAttempts)}
+                      onChange={(next) =>
+                        updateSubscription(index, { maxAttempts: next === null ? "" : String(next) })
                       }
                       error={errors[`subscriptions.${index}.maxAttempts`]}
-                      className="w-32"
+                      hint="Deliveries tried before the event is dropped."
                     />
                   </Row>
                 </Stack>

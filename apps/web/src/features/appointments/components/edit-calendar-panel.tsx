@@ -2,15 +2,7 @@
 
 import { useActionState } from "react";
 
-import {
-  Card,
-  Notice,
-  NumberField,
-  Row,
-  SubmitButton,
-  Tag,
-  TextField,
-} from "@/components/ui";
+import { Card, ChoiceChips, minutesLabel, Notice, Row, SubmitButton, Tag, TextField } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 import { useFormToast } from "@/stores/toast.store";
 
@@ -86,30 +78,28 @@ export const EditCalendarPanel = ({
 
         <TimezoneSelect defaultValue={calendar.timezone} error={fieldError("timezone")} disabled={!canWrite} />
 
-        <div className="grid grid-cols-2 gap-3.5">
-          <NumberField
-            label="Slot length"
-            name="slotMinutes"
-            required
-            defaultValue={calendar.slotMinutes}
-            min={5}
-            step={5}
-            error={fieldError("slotMinutes")}
-            disabled={!canWrite}
-            hint="Minutes per appointment."
-          />
-          <NumberField
-            label="Buffer"
-            name="bufferMinutes"
-            required
-            defaultValue={calendar.bufferMinutes}
-            min={0}
-            step={5}
-            error={fieldError("bufferMinutes")}
-            disabled={!canWrite}
-            hint="Minutes kept free either side."
-          />
-        </div>
+        <div className="flex flex-col gap-4">
+            <ChoiceChips
+              label="Slot length"
+              name="slotMinutes"
+              presets={[10, 15, 20, 30, 45, 60, 90]}
+              format={minutesLabel}
+              defaultValue={calendar.slotMinutes}
+              error={fieldError("slotMinutes")}
+              disabled={!canWrite}
+              hint="Per appointment."
+            />
+            <ChoiceChips
+              label="Buffer"
+              name="bufferMinutes"
+              presets={[0, 5, 10, 15, 30]}
+              format={(minutes) => (minutes === 0 ? "None" : minutesLabel(minutes))}
+              defaultValue={calendar.bufferMinutes}
+              error={fieldError("bufferMinutes")}
+              disabled={!canWrite}
+              hint="Kept free either side of each appointment."
+            />
+          </div>
 
         {canWrite ? (
           <div>

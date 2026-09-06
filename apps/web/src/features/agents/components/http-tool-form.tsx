@@ -3,21 +3,7 @@
 import Link from "next/link";
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 
-import {
-  Button,
-  Card,
-  CheckboxField,
-  FieldError,
-  Notice,
-  SelectField,
-  Stack,
-  Stepper,
-  Tag,
-  TextAreaField,
-  TextField,
-  type StepDef,
-  type Tone,
-} from "@/components/ui";
+import { Button, Card, CheckboxField, ChoiceChips, FieldError, millisLabel, Notice, SelectField, Stack, Stepper, Tag, TextAreaField, TextField, type StepDef, type Tone } from "@/components/ui";
 
 import { parseCurl } from "../curl-import";
 import { HOST, type ToolTemplate } from "../tool-templates";
@@ -676,13 +662,16 @@ export const HttpToolForm = ({
               </>
             )}
 
-            <TextField
-              label="Timeout (ms)"
-              value={draft.timeoutMs}
-              onChange={(event) => edit({ timeoutMs: event.target.value })}
+            <ChoiceChips
+              label="Timeout"
+              name="timeoutMs"
+              presets={[1000, 2000, 3000, 5000, 10000]}
+              format={millisLabel}
+              none="Default"
+              value={draft.timeoutMs === "" ? null : Number(draft.timeoutMs)}
+              onChange={(next) => edit({ timeoutMs: next === null ? "" : String(next) })}
               error={problem("timeoutMs")}
-              hint="Blank uses the platform default. A caller hears silence for however long this is."
-              placeholder="3000"
+              hint="A caller hears holding speech for however long this is, then the fallback line."
             />
           </Stack>
         </Card>

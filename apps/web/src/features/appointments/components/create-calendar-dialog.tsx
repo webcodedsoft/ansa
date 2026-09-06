@@ -4,15 +4,7 @@ import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { useActionState, useEffect, useId, useState } from "react";
 
-import {
-  Button,
-  Modal,
-  Notice,
-  NumberField,
-  SelectField,
-  SubmitButton,
-  TextField,
-} from "@/components/ui";
+import { Button, ChoiceChips, minutesLabel, Modal, Notice, SelectField, SubmitButton, TextField } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 import { useFormToast } from "@/stores/toast.store";
 
@@ -102,26 +94,24 @@ export const CreateCalendarDialog = ({
 
           <TimezoneSelect error={fieldError("timezone")} />
 
-          <div className="grid grid-cols-2 gap-3.5">
-            <NumberField
+          <div className="flex flex-col gap-4">
+            <ChoiceChips
               label="Slot length"
               name="slotMinutes"
-              required
+              presets={[10, 15, 20, 30, 45, 60, 90]}
+              format={minutesLabel}
               defaultValue={30}
-              min={5}
-              step={5}
               error={fieldError("slotMinutes")}
-              hint="Minutes per appointment."
+              hint="Per appointment."
             />
-            <NumberField
+            <ChoiceChips
               label="Buffer"
               name="bufferMinutes"
-              required
+              presets={[0, 5, 10, 15, 30]}
+              format={(minutes) => (minutes === 0 ? "None" : minutesLabel(minutes))}
               defaultValue={0}
-              min={0}
-              step={5}
               error={fieldError("bufferMinutes")}
-              hint="Minutes kept free either side."
+              hint="Kept free either side of each appointment."
             />
           </div>
 

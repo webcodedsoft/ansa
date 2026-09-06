@@ -4,8 +4,9 @@ import { useActionState, useState, type ReactNode } from "react";
 
 import {
   Card,
+  ChoiceChips,
+  minutesLabel,
   Notice,
-  NumberField,
   SelectField,
   Stack,
   SubmitButton,
@@ -180,28 +181,25 @@ export const CampaignBrief = ({
                 <option value="hang_up">Hang up</option>
                 <option value="leave_message">Leave the standard message</option>
               </SelectField>
-              <div className="flex flex-wrap gap-3">
-                <NumberField
+              <div className="flex flex-col gap-4">
+                <ChoiceChips
                   label="Try at most"
                   name="maxAttempts"
+                  presets={[1, 2, 3, 5]}
                   defaultValue={values.maxAttempts}
-                  min={1}
-                  max={10}
                   disabled={disabled}
                   error={state.fieldErrors["maxAttempts"]}
                   hint="Times, per person."
-                  className="w-36"
                 />
-                <NumberField
+                <ChoiceChips
                   label="Wait between tries"
                   name="retryAfterMinutes"
+                  presets={[15, 30, 60, 120, 240, 1440, 2880, 10080]}
+                  format={minutesLabel}
                   defaultValue={values.retryAfterMinutes}
-                  min={15}
-                  step={15}
                   disabled={disabled}
                   error={state.fieldErrors["retryAfterMinutes"]}
-                  hint="Minutes."
-                  className="w-40"
+                  hint="Before the next attempt at somebody who did not pick up."
                 />
               </div>
             </Section>

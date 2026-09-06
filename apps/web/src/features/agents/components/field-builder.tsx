@@ -3,7 +3,7 @@
 import { GripVertical, Plus } from "lucide-react";
 import { useState, useTransition } from "react";
 
-import { Button, CONTROL, Notice, Panel, PanelBody, Segmented, SelectField, SettingRow, Tag, Toggle } from "@/components/ui";
+import { Button, ChoiceChips, CONTROL, Notice, Panel, PanelBody, Segmented, SelectField, SettingRow, Tag, Toggle } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
 import { saveCapturedFields } from "../agents.actions";
@@ -328,22 +328,14 @@ export const FieldBuilder = ({
                       Rejected values are re-asked, not passed on.
                     </span>
                   </label>
-                  <label className="block">
-                    <span className="mb-1.5 block text-[13px] font-medium">
-                      Attempts before escalating
-                    </span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={10}
-                      value={current.attempts}
-                      onChange={(event) => edit({ attempts: Number(event.target.value) })}
-                      className={CONTROL}
-                    />
-                    <span className="mt-1.5 block text-[12.5px] text-[var(--ink-3)]">
-                      Then it transfers to a person.
-                    </span>
-                  </label>
+                  <ChoiceChips
+                    label="Attempts before escalating"
+                    name="attempts"
+                    presets={[1, 2, 3, 5]}
+                    value={current.attempts}
+                    onChange={(next) => edit({ attempts: next ?? 3 })}
+                    hint="Then it transfers to a person."
+                  />
                 </div>
 
                 <div>

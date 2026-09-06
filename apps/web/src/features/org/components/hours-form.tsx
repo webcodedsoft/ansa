@@ -8,7 +8,7 @@ import {
   CheckboxGroup,
   FieldError,
   Notice,
-  NumberField,
+  SelectField,
   Stack,
   SubmitButton,
 } from "@/components/ui";
@@ -18,6 +18,14 @@ import { saveHours, type HoursState } from "../org.actions";
 import type { Organisation } from "../org.service";
 
 const START: HoursState = idleForm();
+
+/** Hours as a clock shows them, so "17" is chosen as 17:00 and never typed as 5. */
+const hourOptions = (from: number, to: number) =>
+  Array.from({ length: to - from + 1 }, (_, i) => from + i).map((hour) => (
+    <option key={hour} value={hour}>
+      {`${String(hour).padStart(2, "0")}:00`}
+    </option>
+  ));
 
 const DAYS = [
   { value: 1, label: "Mon" },
@@ -69,24 +77,24 @@ export const HoursForm = ({ organisation }: { readonly organisation: Organisatio
           />
 
           <div className="grid gap-3.5 sm:grid-cols-2">
-            <NumberField
+            <SelectField
               label="Opens at"
               name="opensAtHour"
-              min={0}
-              max={23}
               defaultValue={hours?.opensAtHour ?? 9}
               error={errors["opensAtHour"]}
-              hint="WAT, inclusive."
-            />
-            <NumberField
+              hint="WAT. The first hour a call is taken."
+            >
+              {hourOptions(0, 23)}
+            </SelectField>
+            <SelectField
               label="Closes at"
               name="closesAtHour"
-              min={1}
-              max={24}
               defaultValue={hours?.closesAtHour ?? 17}
               error={errors["closesAtHour"]}
-              hint="WAT, exclusive — a line that shuts at five holds 17."
-            />
+              hint="WAT. Calls stop at this hour, so 17:00 means the last call is before five."
+            >
+              {hourOptions(1, 24)}
+            </SelectField>
           </div>
 
           <div>

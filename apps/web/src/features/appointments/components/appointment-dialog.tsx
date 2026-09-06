@@ -2,17 +2,7 @@
 
 import { useActionState, useEffect, useId, useMemo, useState } from "react";
 
-import {
-  Button,
-  Modal,
-  Notice,
-  NumberField,
-  SelectField,
-  SubmitButton,
-  Tag,
-  TextAreaField,
-  TextField,
-} from "@/components/ui";
+import { Button, ChoiceChips, minutesLabel, Modal, Notice, SelectField, SubmitButton, Tag, TextAreaField, TextField } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 import { useFormToast } from "@/stores/toast.store";
 
@@ -338,14 +328,14 @@ export const AppointmentDialog = ({
           )}
 
           {booking === null && mode === "held" && (
-            <NumberField
+            <ChoiceChips
               label="Hold for"
               name="holdMinutes"
+              presets={[5, 10, 15, 30, 60]}
+              format={minutesLabel}
               defaultValue={15}
-              min={1}
-              step={5}
               error={fieldErrors["holdMinutes"]}
-              hint="Minutes before the hold lapses and the slot is offered again."
+              hint="Before the hold lapses and the slot is offered again."
             />
           )}
 
