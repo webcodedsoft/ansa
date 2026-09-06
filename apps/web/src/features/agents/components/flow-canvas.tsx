@@ -1227,12 +1227,17 @@ export const FlowCanvas = ({
     viewLive.current = clamped;
     const layer = layerRef.current;
     if (layer !== null) layer.style.transform = `translate(${clamped.x}px,${clamped.y}px) scale(${clamped.scale})`;
-    if (viewCommit.current === null) {
-      viewCommit.current = requestAnimationFrame(() => {
-        viewCommit.current = null;
-        setView(viewLive.current);
-      });
-    }
+    /* Cancel-and-reschedule rather than "schedule only if none pending". The pending check
+       used the frame handle as its flag and cleared it only inside the callback — and a frame
+       requested while the canvas was inside a hidden tab never ran, so the flag stayed set
+       forever and every later zoom wrote the layer's transform and never committed `view`.
+       The drawing scaled and the toolbar said 100% for the life of the page. Cancelling
+       whatever is outstanding and asking again costs nothing and cannot get stuck. */
+    if (viewCommit.current !== null) cancelAnimationFrame(viewCommit.current);
+    viewCommit.current = requestAnimationFrame(() => {
+      viewCommit.current = null;
+      setView(viewLive.current);
+    });
   };
   const applyPan = (next: Point) => applyView({ ...viewLive.current, ...next });
   const applyViewRef = useRef(applyView);
