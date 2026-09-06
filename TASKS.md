@@ -5180,6 +5180,30 @@ rather than landed as inventory — the wave that needs them adds them wired.
       Schedule tab under the hours. Empty box is no cap, and the schema turns "" into null
       rather than 0 — tested, because 0 is a cap the API refuses.
 
+- [~] **The contact page, rebuilt as a person rather than a call table** (2026-09-06)
+      From the clickable prototype. The page was one table answering "when did they ring";
+      it is now a timeline answering "what has happened", with a rail carrying what we know
+      and how often they call. `contact-timeline.ts` is pure and tested: calls and confirmed
+      values merge onto one spine, and a value is interleaved only when it falls inside the
+      span that page of calls covers — page two showing March must not carry last week's
+      confirmation. The weekly count returns null rather than a guess when calls are hidden on
+      another page.
+
+      **Reverses a documented decision, on purpose.** The old comment kept captured values off
+      this page because "the one with the export wins". They are here now with provenance —
+      which call confirmed each value — because Collected data answers "what have we learned
+      across everyone" and this answers "who am I about to speak to". The comment says so.
+
+      **Left out rather than faked**, because nothing serves them: consent and do-not-call per
+      number (no endpoint exposes either), merging two numbers into one person, and the
+      subject-access export. Those are slices 1, 2 and features 5 and 7 of
+      `docs/CAMPAIGN_RECURRENCE.md`'s sibling plan, published as an artifact this session.
+
+      **Not seen with data.** `contacts` is empty in every organisation in the database, so
+      the render path has never drawn a row. Typecheck, lint and 1 668 web tests pass and the
+      pure helper is covered, but the page itself is unproven until somebody rings or a
+      contact is added. Do that before calling this done.
+
 - [x] **Two names that lied on the campaign page** (2026-09-06)
       The `Schedule` button and the `Schedule` tab were different things with one name, and the
       stepper spelled the collision out loud: "Press Schedule to start it yourself, or give it
