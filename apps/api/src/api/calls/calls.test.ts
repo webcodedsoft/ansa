@@ -161,14 +161,14 @@ const seed = async (label: string): Promise<Organisation> => {
   );
 
   const first = await owner.query<{ id: string }[]>(
-    `insert into transcripts (organization_id, call_id, kind, text, confidence, offset_ms, provider)
-     values ($1, $2, 'final', 'my policy number is AB1234', 0.62, 900, 'openai')
+    `insert into transcripts (organization_id, call_id, kind, speaker, text, confidence, offset_ms, provider)
+     values ($1, $2, 'final', 'caller', 'my policy number is AB1234', 0.62, 900, 'openai')
      returning id`,
     [organizationId, callId],
   );
   const second = await owner.query<{ id: string }[]>(
-    `insert into transcripts (organization_id, call_id, kind, text, confidence, offset_ms, provider)
-     values ($1, $2, 'final', 'yes that is right', 0.91, 300, 'openai')
+    `insert into transcripts (organization_id, call_id, kind, speaker, text, confidence, offset_ms, provider)
+     values ($1, $2, 'final', 'caller', 'yes that is right', 0.91, 300, 'openai')
      returning id`,
     [organizationId, otherCallId],
   );

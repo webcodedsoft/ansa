@@ -53,8 +53,8 @@ const seedCall = async (organization: typeof BRIEF, id: string, endedAt: string)
     );
     // The words, in all three places they are kept.
     await scope.query(
-      `insert into transcripts (organization_id, call_id, kind, text, confidence, offset_ms, provider)
-       values ($1, $2, 'final', 'my NIN is 12345678901', 0.71, 900, 'openai')`,
+      `insert into transcripts (organization_id, call_id, kind, speaker, text, confidence, offset_ms, provider)
+       values ($1, $2, 'final', 'caller', 'my NIN is 12345678901', 0.71, 900, 'openai')`,
       [organization, id],
     );
     await scope.query(

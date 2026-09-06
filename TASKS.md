@@ -5180,6 +5180,40 @@ rather than landed as inventory — the wave that needs them adds them wired.
       Schedule tab under the hours. Empty box is no cap, and the schema turns "" into null
       rather than 0 — tested, because 0 is a cap the API refuses.
 
+- [x] **Slice 3 — the agent's words become first-class** (2026-09-06)
+      The structural one, and the whole reason the conversation view was blocked. Migration
+      0076 adds `transcripts.speaker`, backfilled `caller` for all 148 existing rows because
+      that is what every one of them was, then the default is **dropped** — so a writer that
+      does not say who spoke fails loudly instead of silently filing the agent as the caller.
+      It caught three test fixtures immediately, which is the point.
+
+      **Where the agent's words are written.** `recordAgentTurn` in the orchestrator, which is
+      the single seam both exits pass through — played out (`finishIfComplete`) and cut off
+      (`stopSpeaking`) — so a turn is recorded exactly once however it ended. The text is
+      `heardText(current)`, not the whole utterance: on a barge-in the caller never heard the
+      tail and `commitHeard` already trims the model's own history to the same point. Storing
+      what was enqueued would put words in a transcript that nobody on the call experienced.
+      No confidence — these are our own words, not a guess at somebody else's — and the
+      provider is the voice that said them.
+
+      The author had known: the comment on the old `record.event("agent said", …)` reads
+      "Without this the stored call is one-sided… not a conversation anyone can review." The
+      intent was right and the destination was wrong; `call_events.detail` is projected through
+      an allowlist that drops `text`.
+
+      **Published and rendered.** `speaker` flows through `call-page.ts`, the `transcript`
+      response schema on `GET /calls/:callId`, and the console. `linesOf` now merges both sides
+      from `transcripts` and matches an agent line to its turn by offset for the cut marker;
+      the word **"spoke"** is gone. A wordless agent turn still renders, saying so, because a
+      gap reads worse than an admission.
+
+      Retention untouched: `purge_expired_call_content` deletes whole `transcripts` rows, so
+      agent lines expire on the caller lines' clock with no new rule to keep in step.
+
+      **Not seen on a real call.** 629 orchestrator and recorder tests pass and the endpoint
+      returns the field, but no call has been placed since. Some endpoint suites time out at
+      60–120s against the shared database under load — environmental, and each passes alone.
+
 - [x] **Slice 2 — every call files itself under a person** (2026-09-06)
       Migration 0075: `calls.contact_id` and `contacts.identified`.
 

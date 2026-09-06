@@ -142,9 +142,18 @@ export const recordCallEnded = async (dataSource: Db, call: EndedCall): Promise<
 };
 
 export interface RecordedTranscript {
+  /**
+   * Who said it (0076).
+   *
+   * Required rather than defaulted, because the commonest answer is the one that would be
+   * wrong silently: every row in this table was a caller line until the agent's words were
+   * given somewhere to live, and a default would have quietly made the agent a caller again.
+   */
+  readonly speaker: "caller" | "agent";
   readonly text: string;
   readonly confidence: number | null;
   readonly offsetMs: number;
+  /** For an agent line this is the voice; for a caller line it is the transcriber. */
   readonly provider: string;
 }
 
@@ -169,12 +178,12 @@ export const recordTranscripts = async (
   await withOrganization(dataSource, organizationId, async (scope) => {
     const values: unknown[] = [];
     const tuples = transcripts.map((t, i) => {
-      const b = i * 6;
-      values.push(organizationId, callRowId, t.text, t.confidence, t.offsetMs, t.provider);
-      return `($${b + 1}, $${b + 2}, 'final', $${b + 3}, $${b + 4}, $${b + 5}, $${b + 6})`;
+      const b = i * 7;
+      values.push(organizationId, callRowId, t.speaker, t.text, t.confidence, t.offsetMs, t.provider);
+      return `($${b + 1}, $${b + 2}, 'final', $${b + 3}, $${b + 4}, $${b + 5}, $${b + 6}, $${b + 7})`;
     });
     await scope.query(
-      `insert into transcripts (organization_id, call_id, kind, text, confidence, offset_ms, provider)
+      `insert into transcripts (organization_id, call_id, kind, speaker, text, confidence, offset_ms, provider)
        values ${tuples.join(", ")}`,
       values,
     );

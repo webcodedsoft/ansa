@@ -29,6 +29,7 @@ import { Endpoint } from "../http/endpoint";
 import { PAGE_PROPS, pageResponse, toPageBody, toPageRequest } from "../http/pagination";
 import { apiRoute, FromBody, FromPath, FromQuery } from "../http/request";
 import {
+  choice,
   flag,
   integer,
   list,
@@ -140,6 +141,11 @@ const transcriptPath = object({
  */
 const transcript = object({
   id: text({ maxLength: 19 }),
+  /* Who said it (0076). The agent's words used to live in `call_events.detail`, which this
+     controller projects through an allowlist that drops `text` — so a conversation could not
+     be read back at all. Speech belongs here, which is what the event allowlist's own comment
+     says, and now both sides of it are. */
+  speaker: choice(["caller", "agent"] as const),
   // No maxLength on what came out of the database. A bound on a response field is not a
   // guard, it is a way to turn one unusually long turn into a 500 for the whole call:
   // the interceptor projects through this schema and a failure there is ours, not the

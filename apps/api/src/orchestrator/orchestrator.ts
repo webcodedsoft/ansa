@@ -1667,6 +1667,34 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       endedOffsetMs: sinceStart(),
       bargedInAtMs,
     });
+
+    /* And the words, into `transcripts` beside the caller's (0076).
+     *
+     * They were only ever a `call_events` payload, which the API projects through an
+     * allowlist that drops `text` — so the stored call was one-sided and the console
+     * rendered the single word "spoke". This is the one place both exits pass through, so
+     * an agent turn is written down exactly once however it ended.
+     *
+     * `heardText`, not the whole utterance: on a barge-in the caller never heard the tail,
+     * and the model's own history is trimmed to the same point by `commitHeard`. Storing
+     * what was enqueued would put words in the transcript that nobody on the call ever
+     * experienced, which is the one thing a transcript exists not to do.
+     *
+     * No confidence, because these are our own words rather than a guess at somebody
+     * else's. The provider is the voice that said them, as it is the transcriber that
+     * heard the other side.
+     */
+    const said = heardText(current).trim();
+    if (said !== "") {
+      record.transcript({
+        speaker: "agent",
+        text: said,
+        confidence: null,
+        offsetMs: current.startedAtMs,
+        provider: deps.voiceId,
+      });
+    }
+
     current.startedAtMs = undefined; // recorded once, whichever exit runs first
   };
 
@@ -3237,6 +3265,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     callerTurnStartedMs = null;
 
     record.transcript({
+      speaker: "caller",
       text,
       confidence: transcript.confidence,
       offsetMs: transcript.offsetMs,

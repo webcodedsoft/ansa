@@ -273,6 +273,8 @@ export interface CallEventItem {
 
 export interface CallTranscriptItem {
   readonly id: string;
+  /** Who said it (0076). Before that every row here was the caller and the agent was nowhere. */
+  readonly speaker: "caller" | "agent";
   readonly text: string;
   /** What a reviewer said it was. Null until someone has ruled on it. */
   readonly correctedText: string | null;
@@ -371,6 +373,7 @@ export const loadCallDetail = async (
 
   const transcripts = await scope.query<{
     id: string | number;
+    speaker: string;
     text: string;
     corrected_text: string | null;
     corrected_at: Date | null;
@@ -378,7 +381,7 @@ export const loadCallDetail = async (
     offset_ms: number | string;
     provider: string;
   }>(
-    `select id, text, corrected_text, corrected_at, confidence, offset_ms, provider
+    `select id, speaker, text, corrected_text, corrected_at, confidence, offset_ms, provider
        from transcripts where call_id = $1 and kind = 'final' order by offset_ms, id`,
     [callId],
   );
@@ -437,6 +440,7 @@ export const loadCallDetail = async (
     })),
     transcripts: transcripts.map((t) => ({
       id: String(t.id),
+      speaker: t.speaker === "agent" ? "agent" : "caller",
       text: t.text,
       correctedText: t.corrected_text,
       correctedAt: t.corrected_at?.toISOString() ?? null,

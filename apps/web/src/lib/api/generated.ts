@@ -1188,6 +1188,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       })[];
         readonly transcripts: readonly ({
         readonly id: string;
+        readonly speaker: "caller" | "agent";
         readonly text: string;
         readonly correctedText: string | null;
         readonly correctedAt: string | null;

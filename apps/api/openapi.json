@@ -11637,6 +11637,13 @@
                             "type": "string",
                             "maxLength": 19
                           },
+                          "speaker": {
+                            "type": "string",
+                            "enum": [
+                              "caller",
+                              "agent"
+                            ]
+                          },
                           "text": {
                             "type": "string"
                           },
@@ -11671,6 +11678,7 @@
                         },
                         "required": [
                           "id",
+                          "speaker",
                           "text",
                           "correctedText",
                           "correctedAt",

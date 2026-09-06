@@ -21,16 +21,33 @@ export interface TimelineLine {
 }
 
 export const linesOf = (call: CallDetail): readonly TimelineLine[] => {
+  /* Both sides come from `transcripts` now (0076). The agent's words used to exist only as a
+     `call_events` payload the API strips, so this merged caller transcripts with bare agent
+     *turns* and rendered the word "spoke" where a reply belonged. */
   const spoken: readonly TimelineLine[] = call.transcripts.map((transcript) => ({
     key: `t:${transcript.id}`,
     at: transcript.offsetMs,
-    speaker: "caller",
+    speaker: transcript.speaker,
     transcript,
-    bargedInAtMs: null,
+    /* An agent turn carries the moment the caller cut in. Matched to its line by the offset
+       it started at, which is the same clock both were stamped from. */
+    bargedInAtMs:
+      call.turns.find(
+        (turn) => turn.speaker === "agent" && turn.startedOffsetMs === transcript.offsetMs,
+      )?.bargedInAtMs ?? null,
   }));
 
-  const acted: readonly TimelineLine[] = call.turns
-    .filter((turn) => turn.speaker !== "caller")
+  /* A turn that made a sound but left no words — cut off before a whole word landed, or its
+     transcript is still in flight. Kept, because a gap in the record reads worse than a line
+     saying only that somebody spoke. */
+  const wordless: readonly TimelineLine[] = call.turns
+    .filter(
+      (turn) =>
+        turn.speaker !== "caller" &&
+        !call.transcripts.some(
+          (t) => t.speaker === "agent" && t.offsetMs === turn.startedOffsetMs,
+        ),
+    )
     .map((turn) => ({
       key: `a:${turn.seq}`,
       at: turn.startedOffsetMs,
@@ -39,7 +56,7 @@ export const linesOf = (call: CallDetail): readonly TimelineLine[] => {
       bargedInAtMs: turn.bargedInAtMs,
     }));
 
-  return [...spoken, ...acted].sort((left, right) => left.at - right.at);
+  return [...spoken, ...wordless].sort((left, right) => left.at - right.at);
 };
 
 export const CallTimeline = ({
@@ -70,16 +87,24 @@ export const CallTimeline = ({
               {line.speaker}
             </div>
             {line.transcript === null ? (
+              /* Rare now: a turn that made a sound and left no words. Before 0076 this was
+                 every agent turn on every call. */
               <div className="flex flex-wrap items-center gap-2 text-[var(--ink-3)]">
-                {/* The agent's words are not stored — only that it took a turn. What it said
-                    is reconstructible from the configuration version on the call. */}
-                spoke
-                {line.bargedInAtMs !== null && (
-                  <Tag>interrupted at {offset(line.bargedInAtMs)}</Tag>
-                )}
+                spoke, too briefly to transcribe
+                {line.bargedInAtMs !== null && <Tag>interrupted at {offset(line.bargedInAtMs)}</Tag>}
               </div>
             ) : (
-              <TranscriptLine callId={callId} transcript={line.transcript} />
+              <div className="flex flex-col gap-1">
+                <TranscriptLine callId={callId} transcript={line.transcript} />
+                {/* What the caller never heard. The agent kept speaking into a line the
+                    caller had already taken back, and the words past this point were
+                    dropped from its own history too. */}
+                {line.bargedInAtMs !== null && (
+                  <div>
+                    <Tag>cut off {offset(line.bargedInAtMs)} in</Tag>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>

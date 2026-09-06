@@ -160,7 +160,7 @@ describe("the call path only ever writes a row", () => {
       configVersion: 4,
     });
     recorder.event("agent said", { text: "Good afternoon." }, 10);
-    recorder.transcript({ text: "hello", confidence: 0.9, offsetMs: 20, provider: "test" });
+    recorder.transcript({ speaker: "caller", text: "hello", confidence: 0.9, offsetMs: 20, provider: "test" });
     recorder.turn({ seq: 1, speaker: "caller", startedOffsetMs: 0, endedOffsetMs: 5, bargedInAtMs: null });
     recorder.ended("caller hung up", null, 12);
     await settle();
@@ -232,7 +232,7 @@ describe("the payload", () => {
     const { recorder } = publisherOver(countingRecorder().recorder, preparedWith(subscription("crm")), db);
 
     recorder.event("agent said", { text: "Good afternoon." }, 100);
-    recorder.transcript({ text: "I want my renewal date", confidence: 0.8, offsetMs: 50, provider: "t" });
+    recorder.transcript({ speaker: "caller", text: "I want my renewal date", confidence: 0.8, offsetMs: 50, provider: "t" });
     recorder.event("tool_call", { tool: "policy_lookup", outcome: "ok" }, 300);
     recorder.ended("caller hung up", null, 30);
     await settle();
@@ -302,7 +302,7 @@ describe("payloads leave complete", () => {
     const db = fakeDb();
     const { recorder } = publisherOver(countingRecorder().recorder, preparedWith(subscription("crm")), db);
 
-    recorder.transcript({ text: "my number is 08031234567", confidence: 0.9, offsetMs: 1, provider: "t" });
+    recorder.transcript({ speaker: "caller", text: "my number is 08031234567", confidence: 0.9, offsetMs: 1, provider: "t" });
     recorder.ended("caller hung up", null, 30);
     await settle();
 
@@ -324,7 +324,7 @@ describe("payloads leave complete", () => {
       db,
       facts,
     );
-    recorder.transcript({ text: "it is QX7K2M on 08031234567", confidence: 0.9, offsetMs: 1, provider: "t" });
+    recorder.transcript({ speaker: "caller", text: "it is QX7K2M on 08031234567", confidence: 0.9, offsetMs: 1, provider: "t" });
     recorder.ended("caller hung up", null, 30);
     await settle();
 
@@ -356,7 +356,7 @@ describe("payloads leave complete", () => {
       db,
       facts,
     );
-    recorder.transcript({ text: "RT 88213, or was it RT-88213", confidence: 0.7, offsetMs: 1, provider: "t" });
+    recorder.transcript({ speaker: "caller", text: "RT 88213, or was it RT-88213", confidence: 0.7, offsetMs: 1, provider: "t" });
     recorder.ended("caller hung up", null, 30);
     await settle();
 

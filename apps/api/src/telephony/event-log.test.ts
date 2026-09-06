@@ -154,7 +154,7 @@ describe("call recorder", () => {
     r.started(started);
     await settle();
 
-    r.transcript({ text: "my policy number", confidence: 0.82, offsetMs: 1200, provider: "openai" });
+    r.transcript({ speaker: "caller", text: "my policy number", confidence: 0.82, offsetMs: 1200, provider: "openai" });
     r.ended("carrier sent stop");
     await settle();
 
@@ -171,7 +171,7 @@ describe("call recorder", () => {
     r.started(started);
     await settle();
 
-    r.transcript({ text: "hello", confidence: null, offsetMs: 0, provider: "openai" });
+    r.transcript({ speaker: "caller", text: "hello", confidence: null, offsetMs: 0, provider: "openai" });
     r.ended("done");
     await settle();
 
@@ -229,7 +229,7 @@ describe("call recorder", () => {
     await settle();
 
     expect(() => {
-      r.transcript({ text: "x", confidence: null, offsetMs: 0, provider: "openai" });
+      r.transcript({ speaker: "caller", text: "x", confidence: null, offsetMs: 0, provider: "openai" });
       r.ended("done");
     }).not.toThrow();
     await settle();

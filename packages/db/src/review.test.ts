@@ -84,8 +84,8 @@ beforeAll(async () => {
       [ORGANIZATION, CALL],
     );
     const rows = await scope.query<{ id: string }>(
-      `insert into transcripts (organization_id, call_id, kind, text, confidence, offset_ms, provider)
-       values ($1, $2, 'final', 'My name is Security', 0.4, 1000, 'openai')
+      `insert into transcripts (organization_id, call_id, kind, speaker, text, confidence, offset_ms, provider)
+       values ($1, $2, 'final', 'caller', 'My name is Security', 0.4, 1000, 'openai')
        returning id`,
       [ORGANIZATION, CALL],
     );
