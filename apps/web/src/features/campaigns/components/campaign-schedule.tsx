@@ -3,79 +3,156 @@
 import { startTransition, useActionState, useState } from "react";
 
 import { Button, CONTROL, Field, Notice, Stack } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import { idleForm } from "@/lib/form-state";
 
 import { setScheduleAction, type ScheduleState } from "../campaigns.actions";
+import type { CampaignWindow } from "../campaigns.service";
+import {
+  CUSTOM,
+  offeredPresets,
+  parts,
+  presetFor,
+  readable,
+  STARTS,
+  STOPS,
+  type Parts,
+  type Preset,
+} from "../schedule-presets";
 
 const START: ScheduleState = idleForm();
-
-const pad = (n: number): string => String(n).padStart(2, "0");
-
-/**
- * A local wall-clock reading of an instant, in the shape the inputs want.
- *
- * `toISOString` would be the wrong half of the problem: it renders UTC, so an 09:00 start in
- * Lagos comes back as 08:00 and the operator is shown a time they did not set. These read the
- * browser's own zone, which is the zone the person picking the time is standing in.
- */
-const parts = (iso: string | null): { readonly date: string; readonly time: string } => {
-  if (iso === null) return { date: "", time: "" };
-  const at = new Date(iso);
-  if (Number.isNaN(at.getTime())) return { date: "", time: "" };
-  return {
-    date: `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`,
-    time: `${pad(at.getHours())}:${pad(at.getMinutes())}`,
-  };
-};
 
 /** Both halves, or nothing. A date without a time would silently mean midnight. */
 const instant = (date: string, time: string): string | null =>
   date === "" || time === "" ? null : new Date(`${date}T${time}`).toISOString();
 
+const Chip = ({
+  on,
+  disabled,
+  onClick,
+  children,
+}: {
+  readonly on: boolean;
+  readonly disabled: boolean;
+  readonly onClick: () => void;
+  readonly children: string;
+}) => (
+  <button
+    type="button"
+    role="radio"
+    aria-checked={on}
+    disabled={disabled}
+    onClick={onClick}
+    className={cn(
+      "rounded-full border px-3 py-1.5 text-[12.5px] transition-colors disabled:cursor-not-allowed disabled:opacity-55",
+      on
+        ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-on)]"
+        : "border-[var(--hairline)] text-[var(--ink-2)] hover:border-[var(--ink-3)]",
+    )}
+  >
+    {children}
+  </button>
+);
+
+/**
+ * One end of the run: a choice, with the exact pickers under "Pick a time".
+ *
+ * `none` is the honest default — started by hand, or run until the list is done — and it is
+ * a chip like the others rather than an empty box that silently means it. The presets resolve
+ * against the campaign's own hours, so "tomorrow" is tomorrow at the first hour it may ring.
+ * A saved time that no preset produces lands on "Pick a time" with the fields filled, so the
+ * card never shows a choice the row does not hold.
+ */
 const When = ({
   legend,
   hint,
-  date,
-  time,
+  none,
+  presets,
+  value,
+  now,
+  window,
   disabled,
-  onDate,
-  onTime,
+  onChange,
 }: {
   readonly legend: string;
   readonly hint: string;
-  readonly date: string;
-  readonly time: string;
+  readonly none: string;
+  readonly presets: readonly Preset[];
+  readonly value: Parts;
+  readonly now: Date;
+  readonly window: CampaignWindow | null;
   readonly disabled: boolean;
-  readonly onDate: (value: string) => void;
-  readonly onTime: (value: string) => void;
-}) => (
-  <fieldset>
-    <legend className="mb-1.5 text-[11px] font-semibold tracking-[0.06em] text-[var(--ink-3)] uppercase">
-      {legend}
-    </legend>
-    <div className="flex flex-wrap gap-2">
-      <Field label="Date" className="min-w-[8.5rem] flex-[2]">
-        <input
-          type="date"
-          value={date}
+  readonly onChange: (next: Parts) => void;
+}) => {
+  const offered = offeredPresets(presets, now, window);
+  const chosen = presetFor(value, offered, now, window);
+  const [custom, setCustom] = useState(chosen === CUSTOM);
+  const showPickers = custom || chosen === CUSTOM;
+
+  return (
+    <fieldset>
+      <legend className="mb-1.5 text-[11px] font-semibold tracking-[0.06em] text-[var(--ink-3)] uppercase">
+        {legend}
+      </legend>
+      <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={legend}>
+        <Chip
+          on={chosen === null && !custom}
           disabled={disabled}
-          onChange={(event) => onDate(event.target.value)}
-          className={CONTROL}
-        />
-      </Field>
-      <Field label="Time" className="min-w-[6.5rem] flex-1">
-        <input
-          type="time"
-          value={time}
-          disabled={disabled}
-          onChange={(event) => onTime(event.target.value)}
-          className={CONTROL}
-        />
-      </Field>
-    </div>
-    <p className="mt-1 text-[11.5px] text-[var(--ink-3)]">{hint}</p>
-  </fieldset>
-);
+          onClick={() => {
+            setCustom(false);
+            onChange({ date: "", time: "" });
+          }}
+        >
+          {none}
+        </Chip>
+        {offered.map((preset) => (
+          <Chip
+            key={preset.key}
+            on={chosen === preset.key && !custom}
+            disabled={disabled}
+            onClick={() => {
+              setCustom(false);
+              onChange(preset.resolve(now, window));
+            }}
+          >
+            {preset.label}
+          </Chip>
+        ))}
+        <Chip on={showPickers} disabled={disabled} onClick={() => setCustom(true)}>
+          Pick a time…
+        </Chip>
+      </div>
+
+      {showPickers ? (
+        <div className="mt-2 flex flex-wrap gap-2">
+          <Field label="Date" className="min-w-[8.5rem] flex-[2]">
+            <input
+              type="date"
+              value={value.date}
+              disabled={disabled}
+              onChange={(event) => onChange({ ...value, date: event.target.value })}
+              className={CONTROL}
+            />
+          </Field>
+          <Field label="Time" className="min-w-[6.5rem] flex-1">
+            <input
+              type="time"
+              value={value.time}
+              disabled={disabled}
+              onChange={(event) => onChange({ ...value, time: event.target.value })}
+              className={CONTROL}
+            />
+          </Field>
+        </div>
+      ) : (
+        chosen !== null && (
+          <p className="mt-1.5 text-[12.5px] tabular-nums text-[var(--ink-2)]">{readable(value)}</p>
+        )
+      )}
+      <p className="mt-1 text-[11.5px] text-[var(--ink-3)]">{hint}</p>
+    </fieldset>
+  );
+};
 
 /**
  * The span a campaign runs over: when it starts, and when it gives up.
@@ -101,6 +178,7 @@ export const CampaignSchedule = ({
   endsAt,
   startEditable,
   canWrite,
+  window = null,
 }: {
   readonly campaignId: string;
   readonly startsAt: string | null;
@@ -108,10 +186,14 @@ export const CampaignSchedule = ({
   /** False once the campaign has started. The end stays editable regardless. */
   readonly startEditable: boolean;
   readonly canWrite: boolean;
+  /** The campaign's hours, so the presets land on the first and last hour it may ring. */
+  readonly window?: CampaignWindow | null;
 }) => {
   const [state, action, pending] = useActionState(setScheduleAction, START);
   const [from, setFrom] = useState(parts(startsAt));
   const [to, setTo] = useState(parts(endsAt));
+  // Read once: presets resolved against a clock that moves would flicker between chips.
+  const [now] = useState(() => new Date());
 
   const locked = !canWrite || pending;
   const begins = instant(from.date, from.time);
@@ -130,14 +212,6 @@ export const CampaignSchedule = ({
     startTransition(() => action(form));
   };
 
-  const clear = (): void => {
-    setFrom({ date: "", time: "" });
-    setTo({ date: "", time: "" });
-    const form = new FormData();
-    form.set("campaignId", campaignId);
-    startTransition(() => action(form));
-  };
-
   return (
     <Stack gap="sm">
       {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
@@ -153,11 +227,13 @@ export const CampaignSchedule = ({
         <When
           legend="Starts"
           hint="It moves to running on its own at this moment."
-          date={from.date}
-          time={from.time}
+          none="When I start it"
+          presets={STARTS}
+          value={from}
+          now={now}
+          window={window}
           disabled={locked}
-          onDate={(date) => setFrom((one) => ({ ...one, date }))}
-          onTime={(time) => setFrom((one) => ({ ...one, time }))}
+          onChange={setFrom}
         />
       ) : (
         <p className="text-[12px] leading-relaxed text-[var(--ink-3)]">
@@ -170,11 +246,13 @@ export const CampaignSchedule = ({
       <When
         legend="Stops"
         hint="Whatever is left on the list is dropped. A call already in progress finishes."
-        date={to.date}
-        time={to.time}
+        none="When the list is done"
+        presets={STOPS}
+        value={to}
+        now={now}
+        window={window}
         disabled={locked}
-        onDate={(date) => setTo((one) => ({ ...one, date }))}
-        onTime={(time) => setTo((one) => ({ ...one, time }))}
+        onChange={setTo}
       />
 
       {(halfStart || halfEnd) && (
@@ -199,11 +277,6 @@ export const CampaignSchedule = ({
           >
             {pending ? "Saving…" : "Save schedule"}
           </Button>
-          {(startsAt !== null || endsAt !== null) && (
-            <Button size="sm" disabled={locked} onClick={clear}>
-              Clear
-            </Button>
-          )}
         </div>
       )}
     </Stack>

@@ -5127,6 +5127,17 @@ rather than landed as inventory — the wave that needs them adds them wired.
       clock, not by any code. After 08:00 WAT: run `pnpm tunnel`, put one contact with a real
       handset on a campaign, start it, and the sweeper does the rest within its interval.
 
+- [x] **The run's start and stop are offered as moments, with the pickers under "Pick a time"** (2026-09-06)
+      "When it runs" was two blank date+time pairs. Now: Starts — When I start it · Tomorrow ·
+      Next Monday · In a week · Pick a time…; Stops — When the list is done · End of today ·
+      End of tomorrow · End of the week · In a week · Pick a time…. Presets resolve against
+      the campaign's own hours, so "tomorrow" is tomorrow at the first hour it may ring and
+      "end of today" the last. A saved time no preset produces lands on "Pick a time" with the
+      fields filled. One chip per moment: on a Sunday "Next Monday" is dropped because it is
+      tomorrow. `schedule-presets.ts` is pure and tested for the traps — Sunday, a Monday's
+      "next Monday", Friday night's "end of the week", a nine-o'clock window. The redundant
+      Clear button went; "When I start it" is the clear.
+
 - [x] **Verdicts are offered, not only typed** (2026-09-06)
       "What counts as done" was the one field on the brief still asking for invented words.
       The 73 templates hold 168 distinct verdicts in sets that agree with each other, so

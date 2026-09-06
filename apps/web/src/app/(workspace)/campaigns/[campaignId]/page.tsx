@@ -351,6 +351,7 @@ const CampaignPage = async ({
           endsAt={campaign.endsAt}
           startEditable={campaign.briefEditable}
           canWrite={canWrite}
+          window={campaign.callingWindow}
         />
       </Card>
     </div>
