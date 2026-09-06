@@ -5233,9 +5233,31 @@ rather than landed as inventory — the wave that needs them adds them wired.
       PCM16, not an array of samples, so `left[i]` reads half a sample. It type-checks and
       plays as noise. Fixed to `readInt16LE`, and the test asserts the interleave.
 
-      Still to do: the expiring single-use URL, the access log — no audit table exists, so it
-      needs one — and the console player. **`wavFromLegs` is inventory until then**: nothing
-      serves it, and `check-wiring` counts its test as a caller, so lint will not say so.
+      **5c: served, on a ticket, with a record of who was given one.**
+
+      `POST /calls/:callId/recording` mints a 128-bit single-use link that lives two minutes;
+      `GET /recordings/:token` spends it and returns the stereo WAV. Unknown, expired and spent
+      are one answer — three would let a prober learn that a call exists and was recorded.
+
+      The fetch route is deliberately outside `/api/v1` and unauthenticated, because an
+      `<audio>` element cannot send an authorization header, so the URL is the only credential
+      it can carry. `routes.test.ts` refused to let it sit among the API controllers, which was
+      correct: it declares no `@Endpoint` and has no prefix. It lives in `RecordingModule` with
+      the shared ticket registry, its own config and its own logger — reaching for the call
+      path's `APP_CONFIG` would have made the dashboard's module import the whole media stack
+      to read one directory name.
+
+      Migration 0078 adds `audio_access_log`, written when the link is minted rather than when
+      the bytes are fetched: the mint is the authenticated act with a known member of staff
+      behind it. `select, insert` only — an access log an organisation can edit is not one — and
+      no retention rule of its own, because deleting the record of access alongside the thing
+      accessed is how an access log stops being one.
+
+      The comment on the corrections endpoint that explained why there was no audio has been
+      retired; it had named the exact price, and both halves of it now exist.
+
+      Still to do: the player in the console, and a real call with `record_calls` on. Nothing
+      here has produced or served a byte of real audio yet.
 
 - [x] **Slice 4 — the conversation page** (2026-09-06)
       Now that both halves are stored, the screen is only a screen. The call detail page reads

@@ -21,6 +21,8 @@ export interface ApiConfig {
    * everything except write an absolute link, so it answers null and the caller decides.
    */
   readonly publicBaseUrl: string | null;
+  /** Where call audio is written, or undefined when this deployment records nothing. */
+  readonly recordAudioDir: string | undefined;
 }
 
 /**
@@ -38,5 +40,6 @@ export const loadApiConfig = (env: NodeJS.ProcessEnv = process.env): ApiConfig =
     databaseUrl: url === undefined || url === "" ? undefined : url,
     poolSize: Number.isInteger(poolSize) && poolSize > 0 ? poolSize : DEFAULT_POOL_SIZE,
     publicBaseUrl: base === undefined || base === "" ? null : base,
+    recordAudioDir: env["RECORD_AUDIO_DIR"] === "" ? undefined : env["RECORD_AUDIO_DIR"],
   };
 };

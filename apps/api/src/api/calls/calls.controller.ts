@@ -1,8 +1,12 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
 import {
   applyTranscriptCorrection,
   listCallPage,
   readCallCaptures,
   readCapturedRows,
+  recordAudioAccess,
   loadCallDetail,
   readCallRecords,
   readStageLatencies,
@@ -42,6 +46,12 @@ import {
 } from "../http/schema";
 import { timestamp, uuid } from "../schemas";
 import { OrganizationContext } from "../tenancy/organization-context";
+import type { ApiConfig } from "../api-config";
+import type { RecordingLinks } from "./recording-links";
+import { RECORDING_CONFIG, RECORDING_LINKS } from "./tokens";
+
+/** Matches `createRecordingLinks`'s own default. Long enough to click, short enough to leak. */
+const RECORDING_LINK_TTL_MS = 120_000;
 
 /**
  * The organisation's own call history — the organization-facing half of the internal viewer.
@@ -156,6 +166,14 @@ const transcript = object({
   confidence: nullable(text({ maxLength: 24 })),
   offsetMs: integer({ minimum: 0 }),
   provider: text({ maxLength: 64 }),
+});
+
+const recordingLink = object({
+  /** Absolute, because an `<audio src>` in the console is not on the API's origin. */
+  url: text({ maxLength: 512 }),
+  expiresAt: timestamp(),
+  /** True when both legs are on disk. False means this call predates the agent being taped. */
+  bothLegs: flag(),
 });
 
 const turn = object({
@@ -570,7 +588,11 @@ const toFilters = (query: Infer<typeof callQuery>): CallFilters => ({
 
 @Controller(apiRoute("calls"))
 export class CallsController {
-  constructor(@Inject(OrganizationContext) private readonly db: OrganizationContext) {}
+  constructor(
+    @Inject(OrganizationContext) private readonly db: OrganizationContext,
+    @Inject(RECORDING_LINKS) private readonly links: RecordingLinks,
+    @Inject(RECORDING_CONFIG) private readonly config: ApiConfig,
+  ) {}
 
   @Get()
   @Endpoint({
@@ -919,24 +941,60 @@ export class CallsController {
    * no accuracy rate exists. That is why this is a plain POST with the text in it rather
    * than an endpoint you only call when something is wrong.
    *
-   * **Why there is no audio here, or anywhere on this controller.** A reviewer would
-   * obviously like to hear the turn. What exists is a raw µ-law byte stream written to the
-   * process's own disk under `RECORD_AUDIO_DIR` — an operator diagnostic that is off by
-   * default, keyed by the carrier's call id rather than by anything in this API, swept on
-   * `organizations.audio_retention_days`, and playable by nothing without transcoding. Exposing
-   * it would mean this API grew a media path, and the endpoint would answer 404 for almost
-   * every call because the flag was off when it happened.
+   * **The audio a reviewer wants is next door**, at `POST :callId/recording`. This comment
+   * used to say why there was none, and it named the price: expiring single-use URLs that are
+   * not a guessable path, and a record of who listened to whose voice and when. Both exist now
+   * — the ticket in `recording-links.ts`, the log in `audio_access_log` — along with two
+   * conditions that were not on the list and matter more: the organisation has to have asked
+   * to record at all, and the caller has to have been told.
    *
-   * That is the practical objection. The real one is that the recording is a caller
-   * reading their policy number aloud — the most sensitive thing the system holds. Serving
-   * it needs expiring single-use URLs that are not a guessable path, and a record of who
-   * listened to whose voice and when. That is a slice, with its own decisions; it is not a
-   * field added to a response. The review loop this endpoint serves works without it,
-   * because the question a reviewer answers is "is this text what was said", and the text
-   * plus the transcriber's confidence is what that question is about.
+   * The review loop still works without it, which is why it was right to ship first. The
+   * question a reviewer answers is "is this text what was said", and the text plus the
+   * transcriber's confidence is what that question is about; the audio settles the ones where
+   * the words alone cannot.
    *
    * The corrected text is never logged. It is the sentence the caller spoke.
    */
+  @Post(":callId/recording")
+  @Endpoint({
+    summary: "Get a short-lived link to this call's audio",
+    description:
+      "Returns a URL that plays the call as a stereo WAV — the caller on the left channel, the agent on the right. The link is single use, expires in two minutes, and is not a guessable path, because an audio element cannot send an authorization header and the URL is therefore the only credential. Being given the link is written to the organisation's audio access log, which is what answers \"who has heard my call\". 404 when the call has no audio: the organisation was not recording when it happened, or it has passed `audioRetentionDays` and been swept.",
+    capability: "calls:read",
+    params: callPath,
+    response: recordingLink,
+    status: 201,
+  })
+  async recording(@FromPath() path: Infer<typeof callPath>): Promise<Infer<typeof recordingLink>> {
+    const dir = this.config.recordAudioDir;
+    const found = await this.db.tx(async (scope) => {
+      const call = await loadCallDetail(scope, path.callId);
+      if (call === null) return null;
+      /* Logged here rather than at the fetch. This is the authenticated act with a known
+         member of staff behind it; the fetch carries only the ticket. "Was given the ability
+         to listen" is the honest claim and the only attributable one. */
+      await recordAudioAccess(scope, path.callId, this.db.caller.userId);
+      return call;
+    });
+    /* No base URL means no absolute link, and a relative one would resolve against the
+       console's origin rather than the API's. Better to say there is no recording than to
+       hand back something that 404s somewhere else. */
+    const base = this.config.publicBaseUrl;
+    if (found === null || dir === undefined || base === null) throw new NotFoundException();
+
+    /* Keyed by the carrier's id, because that is what the file on disk is named — the
+       gateway writes it before any row of ours exists. */
+    const caller = join(dir, `${found.carrierCallId}.ulaw`);
+    if (!existsSync(caller)) throw new NotFoundException();
+
+    const token = this.links.offer(found.carrierCallId);
+    return {
+      url: `${base}/recordings/${token}`,
+      expiresAt: new Date(Date.now() + RECORDING_LINK_TTL_MS).toISOString(),
+      bothLegs: existsSync(join(dir, `${found.carrierCallId}.agent.ulaw`)),
+    };
+  }
+
   @Post(":callId/transcripts/:transcriptId/corrections")
   @Endpoint({
     summary: "Record a review verdict on one transcript",

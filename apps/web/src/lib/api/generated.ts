@@ -1216,6 +1216,21 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       }>(options, "GET", `/api/v1/calls/${encodeURIComponent(input.path.callId)}`, input),
 
     /**
+     * Get a short-lived link to this call's audio
+     * Returns a URL that plays the call as a stereo WAV — the caller on the left channel, the agent on the right. The link is single use, expires in two minutes, and is not a guessable path, because an audio element cannot send an authorization header and the URL is therefore the only credential. Being given the link is written to the organisation's audio access log, which is what answers "who has heard my call". 404 when the call has no audio: the organisation was not recording when it happened, or it has passed `audioRetentionDays` and been swept.
+     */
+    recording: (input: {
+        readonly path: {
+          readonly callId: string;
+        };
+      }) =>
+      send<{
+        readonly url: string;
+        readonly expiresAt: string;
+        readonly bothLegs: boolean;
+      }>(options, "POST", `/api/v1/calls/${encodeURIComponent(input.path.callId)}/recording`, input),
+
+    /**
      * Record a review verdict on one transcript
      * Submitting the transcriber's own words back is a verdict, not a no-op: it marks the transcript reviewed and correct. `changed` says which it was.
      */

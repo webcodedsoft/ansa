@@ -11882,6 +11882,120 @@
         }
       }
     },
+    "/api/v1/calls/{callId}/recording": {
+      "post": {
+        "operationId": "calls.recording",
+        "tags": [
+          "calls"
+        ],
+        "summary": "Get a short-lived link to this call's audio",
+        "description": "Returns a URL that plays the call as a stereo WAV — the caller on the left channel, the agent on the right. The link is single use, expires in two minutes, and is not a guessable path, because an audio element cannot send an authorization header and the URL is therefore the only credential. Being given the link is written to the organisation's audio access log, which is what answers \"who has heard my call\". 404 when the call has no audio: the organisation was not recording when it happened, or it has passed `audioRetentionDays` and been swept.",
+        "x-ansa-capability": "calls:read",
+        "parameters": [
+          {
+            "name": "callId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "maxLength": 512
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "bothLegs": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "url",
+                    "expiresAt",
+                    "bothLegs"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold calls:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/calls/{callId}/transcripts/{transcriptId}/corrections": {
       "post": {
         "operationId": "calls.correct",

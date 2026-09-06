@@ -11,6 +11,7 @@ import { AuthController } from "./auth/auth.controller";
 import { AuthService } from "./auth/auth.service";
 import { CallsController } from "./calls/calls.controller";
 import { CampaignsController } from "./campaigns/campaigns.controller";
+import { RecordingModule } from "./calls/recording.module";
 import { loadApiConfig } from "./api-config";
 import { ConfigController } from "./config/config.controller";
 import { ContactsController } from "./contacts/contacts.controller";
@@ -65,6 +66,9 @@ export const API_CONTROLLERS = [
 ];
 
 @Module({
+  /* The recording pair lives in its own module: its fetch route is unauthenticated by
+     design and must share one ticket registry with the mint endpoint here. */
+  imports: [RecordingModule],
   controllers: API_CONTROLLERS,
   providers: [
     {

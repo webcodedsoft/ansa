@@ -14,6 +14,7 @@ export * from "./call-captures";
 export * from "./contacts";
 export * from "./campaigns";
 export * from "./series";
+export * from "./audio-access";
 export * from "./appointments";
 export * from "./holidays";
 export * from "./call-records";
