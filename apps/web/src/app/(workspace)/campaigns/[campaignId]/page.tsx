@@ -313,8 +313,11 @@ const CampaignPage = async ({
   );
 
   /* The sidebar: true of a campaign in every phase. */
-  const sidebar = (
-    <div className="flex flex-col gap-3.5">
+  /* The window and the run, side by side. They were a 310px sidebar, stacked, which meant
+     the strip was drawn narrow and the two date pickers wrapped under their own labels.
+     Given the whole width they sit as two columns and each gets room to be legible. */
+  const scheduleTab = (
+    <div className="grid items-start gap-3.5 lg:grid-cols-2">
       <Card title="Hours it may ring">
         <CallingWindowStrip window={campaign.callingWindow} />
         <p className="mt-3.5 border-t border-[var(--hairline)] pt-3 text-[11.5px] leading-relaxed text-[var(--ink-3)]">
@@ -323,7 +326,7 @@ const CampaignPage = async ({
         </p>
       </Card>
 
-      <Card title="Schedule">
+      <Card title="When it runs">
         <CampaignSchedule
           campaignId={campaign.id}
           startsAt={campaign.startsAt}
@@ -332,33 +335,36 @@ const CampaignPage = async ({
           canWrite={canWrite}
         />
       </Card>
-
-      {phase !== "setup" && (
-        /* Frozen, so read-only, so a panel rather than a form. What it says is still the
-           first thing to check when a call sounds wrong. */
-        <Card title="What it says">
-          {hasPurpose ? (
-            <Purpose text={campaign.purpose ?? ""} size="sm" />
-          ) : (
-            <p className="text-[12.5px] text-[var(--ink-3)]">No purpose was written.</p>
-          )}
-          {campaign.opening !== null && campaign.opening.trim() !== "" && (
-            <p className="mt-2.5 border-t border-[var(--hairline)] pt-2.5 text-[12.5px] leading-relaxed text-[var(--ink-2)]">
-              <span className="text-[var(--ink-3)]">Opens with: </span>
-              {campaign.opening}
-            </p>
-          )}
-          {campaign.outcomes !== null && campaign.outcomes.length > 0 && (
-            <p className="mt-2.5 border-t border-[var(--hairline)] pt-2.5 text-[12px] leading-relaxed text-[var(--ink-3)]">
-              Records one of: {campaign.outcomes.join(", ")}.
-            </p>
-          )}
-          <p className="mt-2.5 text-[11.5px] text-[var(--ink-3)]">
-            Fixed since it started. To say something different, duplicate it.
-          </p>
-        </Card>
-      )}
     </div>
+  );
+
+  /* Frozen, so read-only, so a panel rather than a form. What it says is still the first
+     thing to check when a call sounds wrong, and it lost its sidebar home when the sidebar
+     went — so it is a tab of its own on a campaign that has started. */
+  const saysTab = (
+    <Card title="What it says">
+      <div className="max-w-[70ch]">
+        {hasPurpose ? (
+          <Purpose text={campaign.purpose ?? ""} />
+        ) : (
+          <p className="text-[12.5px] text-[var(--ink-3)]">No purpose was written.</p>
+        )}
+        {campaign.opening !== null && campaign.opening.trim() !== "" && (
+          <p className="mt-3.5 border-t border-[var(--hairline)] pt-3.5 text-[13px] leading-relaxed text-[var(--ink-2)]">
+            <span className="text-[var(--ink-3)]">Opens with: </span>
+            {campaign.opening}
+          </p>
+        )}
+        {campaign.outcomes !== null && campaign.outcomes.length > 0 && (
+          <p className="mt-3.5 border-t border-[var(--hairline)] pt-3.5 text-[12.5px] leading-relaxed text-[var(--ink-3)]">
+            Records one of: {campaign.outcomes.join(", ")}.
+          </p>
+        )}
+        <p className="mt-3.5 text-[11.5px] text-[var(--ink-3)]">
+          Fixed since it started. To say something different, duplicate it.
+        </p>
+      </div>
+    </Card>
   );
 
   const callsTab = (
@@ -411,8 +417,7 @@ const CampaignPage = async ({
         }
       />
 
-      <div className="grid items-start gap-3.5 lg:grid-cols-[minmax(0,1fr)_310px]">
-        <div className="flex flex-col gap-3.5">
+      <div className="flex flex-col gap-3.5">
           {liveStrip}
 
           {phase === "setup" ? (
@@ -455,6 +460,7 @@ const CampaignPage = async ({
                     ),
                   },
                   { id: "calls", label: "People", panel: callsTab },
+                  { id: "schedule", label: "Schedule", panel: scheduleTab },
                 ]}
               />
             </>
@@ -490,6 +496,8 @@ const CampaignPage = async ({
                 initial="calls"
                 tabs={[
                   { id: "calls", label: "Every call", panel: callsTab },
+                  { id: "says", label: "What it says", panel: saysTab },
+                  { id: "schedule", label: "Schedule", panel: scheduleTab },
                   {
                     id: "conversation",
                     label: "Conversation",
@@ -508,9 +516,6 @@ const CampaignPage = async ({
               />
             </>
           )}
-        </div>
-
-        {sidebar}
       </div>
     </>
   );
