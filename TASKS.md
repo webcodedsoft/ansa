@@ -5180,6 +5180,15 @@ rather than landed as inventory — the wave that needs them adds them wired.
       Schedule tab under the hours. Empty box is no cap, and the schema turns "" into null
       rather than 0 — tested, because 0 is a cap the API refuses.
 
+- [x] **Two names that lied on the campaign page** (2026-09-06)
+      The `Schedule` button and the `Schedule` tab were different things with one name, and the
+      stepper spelled the collision out loud: "Press Schedule to start it yourself, or give it
+      a start time in the schedule". The button is right — it schedules the campaign — so the
+      tab was renamed **Timing**, which is what its four cards actually are: hours, pace, the
+      run, the rhythm. And the strip's empty line repeated the stepper a few pixels below it
+      almost verbatim; it now says only what the meter cannot ("Nobody on it yet."), with the
+      instruction left where it belongs, in the step that carries the consent fact too.
+
 - [x] **Recurring campaigns, on the dialler's own clock** (2026-09-06)
       Built as sketched in `docs/CAMPAIGN_RECURRENCE.md`. Migration 0074: `campaign_series`
       (a rhythm as an interval, an anchor, a run length, a template campaign, next_run_at

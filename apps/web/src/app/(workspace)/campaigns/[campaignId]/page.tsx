@@ -128,7 +128,7 @@ const SetupChecklist = ({ campaign }: { readonly campaign: CampaignDetail }) => 
     {
       done: campaign.status !== "draft",
       title: "Start it",
-      next: "Press Schedule to start it yourself, or give it a start time in the schedule and it runs on its own.",
+      next: "Press Schedule to start it yourself, or give it a start time under Timing and it runs on its own.",
     },
   ];
   const upcoming = steps.find((step) => !step.done) ?? null;
@@ -309,7 +309,7 @@ const CampaignPage = async ({
           <CampaignProgress
             pending={campaign.pending}
             total={campaign.total}
-            empty="Nobody on it yet. Add contacts and each one becomes a pending call."
+            empty="Nobody on it yet."
           />
           <div className="mt-4 flex gap-8">
             <Figure label="Pending" value={campaign.pending} />
@@ -502,7 +502,7 @@ const CampaignPage = async ({
                     ),
                   },
                   { id: "calls", label: "People", panel: callsTab },
-                  { id: "schedule", label: "Schedule", panel: scheduleTab },
+                  { id: "timing", label: "Timing", panel: scheduleTab },
                 ]}
               />
             </>
@@ -539,7 +539,7 @@ const CampaignPage = async ({
                 tabs={[
                   { id: "calls", label: "Every call", panel: callsTab },
                   { id: "says", label: "What it says", panel: saysTab },
-                  { id: "schedule", label: "Schedule", panel: scheduleTab },
+                  { id: "timing", label: "Timing", panel: scheduleTab },
                   {
                     id: "conversation",
                     label: "Conversation",
