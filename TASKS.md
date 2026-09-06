@@ -5208,8 +5208,34 @@ rather than landed as inventory — the wave that needs them adds them wired.
       that `agent_config_for_organization` delegates to the same function, so it had to move
       with it — "return type mismatch in function declared to return record" on every read.
 
-      Still to do in slice 5: record the agent's leg, the WAV header, the expiring single-use
-      URL, and the access log.
+      **5b, same day: both legs captured, and a call made playable.**
+
+      The vendor `CallMediaStream` has no send-tap, and adding one would be shaping the
+      provider interface around what the *recorder* needs rather than what the orchestrator
+      needs — so the gateway wraps the stream instead and forwards every method, adding the tap
+      to `send`. Two tracks, `<callId>.ulaw` and `<callId>.agent.ulaw`; the caller keeps the
+      bare name it has always had so the retention sweeper and the comparison tools still find
+      it.
+
+      **The caller's track is the clock.** The carrier sends inbound frames continuously,
+      silence included, so that track is a real timeline; the agent's only exists while it is
+      talking. Before each outbound write the agent track is padded with mu-law silence
+      (`0xFF`) up to the caller's byte count. Without it the two drift by however long the
+      agent was quiet, and a stereo mix would have the answer arriving before the question.
+
+      `packages/shared/src/wav.ts` closes the transcoding gap: `muLawToPcm` already existed and
+      the missing part was the 44 bytes of RIFF header. Stereo, caller left and agent right —
+      a mono mix of a barge-in is a noise nobody can correct a transcript against, and separate
+      channels let the accent work isolate the caller. A recording made before the agent's leg
+      existed becomes a silent right channel rather than a second mono path to maintain.
+
+      **A bug the types could not catch:** `muLawToPcm` returns a `Buffer` of little-endian
+      PCM16, not an array of samples, so `left[i]` reads half a sample. It type-checks and
+      plays as noise. Fixed to `readInt16LE`, and the test asserts the interleave.
+
+      Still to do: the expiring single-use URL, the access log — no audit table exists, so it
+      needs one — and the console player. **`wavFromLegs` is inventory until then**: nothing
+      serves it, and `check-wiring` counts its test as a caller, so lint will not say so.
 
 - [x] **Slice 4 — the conversation page** (2026-09-06)
       Now that both halves are stored, the screen is only a screen. The call detail page reads

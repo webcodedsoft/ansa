@@ -9,3 +9,4 @@ export * from "./flow-project";
 export * from "./flow-tools";
 export * from "./campaign";
 export * from "./phone";
+export * from "./wav";

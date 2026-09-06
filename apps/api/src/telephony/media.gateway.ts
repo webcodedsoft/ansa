@@ -1,4 +1,5 @@
 import { createWriteStream, mkdirSync } from "node:fs";
+import type { Writable } from "node:stream";
 import { join } from "node:path";
 import type { Server } from "node:http";
 import { monitorEventLoopDelay } from "node:perf_hooks";
@@ -124,6 +125,9 @@ interface WarmAudio {
 /** Nothing rendered yet, and the call must not wait for it (R6.2). */
 /** One carrier frame of 8kHz audio. Its timestamps advance by this much when nothing is lost. */
 const FRAME_MS = 20;
+
+/** Silence in mu-law. Used to pad the agent's track up to the caller's clock. */
+const MULAW_SILENCE = 0xff;
 
 const NOT_WARM: WarmAudio = { greeting: null, leads: new Map(), fillers: new Map(), complete: false };
 
@@ -626,39 +630,80 @@ export class MediaGateway implements OnApplicationShutdown {
    *
    * Retention is `organizations.audio_retention_days`, swept by `AudioRetentionSweeper`.
    */
-  private recordAudio(stream: CallMediaStream, log: Logger): (allowed: boolean) => void {
+  private recordAudio(
+    stream: CallMediaStream,
+    log: Logger,
+  ): { readonly decide: (allowed: boolean) => void; readonly tap: CallMediaStream } {
     const dir = this.config.recordAudioDir;
-    if (dir === undefined) return () => undefined;
+    if (dir === undefined) return { decide: () => undefined, tap: stream };
 
-    let held: Buffer[] | null = [];
-    let file: ReturnType<typeof createWriteStream> | null = null;
-    let bytes = 0;
+    /* One track per leg, aligned by the caller's own clock.
+     *
+     * The carrier sends inbound frames continuously, silence included, so the caller track is
+     * a real timeline and the agent track is not — it only exists while the agent is talking.
+     * Before each outbound write the agent track is padded with mu-law silence up to the
+     * caller's byte count, which puts a word in the same place in both files. Without that the
+     * two drift by however long the agent was quiet, and a stereo mix would have the answer
+     * arriving before the question.
+     */
+    const legs = { caller: { held: [] as Buffer[] | null, file: null as Writable | null, bytes: 0 },
+                   agent: { held: [] as Buffer[] | null, file: null as Writable | null, bytes: 0 } };
     let dropped = false;
 
+    const write = (leg: typeof legs.caller, data: Buffer): void => {
+      leg.bytes += data.length;
+      if (leg.file !== null) leg.file.write(data);
+      else leg.held?.push(data);
+    };
+
     stream.onAudio((chunk) => {
-      if (dropped) return;
-      bytes += chunk.data.length;
-      if (file !== null) file.write(chunk.data);
-      else held?.push(chunk.data);
+      if (!dropped) write(legs.caller, chunk.data);
     });
 
+    /* Everything the orchestrator uses, forwarded, with one addition. The vendor interface is
+       designed around what the orchestrator needs and a send-tap is not that — it is what the
+       recorder needs — so it is wrapped here rather than added there. */
+    const tap: CallMediaStream = {
+      callId: stream.callId,
+      format: stream.format,
+      parameters: stream.parameters,
+      onAudio: (listener) => stream.onAudio(listener),
+      send: (chunk) => {
+        if (!dropped) {
+          const behind = legs.caller.bytes - legs.agent.bytes;
+          if (behind > 0) write(legs.agent, Buffer.alloc(behind, MULAW_SILENCE));
+          write(legs.agent, chunk.data);
+        }
+        stream.send(chunk);
+      },
+      mark: (name) => stream.mark(name),
+      onMark: (listener) => stream.onMark(listener),
+      clear: () => stream.clear(),
+      onDigit: (listener) => stream.onDigit(listener),
+      onClosed: (listener) => stream.onClosed(listener),
+      hangUp: () => stream.hangUp(),
+    };
+
     stream.onClosed(() => {
-      if (file === null) return;
-      file.end();
-      log.info("recorded caller audio", {
-        path: join(dir, `${stream.callId}.ulaw`),
-        bytes,
-        seconds: Math.round(bytes / 8000),
+      if (legs.caller.file === null) return;
+      legs.caller.file.end();
+      legs.agent.file?.end();
+      log.info("recorded both legs", {
+        callId: stream.callId,
+        callerBytes: legs.caller.bytes,
+        agentBytes: legs.agent.bytes,
+        seconds: Math.round(legs.caller.bytes / 8000),
       });
     });
 
-    return (allowed: boolean) => {
-      if (dropped || file !== null) return; // decided once
+    const decide = (allowed: boolean): void => {
+      if (dropped || legs.caller.file !== null) return; // decided once
       if (!allowed) {
         /* Never touched the disk. An organisation that has not asked to record leaves no file
            to delete later, and nothing a sweeper has to be trusted about. */
         dropped = true;
-        held = null;
+        legs.caller.held = null;
+        legs.agent.held = null;
         return;
       }
 
@@ -666,7 +711,8 @@ export class MediaGateway implements OnApplicationShutdown {
         mkdirSync(dir, { recursive: true });
       } catch (error) {
         dropped = true;
-        held = null;
+        legs.caller.held = null;
+        legs.agent.held = null;
         log.error("could not create the audio directory", {
           dir,
           error: error instanceof Error ? error.message : String(error),
@@ -674,16 +720,22 @@ export class MediaGateway implements OnApplicationShutdown {
         return;
       }
 
-      const path = join(dir, `${stream.callId}.ulaw`);
-      const opened = createWriteStream(path);
-      // A recording failing must not affect the call, exactly as with the event log.
-      opened.on("error", (error: Error) => {
-        log.error("could not write call audio", { path, error: error.message });
-      });
-      for (const chunk of held ?? []) opened.write(chunk);
-      held = null;
-      file = opened;
+      for (const [side, leg] of Object.entries(legs)) {
+        /* The caller's leg keeps the bare `<callId>.ulaw` name it has always had, so the
+           retention sweeper and the comparison tools find it where they always did. */
+        const path = join(dir, side === "caller" ? `${stream.callId}.ulaw` : `${stream.callId}.agent.ulaw`);
+        const opened = createWriteStream(path);
+        // A recording failing must not affect the call, exactly as with the event log.
+        opened.on("error", (error: Error) => {
+          log.error("could not write call audio", { path, error: error.message });
+        });
+        for (const chunk of leg.held ?? []) opened.write(chunk);
+        leg.held = null;
+        leg.file = opened;
+      }
     };
+
+    return { decide, tap };
   }
 
   onApplicationShutdown(): void {
@@ -833,18 +885,21 @@ export class MediaGateway implements OnApplicationShutdown {
     // audio was gone the moment it was transcribed.
     /* Buffered, not yet written: whether this organisation records is not known until its
        configuration resolves, and the answer decides whether any of this reaches disk. */
-    const decideRecording = this.recordAudio(stream, log);
+    const recording = this.recordAudio(stream, log);
 
     const organizationId = stream.parameters[ORGANIZATION_PARAM];
     void this.startConversation(
-      stream,
+      /* The tapped stream, so what the agent says is captured where it is sent. Identical to
+         the carrier's in every other respect, and identical to it entirely when recording is
+         not configured. */
+      recording.tap,
       log,
       organizationId,
       () => {
         buffering = false;
         return early;
       },
-      decideRecording,
+      recording.decide,
     );
   }
 
