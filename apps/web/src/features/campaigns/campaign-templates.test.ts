@@ -46,10 +46,11 @@ describe("the campaign catalogue", () => {
   });
 
   it.each(each)("%s reads as the tail of \"I'm calling…\"", (_, template) => {
-    /* The agent says "I'm calling" and then this, in one breath. A purpose that starts with
-       a capital or a full sentence produces "I'm calling. We wanted to…", which is the sound
-       of a script being read. */
-    expect(template.purpose).toMatch(/^(to|because|with|about)\b/);
+    /* The agent says "I'm calling" and then this, in one breath. "just to check" and "ahead
+       of your stay" are as much the tail of that sentence as "to confirm" is; what is refused
+       is a capital letter or a noun phrase, which produces "I'm calling. We wanted to…" —
+       the sound of a script being read. */
+    expect(template.purpose).toMatch(/^(to|because|with|about|following|ahead of|just|on behalf of)\b/);
     expect(template.purpose.endsWith(".")).toBe(false);
   });
 
@@ -98,12 +99,16 @@ describe("the campaign catalogue", () => {
        stage: none of it belongs on a machine that plays out loud in a room. The templates
        whose rationale says so must also say so in their setting. */
     const privateOnes = [
-      "rent-reminder",
-      "loan-repayment",
-      "school-fees",
-      "appointment-reminder",
-      "results-ready",
-      "claim-status",
+      // money
+      "rent-reminder", "loan-repayment", "school-fees", "service-charge", "premium-due",
+      "bill-overdue", "savings-maturity", "dormant-account",
+      // medicine
+      "appointment-reminder", "results-ready", "medication-refill", "post-discharge",
+      "immunisation-due",
+      // anything else that is somebody's private business
+      "claim-status", "claim-documents", "exam-results", "document-signing", "tax-deadline",
+      "consultation-followup", "complaint-followup", "suspicious-activity", "sim-swap-check",
+      "kyc-update", "welfare-check", "lease-renewal", "quote-followup",
     ];
     for (const id of privateOnes) {
       expect(campaignTemplateById(id)?.voicemail, id).toBe("hang_up");

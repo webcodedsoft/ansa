@@ -5068,6 +5068,29 @@ rather than landed as inventory — the wave that needs them adds them wired.
       survives only where it names call *direction* — the metrics page's "outbound only" and
       the agent catalogue's sector — which is a different fact and correctly keeps its word.
 
+- [x] **Fifty-six more campaign templates; seventy-three across sixteen sectors** (this session)
+
+      The wider catalogue lives in `campaign-templates.more.ts`, with the interface and the
+      shared helpers lifted into `campaign-templates.shape.ts` so neither catalogue file
+      imports the other. The first attempt had the main file importing the extension at its
+      top, before its own helpers were defined — the extension evaluated first and saw
+      `confirmOrMove` as undefined. A circular import that only fails at load, which is the
+      worst kind; the shape module is the fix, not a reorder.
+
+      Every sector the agent gallery knows now has campaigns, including seven it did not
+      before: hospitality, logistics, telecoms, travel, automotive, home services,
+      professional services, faith and community. The two most dangerous templates in the
+      set — the unusual-activity check and the SIM-swap check — are written to be the
+      opposite of what they resemble: the opening says aloud that no PIN, code or card number
+      will be asked for, the conversation is built so none ever is, and anything but a clear
+      "that was me" goes to a person at once. They retry hard and across the whole day,
+      because an account may be draining.
+
+      442 tests. Five failed on first run, all one thing: purposes opening "ahead of…",
+      "following…", "just…" — which read perfectly after "I'm calling" and were refused by a
+      test whose list of openers was too narrow. The test was wrong, not the templates. The
+      answerphone rule now names all twenty-six private templates rather than the founding six.
+
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The queue drains, the consent gate is in the path, and a call can now offer and take a time,
 but every one of those is green tests and database round trips. By Rule 1 both slices are open
