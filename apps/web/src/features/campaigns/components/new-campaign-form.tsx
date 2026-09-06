@@ -16,7 +16,9 @@ import { cn } from "@/lib/cn";
 import { idleForm } from "@/lib/form-state";
 
 import { createCampaignAction, type CreateCampaignState } from "../campaigns.actions";
+import { campaignTemplateById } from "../campaign-templates";
 import { windowSummary } from "../campaigns.display";
+import { CampaignTemplatePicker } from "./campaign-template-picker";
 
 const START: CreateCampaignState = idleForm();
 
@@ -133,6 +135,8 @@ export const NewCampaignForm = ({ agents }: { readonly agents: readonly AgentCho
   const errors = state.fieldErrors;
 
   const [name, setName] = useState("");
+  const [templateId, setTemplateId] = useState("");
+  const template = campaignTemplateById(templateId);
   const [agentId, setAgentId] = useState("");
   const [mode, setMode] = useState<"default" | "custom">("default");
   const [startHour, setStartHour] = useState(8);
@@ -150,6 +154,27 @@ export const NewCampaignForm = ({ agents }: { readonly agents: readonly AgentCho
         : windowSummary({ startHour, endHour, weekdays: [...days] }),
     [mode, startHour, endHour, days],
   );
+
+  /* A template suggests a name and brings its window, and neither is forced: a name already
+     typed is kept, and the window can be narrowed afterwards. Picking "scratch" clears only
+     what a template put there. */
+  const pick = (id: string): void => {
+    setTemplateId(id);
+    const next = campaignTemplateById(id);
+    if (next !== null) {
+      if (name.trim() === "" || name === template?.name) setName(next.name);
+      if (next.callingWindow !== null) {
+        setMode("custom");
+        setStartHour(next.callingWindow.startHour);
+        setEndHour(next.callingWindow.endHour);
+        setDays(new Set(next.callingWindow.weekdays));
+      } else {
+        setMode("default");
+      }
+    } else if (name === template?.name) {
+      setName("");
+    }
+  };
 
   const toggleDay = (value: number): void =>
     setDays((current) => {
@@ -180,6 +205,13 @@ export const NewCampaignForm = ({ agents }: { readonly agents: readonly AgentCho
   return (
     <form action={action} className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_310px]">
       <Stack>
+        <Card
+          title="Start from"
+          description="A campaign somebody actually runs, with its reason, its verdicts and its retry policy written for the subject — or a blank one. Everything it fills in can be changed on the next screen."
+        >
+          <CampaignTemplatePicker selectedId={templateId} onSelect={pick} />
+        </Card>
+
         <Card
           title="What it is"
           description="A name you will recognise on the list in a month, and the agent whose script and voice these calls run."
@@ -328,6 +360,13 @@ export const NewCampaignForm = ({ agents }: { readonly agents: readonly AgentCho
               )}
             </p>
             <p className="text-[12.5px] leading-relaxed text-[var(--ink-2)]">{summary}</p>
+            {template !== null && (
+              <p className="text-[12.5px] leading-relaxed text-[var(--ink-2)]">
+                Opens by saying it is calling{" "}
+                <span className="text-[var(--ink)]">…{template.purpose}</span>
+                {template.conversation !== null && ", with a conversation drawn for what they say back"}.
+              </p>
+            )}
 
             <hr className="my-1 border-0 border-t border-[var(--hairline)]" />
 

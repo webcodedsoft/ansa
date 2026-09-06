@@ -27,7 +27,7 @@ const NewCampaignPage = async () => {
   return (
     <>
       <PageHeader
-        eyebrow="Outbound"
+        eyebrow="Campaigns"
         title="New campaign"
         meta="An agent, and the hours it may ring. It begins as a draft with nobody on it — nothing is dialled until you add people and start it."
       />

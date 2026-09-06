@@ -407,7 +407,7 @@ const CampaignPage = async ({
       {phase === "watching" && <AutoRefresh intervalMs={LIVE_REFRESH_MS} />}
 
       <PageHeader
-        eyebrow="Outbound"
+        eyebrow="Campaigns"
         title={campaign.name}
         meta={`${agentName} · ${windowSummary(campaign.callingWindow)}`}
         actions={

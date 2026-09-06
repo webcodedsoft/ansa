@@ -8,7 +8,7 @@ import { CampaignCard } from "@/features/campaigns/components/campaign-card";
 import { listCampaigns } from "@/features/campaigns/campaigns.service";
 import { readPaging } from "@/lib/paging";
 
-export const metadata: Metadata = { title: "Outbound · Ansa" };
+export const metadata: Metadata = { title: "Campaigns · Ansa" };
 export const dynamic = "force-dynamic";
 
 type CampaignsSearch = { readonly page?: string; readonly perPage?: string };
@@ -44,8 +44,8 @@ const CampaignsPage = async ({
     <>
       <PageHeader
         eyebrow="Operate"
-        title="Outbound"
-        meta="Campaigns that place calls: an agent, a list of people, and the hours it may ring them. Consent and do-not-call are enforced on every call, not configured away here."
+        title="Campaigns"
+        meta="An agent, a list of people, and the hours it may ring them. Consent and do-not-call are enforced on every call, not configured away here."
         actions={
           canWrite ? (
             <Link href="/campaigns/new" className={buttonClass("primary")}>

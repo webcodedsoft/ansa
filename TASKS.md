@@ -5021,6 +5021,53 @@ rather than landed as inventory — the wave that needs them adds them wired.
       Not done, deliberately: CSV export and free-text notes. Both are real and both are
       independent of the layout, so they wait for their own pass.
 
+- [x] **Campaign templates, and the section is called Campaigns** (this session)
+
+      Seventeen campaigns real organisations run, across eight sectors: viewing confirmation,
+      rent reminder, repair follow-up, appointment reminder, results ready, vaccination drive,
+      school fees, absence check, loan repayment, card activation, policy renewal, claim
+      update, delivery confirmation, abandoned order, planned outage, satisfaction follow-up,
+      event invitation. Each carries the reason the agent opens with, the exact verdicts that
+      campaign records, the conversation it has when the person says something back, the
+      retry policy that suits the subject, and a rationale for why it is shaped that way.
+
+      **The retry policy follows from the subject, not from a default.** An appointment
+      reminder tries three times ninety minutes apart, because a slot freed this afternoon can
+      go to the waiting list and one freed tomorrow cannot. An abandoned-basket call tries
+      once, because a second call about a basket somebody walked away from is what makes them
+      block the number. An absence check tries every twenty minutes in a morning-only window,
+      because the whole point is to know before lunch.
+
+      **Money and medicine never go on the answerphone.** Rent, loans, fees, appointments,
+      results and claims are all `hang_up`, and a test pins that: a message naming a clinic
+      or an amount owed on a machine that plays out loud in a shared room is the failure the
+      voicemail rule exists to prevent. Public things — a viewing, an outage, an invitation —
+      leave a message, because the message *is* the notice.
+
+      **Every hard thing goes to a person.** A disputed amount, a missing card, a withdrawal, a
+      household that depends on supply, a parent who did not know their child was absent. The
+      agent reminds and records; it does not negotiate, promise a refund, quote a price, or
+      hold the conversation a person should be holding. And no template's conversation asks
+      for anything `prompts/outbound.ts` forbids — a test greps every prompt for PIN, OTP, card
+      number, BVN, NIN and date of birth, and refuses the capture types too.
+
+      The conversations reuse the agent-template machinery — `field`, `branch`,
+      `flowFromTemplate` — because a campaign's flow and an agent's are the same drawing.
+      106 tests: every template's graph passes the validator Start runs, every `{placeholder}`
+      in a purpose is a declared fact and no fact is declared unused, every purpose reads as
+      the tail of "I'm calling…", and every brief is inside the API's caps.
+
+      Applied after create, not folded into it: creation takes a name, an agent and a window,
+      and the brief endpoint already saves everything a template carries, so one route doing
+      both would be a second copy of the brief's rules. Two calls behind one button. The
+      gallery is inline on the create page rather than behind a modal — seventeen cards is a
+      choice, seventy is a page — with the chosen card opened up to show the purpose, the
+      facts each contact must carry, the verdicts, and the reasoning.
+
+      The section is **Campaigns** now, in the nav, the breadcrumb and every eyebrow. "Outbound"
+      survives only where it names call *direction* — the metrics page's "outbound only" and
+      the agent catalogue's sector — which is a different fact and correctly keeps its word.
+
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The queue drains, the consent gate is in the path, and a call can now offer and take a time,
 but every one of those is green tests and database round trips. By Rule 1 both slices are open

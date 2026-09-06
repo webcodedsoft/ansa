@@ -5,8 +5,10 @@ import { redirect } from "next/navigation";
 
 import { failureMessage, refusedWith } from "@/lib/api/server";
 import { listContacts } from "@/features/contacts/contacts.service";
+import { flowFromTemplate } from "@/features/agents/flow.schema";
 import { failedForm, invalidForm, succeededForm, type FormState } from "@/lib/form-state";
 
+import { campaignTemplateById } from "./campaign-templates";
 import {
   createCampaignSchema,
   enqueueSchema,
@@ -75,10 +77,38 @@ export const createCampaignAction = async (
   });
   if (!parsed.success) return invalidForm(parsed.error);
 
+  /* A template is applied after the create rather than folded into it. Creation takes a
+     name, an agent and a window; everything a template carries — the brief, the retry policy,
+     the conversation — is what the brief endpoint already saves, and one route that does both
+     would be a second copy of the brief's rules. Two calls behind one button. */
+  const template = campaignTemplateById(String(form.get("templateId") ?? ""));
+
   let campaignId: string;
   try {
-    const created = await createCampaign(parsed.data);
+    const created = await createCampaign({
+      ...parsed.data,
+      /* The template's window unless the form set one. The form's choice wins because it is
+         the later, more specific decision — somebody who picked a template and then narrowed
+         the hours meant the hours. */
+      ...(parsed.data.callingWindow === undefined && template?.callingWindow
+        ? { callingWindow: template.callingWindow }
+        : {}),
+    });
     campaignId = created.id;
+
+    if (template !== null) {
+      await saveBrief(campaignId, {
+        purpose: template.purpose,
+        opening: template.opening,
+        outcomes: [...template.outcomes],
+        voicemail: { mode: template.voicemail },
+        maxAttempts: template.maxAttempts,
+        retryAfterMinutes: template.retryAfterMinutes,
+      });
+      if (template.conversation !== null) {
+        await saveCampaignFlow(campaignId, flowFromTemplate(template.conversation));
+      }
+    }
   } catch (error) {
     return failedForm(failureMessage(error));
   }
