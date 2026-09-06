@@ -55,6 +55,8 @@ export interface CallSettings {
    * tool it will offer to the caller.
    */
   readonly appointmentCalendarId: string | null;
+  /** Whether this organisation records, and therefore whether the agent says so (0077). */
+  readonly recordCalls: boolean;
   /**
    * What this agent's drawing names, or null when it is conducted by the list.
    *
@@ -128,6 +130,7 @@ export const callSettings = (
     capturedFields: resolved.capturedFields,
     flow: resolved.flow,
     appointmentCalendarId: resolved.appointmentCalendarId,
+    recordCalls: resolved.recordCalls,
     namedTools: resolved.namedTools,
     hasKnowledgeSources: resolved.hasKnowledgeSources,
     answeringMachineDetection: resolved.answeringMachineDetection,

@@ -143,6 +143,14 @@ export interface AgentConfig {
    */
   readonly appointmentCalendarId: string | null;
   /**
+   * Whether this organisation records call audio (0077).
+   *
+   * The organisation's decision, not the agent's, so one number cannot record silently while
+   * another discloses — the caller cannot tell which number they rang. `RECORD_AUDIO_DIR`
+   * still says where audio goes; this says whether there is any.
+   */
+  readonly recordCalls: boolean;
+  /**
    * Which of the organization's own systems get pushed a record of a call, and what is masked on
    * the way (Slice 6a, R5.2.4). Null until they configure some, which is every organization.
    *
@@ -188,6 +196,7 @@ interface ConfigRow {
   authoring_mode?: "form" | "flow" | null;
   /** Absent before migration 0068. Null on every agent that has not been pointed at a diary. */
   appointment_calendar_id?: string | null;
+  record_calls?: boolean | null;
   event_config: unknown;
   escalation_to_number: string | null;
   /** Migration 0055. `undefined` on a database that has not applied it. */
@@ -291,6 +300,9 @@ const toConfig = (row: ConfigRow): AgentConfig => ({
   /* `undefined` against a database without migration 0068, and "no diary" is the right
      reading of that: an agent that cannot be pointed at a calendar has not been. */
   appointmentCalendarId: row.appointment_calendar_id ?? null,
+  /* Absent against a database without 0077, and false is the right reading of that: an
+     organisation that has never been asked has not said yes. */
+  recordCalls: row.record_calls === true,
   eventConfig: row.event_config ?? null,
   sealedCredentials: toSealed(row),
   configVersion: row.config_version,

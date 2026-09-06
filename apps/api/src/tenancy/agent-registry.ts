@@ -120,6 +120,15 @@ export interface CallAgent {
    */
   readonly appointmentCalendarId: string | null;
   /**
+   * Whether this organisation records call audio, and therefore whether the agent says so
+   * (0077).
+   *
+   * The organisation's decision rather than the agent's: a per-agent toggle would let one
+   * number record silently while another disclosed, and the caller cannot tell which number
+   * they rang.
+   */
+  readonly recordCalls: boolean;
+  /**
    * The internal tools this agent's drawing names, or null when it is not a drawing.
    *
    * Carried down rather than recomputed on the socket so the registry gates on the same set
@@ -181,6 +190,8 @@ export const UNKNOWN_AGENT: CallAgent = {
   flow: null,
   // No agent, so no diary. The booking tools are not registered for a call like this.
   appointmentCalendarId: null,
+  // Nobody's organisation answered, so nobody has consented to being recorded.
+  recordCalls: false,
   // No agent means no drawing, and tool dispatch is off entirely on this call anyway.
   namedTools: null,
   configVersion: 0,
@@ -375,6 +386,7 @@ const toCallAgent = async (
     flow,
     namedTools: named,
     appointmentCalendarId: config.appointmentCalendarId,
+    recordCalls: config.recordCalls,
     answeringMachineDetection: config.answeringMachineDetection,
     configVersion: config.configVersion,
   };

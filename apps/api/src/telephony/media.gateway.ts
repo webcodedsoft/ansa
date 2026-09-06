@@ -51,7 +51,13 @@ import { ALL_GREETING_LEADS, chooseGreetingLead } from "./greeting-lead";
 /* The same clock the situation block reads. Asking it here rather than deriving the hour
    again keeps one definition of what "morning" means on a call. */
 import { describeSituation } from "../conversation/situation";
-import { campaignCallCannotOpen, forSpeech, GREETING_TEXT, outboundOpener } from "./greeting";
+import {
+  campaignCallCannotOpen,
+  forSpeech,
+  GREETING_TEXT,
+  outboundOpener,
+  withRecordingNotice,
+} from "./greeting";
 import { cacheKey, createAudioCache, type AudioCache } from "./prerender";
 import { createWarmScheduler } from "./warm-scheduler";
 import { openIntronSession, type IntronLanguage } from "@ansa/intron-listen";
@@ -605,42 +611,79 @@ export class MediaGateway implements OnApplicationShutdown {
   }
 
   /**
-   * Writes the caller's audio to disk when RECORD_AUDIO_DIR is set.
+   * Writes the caller's audio to disk, if this organisation records and a directory exists.
    *
-   * Off unless configured, and it should be turned off again after diagnosing: this is a
-   * caller reading their policy number aloud. `organizations.audio_retention_days` exists and
-   * nothing enforces it yet, so nothing here pretends otherwise.
+   * Two conditions, answering different questions. `RECORD_AUDIO_DIR` says *where* audio can
+   * go — a deployment concern, unset by default. `organizations.record_calls` (0077) says
+   * *whether* this organisation records at all, which is theirs to decide and which the agent
+   * discloses in its opening line. Either one false and nothing is written.
+   *
+   * **It buffers first and decides after.** The socket delivers audio before the organisation
+   * is resolved — inbound is usually warm from the voice webhook, outbound never is, because
+   * it inlines its TwiML and never touches one. Waiting for the answer would lose the caller's
+   * first word; recording before the answer would record somebody who has not agreed to it.
+   * So frames are held in memory until `decide` is called, then flushed to disk or dropped.
+   *
+   * Retention is `organizations.audio_retention_days`, swept by `AudioRetentionSweeper`.
    */
-  private recordAudio(stream: CallMediaStream, log: Logger): void {
+  private recordAudio(stream: CallMediaStream, log: Logger): (allowed: boolean) => void {
     const dir = this.config.recordAudioDir;
-    if (dir === undefined) return;
+    if (dir === undefined) return () => undefined;
 
-    try {
-      mkdirSync(dir, { recursive: true });
-    } catch (error) {
-      log.error("could not create the audio directory", {
-        dir,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return;
-    }
-
-    const path = join(dir, `${stream.callId}.ulaw`);
-    const file = createWriteStream(path);
-    // A recording failing must not affect the call, exactly as with the event log.
-    file.on("error", (error: Error) => {
-      log.error("could not write call audio", { path, error: error.message });
-    });
-
+    let held: Buffer[] | null = [];
+    let file: ReturnType<typeof createWriteStream> | null = null;
     let bytes = 0;
+    let dropped = false;
+
     stream.onAudio((chunk) => {
+      if (dropped) return;
       bytes += chunk.data.length;
-      file.write(chunk.data);
+      if (file !== null) file.write(chunk.data);
+      else held?.push(chunk.data);
     });
+
     stream.onClosed(() => {
+      if (file === null) return;
       file.end();
-      log.info("recorded caller audio", { path, bytes, seconds: Math.round(bytes / 8000) });
+      log.info("recorded caller audio", {
+        path: join(dir, `${stream.callId}.ulaw`),
+        bytes,
+        seconds: Math.round(bytes / 8000),
+      });
     });
+
+    return (allowed: boolean) => {
+      if (dropped || file !== null) return; // decided once
+      if (!allowed) {
+        /* Never touched the disk. An organisation that has not asked to record leaves no file
+           to delete later, and nothing a sweeper has to be trusted about. */
+        dropped = true;
+        held = null;
+        return;
+      }
+
+      try {
+        mkdirSync(dir, { recursive: true });
+      } catch (error) {
+        dropped = true;
+        held = null;
+        log.error("could not create the audio directory", {
+          dir,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return;
+      }
+
+      const path = join(dir, `${stream.callId}.ulaw`);
+      const opened = createWriteStream(path);
+      // A recording failing must not affect the call, exactly as with the event log.
+      opened.on("error", (error: Error) => {
+        log.error("could not write call audio", { path, error: error.message });
+      });
+      for (const chunk of held ?? []) opened.write(chunk);
+      held = null;
+      file = opened;
+    };
   }
 
   onApplicationShutdown(): void {
@@ -788,13 +831,21 @@ export class MediaGateway implements OnApplicationShutdown {
     // a real call through two transcribers is the only way to tell a provider problem
     // from an encoding one, and every comparison so far has been a guess because the
     // audio was gone the moment it was transcribed.
-    this.recordAudio(stream, log);
+    /* Buffered, not yet written: whether this organisation records is not known until its
+       configuration resolves, and the answer decides whether any of this reaches disk. */
+    const decideRecording = this.recordAudio(stream, log);
 
     const organizationId = stream.parameters[ORGANIZATION_PARAM];
-    void this.startConversation(stream, log, organizationId, () => {
-      buffering = false;
-      return early;
-    });
+    void this.startConversation(
+      stream,
+      log,
+      organizationId,
+      () => {
+        buffering = false;
+        return early;
+      },
+      decideRecording,
+    );
   }
 
   /**
@@ -815,6 +866,8 @@ export class MediaGateway implements OnApplicationShutdown {
     organizationId: string | undefined,
     /** Stops buffering and hands over whatever arrived while we were looking up config. */
     drainEarlyAudio: () => readonly AudioChunk[],
+    /** Told once the organisation is known, so nobody is recorded who has not agreed to be. */
+    decideRecording: (allowed: boolean) => void,
   ): Promise<void> {
     const organization =
       organizationId === undefined
@@ -833,6 +886,13 @@ export class MediaGateway implements OnApplicationShutdown {
      */
     const settings = callSettings(organization, this.platform());
     const { keyterms } = settings;
+
+    /* The organisation has answered, so the audio held since the first frame either reaches
+       disk or is dropped. Nothing is recorded before this line, and nothing is recorded at
+       all unless the caller is about to be told — the disclosure below is part of the same
+       decision, not a setting beside it. */
+    decideRecording(settings.recordCalls);
+
     log.info("organization for call", {
       organizationId: settings.organizationId,
       name: settings.name,
@@ -878,7 +938,10 @@ export class MediaGateway implements OnApplicationShutdown {
 
     const campaignFlow = runnableFlow(campaignBrief?.flow ?? null, this.log);
 
-    const opening =
+    /* The disclosure rides on whichever opening this call has, so it is said once, first, and
+       on both directions — and it is part of the same decision that started the recording a
+       few lines above rather than a setting beside it. */
+    const opening = withRecordingNotice(
       direction === "outbound"
         ? outboundOpener(
             settings.name,
@@ -886,7 +949,9 @@ export class MediaGateway implements OnApplicationShutdown {
               ? null
               : { purpose: campaignBrief.purpose, opening: campaignBrief.opening, facts: campaignBrief.facts },
           )
-        : settings.greeting;
+        : settings.greeting,
+      settings.recordCalls,
+    );
 
     // Keyed on the text, so the two openings are two entries and neither evicts the other.
     const warm = this.warmed(settings.voiceId, opening, settings.speakingRate);

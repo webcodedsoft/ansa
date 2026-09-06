@@ -5180,6 +5180,37 @@ rather than landed as inventory — the wave that needs them adds them wired.
       Schedule tab under the hours. Empty box is no cap, and the schema turns "" into null
       rather than 0 — tested, because 0 is a cap the API refuses.
 
+- [~] **Slice 5a — recording becomes a choice, with a disclosure** (2026-09-06)
+      Chosen posture: both legs, per organisation, with disclosure. This is the consent half;
+      capturing the agent's leg and serving the audio are still to come.
+
+      Migration 0077 adds `organizations.record_calls`, off by default, and threads it through
+      the call-path config to `CallAgent` and `callSettings`. The env var keeps one job and
+      loses the other: `RECORD_AUDIO_DIR` says *where* audio goes, `record_calls` says
+      *whether* there is any. Both must be true.
+
+      **`recordAudio` buffers first and decides after.** The socket delivers audio before the
+      organisation resolves — inbound is usually warm, outbound never is. Waiting would lose
+      the caller's first word; writing would record somebody who has not agreed. Frames are
+      held in memory until `decideRecording(settings.recordCalls)`, then flushed or dropped, so
+      an organisation that has not asked leaves no file on disk at all.
+
+      **The disclosure is spoken, not configurable.** `withRecordingNotice` appends "This call
+      is recorded." to whichever opening the call has, inbound or outbound. It is not a setting
+      because a settable disclosure is the first setting anybody turns off, and the disclosure
+      is what makes holding a voice defensible. After the greeting, not before: opening on a
+      warning is not how a person speaks, and the caller still hears it before saying anything.
+
+      **Two mistakes worth recording.** Adding a column to the call-path config meant dropping
+      and recreating `agent_config_for_id`, and `create function` grants EXECUTE to PUBLIC —
+      handing the application role the unscoped reader that 0050 revoked and 0057 exists
+      entirely to have fixed once already. `agent-config-scope.test.ts` caught it. And I missed
+      that `agent_config_for_organization` delegates to the same function, so it had to move
+      with it — "return type mismatch in function declared to return record" on every read.
+
+      Still to do in slice 5: record the agent's leg, the WAV header, the expiring single-use
+      URL, and the access log.
+
 - [x] **Slice 4 — the conversation page** (2026-09-06)
       Now that both halves are stored, the screen is only a screen. The call detail page reads
       as a **chat**: caller left in a neutral bubble, agent right in the accent — the

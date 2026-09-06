@@ -61,6 +61,28 @@ export const outboundOpener = (agentName: string, reason: OutboundReason | null 
 };
 
 /**
+ * The opening line, with the recording disclosure when this organisation records.
+ *
+ * Said rather than configured. An organisation that turns recording on does not get to choose
+ * whether the caller is told, because the disclosure is what makes holding somebody's voice
+ * defensible under NDPR — and a settable one would be the first setting turned off.
+ *
+ * It goes after the greeting rather than before it. "This call is recorded. Thank you for
+ * calling Ansa" opens on a warning; the greeting first is how a person would say it, and the
+ * caller still hears it before saying anything worth recording.
+ *
+ * Short on purpose: this is spoken on every call, and every word is a word before the caller
+ * can begin. Nothing is added when the organisation does not record, so the common case is
+ * exactly the line it was before.
+ */
+export const withRecordingNotice = (opening: string, recording: boolean): string => {
+  if (!recording) return opening;
+  const said = opening.trimEnd();
+  const stop = /[.!?]$/.test(said) ? "" : ".";
+  return `${said}${stop} This call is recorded.`;
+};
+
+/**
  * Whether a campaign call has nothing to open with, in which case it is hung up.
  *
  * Null or empty, not just null: the brief is null when the read failed or when the ids on

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { campaignCallCannotOpen, forSpeech, GREETING_TEXT, outboundOpener } from "./greeting";
+import {
+  campaignCallCannotOpen,
+  forSpeech,
+  GREETING_TEXT,
+  outboundOpener,
+  withRecordingNotice,
+} from "./greeting";
 
 describe("the greeting", () => {
   it("hands over to the caller, so they know it is their turn", () => {
@@ -183,5 +189,34 @@ describe("a campaign call with nothing to say", () => {
 
   it("never touches an inbound call", () => {
     expect(campaignCallCannotOpen({ direction: "inbound", campaignId: null, brief: null })).toBeNull();
+  });
+});
+
+describe("telling a caller they are recorded", () => {
+  /* An organisation that records does not get to choose whether the caller is told. The
+     disclosure is what makes holding somebody's voice defensible, and a settable one would be
+     the first setting turned off. */
+  it("says nothing at all when the organisation does not record", () => {
+    expect(withRecordingNotice(GREETING_TEXT, false)).toBe(GREETING_TEXT);
+    expect(withRecordingNotice("Good day, this is Oakhaven calling.", false)).toBe(
+      "Good day, this is Oakhaven calling.",
+    );
+  });
+
+  it("adds it after the greeting, not before", () => {
+    /* "This call is recorded. Thank you for calling" opens on a warning. A person would greet
+       you first, and the caller still hears it before saying anything worth recording. */
+    const said = withRecordingNotice(GREETING_TEXT, true);
+    expect(said.startsWith(GREETING_TEXT)).toBe(true);
+    expect(said).toBe(`${GREETING_TEXT} This call is recorded.`);
+  });
+
+  it("does not double a full stop, or leave a sentence run on", () => {
+    expect(withRecordingNotice("Is now a good time?", true)).toBe(
+      "Is now a good time? This call is recorded.",
+    );
+    expect(withRecordingNotice("Good day", true)).toBe("Good day. This call is recorded.");
+    expect(withRecordingNotice("Good day.   ", true)).toBe("Good day. This call is recorded.");
+    expect(withRecordingNotice("Good day.", true)).not.toContain("..");
   });
 });
