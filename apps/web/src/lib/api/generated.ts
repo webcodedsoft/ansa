@@ -1469,6 +1469,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly maxAttempts: number;
         readonly retryAfterMinutes: number;
         readonly briefEditable: boolean;
+        readonly startsAt: string | null;
         readonly createdBy: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;
@@ -1552,6 +1553,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly maxAttempts: number;
         readonly retryAfterMinutes: number;
         readonly briefEditable: boolean;
+        readonly startsAt: string | null;
         readonly createdBy: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;
@@ -1623,6 +1625,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly maxAttempts: number;
         readonly retryAfterMinutes: number;
         readonly briefEditable: boolean;
+        readonly startsAt: string | null;
         readonly createdBy: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;
@@ -1633,7 +1636,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
 
     /**
      * Rename a campaign, or change its calling window
-     * Send `name`, `callingWindow`, or both. An omitted field is left as it was; a null `callingWindow` clears it back to the default window. The window can only narrow the 08:00–20:00 WAT bound `mayCall` clamps to.
+     * Send `name`, `callingWindow`, `startsAt`, or any combination. An omitted field is left as it was; a null `callingWindow` clears it back to the default window and a null `startsAt` back to starting by hand. The window can only narrow the 08:00–20:00 WAT bound `mayCall` clamps to. A `startsAt` is refused with 422 once the campaign has left draft or scheduled: a start time for a campaign that has already started is a value nothing would ever read.
      */
     edit: (input: {
         readonly path: {
@@ -1646,6 +1649,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
           readonly endHour: number;
           readonly weekdays: readonly (number)[];
         } | null;
+          readonly startsAt?: string | null;
         };
       }) =>
       send<{
@@ -1703,6 +1707,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly maxAttempts: number;
         readonly retryAfterMinutes: number;
         readonly briefEditable: boolean;
+        readonly startsAt: string | null;
         readonly createdBy: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;
@@ -1710,6 +1715,20 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly pending: number;
         readonly answered: number;
       }>(options, "PATCH", `/api/v1/campaigns/${encodeURIComponent(input.path.campaignId)}`, input),
+
+    /**
+     * How a campaign turned out
+     * Two counts over the same rows. `byStatus` is what the dialler did — answered, rang out, engaged, refused by the consent gate. `byOutcome` is what the calls came to, from the campaign's own list of verdicts as the agent recorded them, and is the only one that says whether the campaign worked. A status or verdict nothing reached is absent rather than zero.
+     */
+    breakdown: (input: {
+        readonly path: {
+          readonly campaignId: string;
+        };
+      }) =>
+      send<{
+        readonly byStatus: Readonly<Record<string, number>>;
+        readonly byOutcome: Readonly<Record<string, number>>;
+      }>(options, "GET", `/api/v1/campaigns/${encodeURIComponent(input.path.campaignId)}/breakdown`, input),
 
     /**
      * Say what this campaign is about
@@ -1821,6 +1840,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly maxAttempts: number;
         readonly retryAfterMinutes: number;
         readonly briefEditable: boolean;
+        readonly startsAt: string | null;
         readonly createdBy: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;
@@ -1831,7 +1851,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
 
     /**
      * The calls scheduled under a campaign
-     * One row per enqueued contact, with the person beside it and where the call got to.
+     * One row per enqueued contact, with the person beside it and where the call got to. Pass `status` to narrow it to one — the total narrows with it, so the pager counts what was asked for rather than everything.
      */
     calls: (input: {
         readonly path: {
@@ -1840,6 +1860,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly query?: {
           readonly page?: number;
           readonly perPage?: number;
+          readonly status?: "pending" | "placing" | "answered" | "no_answer" | "busy" | "voicemail" | "failed" | "suppressed";
         };
       }) =>
       send<{
@@ -1881,6 +1902,82 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly requested: number;
         readonly enqueued: number;
       }>(options, "POST", `/api/v1/campaigns/${encodeURIComponent(input.path.campaignId)}/contacts`, input),
+
+    /**
+     * Copy a campaign's words onto a new draft
+     * Everything somebody wrote comes across — the brief, the flow, the outcomes, the voicemail choice, the retry settings and the window. Nothing the original did comes with it: no contacts, no calls, no start time, and the copy is a draft. Copying the list would be a button that silently re-rings everyone on it.
+     */
+    duplicate: (input: {
+        readonly path: {
+          readonly campaignId: string;
+        };
+        readonly body: {
+          readonly name: string;
+        };
+      }) =>
+      send<{
+        readonly id: string;
+        readonly agentId: string;
+        readonly name: string;
+        readonly status: "draft" | "scheduled" | "running" | "paused" | "done";
+        readonly callingWindow: {
+        readonly startHour: number;
+        readonly endHour: number;
+        readonly weekdays: readonly (number)[];
+      } | null;
+        readonly purpose: string | null;
+        readonly opening: string | null;
+        readonly flow: {
+        readonly version: number;
+        readonly nodes: readonly ({
+        readonly id: string;
+        readonly kind: "start" | "say" | "collect" | "confirm" | "decide" | "tool" | "transfer" | "hangup";
+        readonly x: number;
+        readonly y: number;
+        readonly field?: {
+        readonly key: string;
+        readonly type: "name" | "reference" | "phone" | "email" | "address" | "date" | "time" | "amount" | "nin" | "bvn" | "otp" | "quantity" | "choice" | "text";
+        readonly prompt: string;
+        readonly capture: "speech" | "keypad" | "either";
+        readonly confirm: "none" | "readback" | "spellback";
+        readonly pattern: string;
+        readonly attempts: number;
+        readonly required: boolean;
+        readonly options: readonly (string)[];
+      };
+        readonly text?: string;
+        readonly tool?: string;
+        readonly on?: string;
+        readonly service?: string;
+      })[];
+        readonly edges: readonly ({
+        readonly from: string;
+        readonly to: string;
+        readonly port?: string;
+        readonly when?: {
+        readonly equals?: string;
+        readonly oneOf?: readonly (string)[];
+        readonly isEmpty?: boolean;
+        readonly greaterThan?: number;
+      };
+        readonly otherwise?: boolean;
+      })[];
+      } | null;
+        readonly outcomes: readonly (string)[] | null;
+        readonly voicemail: {
+        readonly mode: "hang_up" | "leave_message";
+      } | null;
+        readonly maxAttempts: number;
+        readonly retryAfterMinutes: number;
+        readonly briefEditable: boolean;
+        readonly startsAt: string | null;
+        readonly createdBy: string | null;
+        readonly createdAt: string;
+        readonly updatedAt: string;
+        readonly total: number;
+        readonly pending: number;
+        readonly answered: number;
+      }>(options, "POST", `/api/v1/campaigns/${encodeURIComponent(input.path.campaignId)}/duplicate`, input),
 
     /**
      * Move a campaign between states
@@ -1949,6 +2046,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly maxAttempts: number;
         readonly retryAfterMinutes: number;
         readonly briefEditable: boolean;
+        readonly startsAt: string | null;
         readonly createdBy: string | null;
         readonly createdAt: string;
         readonly updatedAt: string;

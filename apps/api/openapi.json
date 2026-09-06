@@ -13548,6 +13548,13 @@
                           "briefEditable": {
                             "type": "boolean"
                           },
+                          "startsAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time"
+                          },
                           "createdBy": {
                             "type": [
                               "string",
@@ -13591,6 +13598,7 @@
                           "maxAttempts",
                           "retryAfterMinutes",
                           "briefEditable",
+                          "startsAt",
                           "createdBy",
                           "createdAt",
                           "updatedAt",
@@ -14080,6 +14088,13 @@
                     "briefEditable": {
                       "type": "boolean"
                     },
+                    "startsAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
                     "createdBy": {
                       "type": [
                         "string",
@@ -14123,6 +14138,7 @@
                     "maxAttempts",
                     "retryAfterMinutes",
                     "briefEditable",
+                    "startsAt",
                     "createdBy",
                     "createdAt",
                     "updatedAt",
@@ -14541,6 +14557,13 @@
                     "briefEditable": {
                       "type": "boolean"
                     },
+                    "startsAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
                     "createdBy": {
                       "type": [
                         "string",
@@ -14584,6 +14607,7 @@
                     "maxAttempts",
                     "retryAfterMinutes",
                     "briefEditable",
+                    "startsAt",
                     "createdBy",
                     "createdAt",
                     "updatedAt",
@@ -14664,7 +14688,7 @@
           "campaigns"
         ],
         "summary": "Rename a campaign, or change its calling window",
-        "description": "Send `name`, `callingWindow`, or both. An omitted field is left as it was; a null `callingWindow` clears it back to the default window. The window can only narrow the 08:00–20:00 WAT bound `mayCall` clamps to.",
+        "description": "Send `name`, `callingWindow`, `startsAt`, or any combination. An omitted field is left as it was; a null `callingWindow` clears it back to the default window and a null `startsAt` back to starting by hand. The window can only narrow the 08:00–20:00 WAT bound `mayCall` clamps to. A `startsAt` is refused with 422 once the campaign has left draft or scheduled: a start time for a campaign that has already started is a value nothing would ever read.",
         "x-ansa-capability": "campaigns:write",
         "parameters": [
           {
@@ -14722,6 +14746,13 @@
                       "weekdays"
                     ],
                     "additionalProperties": false
+                  },
+                  "startsAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
                   }
                 },
                 "required": [],
@@ -15063,6 +15094,13 @@
                     "briefEditable": {
                       "type": "boolean"
                     },
+                    "startsAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
                     "createdBy": {
                       "type": [
                         "string",
@@ -15106,6 +15144,7 @@
                     "maxAttempts",
                     "retryAfterMinutes",
                     "briefEditable",
+                    "startsAt",
                     "createdBy",
                     "createdAt",
                     "updatedAt",
@@ -15130,6 +15169,123 @@
           },
           "403": {
             "description": "The caller's role does not hold campaigns:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/campaigns/{campaignId}/breakdown": {
+      "get": {
+        "operationId": "campaigns.breakdown",
+        "tags": [
+          "campaigns"
+        ],
+        "summary": "How a campaign turned out",
+        "description": "Two counts over the same rows. `byStatus` is what the dialler did — answered, rang out, engaged, refused by the consent gate. `byOutcome` is what the calls came to, from the campaign's own list of verdicts as the agent recorded them, and is the only one that says whether the campaign worked. A status or verdict nothing reached is absent rather than zero.",
+        "x-ansa-capability": "campaigns:read",
+        "parameters": [
+          {
+            "name": "campaignId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "byStatus": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "byOutcome": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "maxProperties": 12
+                    }
+                  },
+                  "required": [
+                    "byStatus",
+                    "byOutcome"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold campaigns:read",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -15816,6 +15972,13 @@
                     "briefEditable": {
                       "type": "boolean"
                     },
+                    "startsAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
                     "createdBy": {
                       "type": [
                         "string",
@@ -15859,6 +16022,7 @@
                     "maxAttempts",
                     "retryAfterMinutes",
                     "briefEditable",
+                    "startsAt",
                     "createdBy",
                     "createdAt",
                     "updatedAt",
@@ -15941,7 +16105,7 @@
           "campaigns"
         ],
         "summary": "The calls scheduled under a campaign",
-        "description": "One row per enqueued contact, with the person beside it and where the call got to.",
+        "description": "One row per enqueued contact, with the person beside it and where the call got to. Pass `status` to narrow it to one — the total narrows with it, so the pager counts what was asked for rather than everything.",
         "x-ansa-capability": "campaigns:read",
         "parameters": [
           {
@@ -15969,8 +16133,25 @@
             "required": false,
             "schema": {
               "type": "integer",
-              "minimum": 1,
-              "maximum": 100
+              "minimum": 1
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "placing",
+                "answered",
+                "no_answer",
+                "busy",
+                "voicemail",
+                "failed",
+                "suppressed"
+              ]
             }
           }
         ],
@@ -16256,6 +16437,507 @@
                   "required": [
                     "requested",
                     "enqueued"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold campaigns:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/campaigns/{campaignId}/duplicate": {
+      "post": {
+        "operationId": "campaigns.duplicate",
+        "tags": [
+          "campaigns"
+        ],
+        "summary": "Copy a campaign's words onto a new draft",
+        "description": "Everything somebody wrote comes across — the brief, the flow, the outcomes, the voicemail choice, the retry settings and the window. Nothing the original did comes with it: no contacts, no calls, no start time, and the copy is a draft. Copying the list would be a button that silently re-rings everyone on it.",
+        "x-ansa-capability": "campaigns:write",
+        "parameters": [
+          {
+            "name": "campaignId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "agentId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "draft",
+                        "scheduled",
+                        "running",
+                        "paused",
+                        "done"
+                      ]
+                    },
+                    "callingWindow": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "startHour": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 23
+                        },
+                        "endHour": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 24
+                        },
+                        "weekdays": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 6
+                          },
+                          "maxItems": 7
+                        }
+                      },
+                      "required": [
+                        "startHour",
+                        "endHour",
+                        "weekdays"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "purpose": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 300
+                    },
+                    "opening": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 300
+                    },
+                    "flow": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "version": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 1
+                        },
+                        "nodes": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                              },
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "start",
+                                  "say",
+                                  "collect",
+                                  "confirm",
+                                  "decide",
+                                  "tool",
+                                  "transfer",
+                                  "hangup"
+                                ]
+                              },
+                              "x": {
+                                "type": "number"
+                              },
+                              "y": {
+                                "type": "number"
+                              },
+                              "field": {
+                                "type": "object",
+                                "properties": {
+                                  "key": {
+                                    "type": "string",
+                                    "maxLength": 64,
+                                    "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+                                  },
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "name",
+                                      "reference",
+                                      "phone",
+                                      "email",
+                                      "address",
+                                      "date",
+                                      "time",
+                                      "amount",
+                                      "nin",
+                                      "bvn",
+                                      "otp",
+                                      "quantity",
+                                      "choice",
+                                      "text"
+                                    ]
+                                  },
+                                  "prompt": {
+                                    "type": "string",
+                                    "maxLength": 300
+                                  },
+                                  "capture": {
+                                    "type": "string",
+                                    "enum": [
+                                      "speech",
+                                      "keypad",
+                                      "either"
+                                    ]
+                                  },
+                                  "confirm": {
+                                    "type": "string",
+                                    "enum": [
+                                      "none",
+                                      "readback",
+                                      "spellback"
+                                    ]
+                                  },
+                                  "pattern": {
+                                    "type": "string",
+                                    "maxLength": 200
+                                  },
+                                  "attempts": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 10
+                                  },
+                                  "required": {
+                                    "type": "boolean"
+                                  },
+                                  "options": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "maxLength": 120
+                                    },
+                                    "maxItems": 24
+                                  }
+                                },
+                                "required": [
+                                  "key",
+                                  "type",
+                                  "prompt",
+                                  "capture",
+                                  "confirm",
+                                  "pattern",
+                                  "attempts",
+                                  "required",
+                                  "options"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "text": {
+                                "type": "string",
+                                "maxLength": 600
+                              },
+                              "tool": {
+                                "type": "string",
+                                "maxLength": 128
+                              },
+                              "on": {
+                                "type": "string",
+                                "maxLength": 64
+                              },
+                              "service": {
+                                "type": "string",
+                                "maxLength": 120
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "kind",
+                              "x",
+                              "y"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 120
+                        },
+                        "edges": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "from": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                              },
+                              "to": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                              },
+                              "port": {
+                                "type": "string",
+                                "maxLength": 32
+                              },
+                              "when": {
+                                "type": "object",
+                                "properties": {
+                                  "equals": {
+                                    "type": "string",
+                                    "maxLength": 120
+                                  },
+                                  "oneOf": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "maxLength": 120
+                                    },
+                                    "maxItems": 24
+                                  },
+                                  "isEmpty": {
+                                    "type": "boolean"
+                                  },
+                                  "greaterThan": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [],
+                                "additionalProperties": false
+                              },
+                              "otherwise": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "from",
+                              "to"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 240
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "nodes",
+                        "edges"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "outcomes": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "string",
+                        "maxLength": 60
+                      }
+                    },
+                    "voicemail": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "hang_up",
+                            "leave_message"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "mode"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxAttempts": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 10
+                    },
+                    "retryAfterMinutes": {
+                      "type": "integer",
+                      "minimum": 15,
+                      "maximum": 10080
+                    },
+                    "briefEditable": {
+                      "type": "boolean"
+                    },
+                    "startsAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "createdBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "pending": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "answered": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "agentId",
+                    "name",
+                    "status",
+                    "callingWindow",
+                    "purpose",
+                    "opening",
+                    "flow",
+                    "outcomes",
+                    "voicemail",
+                    "maxAttempts",
+                    "retryAfterMinutes",
+                    "briefEditable",
+                    "startsAt",
+                    "createdBy",
+                    "createdAt",
+                    "updatedAt",
+                    "total",
+                    "pending",
+                    "answered"
                   ],
                   "additionalProperties": false
                 }
@@ -16705,6 +17387,13 @@
                     "briefEditable": {
                       "type": "boolean"
                     },
+                    "startsAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
                     "createdBy": {
                       "type": [
                         "string",
@@ -16748,6 +17437,7 @@
                     "maxAttempts",
                     "retryAfterMinutes",
                     "briefEditable",
+                    "startsAt",
                     "createdBy",
                     "createdAt",
                     "updatedAt",

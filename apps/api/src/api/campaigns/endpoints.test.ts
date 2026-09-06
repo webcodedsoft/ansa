@@ -308,4 +308,124 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)("the campaign en
     expect(after.body["purpose"]).toBe("to confirm your viewing");
   });
 
+  /**
+   * The four things this page gained, over real HTTP.
+   *
+   * Each is a route that did not exist, and three of them exist because two fields the API
+   * had returned since it was written — `outcome` and `callId` — were never rendered, which
+   * is what made "how did it go" unanswerable on a screen holding the answer.
+   */
+  describe("what a campaign came to, and running one again", () => {
+    let fresh = "";
+
+    beforeAll(async () => {
+      const created = await call("POST", "/api/v1/campaigns", {
+        name: "Breakdown fixture",
+        agentId: organizationId,
+      });
+      expect(created.status, JSON.stringify(created.body)).toBe(201);
+      fresh = String(created.body["id"]);
+    }, 30_000);
+
+    it("scheduling a draft moves it to scheduled, so the time is not stored inertly", async () => {
+      /* `start_due_campaigns` only promotes a scheduled campaign. Without the move, a start
+         time set on a draft would sit in the column and never fire — saved, and silent. */
+      /* A whole second. `timestamptz` here keeps second precision, so a time carrying
+         milliseconds comes back trimmed and the round-trip assertion would fail on a
+         difference nobody has ever cared about. */
+      const at = new Date(Math.floor((Date.now() + 86_400_000) / 1000) * 1000).toISOString();
+      const reply = await call("PATCH", `/api/v1/campaigns/${fresh}`, { startsAt: at });
+
+      expect(reply.status, JSON.stringify(reply.body)).toBe(200);
+      expect(reply.body["startsAt"]).toBe(at);
+      expect(reply.body["status"]).toBe("scheduled");
+    });
+
+    it("clearing the start time leaves it scheduled, waiting for a person", async () => {
+      // Clearing says "I will start it myself", not "put it back in the drawer".
+      const reply = await call("PATCH", `/api/v1/campaigns/${fresh}`, { startsAt: null });
+      expect(reply.status, JSON.stringify(reply.body)).toBe(200);
+      expect(reply.body["startsAt"]).toBeNull();
+      expect(reply.body["status"]).toBe("scheduled");
+    });
+
+    it("refuses a start time on a campaign that has already started", async () => {
+      /* A campaign cannot start without a purpose — the agent would have nothing to say it
+         was calling about — so this is what it takes to get one running. */
+      const brief = await call("PATCH", `/api/v1/campaigns/${fresh}/brief`, {
+        purpose: "to ask how the viewing went",
+      });
+      expect(brief.status, JSON.stringify(brief.body)).toBe(200);
+
+      const running = await call("POST", `/api/v1/campaigns/${fresh}/status`, { status: "running" });
+      expect(running.status, JSON.stringify(running.body)).toBe(200);
+
+      const reply = await call("PATCH", `/api/v1/campaigns/${fresh}`, {
+        startsAt: new Date(Date.now() + 86_400_000).toISOString(),
+      });
+      expect(reply.status, JSON.stringify(reply.body)).toBe(422);
+
+      // The name is still editable on a running campaign; only the start time is refused.
+      const renamed = await call("PATCH", `/api/v1/campaigns/${fresh}`, { name: "Renamed while running" });
+      expect(renamed.status, JSON.stringify(renamed.body)).toBe(200);
+    });
+
+    it("breaks a campaign down by status and by verdict", async () => {
+      const reply = await call("GET", `/api/v1/campaigns/${fresh}/breakdown`);
+      expect(reply.status, JSON.stringify(reply.body)).toBe(200);
+      /* Nobody is on this one, so both are empty objects rather than a shape full of zeroes.
+         Absent and zero are different facts and the panel draws them differently. */
+      expect(reply.body["byStatus"]).toEqual({});
+      expect(reply.body["byOutcome"]).toEqual({});
+    });
+
+    it("filters the calls by status, and narrows the total with them", async () => {
+      const all = await call("GET", `/api/v1/campaigns/${campaignId}/calls`);
+      expect(all.status, JSON.stringify(all.body)).toBe(200);
+      const everyone = Number(all.body["total"]);
+      expect(everyone).toBeGreaterThan(0);
+
+      /* Read from the rows rather than assumed. An earlier test in this file moves the
+         campaign around, and pinning a status here would be asserting that history rather
+         than the filter. */
+      const items = all.body["items"] as Record<string, unknown>[];
+      const present = String(items[0]?.["status"]);
+      const held = items.filter((one) => String(one["status"]) === present).length;
+
+      const same = await call("GET", `/api/v1/campaigns/${campaignId}/calls?status=${present}`);
+      expect(same.status, JSON.stringify(same.body)).toBe(200);
+      expect(Number(same.body["total"])).toBe(held);
+
+      /* The total has to move with the filter. Filtering a page rather than the query would
+         leave the pager saying "1–20 of 500" above four rows. */
+      const absent = present === "failed" ? "busy" : "failed";
+      const none = await call("GET", `/api/v1/campaigns/${campaignId}/calls?status=${absent}`);
+      expect(none.status, JSON.stringify(none.body)).toBe(200);
+      expect(Number(none.body["total"])).toBe(0);
+      expect((none.body["items"] as unknown[]).length).toBe(0);
+    });
+
+    it("duplicates the words and none of the people", async () => {
+      const reply = await call("POST", `/api/v1/campaigns/${campaignId}/duplicate`, {
+        name: "Renewals, again",
+      });
+      expect(reply.status, JSON.stringify(reply.body)).toBe(201);
+      expect(reply.body["id"]).not.toBe(campaignId);
+      expect(reply.body["name"]).toBe("Renewals, again");
+      // A draft with an empty list. Copying the contacts would silently re-ring everyone.
+      expect(reply.body["status"]).toBe("draft");
+      expect(reply.body["total"]).toBe(0);
+      expect(reply.body["startsAt"]).toBeNull();
+      // The window came across, because that is one of the words somebody wrote.
+      expect(reply.body["callingWindow"]).toMatchObject({ startHour: 9, endHour: 17 });
+    });
+
+    it("answers 404 duplicating a campaign that is not ours", async () => {
+      const reply = await call("POST", `/api/v1/campaigns/${randomUUID()}/duplicate`, {
+        name: "Not mine",
+      });
+      expect(reply.status).toBe(404);
+    });
+  });
+
 });

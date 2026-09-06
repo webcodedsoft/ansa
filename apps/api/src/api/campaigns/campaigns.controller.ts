@@ -3,6 +3,8 @@ import {
   enqueueScheduledCalls,
   findAgent,
   readCampaign,
+  duplicateCampaign,
+  readCampaignBreakdown,
   readCampaigns,
   readScheduledCalls,
   setCampaignStatus,
@@ -28,6 +30,7 @@ import {
   NotFoundException,
   Patch,
   Post,
+  UnprocessableEntityException,
 } from "@nestjs/common";
 
 import { Endpoint } from "../http/endpoint";
@@ -197,6 +200,13 @@ const campaign = object({
   }),
   /** Whether the brief may still be changed. False once calls can be in flight. */
   briefEditable: flag(),
+  /**
+   * When it starts dialling by itself, or null to start it by hand.
+   *
+   * Only meaningful while it is waiting. A campaign already running keeps the time it was
+   * scheduled for as a record of when it began.
+   */
+  startsAt: nullable(timestamp()),
   createdBy: nullable(uuid()),
   createdAt: timestamp(),
   updatedAt: timestamp(),
@@ -237,7 +247,29 @@ const editBody = object({
   name: optional(text({ minLength: 1, maxLength: 200 })),
   /** Null clears the window back to the default; an omitted one is left alone. */
   callingWindow: optional(nullable(callingWindow)),
+  /** Null clears the start time back to starting by hand; an omitted one is left alone. */
+  startsAt: optional(nullable(timestamp())),
 });
+
+const duplicateBody = object({ name: text({ minLength: 1, maxLength: 200 }) });
+
+/** The page query, plus the one status somebody wants to look at. */
+const callsQuery = object({
+  page: optional(integer({ minimum: 1 })),
+  perPage: optional(integer({ minimum: 1 })),
+  status: optional(choice(SCHEDULED_STATUSES)),
+});
+
+/* A record rather than a fixed shape. A status or verdict nothing reached is absent, which
+   is not the same as zero — "nobody was suppressed" and "suppression was never possible on
+   this campaign" read differently, and the caller decides which to draw. */
+const breakdown = object({
+  byStatus: map(integer({ minimum: 0 })),
+  byOutcome: map(integer({ minimum: 0 }), { maxProperties: CAMPAIGN_LIMITS.outcomes }),
+});
+
+/** Distinguishable from `null`, which already means "no such campaign" on this path. */
+const ALREADY_STARTED = Symbol("already started");
 
 const statusBody = object({ status: choice(CAMPAIGN_STATUSES) });
 
@@ -308,6 +340,7 @@ const asCampaignBody = (summary: CampaignSummary): Infer<typeof campaign> => ({
   maxAttempts: summary.maxAttempts,
   retryAfterMinutes: summary.retryAfterMinutes,
   briefEditable: briefIsEditable(summary.status),
+  startsAt: summary.startsAt === null ? null : summary.startsAt.toISOString(),
   createdBy: summary.createdBy,
   createdAt: summary.createdAt.toISOString(),
   updatedAt: summary.updatedAt.toISOString(),
@@ -420,7 +453,7 @@ export class CampaignsController {
   @Endpoint({
     summary: "Rename a campaign, or change its calling window",
     description:
-      "Send `name`, `callingWindow`, or both. An omitted field is left as it was; a null `callingWindow` clears it back to the default window. The window can only narrow the 08:00–20:00 WAT bound `mayCall` clamps to.",
+      "Send `name`, `callingWindow`, `startsAt`, or any combination. An omitted field is left as it was; a null `callingWindow` clears it back to the default window and a null `startsAt` back to starting by hand. The window can only narrow the 08:00–20:00 WAT bound `mayCall` clamps to. A `startsAt` is refused with 422 once the campaign has left draft or scheduled: a start time for a campaign that has already started is a value nothing would ever read.",
     capability: "campaigns:write",
     params: campaignPath,
     body: editBody,
@@ -436,13 +469,30 @@ export class CampaignsController {
     }
 
     const updated = await this.db.tx(async (scope) => {
+      /* Read before writing, only when a start time was sent. `updateCampaign` has no status
+         guard of its own — renaming a running campaign is fine — so this is where a start
+         time that could never fire is refused rather than stored and ignored. */
+      if (body.startsAt !== undefined) {
+        const existing = await readCampaign(scope, path.campaignId);
+        if (existing === null) return null;
+        if (!briefIsEditable(existing.status)) return ALREADY_STARTED;
+      }
+
       const changed = await updateCampaign(scope, path.campaignId, {
         ...(body.name === undefined ? {} : { name: body.name }),
         ...(body.callingWindow === undefined ? {} : { callingWindow: body.callingWindow }),
+        ...(body.startsAt === undefined
+          ? {}
+          : { startsAt: body.startsAt === null ? null : new Date(body.startsAt) }),
       });
       if (!changed) return null;
       return readCampaign(scope, path.campaignId);
     });
+    if (updated === ALREADY_STARTED) {
+      throw new UnprocessableEntityException(
+        "This campaign has already started, so a start time would never be read.",
+      );
+    }
     if (updated === null) throw new NotFoundException();
     return asCampaignBody(updated);
   }
@@ -619,22 +669,70 @@ export class CampaignsController {
   @Get(":campaignId/calls")
   @Endpoint({
     summary: "The calls scheduled under a campaign",
-    description: "One row per enqueued contact, with the person beside it and where the call got to.",
+    description:
+      "One row per enqueued contact, with the person beside it and where the call got to. Pass `status` to narrow it to one — the total narrows with it, so the pager counts what was asked for rather than everything.",
     capability: "campaigns:read",
     params: campaignPath,
-    query: pageQuery,
+    query: callsQuery,
     response: callsPage,
   })
   async calls(
     @FromPath() path: Infer<typeof campaignPath>,
-    @FromQuery() query: PageQuery,
+    @FromQuery() query: Infer<typeof callsQuery>,
   ): Promise<Infer<typeof callsPage>> {
     const found = await this.db.tx(async (scope) => {
       const campaignRow = await readCampaign(scope, path.campaignId);
       if (campaignRow === null) return null;
-      return readScheduledCalls(scope, path.campaignId, toPageRequest(query));
+      return readScheduledCalls(scope, path.campaignId, toPageRequest(query), query.status);
     });
     if (found === null) throw new NotFoundException();
     return toPageBody({ items: found.items.map(asScheduledBody), total: found.total }, query);
+  }
+
+  @Get(":campaignId/breakdown")
+  @Endpoint({
+    summary: "How a campaign turned out",
+    description:
+      "Two counts over the same rows. `byStatus` is what the dialler did — answered, rang out, engaged, refused by the consent gate. `byOutcome` is what the calls came to, from the campaign's own list of verdicts as the agent recorded them, and is the only one that says whether the campaign worked. A status or verdict nothing reached is absent rather than zero.",
+    capability: "campaigns:read",
+    params: campaignPath,
+    response: breakdown,
+  })
+  async breakdown(
+    @FromPath() path: Infer<typeof campaignPath>,
+  ): Promise<Infer<typeof breakdown>> {
+    const found = await this.db.tx(async (scope) => {
+      const campaignRow = await readCampaign(scope, path.campaignId);
+      if (campaignRow === null) return null;
+      return readCampaignBreakdown(scope, path.campaignId);
+    });
+    if (found === null) throw new NotFoundException();
+    return { byStatus: { ...found.byStatus }, byOutcome: { ...found.byOutcome } };
+  }
+
+  @Post(":campaignId/duplicate")
+  @Endpoint({
+    summary: "Copy a campaign's words onto a new draft",
+    description:
+      "Everything somebody wrote comes across — the brief, the flow, the outcomes, the voicemail choice, the retry settings and the window. Nothing the original did comes with it: no contacts, no calls, no start time, and the copy is a draft. Copying the list would be a button that silently re-rings everyone on it.",
+    capability: "campaigns:write",
+    params: campaignPath,
+    body: duplicateBody,
+    response: campaign,
+    // A new campaign, like `POST /campaigns` beside it. Same act, same code.
+    status: 201,
+  })
+  async duplicate(
+    @FromPath() path: Infer<typeof campaignPath>,
+    @FromBody() body: Infer<typeof duplicateBody>,
+  ): Promise<Infer<typeof campaign>> {
+    const created = await this.db.tx((scope) =>
+      duplicateCampaign(scope, path.campaignId, {
+        name: body.name,
+        createdBy: this.db.caller.userId,
+      }),
+    );
+    if (created === null) throw new NotFoundException();
+    return asCampaignBody(created);
   }
 }

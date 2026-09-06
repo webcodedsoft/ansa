@@ -4884,6 +4884,60 @@ rather than landed as inventory — the wave that needs them adds them wired.
       The list and the create page are unchanged, matching the agent side exactly: `/agents`
       and `/agents/new` are not wide either. A form wants a reading measure, not a canvas.
 
+- [x] **What the campaign page was missing** (this session)
+
+      **Two fields were already on the wire and thrown away.** `outcome` and `callId` have
+      been on every scheduled call since the endpoint was written and the table rendered
+      neither. `outcome` is the *why* behind a status — the carrier's reason, `mayCall`'s
+      refusal, and the campaign's own verdict when the agent recorded one — so "suppressed"
+      and "failed" were words with no explanation on a screen holding the explanation.
+      `callId` links to `/calls/:id`, which already existed, so "what did it actually say to
+      this person" had no answer short of hunting the calls list by number. Both are one
+      column each.
+
+      **The breakdown is the thing that says whether it worked.** `GET
+      /campaigns/:id/breakdown` counts by status and by verdict in one round trip.
+      `CampaignBreakdown` draws two bars, not one: what the dialler did sums to the total,
+      what the calls came to is always a subset, and averaging them would be nonsense — so the
+      second gets its own total, captioned. A status nothing reached is absent rather than a
+      zero segment, because "nobody was suppressed" and "suppression never came up" are
+      different facts.
+
+      **Filtering** goes in the URL, not component state — a filtered view worth sending to
+      somebody has to be linkable, and the filter rides the pager's `params` so page two of
+      the failures is not page two of everything. The status chips only offer statuses that
+      are present, counted from the same breakdown the panel draws.
+
+      **Duplicating** copies every word and nothing done: no contacts, no calls, no start
+      time, and the copy is a draft. A brief freezes on start, deliberately, so until now the
+      only way to run last month's campaign again was to retype it, flow and all.
+
+      **And a campaign can now schedule itself** (migration 0069). `scheduled` was a status
+      that did not mean what its name said — it meant "waiting for somebody to press Start",
+      so a campaign for Tuesday morning had to be started on Tuesday morning by a person who
+      remembered. `campaigns.starts_at` plus `app.start_due_campaigns()`, which the sweeper
+      calls before it looks for work so a campaign whose time just passed dials on this sweep
+      rather than the next.
+
+      Promotion rather than a wider due query, deliberately: `readDueScheduledCalls`,
+      `organizations_with_due_calls`, the console and the status control all key off
+      `running`. Teaching four places about a second way to be dialable is four chances to get
+      it wrong; flipping the status once is one, and the campaign visibly becomes running,
+      which is the honest thing to show.
+
+      The trap worth writing down: setting a start time on a *draft* would have stored a value
+      nothing ever reads, because the promotion only moves `scheduled`. So giving a draft a
+      time schedules it, in the same statement — a setting that reads as saved and does
+      nothing is the worst of the three options. There is a test for exactly that.
+
+      Times are read in the browser's own zone and sent as an instant: 09:30 picked in Lagos
+      stored as 08:30Z, verified against the database. Two native inputs rather than one
+      `datetime-local`, which renders differently in every browser and cannot be styled to
+      match anything else on the page.
+
+      Not done: the live dev API predates these builds, so the draft-to-scheduled promotion
+      could not be confirmed against the running server — the endpoint test is what proves it.
+
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The queue drains, the consent gate is in the path, and a call can now offer and take a time,
 but every one of those is green tests and database round trips. By Rule 1 both slices are open

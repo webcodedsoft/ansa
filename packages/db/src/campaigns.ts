@@ -98,6 +98,13 @@ export interface Campaign {
   readonly maxAttempts: number;
   readonly retryAfterMinutes: number;
   readonly createdBy: string | null;
+  /**
+   * When a scheduled campaign begins dialling, or null to start it by hand.
+   *
+   * Null is the default and is what every campaign written before migration 0069 has, so
+   * nothing starts itself that was not asked to.
+   */
+  readonly startsAt: Date | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -112,7 +119,7 @@ export interface CampaignSummary extends Campaign {
 const CAMPAIGN_COLUMNS = `
   cp.id, cp.agent_id, cp.name, cp.status, cp.calling_window, cp.created_by,
   cp.purpose, cp.opening, cp.flow, cp.outcomes, cp.voicemail,
-  cp.max_attempts, cp.retry_after_minutes,
+  cp.max_attempts, cp.retry_after_minutes, cp.starts_at,
   cp.created_at, cp.updated_at,
   (select count(*) from scheduled_calls s where s.campaign_id = cp.id)::int as total,
   (select count(*) from scheduled_calls s
@@ -137,6 +144,12 @@ const asCampaign = (row: Record<string, unknown>): CampaignSummary => ({
   maxAttempts: Number(row["max_attempts"] ?? 3),
   retryAfterMinutes: Number(row["retry_after_minutes"] ?? 240),
   createdBy: row["created_by"] === null ? null : String(row["created_by"]),
+  /* Absent against a database without 0069, and null is the right reading of that: a
+     campaign that cannot hold a start time is one nobody scheduled. */
+  startsAt:
+    row["starts_at"] === null || row["starts_at"] === undefined
+      ? null
+      : new Date(String(row["starts_at"])),
   createdAt: new Date(String(row["created_at"])),
   updatedAt: new Date(String(row["updated_at"])),
   total: Number(row["total"]),
@@ -268,8 +281,53 @@ export const readCampaign = async (
   return row === undefined ? null : asCampaign(row);
 };
 
+/**
+ * Copy a campaign's words onto a new draft, and nothing else.
+ *
+ * What comes across is everything somebody wrote: the brief, the flow, the outcomes, the
+ * voicemail choice, the retry settings and the window. What does not is everything the
+ * original *did* — no contacts, no scheduled calls, no start time, no status. A duplicate
+ * is a fresh draft with nobody on it, which is the only safe reading: copying the list too
+ * would mean a button that silently re-rings four hundred people.
+ *
+ * Written as one insert-select so the copy is of the row as it stands rather than of a row
+ * read a moment ago, and scoped by `app.current_organization()` on the way in as well as by
+ * RLS on the way out — a campaign id from another organisation selects nothing and inserts
+ * nothing rather than seeding a copy from a row this organisation cannot see.
+ */
+export const duplicateCampaign = async (
+  scope: OrganizationScope,
+  campaignId: string,
+  input: { readonly name: string; readonly createdBy: string | null },
+): Promise<CampaignSummary | null> => {
+  const rows = await scope.query<Record<string, unknown>>(
+    `insert into campaigns
+       (organization_id, agent_id, name, calling_window, purpose, opening, flow, outcomes,
+        voicemail, max_attempts, retry_after_minutes, created_by)
+     select app.current_organization(), cp.agent_id, $2, cp.calling_window, cp.purpose,
+            cp.opening, cp.flow, cp.outcomes, cp.voicemail, cp.max_attempts,
+            cp.retry_after_minutes, $3
+       from campaigns cp
+      where cp.id = $1
+     returning id`,
+    [campaignId, input.name, input.createdBy],
+  );
+  const created = rows[0];
+  if (created === undefined) return null;
+  return readCampaign(scope, String(created["id"]));
+};
+
 export interface CampaignEdit {
   readonly name?: string;
+  /**
+   * When it should start itself. Null clears it back to starting by hand.
+   *
+   * Written unconditionally here. Unlike the brief, this statement has no status guard —
+   * renaming a running campaign is perfectly reasonable — so whether a start time still
+   * makes sense is the endpoint's question, and it refuses one on a campaign that has
+   * already started rather than accepting a value nothing will ever read.
+   */
+  readonly startsAt?: Date | null;
   /** Null clears it back to the default window; undefined leaves it alone. */
   readonly callingWindow?: Record<string, unknown> | null;
 }
@@ -282,7 +340,18 @@ export const updateCampaign = async (
   const rows = await scope.mutate<Record<string, unknown>>(
     `update campaigns
         set name           = coalesce($2, name),
-            calling_window = case when $3 then $4::jsonb else calling_window end
+            calling_window = case when $3 then $4::jsonb else calling_window end,
+            starts_at      = case when $5 then $6::timestamptz else starts_at end,
+            /* Giving a draft a start time schedules it, in the same statement.
+               start_due_campaigns only promotes a scheduled campaign, so without this a
+               start time set on a draft would sit in the column and never fire: a setting
+               that reads as saved and does nothing, which is the worst of the options. The
+               move is one the status control already offers, so nothing new becomes legal. */
+            status         = case
+                               when $5 and $6::timestamptz is not null and status = 'draft'
+                               then 'scheduled' else status
+                             end,
+            updated_at     = now()
       where id = $1
       returning id`,
     [
@@ -292,6 +361,8 @@ export const updateCampaign = async (
       edit.callingWindow === undefined || edit.callingWindow === null
         ? null
         : JSON.stringify(edit.callingWindow),
+      edit.startsAt !== undefined,
+      edit.startsAt ?? null,
     ],
   );
   return rows.length > 0;
@@ -426,16 +497,70 @@ export const readScheduledCalls = async (
   scope: OrganizationScope,
   campaignId: string,
   page: PageRequest,
+  /** One status, or undefined for all of them. The count in the slice narrows with it. */
+  status?: ScheduledCallStatus,
 ): Promise<PageSlice<ScheduledCall>> => {
+  /* The filter goes in the WHERE rather than being applied to the page afterwards, so the
+     total the pager shows is the total of what was asked for. Filtering a page would say
+     "1–20 of 500" above four rows. */
   const rows = await scope.query<Record<string, unknown> & WithTotal>(
     `select ${SCHEDULED_COLUMNS}, ${TOTAL_COLUMN}
        from scheduled_calls s
        join contacts ct on ct.id = s.contact_id
       where s.campaign_id = $1
-      ${pageOrder("s.created_at", "s.id", 2)}`,
-    [campaignId, ...pageParams(page)],
+        and ($2::text is null or s.status = $2)
+      ${pageOrder("s.created_at", "s.id", 3)}`,
+    [campaignId, status ?? null, ...pageParams(page)],
   );
   return toSlice(rows, asScheduled);
+};
+
+/**
+ * How a campaign turned out, counted rather than paged.
+ *
+ * Two questions the progress bar cannot answer. `byStatus` is what the dialler did — rang
+ * out, engaged, answered, refused by the consent gate. `byOutcome` is what the *call* came
+ * to, which is the campaign's own list of verdicts recorded by the agent, and is the only
+ * one of the two that says whether the campaign worked.
+ *
+ * Counted in one round trip over the same rows, because two queries over a few hundred rows
+ * to fill one panel is a round trip nobody needs. `byOutcome` only counts rows whose outcome
+ * is one the campaign actually declares — free text from a carrier refusal lands in the same
+ * column and is not a verdict.
+ */
+export interface CampaignBreakdown {
+  readonly byStatus: Readonly<Record<string, number>>;
+  readonly byOutcome: Readonly<Record<string, number>>;
+}
+
+export const readCampaignBreakdown = async (
+  scope: OrganizationScope,
+  campaignId: string,
+): Promise<CampaignBreakdown> => {
+  const rows = await scope.query<Record<string, unknown>>(
+    `select s.status,
+            case when cp.outcomes is not null and cp.outcomes @> to_jsonb(s.outcome)
+                 then s.outcome end as verdict,
+            count(*)::int as n
+       from scheduled_calls s
+       join campaigns cp on cp.id = s.campaign_id
+      where s.campaign_id = $1
+      group by 1, 2`,
+    [campaignId],
+  );
+
+  const byStatus: Record<string, number> = {};
+  const byOutcome: Record<string, number> = {};
+  for (const row of rows) {
+    const n = Number(row["n"]);
+    const status = String(row["status"]);
+    byStatus[status] = (byStatus[status] ?? 0) + n;
+    const verdict = row["verdict"];
+    if (typeof verdict === "string" && verdict !== "") {
+      byOutcome[verdict] = (byOutcome[verdict] ?? 0) + n;
+    }
+  }
+  return { byStatus, byOutcome };
 };
 
 /**
@@ -577,6 +702,29 @@ export const organizationsWithDueCalls = async (
     "select organization_id from app.organizations_with_due_calls()",
   )) as Record<string, unknown>[];
   return rows.map((row) => String(row["organization_id"]) as OrganizationId);
+};
+
+/**
+ * Start every campaign whose time has come, across every organisation.
+ *
+ * Unscoped by design and through a `security definer` function, exactly as
+ * `organizationsWithDueCalls` is: the sweeper runs on a timer holding no organisation, and
+ * looping all of them to find the few with a campaign due would be the same query a hundred
+ * times. Migration 0069 has the argument in full.
+ *
+ * Returns what it started so the sweeper can say so in the log. A campaign beginning to dial
+ * by itself is exactly the event somebody will later want to find the moment of.
+ */
+export const startDueCampaigns = async (
+  dataSource: Db,
+): Promise<readonly { readonly campaignId: string; readonly organizationId: OrganizationId }[]> => {
+  const rows = (await dataSource.query(
+    "select campaign_id, organization_id from app.start_due_campaigns()",
+  )) as Record<string, unknown>[];
+  return rows.map((row) => ({
+    campaignId: String(row["campaign_id"]),
+    organizationId: String(row["organization_id"]) as OrganizationId,
+  }));
 };
 
 export const readDueScheduledCalls = async (

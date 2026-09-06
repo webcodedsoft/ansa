@@ -1,5 +1,6 @@
 import {
   organizationsWithDueCalls,
+  startDueCampaigns,
   type Db,
   type DueCall,
 } from "@ansa/db";
@@ -72,6 +73,25 @@ export class OutboundDialer implements OnApplicationBootstrap, OnApplicationShut
     try {
       const dataSource = this.dataSource;
       const origination = this.origination;
+
+      /* Before looking for work, not after: a campaign whose start time passed a moment ago
+         should dial on this sweep rather than wait out another interval. Its own try/catch,
+         because a campaign failing to start is not a reason to stop dialling every campaign
+         that already has. */
+      try {
+        const started = await startDueCampaigns(dataSource);
+        for (const one of started) {
+          this.log.info("campaign reached its start time and is now running", {
+            campaignId: one.campaignId,
+            organizationId: one.organizationId,
+          });
+        }
+      } catch (error) {
+        this.log.warn("could not start scheduled campaigns", {
+          reason: error instanceof Error ? error.message : String(error),
+        });
+      }
+
       return await sweepOnce({
         dataSource,
         log: this.log,

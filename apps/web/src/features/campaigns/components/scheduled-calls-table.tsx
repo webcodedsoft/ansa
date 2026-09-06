@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { EmptyState, Notice, Panel, Table, Tag, Td, Th, Tr } from "@/components/ui";
 import { phone as formatPhone, when } from "@/lib/format";
 
@@ -36,6 +38,10 @@ export const ScheduledCallsTable = ({ calls }: { readonly calls: readonly Schedu
             <Tr>
               <Th>Who</Th>
               <Th>Status</Th>
+              {/* The reason behind the status. It has been on the wire since the endpoint was
+                  written and was never rendered, which left "suppressed" and "failed" as
+                  words with no explanation on a screen that had the explanation in hand. */}
+              <Th>What came of it</Th>
               <Th className="text-right">Attempts</Th>
               <Th className="text-right">Last attempt</Th>
               <Th className="text-right">Next attempt</Th>
@@ -54,6 +60,24 @@ export const ScheduledCallsTable = ({ calls }: { readonly calls: readonly Schedu
                 </Td>
                 <Td>
                   <Tag tone={callTone[call.status]}>{callStatusLabel[call.status]}</Tag>
+                </Td>
+                <Td className="text-[12.5px] text-[var(--ink-2)]">
+                  {call.outcome === null || call.outcome.trim() === "" ? (
+                    <span className="text-[var(--ink-3)]">—</span>
+                  ) : (
+                    <span className="line-clamp-2">{call.outcome}</span>
+                  )}
+                  {/* The call itself, once the carrier made one. `callId` was on the wire too
+                      and unrendered, which meant "what did it actually say to this person"
+                      had no answer short of hunting the calls list by number. */}
+                  {call.callId !== null && (
+                    <Link
+                      href={`/calls/${call.callId}`}
+                      className="mt-0.5 block text-[11.5px] text-[var(--accent)] hover:underline"
+                    >
+                      Listen to the call
+                    </Link>
+                  )}
                 </Td>
                 <Td className="text-right tabular-nums text-[var(--ink-2)]">{call.attempts}</Td>
                 <Td className="text-right text-[12.5px] whitespace-nowrap text-[var(--ink-3)]">

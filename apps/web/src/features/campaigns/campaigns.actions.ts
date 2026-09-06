@@ -16,6 +16,8 @@ import {
 } from "./campaigns.schema";
 import {
   createCampaign,
+  duplicateCampaign,
+  editCampaign,
   enqueueContacts,
   setCampaignStatus,
   type CampaignStatus,
@@ -282,4 +284,73 @@ export const saveCampaignFlowAction = async (
     }
     return failedForm(failureMessage(error));
   }
+};
+
+/**
+ * When a campaign starts itself.
+ *
+ * An absent `startsAt` clears it rather than leaving it alone, because the form only omits
+ * the field when somebody pressed "start by hand instead". That is the opposite of the PATCH
+ * endpoint's own convention, where omitted means unchanged — so this sends an explicit null
+ * rather than letting the omission travel and mean nothing.
+ */
+export type ScheduleState = FormState<{ readonly startsAt: string | null }>;
+
+export const setScheduleAction = async (
+  _previous: ScheduleState,
+  form: FormData,
+): Promise<ScheduleState> => {
+  const campaignId = String(form.get("campaignId") ?? "");
+  if (campaignId === "") return failedForm("This form does not say which campaign it is for.");
+
+  const raw = form.get("startsAt");
+  const startsAt = typeof raw === "string" && raw.trim() !== "" ? raw.trim() : null;
+  if (startsAt !== null && Number.isNaN(new Date(startsAt).getTime())) {
+    return failedForm("That is not a time this can understand.");
+  }
+
+  try {
+    await editCampaign(campaignId, { startsAt });
+    /* Both trees: the campaign's own page shows the time, and the list shows the status it
+       will move to. One write, two screens. */
+    revalidatePath(`/campaigns/${campaignId}`);
+    revalidatePath("/campaigns");
+    return succeededForm({ startsAt });
+  } catch (error) {
+    if (refusedWith(error, 422)) {
+      return failedForm("This campaign has already started, so a start time would never be read.");
+    }
+    return failedForm(failureMessage(error));
+  }
+};
+
+/**
+ * Copy a campaign's words onto a fresh draft and open it.
+ *
+ * The redirect is the point: a duplicate you are not taken to is one you have to go and find,
+ * and the next thing anybody does with a copy is add the people it should ring. Outside the
+ * try, because `redirect` throws by design.
+ */
+export type DuplicateState = FormState<{ readonly campaignId: string }>;
+
+export const duplicateCampaignAction = async (
+  _previous: DuplicateState,
+  form: FormData,
+): Promise<DuplicateState> => {
+  const campaignId = String(form.get("campaignId") ?? "");
+  if (campaignId === "") return failedForm("This form does not say which campaign it is for.");
+
+  const raw = form.get("name");
+  const name = typeof raw === "string" ? raw.trim() : "";
+  if (name === "") return failedForm("Give the copy a name.");
+
+  let created: string;
+  try {
+    created = (await duplicateCampaign(campaignId, name)).id;
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+
+  revalidatePath("/campaigns");
+  redirect(`/campaigns/${created}`);
 };

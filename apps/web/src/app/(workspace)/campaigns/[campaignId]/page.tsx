@@ -3,7 +3,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { WidePage } from "@/components/shell/wide-page";
-import { buttonClass, Card, PageHeader, Pagination, Tabs } from "@/components/ui";
+import {
+  buttonClass,
+  Card,
+  PageHeader,
+  Pagination,
+  Tabs,
+} from "@/components/ui";
 import { currentPrincipal } from "@/features/auth/auth.service";
 import { listAgents } from "@/features/agents/agents.service";
 import { listContacts } from "@/features/contacts/contacts.service";
@@ -11,23 +17,41 @@ import { AddContactsButton } from "@/features/campaigns/components/add-contacts-
 import { readTools } from "@/features/agents/agents.service";
 import { CampaignBrief } from "@/features/campaigns/components/campaign-brief";
 import { CampaignConversation } from "@/features/campaigns/components/campaign-conversation";
+import { CallStatusFilter } from "@/features/campaigns/components/call-status-filter";
 import { CallingWindowStrip } from "@/features/campaigns/components/calling-window-strip";
+import { CampaignBreakdown } from "@/features/campaigns/components/campaign-breakdown";
+import { CampaignSchedule } from "@/features/campaigns/components/campaign-schedule";
+import { DuplicateCampaignButton } from "@/features/campaigns/components/duplicate-campaign-button";
 import { CampaignProgress } from "@/features/campaigns/components/campaign-progress";
 import { CampaignStatusControl } from "@/features/campaigns/components/campaign-status-control";
 import { ScheduledCallsTable } from "@/features/campaigns/components/scheduled-calls-table";
-import { listCampaignCalls, readCampaign } from "@/features/campaigns/campaigns.service";
+import {
+  listCampaignCalls,
+  readCampaign,
+  readCampaignBreakdown,
+  SCHEDULED_STATUSES,
+  type ScheduledCallStatus,
+} from "@/features/campaigns/campaigns.service";
 import { refusedWith } from "@/lib/api/server";
 import { readPaging } from "@/lib/paging";
 
 export const metadata: Metadata = { title: "Campaign · Ansa" };
 export const dynamic = "force-dynamic";
 
-const Figure = ({ label, value }: { readonly label: string; readonly value: number }) => (
+const Figure = ({
+  label,
+  value,
+}: {
+  readonly label: string;
+  readonly value: number;
+}) => (
   <div>
     <div className="text-[22px] leading-none font-medium tabular-nums text-[var(--ink)]">
       {value}
     </div>
-    <div className="mt-1.5 text-[11px] tracking-[0.06em] text-[var(--ink-3)] uppercase">{label}</div>
+    <div className="mt-1.5 text-[11px] tracking-[0.06em] text-[var(--ink-3)] uppercase">
+      {label}
+    </div>
   </div>
 );
 
@@ -82,10 +106,20 @@ const CampaignPage = async ({
   searchParams,
 }: {
   readonly params: Promise<{ readonly campaignId: string }>;
-  readonly searchParams: Promise<{ readonly page?: string; readonly perPage?: string }>;
+  readonly searchParams: Promise<{
+    readonly page?: string;
+    readonly perPage?: string;
+    readonly status?: string;
+  }>;
 }) => {
   const { campaignId } = await params;
-  const requested = readPaging(await searchParams);
+  const search = await searchParams;
+  const requested = readPaging(search);
+
+  /* A status the API does not know is dropped rather than passed on and refused. Somebody
+     editing the query by hand gets the whole list, which is the harmless reading. */
+  const status =
+    SCHEDULED_STATUSES.find((one) => one === search.status) ?? null;
 
   const campaign = await readCampaign(campaignId).catch((error: unknown) => {
     // Another organisation's campaign is a 404 here too, deliberately — it looks exactly like
@@ -95,26 +129,35 @@ const CampaignPage = async ({
   });
   if (campaign === null) notFound();
 
-  const [principal, calls, agentList, tools] = await Promise.all([
+  const [principal, calls, agentList, tools, breakdown] = await Promise.all([
     currentPrincipal(),
-    listCampaignCalls(campaignId, requested),
+    listCampaignCalls(campaignId, {
+      ...requested,
+      ...(status === null ? {} : { status: status as ScheduledCallStatus }),
+    }),
     listAgents(),
     /* The organisation's tools, so a tool step can name one that exists. A campaign
        enables nothing of its own — the tools belong to the agent it uses. */
     readTools(),
+    /* Counted rather than derived from `calls`, which is one page of a filtered list and
+       would report "3 answered" on a campaign with four hundred. */
+    readCampaignBreakdown(campaignId),
   ]);
   const canWrite = principal.capabilities.includes("campaigns:write");
 
   const agentName =
-    agentList.items.find((agent) => agent.agentId === campaign.agentId)?.name ?? "Unknown agent";
+    agentList.items.find((agent) => agent.agentId === campaign.agentId)?.name ??
+    "Unknown agent";
 
   // Only fetched when it can be acted on — the picker is the only thing that reads it.
   const contacts = canWrite
-    ? (await listContacts(undefined, { perPage: 100 })).page.items.map((person) => ({
-        id: person.id,
-        displayName: person.displayName,
-        phone: person.phone,
-      }))
+    ? (await listContacts(undefined, { perPage: 100 })).page.items.map(
+        (person) => ({
+          id: person.id,
+          displayName: person.displayName,
+          phone: person.phone,
+        }),
+      )
     : [];
 
   /* Which tab opens depends on what the campaign is for at this moment, and its status is the
@@ -145,59 +188,103 @@ const CampaignPage = async ({
         }
       />
 
-      <div className="grid items-start gap-3.5 lg:grid-cols-[minmax(0,1fr)_270px]">
-        <Card>
-          {/* Status and the moves it can make sit at the top of the card they describe, with
+      {/* Left column stacks, right column is the time card. The breakdown lives inside the
+          left rather than below the grid so the two columns end near each other — the window
+          card carries a strip, a date picker and two notes, and on its own it towered over a
+          state card that is three lines and some figures. */}
+      <div className="grid items-start gap-3.5 lg:grid-cols-[minmax(0,1fr)_290px]">
+        <div className="flex flex-col gap-3.5">
+          <Card>
+            {/* Status and the moves it can make sit at the top of the card they describe, with
               the numbers under them — the order somebody reads the page in. */}
-          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
-            <CampaignStatusControl
-              campaignId={campaign.id}
-              status={campaign.status}
-              canWrite={canWrite}
-            />
-            {canWrite && <AddContactsButton campaignId={campaign.id} contacts={contacts} />}
-          </div>
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+              <CampaignStatusControl
+                campaignId={campaign.id}
+                status={campaign.status}
+                canWrite={canWrite}
+              />
+              <div className="flex flex-wrap gap-2">
+                {canWrite && (
+                  <AddContactsButton
+                    campaignId={campaign.id}
+                    contacts={contacts}
+                  />
+                )}
+                {canWrite && (
+                  <DuplicateCampaignButton
+                    campaignId={campaign.id}
+                    name={campaign.name}
+                  />
+                )}
+              </div>
+            </div>
 
-          {/* Two columns on a wide shell: the reason on the left, the numbers on the right.
+            {/* Two columns on a wide shell: the reason on the left, the numbers on the right.
               At 1600px a single column left roughly six hundred pixels of nothing beside the
               quote, which is the cost of taking the width without spending it. */}
-          <div className="mt-5 grid gap-6 lg:grid-cols-2">
-            <div className="border-l-2 border-[var(--accent)] pl-3.5">
-              <div className="mb-1.5 text-[11px] tracking-[0.06em] text-[var(--ink-3)] uppercase">
-                Why it rings
+            <div className="mt-5 grid gap-6 lg:grid-cols-2">
+              <div className="border-l-2 border-[var(--accent)] pl-3.5">
+                <div className="mb-1.5 text-[11px] tracking-[0.06em] text-[var(--ink-3)] uppercase">
+                  Why it rings
+                </div>
+                {campaign.purpose === null || campaign.purpose.trim() === "" ? (
+                  <p className="text-[14px] text-[var(--ink-3)]">
+                    No reason written yet. Until there is one the agent composes
+                    its own, which is the thing an unexpected call can least
+                    afford. It is the first field on the Brief tab.
+                  </p>
+                ) : (
+                  <Purpose text={campaign.purpose} />
+                )}
               </div>
-              {campaign.purpose === null || campaign.purpose.trim() === "" ? (
-                <p className="text-[14px] text-[var(--ink-3)]">
-                  No reason written yet. Until there is one the agent composes its own, which is
-                  the thing an unexpected call can least afford. It is the first field on the
-                  Brief tab.
-                </p>
-              ) : (
-                <Purpose text={campaign.purpose} />
-              )}
-            </div>
 
-            <div>
-              <CampaignProgress
-                pending={campaign.pending}
-                total={campaign.total}
-                empty="Nobody on it yet. Add contacts and each one becomes a pending call."
+              <div>
+                <CampaignProgress
+                  pending={campaign.pending}
+                  total={campaign.total}
+                  empty="Nobody on it yet. Add contacts and each one becomes a pending call."
+                />
+                <div className="mt-4 flex gap-8">
+                  <Figure label="Pending" value={campaign.pending} />
+                  <Figure label="Answered" value={campaign.answered} />
+                  <Figure label="On the campaign" value={campaign.total} />
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          {campaign.total > 0 && (
+            <Card title="How it is going">
+              <CampaignBreakdown
+                byStatus={breakdown.byStatus}
+                byOutcome={breakdown.byOutcome}
               />
-              <div className="mt-4 flex gap-8">
-                <Figure label="Pending" value={campaign.pending} />
-                <Figure label="Answered" value={campaign.answered} />
-                <Figure label="On the campaign" value={campaign.total} />
-              </div>
-            </div>
-          </div>
-
-        </Card>
+            </Card>
+          )}
+        </div>
 
         <Card title="When it may ring">
           <CallingWindowStrip window={campaign.callingWindow} />
+
+          <div className="mt-4 border-t border-[var(--hairline)] pt-4">
+            <div className="mb-2 text-[11px] tracking-[0.06em] text-[var(--ink-3)] uppercase">
+              Starts
+            </div>
+            <CampaignSchedule
+              campaignId={campaign.id}
+              startsAt={campaign.startsAt}
+              /* The same freeze the brief is under, and the API refuses a start time on a
+                 campaign past it — so the control is not offered rather than offered and
+                 rejected. */
+              editable={campaign.briefEditable}
+              canWrite={canWrite}
+            />
+          </div>
+
           <p className="mt-3.5 border-t border-[var(--hairline)] pt-3 text-[11.5px] leading-relaxed text-[var(--ink-3)]">
-            Consent and do-not-call are checked per number on every call, whatever this says.
-            A window can narrow the permitted hours and never widen them.
+            Consent and do-not-call are checked per number on every call,
+            whatever this says. A window can narrow the permitted hours and
+            never widen them.
           </p>
         </Card>
       </div>
@@ -211,9 +298,20 @@ const CampaignPage = async ({
               label: "Calls",
               panel: (
                 <>
+                  <div className="mb-3.5">
+                    <CallStatusFilter
+                      basePath={`/campaigns/${campaign.id}`}
+                      active={status as ScheduledCallStatus | null}
+                      byStatus={breakdown.byStatus}
+                      total={campaign.total}
+                    />
+                  </div>
                   <ScheduledCallsTable calls={calls.items} />
                   <Pagination
                     basePath={`/campaigns/${campaign.id}`}
+                    /* Carried through every page link. Without it, page two of the failures
+                       is page two of everything, and the filter silently falls off. */
+                    {...(status === null ? {} : { params: { status } })}
                     page={calls.page}
                     perPage={calls.perPage}
                     totalPages={calls.totalPages}
