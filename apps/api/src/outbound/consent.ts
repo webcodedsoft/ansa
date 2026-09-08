@@ -67,6 +67,18 @@ const KNOWN_LOCAL_TIME = /^\+?234\d+$/;
  */
 const NIGERIAN_NATIONAL = /^0[789]\d{9}$/;
 
+/**
+ * A stored policy string, narrowed to one this understands.
+ *
+ * Anything unrecognised becomes the strictest rather than being trusted or thrown on: the
+ * database constrains the column too, and two independent refusals are cheaper than one
+ * missed one. Shared by `placeOutboundCall`, which acts on it, and by the contacts endpoint,
+ * which shows a person what it would decide — those two disagreeing would mean a screen
+ * saying "may call" over a number the dispatch path refuses.
+ */
+export const asConsentPolicy = (stored: string | null | undefined): ConsentPolicy =>
+  stored === "existing_relationship" ? stored : "per_number";
+
 export interface ConsentFacts {
   /**
    * The number about to be dialled, as it will be dialled.

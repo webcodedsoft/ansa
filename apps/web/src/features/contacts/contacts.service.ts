@@ -50,6 +50,16 @@ export const importContacts = async (body: {
   readonly rows: readonly { readonly phone: string; readonly displayName?: string; readonly notes?: string }[];
 }) => (await api()).contacts.import({ body });
 
+/**
+ * Never ring this number again.
+ *
+ * Global and one-way from here: there is no endpoint that lifts a suppression, which is
+ * deliberate on the API side and means this control is not a toggle however much it looks
+ * like one. The caller confirms before sending.
+ */
+export const suppressContact = async (contactId: string, reason: string) =>
+  (await api()).contacts.doNotCall({ path: { contactId }, body: { reason } });
+
 export type ContactSummary = Awaited<ReturnType<typeof listContacts>>["page"]["items"][number];
 export type ContactDetail = Awaited<ReturnType<typeof readContactDetail>>;
 export type ContactValue = ContactSummary["values"][number];

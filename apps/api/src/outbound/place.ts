@@ -2,7 +2,7 @@ import { loadConsentFacts, loadOutboundPolicy, loadAgentForOrganization, type Db
 import type { Logger, OrganizationId } from "@ansa/shared";
 import type { PlacedCall, TelephonyProvider } from "@ansa/telephony";
 
-import { mayCall, type ConsentPolicy } from "./consent";
+import { asConsentPolicy, mayCall, type ConsentPolicy } from "./consent";
 
 /**
  * The only way a call gets placed.
@@ -53,7 +53,7 @@ export const placeOutboundCall = async (deps: {
   // The database constrains the column too; two independent refusals are cheaper than
   // one missed one.
   const stored = settings?.policy;
-  const policy: ConsentPolicy = stored === "existing_relationship" ? stored : "per_number";
+  const policy: ConsentPolicy = asConsentPolicy(stored);
   if (stored !== undefined && stored !== policy) {
     deps.log.error("organization has an unrecognised consent policy, treating as strictest", {
       organizationId: request.organizationId,

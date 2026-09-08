@@ -19576,6 +19576,61 @@
                       ],
                       "additionalProperties": false
                     },
+                    "consent": {
+                      "type": "object",
+                      "properties": {
+                        "allowed": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 200
+                        },
+                        "policy": {
+                          "type": "string",
+                          "maxLength": 32
+                        },
+                        "basis": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 200
+                        },
+                        "suppressed": {
+                          "type": "boolean"
+                        },
+                        "earliestHour": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 23
+                        },
+                        "latestHour": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 23
+                        }
+                      },
+                      "required": [
+                        "allowed",
+                        "reason",
+                        "policy",
+                        "basis",
+                        "suppressed",
+                        "earliestHour",
+                        "latestHour"
+                      ],
+                      "additionalProperties": false
+                    },
                     "calls": {
                       "type": "object",
                       "properties": {
@@ -19665,6 +19720,7 @@
                   },
                   "required": [
                     "contact",
+                    "consent",
                     "calls"
                   ],
                   "additionalProperties": false
@@ -19801,6 +19857,174 @@
                   "required": [
                     "id",
                     "displayName"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold contacts:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/contacts/{contactId}/do-not-call": {
+      "post": {
+        "operationId": "contacts.doNotCall",
+        "tags": [
+          "contacts"
+        ],
+        "summary": "Never ring this number again",
+        "description": "Recorded globally, not just for this organisation: somebody who asks not to be called is not asking whichever organisation happened to dial them. It outranks every consent record, cannot be undone from this endpoint, and is re-checked by the dispatch path on every call.",
+        "x-ansa-capability": "contacts:write",
+        "parameters": [
+          {
+            "name": "contactId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "allowed": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 200
+                    },
+                    "policy": {
+                      "type": "string",
+                      "maxLength": 32
+                    },
+                    "basis": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 200
+                    },
+                    "suppressed": {
+                      "type": "boolean"
+                    },
+                    "earliestHour": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0,
+                      "maximum": 23
+                    },
+                    "latestHour": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0,
+                      "maximum": 23
+                    }
+                  },
+                  "required": [
+                    "allowed",
+                    "reason",
+                    "policy",
+                    "basis",
+                    "suppressed",
+                    "earliestHour",
+                    "latestHour"
                   ],
                   "additionalProperties": false
                 }

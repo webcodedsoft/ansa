@@ -5619,6 +5619,47 @@ rather than landed as inventory — the wave that needs them adds them wired.
       **Not done, noted.** The context column has never been seen with content in it: this
       organisation's one contact confirmed nothing, so the column renders empty exactly as
       designed and unproven. It is covered by `contacts.display.test.ts`, not by a screen.
+- [x] **"Whether we may ring" reaches the contact page, showing the gate's own verdict** (2026-09-08)
+      The built detail page against the prototype: three rail panels where the design has four,
+      and the number rendered as a raw E.164 run again. The missing panel was the consent one,
+      and the page's own doc comment already said why — "no endpoint exposes consent or
+      do-not-call per number". That was true and fixable: `loadConsentFacts`,
+      `loadOutboundPolicy` and `mayCall` all existed, none of them reachable from a request.
+
+      **The panel shows `mayCall`, not a second reading of the rules.** This is the whole design
+      of it. A screen that worked out its own answer would eventually say "may call" over a
+      number the dispatch path refuses, and whoever read it would believe the screen and go
+      looking for a fault in the dialler. So the endpoint calls the same pure function
+      `placeOutboundCall` gates on, with the same facts, and renders the refusal in the gate's
+      own words — "outside calling hours (22:00 WAT, allowed 8-19)" tells somebody when to try
+      again, where "cannot call" does not.
+
+      Three seams were split rather than copied to get there. `readConsentFacts`,
+      `readOutboundPolicy` and `writeDoNotCall` take a scope already open; the existing
+      `Db`-based functions the outbound gate uses are now one-line wrappers over them, so there
+      is one pair of queries and not two. The organisation comes from
+      `app.current_organization()` rather than a parameter — passing it separately meant a
+      caller could hand in an organisation that was not the scope's and get an empty answer
+      that looked exactly like consent simply being absent. `asConsentPolicy` was extracted for
+      the same reason: the narrowing of an unrecognised policy to the strictest existed only
+      inside `place.ts`, and a second copy is a second thing to get wrong.
+
+      `POST /contacts/:contactId/do-not-call` writes the suppression and re-reads it rather than
+      returning a hand-built `suppressed: true` — the write goes through a SECURITY DEFINER
+      function, and reporting success for a row nobody confirmed exists is the shape of the
+      bug. The control asks before firing and cannot be undone from this screen, because no
+      endpoint lifts a suppression and one that could would be one that eventually does.
+
+      Verified against the live console at 22:03 WAT: the panel reads "may not call · existing
+      relationship", quotes the hours refusal, and carries Oakhaven's own NDPR Art.11 basis.
+      That is also the answer to why no handset rang at 04:00 — the same gate, said out loud.
+
+      **Still absent, and now the only three:** the avatar beside the name, "Call now" and
+      "Export everything" in the header, and the merge suggestion for two numbers that are one
+      person. The first is cosmetic and needs a slot on the shared `PageHeader`. The other
+      three are features, not layout — an origination control, a subject-access export, and
+      duplicate detection across numbers — and each wants its own slice rather than a card
+      with nothing behind it.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

@@ -8,7 +8,7 @@ import {
 } from "@ansa/shared";
 import type { Db } from "./data-source";
 
-import { withOrganization } from "./organization-scope";
+import { withOrganization, type OrganizationScope } from "./organization-scope";
 
 /**
  * The slice of organization configuration the call path needs.
@@ -387,8 +387,17 @@ export const recordDoNotCall = async (
   reason: string,
 ): Promise<void> => {
   await withOrganization(dataSource, organizationId, async (scope) => {
-    await scope.query(`select app.record_do_not_call($1::text, $2::text)`, [phoneNumber, reason]);
+    await writeDoNotCall(scope, phoneNumber, reason);
   });
+};
+
+/** The same suppression, inside a scope already open, for a request that is mid-transaction. */
+export const writeDoNotCall = async (
+  scope: OrganizationScope,
+  phoneNumber: string,
+  reason: string,
+): Promise<void> => {
+  await scope.query(`select app.record_do_not_call($1::text, $2::text)`, [phoneNumber, reason]);
 };
 
 /**
@@ -404,25 +413,47 @@ export const loadConsentFacts = async (
   organizationId: OrganizationId,
   phoneNumber: string,
 ): Promise<{ consent: ConsentRecord | null; suppressed: boolean }> =>
-  withOrganization(dataSource, organizationId, async (scope) => {
-    const consents = await scope.query<{ granted_at: Date; revoked_at: Date | null }>(
-      `select granted_at, revoked_at from outbound_consent
-        where organization_id = $1 and phone_number = $2
-        order by granted_at desc limit 1`,
-      [organizationId, phoneNumber],
-    );
-    const suppressions = await scope.query<{ n: string }>(
-      `select count(*) as n from do_not_call
-        where phone_number = $1 and (organization_id = $2 or organization_id is null)`,
-      [phoneNumber, organizationId],
-    );
+  withOrganization(dataSource, organizationId, async (scope) => readConsentFacts(scope, phoneNumber));
 
-    const row = consents[0];
-    return {
-      consent: row === undefined ? null : { grantedAt: row.granted_at, revokedAt: row.revoked_at },
-      suppressed: Number(suppressions[0]?.n ?? 0) > 0,
-    };
-  });
+/**
+ * The same facts, read inside a scope somebody else already opened.
+ *
+ * Split out so a request that is already in a transaction — the contacts endpoint answering
+ * "may we ring this person" — reads the consent a call would be judged against rather than
+ * asking a second, separately-written question. The gate above and the screen below now share
+ * one pair of queries; two copies would drift, and the direction they drift in is a screen
+ * saying "may call" over a number the dispatch path refuses.
+ *
+ * The organisation comes from `app.current_organization()` rather than a parameter, which is
+ * what RLS is filtering on anyway. Passing it separately meant a caller could hand in an
+ * organisation that was not the one the scope was opened for and get an empty answer that
+ * looked like consent simply being absent.
+ */
+export const readConsentFacts = async (
+  scope: OrganizationScope,
+  phoneNumber: string,
+): Promise<{ consent: ConsentRecord | null; suppressed: boolean }> => {
+  const consents = await scope.query<{ granted_at: Date; revoked_at: Date | null }>(
+    `select granted_at, revoked_at from outbound_consent
+      where organization_id = app.current_organization() and phone_number = $1
+      order by granted_at desc limit 1`,
+    [phoneNumber],
+  );
+  /* Global rows are counted deliberately, as they always have been: somebody who says "stop
+     calling me" is not saying it to whichever organisation happened to dial them. */
+  const suppressions = await scope.query<{ n: string }>(
+    `select count(*) as n from do_not_call
+      where phone_number = $1
+        and (organization_id = app.current_organization() or organization_id is null)`,
+    [phoneNumber],
+  );
+
+  const row = consents[0];
+  return {
+    consent: row === undefined ? null : { grantedAt: row.granted_at, revokedAt: row.revoked_at },
+    suppressed: Number(suppressions[0]?.n ?? 0) > 0,
+  };
+};
 
 export interface OutboundPolicy {
   readonly policy: string;
@@ -436,26 +467,30 @@ export const loadOutboundPolicy = async (
   dataSource: Db,
   organizationId: OrganizationId,
 ): Promise<OutboundPolicy | null> =>
-  withOrganization(dataSource, organizationId, async (scope) => {
-    const rows = await scope.query<{
-      consent_policy: string;
-      consent_basis: string | null;
-      calling_earliest_hour: number | null;
-      calling_latest_hour: number | null;
-    }>(
-      `select consent_policy, consent_basis, calling_earliest_hour, calling_latest_hour
-         from organizations where id = $1`,
-      [organizationId],
-    );
-    const row = rows[0];
-    if (row === undefined) return null;
-    return {
-      policy: row.consent_policy,
-      basis: row.consent_basis,
-      earliestHour: row.calling_earliest_hour,
-      latestHour: row.calling_latest_hour,
-    };
-  });
+  withOrganization(dataSource, organizationId, async (scope) => readOutboundPolicy(scope));
+
+/** The same settings, inside a scope already open. Split for the reason `readConsentFacts` is. */
+export const readOutboundPolicy = async (
+  scope: OrganizationScope,
+): Promise<OutboundPolicy | null> => {
+  const rows = await scope.query<{
+    consent_policy: string;
+    consent_basis: string | null;
+    calling_earliest_hour: number | null;
+    calling_latest_hour: number | null;
+  }>(
+    `select consent_policy, consent_basis, calling_earliest_hour, calling_latest_hour
+       from organizations where id = app.current_organization()`,
+  );
+  const row = rows[0];
+  if (row === undefined) return null;
+  return {
+    policy: row.consent_policy,
+    basis: row.consent_basis,
+    earliestHour: row.calling_earliest_hour,
+    latestHour: row.calling_latest_hour,
+  };
+};
 
 /**
  * Which organisation owns a claim token, and attach the dialled number to it.

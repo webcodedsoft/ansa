@@ -2845,6 +2845,15 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly createdAt: string;
         readonly updatedAt: string;
       };
+        readonly consent: {
+        readonly allowed: boolean;
+        readonly reason: string | null;
+        readonly policy: string;
+        readonly basis: string | null;
+        readonly suppressed: boolean;
+        readonly earliestHour: number | null;
+        readonly latestHour: number | null;
+      };
         readonly calls: {
         readonly items: readonly ({
         readonly callId: string;
@@ -2878,6 +2887,28 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly id: string;
         readonly displayName: string | null;
       }>(options, "PATCH", `/api/v1/contacts/${encodeURIComponent(input.path.contactId)}`, input),
+
+    /**
+     * Never ring this number again
+     * Recorded globally, not just for this organisation: somebody who asks not to be called is not asking whichever organisation happened to dial them. It outranks every consent record, cannot be undone from this endpoint, and is re-checked by the dispatch path on every call.
+     */
+    doNotCall: (input: {
+        readonly path: {
+          readonly contactId: string;
+        };
+        readonly body: {
+          readonly reason: string;
+        };
+      }) =>
+      send<{
+        readonly allowed: boolean;
+        readonly reason: string | null;
+        readonly policy: string;
+        readonly basis: string | null;
+        readonly suppressed: boolean;
+        readonly earliestHour: number | null;
+        readonly latestHour: number | null;
+      }>(options, "POST", `/api/v1/contacts/${encodeURIComponent(input.path.contactId)}/do-not-call`, input),
 
     /**
      * Correct a collected value, or add one

@@ -3,13 +3,14 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 
 import { Card, PageHeader, Pagination, Stack, Tag, buttonClass } from "@/components/ui";
+import { ContactConsent } from "@/features/contacts/components/contact-consent";
 import { nameOf } from "@/features/contacts/contacts.display";
 import { callsThisWeek, daysSince, timelineOf } from "@/features/contacts/contact-timeline";
 import { readContactDetail } from "@/features/contacts/contacts.service";
 import { refusedWith } from "@/lib/api/server";
 import { readPaging } from "@/lib/paging";
 import { cn } from "@/lib/cn";
-import { directionLabel, duration, humanise, when } from "@/lib/format";
+import { directionLabel, duration, humanise, phone, when } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Contact · Ansa" };
 export const dynamic = "force-dynamic";
@@ -30,10 +31,13 @@ export const dynamic = "force-dynamic";
  * rows, different question — and this one carries the provenance the table has no room for,
  * which is the call that confirmed each value.
  *
- * Deliberately absent, because nothing serves them yet: whether this number may be rung (no
- * endpoint exposes consent or do-not-call per number), merging two numbers into one person,
- * and a subject-access export. Cards promising those with nothing behind them would be worse
- * than their absence.
+ * **"Whether we may ring" is here now**, which the note this replaces said it could not be:
+ * an endpoint exposes consent and suppression per number, so the panel shows `mayCall`'s own
+ * verdict rather than a second reading of the rules.
+ *
+ * Still deliberately absent, because nothing serves them yet: merging two numbers into one
+ * person, and a subject-access export. Cards promising those with nothing behind them would be
+ * worse than their absence.
  */
 const ContactPage = async ({
   params,
@@ -54,7 +58,7 @@ const ContactPage = async ({
   });
   if (detail === null) notFound();
 
-  const { contact, calls } = detail;
+  const { contact, calls, consent } = detail;
   const now = new Date();
   const entries = timelineOf(calls.items, contact.values, calls.page === 1);
   const week = callsThisWeek(calls.items, calls.total, now);
@@ -66,7 +70,7 @@ const ContactPage = async ({
       <PageHeader
         eyebrow="Contact"
         title={nameOf(contact)}
-        meta={`${contact.phone} · ${contact.callCount} call${contact.callCount === 1 ? "" : "s"}${
+        meta={`${phone(contact.phone)} · ${contact.callCount} call${contact.callCount === 1 ? "" : "s"}${
           contact.firstCallAt === null ? "" : ` · first heard from ${when(contact.firstCallAt)}`
         }`}
         actions={
@@ -188,6 +192,8 @@ const ContactPage = async ({
               </dl>
             )}
           </Card>
+
+          <ContactConsent contactId={contactId} consent={consent} />
 
           <Card title="Pattern" description="What their calling looks like from a distance.">
             <Stack gap="sm">

@@ -1,12 +1,15 @@
 import {
   addContacts,
+  readConsentFacts,
   readContact,
   readContactCalls,
   readContactStats,
   readContacts,
+  readOutboundPolicy,
   recordContactImport,
   renameContact,
   setContactValue,
+  writeDoNotCall,
   type NewContact,
 } from "@ansa/db";
 import { Controller, Get, Inject, NotFoundException, Patch, Post, Put, UnprocessableEntityException } from "@nestjs/common";
@@ -16,6 +19,7 @@ import { Controller, Get, Inject, NotFoundException, Patch, Post, Put, Unprocess
    with a count, rather than a failure somewhere downstream. */
 import { toE164 } from "@ansa/shared";
 
+import { asConsentPolicy, mayCall } from "../../outbound/consent";
 import { Endpoint } from "../http/endpoint";
 import {
   PAGE_PROPS,
@@ -110,8 +114,34 @@ const contactCall = object({
   direction: text({ maxLength: 16 }),
 });
 
+/**
+ * Whether this person may lawfully be rung, right now.
+ *
+ * The verdict is `mayCall` — the same pure function `placeOutboundCall` gates on, given the
+ * same facts — rather than a second reading of the same rules. A screen that worked out its
+ * own answer would eventually say "may call" over a number the dispatch path refuses, and the
+ * person reading it would believe the screen.
+ *
+ * It is a snapshot and says so in `reason`: calling hours mean the answer changes at 08:00 and
+ * again at 20:00 without anything being edited. The gate is re-run at dial time regardless,
+ * which is the guarantee — this is the explanation, never the permission.
+ */
+const contactConsent = object({
+  allowed: flag(),
+  /** The gate's own words for the refusal. Null when it would allow the call. */
+  reason: nullable(text({ maxLength: 200 })),
+  /** The organisation's declared basis, narrowed the way the gate narrows it. */
+  policy: text({ maxLength: 32 }),
+  basis: nullable(text({ maxLength: 200 })),
+  /** On the do-not-call list — this organisation's row or a global one. */
+  suppressed: flag(),
+  earliestHour: nullable(integer({ minimum: 0, maximum: 23 })),
+  latestHour: nullable(integer({ minimum: 0, maximum: 23 })),
+});
+
 const contactDetail = object({
   contact,
+  consent: contactConsent,
   /**
    * Every call from this number, newest first, whether or not it collected anything.
    *
@@ -123,6 +153,15 @@ const contactDetail = object({
 });
 
 const rename = object({ displayName: nullable(text({ maxLength: 200 })) });
+
+/**
+ * Why this number was suppressed.
+ *
+ * Recorded rather than optional-with-a-default because a suppression outranks every consent
+ * record the organisation holds, and "who decided this, and on what" is the first question
+ * asked when somebody is later found not to have been called.
+ */
+const doNotCallBody = object({ reason: text({ minLength: 1, maxLength: 200 }) });
 
 const valueChange = object({
   fieldKey: text({ maxLength: 128 }),
@@ -321,13 +360,40 @@ export class ContactsController {
     const found = await this.db.tx(async (scope) => {
       const person = await readContact(scope, path.contactId);
       if (person === null) return null;
-      return { person, calls: await readContactCalls(scope, path.contactId, toPageRequest(query)) };
+      /* Read in the same transaction as the person, so the verdict below describes the number
+         that was just read rather than one that could have been renamed between two round
+         trips. Alongside the calls rather than after them: neither needs the other. */
+      const [calls, facts, policy] = await Promise.all([
+        readContactCalls(scope, path.contactId, toPageRequest(query)),
+        readConsentFacts(scope, person.phone),
+        readOutboundPolicy(scope),
+      ]);
+      return { person, calls, facts, policy };
     });
     // Not ours, which under RLS is also what another organisation's contact looks like.
     // Answering 404 to both is the point: a 403 would confirm the id exists.
     if (found === null) throw new NotFoundException();
+
+    const verdict = mayCall({
+      ...found.facts,
+      to: found.person.phone,
+      policy: asConsentPolicy(found.policy?.policy),
+      now: new Date(),
+      ...(found.policy?.earliestHour == null ? {} : { earliestHour: found.policy.earliestHour }),
+      ...(found.policy?.latestHour == null ? {} : { latestHour: found.policy.latestHour }),
+    });
+
     return {
       contact: asBody(found.person),
+      consent: {
+        allowed: verdict.allowed,
+        reason: verdict.allowed ? null : verdict.reason,
+        policy: asConsentPolicy(found.policy?.policy),
+        basis: found.policy?.basis ?? null,
+        suppressed: found.facts.suppressed,
+        earliestHour: found.policy?.earliestHour ?? null,
+        latestHour: found.policy?.latestHour ?? null,
+      },
       calls: toPageBody(
         {
           items: found.calls.items.map((call) => ({
@@ -389,6 +455,55 @@ export class ContactsController {
     });
     if (updated === null) throw new NotFoundException();
     return asBody(updated);
+  }
+
+  @Post(":contactId/do-not-call")
+  @Endpoint({
+    summary: "Never ring this number again",
+    description:
+      "Recorded globally, not just for this organisation: somebody who asks not to be called is not asking whichever organisation happened to dial them. It outranks every consent record, cannot be undone from this endpoint, and is re-checked by the dispatch path on every call.",
+    capability: "contacts:write",
+    params: contactPath,
+    body: doNotCallBody,
+    response: contactConsent,
+  })
+  async doNotCall(
+    @FromPath() path: Infer<typeof contactPath>,
+    @FromBody() body: Infer<typeof doNotCallBody>,
+  ): Promise<Infer<typeof contactConsent>> {
+    const after = await this.db.tx(async (scope) => {
+      const person = await readContact(scope, path.contactId);
+      if (person === null) return null;
+      await writeDoNotCall(scope, person.phone, body.reason);
+      /* Re-read rather than assuming the write took: the suppression goes through a SECURITY
+         DEFINER function, and returning a hand-built "suppressed: true" would report success
+         for a row nobody has confirmed exists. */
+      const [facts, policy] = await Promise.all([
+        readConsentFacts(scope, person.phone),
+        readOutboundPolicy(scope),
+      ]);
+      return { phone: person.phone, facts, policy };
+    });
+    if (after === null) throw new NotFoundException();
+
+    const verdict = mayCall({
+      ...after.facts,
+      to: after.phone,
+      policy: asConsentPolicy(after.policy?.policy),
+      now: new Date(),
+      ...(after.policy?.earliestHour == null ? {} : { earliestHour: after.policy.earliestHour }),
+      ...(after.policy?.latestHour == null ? {} : { latestHour: after.policy.latestHour }),
+    });
+
+    return {
+      allowed: verdict.allowed,
+      reason: verdict.allowed ? null : verdict.reason,
+      policy: asConsentPolicy(after.policy?.policy),
+      basis: after.policy?.basis ?? null,
+      suppressed: after.facts.suppressed,
+      earliestHour: after.policy?.earliestHour ?? null,
+      latestHour: after.policy?.latestHour ?? null,
+    };
   }
 }
 

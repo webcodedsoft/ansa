@@ -6,7 +6,7 @@ import { AnsaApiError } from "@/lib/api/generated";
 import { failureMessage } from "@/lib/api/server";
 import { failedForm, invalidForm, succeededForm, type FormState } from "@/lib/form-state";
 
-import { addContact, importContacts } from "./contacts.service";
+import { addContact, importContacts, suppressContact } from "./contacts.service";
 import { addContactSchema } from "./contacts.schema";
 import { MAX_IMPORT_ROWS } from "./contacts.csv";
 
@@ -138,6 +138,33 @@ export const importContactsAction = async (
       },
       null,
     );
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+};
+
+/**
+ * Put this number on the do-not-call list.
+ *
+ * Revalidates the contact's own page rather than `/contacts`, because that is where the
+ * result is read: the panel must come back saying the call would now be refused, in the
+ * gate's own words, rather than the button simply going quiet.
+ *
+ * The reason is required by the API and defaulted here only to what the control itself says,
+ * so a suppression always carries how it happened.
+ */
+export const suppressContactAction = async (
+  _previous: FormState<null>,
+  form: FormData,
+): Promise<FormState<null>> => {
+  const contactId = String(form.get("contactId") ?? "");
+  if (contactId === "") return failedForm("That contact could not be identified.");
+
+  const reason = String(form.get("reason") ?? "").trim() || "Added from the contact page";
+  try {
+    await suppressContact(contactId, reason);
+    revalidatePath(`/contacts/${contactId}`);
+    return succeededForm(null, "This number will not be rung again.");
   } catch (error) {
     return failedForm(failureMessage(error));
   }
