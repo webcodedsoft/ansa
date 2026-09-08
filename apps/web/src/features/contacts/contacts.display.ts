@@ -48,3 +48,20 @@ export const nameOf = (person: ContactSummary): string => {
     ? captured.value
     : "Unnamed caller";
 };
+
+/**
+ * Two letters standing for a person, or the last two digits when nobody has given a name.
+ *
+ * Shared by the directory row and the record header for the same reason `nameOf` is: the
+ * circle you picked out of a list must be the circle at the top of the page you land on.
+ */
+export const initialsOf = (person: ContactSummary): string => {
+  const name = nameOf(person);
+  if (name !== "Unnamed caller") {
+    const parts = name.split(/\s+/).filter(Boolean);
+    const first = parts[0]?.[0] ?? "";
+    const second = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? "") : (parts[0]?.[1] ?? "");
+    return `${first}${second}`.toUpperCase();
+  }
+  return person.phone.replace(/\D/g, "").slice(-2);
+};

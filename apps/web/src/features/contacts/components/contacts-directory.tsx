@@ -4,7 +4,7 @@ import { EmptyState, GroupRow, Panel, Table, Td } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { phone, when } from "@/lib/format";
 
-import { contextOf, nameOf } from "../contacts.display";
+import { contextOf, initialsOf, nameOf } from "../contacts.display";
 import type { ContactSummary } from "../contacts.service";
 
 /**
@@ -34,18 +34,6 @@ const bandOf = (lastCallAt: string | null, now: number): string => {
   if (age < 7 * DAY_MS) return "This week";
   if (age < 30 * DAY_MS) return "This month";
   return "Earlier";
-};
-
-/** Two letters from the name, or the last two digits when nobody has given one. */
-const initialsOf = (person: ContactSummary): string => {
-  const name = nameOf(person);
-  if (name !== "Unnamed caller") {
-    const parts = name.split(/\s+/).filter(Boolean);
-    const first = parts[0]?.[0] ?? "";
-    const second = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? "") : (parts[0]?.[1] ?? "");
-    return `${first}${second}`.toUpperCase();
-  }
-  return person.phone.replace(/\D/g, "").slice(-2);
 };
 
 /**

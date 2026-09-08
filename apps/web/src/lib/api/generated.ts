@@ -2854,6 +2854,20 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly earliestHour: number | null;
         readonly latestHour: number | null;
       };
+        readonly appointments: readonly ({
+        readonly id: string;
+        readonly startsAt: string;
+        readonly status: string;
+        readonly title: string | null;
+        readonly callId: string | null;
+        readonly bookedAt: string;
+      })[];
+        readonly consentEvents: readonly ({
+        readonly at: string;
+        readonly kind: string;
+        readonly basis: string | null;
+      })[];
+        readonly handedToHuman: number;
         readonly calls: {
         readonly items: readonly ({
         readonly callId: string;

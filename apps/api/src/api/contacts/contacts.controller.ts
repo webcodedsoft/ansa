@@ -2,7 +2,10 @@ import {
   addContacts,
   readConsentFacts,
   readContact,
+  readContactAppointments,
   readContactCalls,
+  readContactConsentEvents,
+  readContactHandoffs,
   readContactStats,
   readContacts,
   readOutboundPolicy,
@@ -139,9 +142,39 @@ const contactConsent = object({
   latestHour: nullable(integer({ minimum: 0, maximum: 23 })),
 });
 
+/** Something this person has booked, as the timeline needs it. */
+const contactAppointment = object({
+  id: uuid(),
+  /** When it is for. */
+  startsAt: timestamp(),
+  status: text({ maxLength: 32 }),
+  title: nullable(text({ maxLength: 200 })),
+  /** The call that booked or moved it, when one did. */
+  callId: nullable(uuid()),
+  /** When the booking last changed — where it sits on the spine. */
+  bookedAt: timestamp(),
+});
+
+/** A consent grant or withdrawal, as a moment. */
+const contactConsentEvent = object({
+  at: timestamp(),
+  kind: text({ maxLength: 16 }),
+  basis: nullable(text({ maxLength: 200 })),
+});
+
 const contactDetail = object({
   contact,
   consent: contactConsent,
+  /**
+   * The other two things that happen to a person, so the spine is not calls and values alone.
+   *
+   * Unpaged, unlike the calls: both are small and bounded per person, and a page boundary
+   * running through a timeline is what makes an entry look deleted rather than further down.
+   */
+  appointments: list(contactAppointment),
+  consentEvents: list(contactConsentEvent),
+  /** Calls of theirs that ended up with a human. Whole history, not this page. */
+  handedToHuman: integer({ minimum: 0 }),
   /**
    * Every call from this number, newest first, whether or not it collected anything.
    *
@@ -363,12 +396,15 @@ export class ContactsController {
       /* Read in the same transaction as the person, so the verdict below describes the number
          that was just read rather than one that could have been renamed between two round
          trips. Alongside the calls rather than after them: neither needs the other. */
-      const [calls, facts, policy] = await Promise.all([
+      const [calls, facts, policy, appointments, consentEvents, handedToHuman] = await Promise.all([
         readContactCalls(scope, path.contactId, toPageRequest(query)),
         readConsentFacts(scope, person.phone),
         readOutboundPolicy(scope),
+        readContactAppointments(scope, path.contactId),
+        readContactConsentEvents(scope, person.phone),
+        readContactHandoffs(scope, path.contactId),
       ]);
-      return { person, calls, facts, policy };
+      return { person, calls, facts, policy, appointments, consentEvents, handedToHuman };
     });
     // Not ours, which under RLS is also what another organisation's contact looks like.
     // Answering 404 to both is the point: a 403 would confirm the id exists.
@@ -385,6 +421,20 @@ export class ContactsController {
 
     return {
       contact: asBody(found.person),
+      appointments: found.appointments.map((one) => ({
+        id: one.id,
+        startsAt: one.startsAt.toISOString(),
+        status: one.status,
+        title: one.title,
+        callId: one.callId,
+        bookedAt: one.bookedAt.toISOString(),
+      })),
+      consentEvents: found.consentEvents.map((one) => ({
+        at: one.at.toISOString(),
+        kind: one.kind,
+        basis: one.basis,
+      })),
+      handedToHuman: found.handedToHuman,
       consent: {
         allowed: verdict.allowed,
         reason: verdict.allowed ? null : verdict.reason,

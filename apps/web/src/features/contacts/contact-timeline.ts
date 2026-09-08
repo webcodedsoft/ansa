@@ -2,6 +2,8 @@ import type { ContactDetail } from "./contacts.service";
 
 type Calls = ContactDetail["calls"]["items"];
 type Values = ContactDetail["contact"]["values"];
+type Appointments = ContactDetail["appointments"];
+type ConsentEvents = ContactDetail["consentEvents"];
 
 /**
  * One entry on a person's timeline: something that happened, at a moment.
@@ -11,7 +13,9 @@ type Values = ContactDetail["contact"]["values"];
  */
 export type TimelineEntry =
   | { readonly kind: "call"; readonly at: string; readonly call: Calls[number] }
-  | { readonly kind: "value"; readonly at: string; readonly value: Values[number] };
+  | { readonly kind: "value"; readonly at: string; readonly value: Values[number] }
+  | { readonly kind: "appointment"; readonly at: string; readonly appointment: Appointments[number] }
+  | { readonly kind: "consent"; readonly at: string; readonly consent: ConsentEvents[number] };
 
 /**
  * Calls and confirmed values on one time-ordered spine, newest first.
@@ -28,19 +32,45 @@ export type TimelineEntry =
 export const timelineOf = (
   calls: Calls,
   values: Values,
-  firstPage: boolean,
+  appointments: Appointments,
+  consentEvents: ConsentEvents,
+  /** Which end of the history this page is at. Both are true when it all fits on one page. */
+  page: { readonly first: boolean; readonly last: boolean },
 ): readonly TimelineEntry[] => {
   const entries: TimelineEntry[] = calls.map((call) => ({ kind: "call", at: call.calledAt, call }));
 
   const oldest = calls.length === 0 ? null : (calls[calls.length - 1]?.calledAt ?? null);
   const newest = calls.length === 0 ? null : (calls[0]?.calledAt ?? null);
 
+  /* The window rule is the same for everything that is not a call, so it is written once.
+     It was inlined when values were the only other kind; a second and third copy of it is
+     how one of them ends up on a page it does not belong to.
+   *
+   * It reaches past the newest call on the first page and past the oldest on the last, which
+   * is the fix for something that had been quietly wrong: the old rule only reached forward,
+   * so anything predating a person's first call — the import that created them, the consent
+   * recorded before anybody rang — was held for "an older page" that does not exist. On a
+   * history that fits one page it was invisible everywhere. */
+  const inWindow = (at: string): boolean =>
+    oldest === null || newest === null
+      ? page.first
+      : (at >= oldest || page.last) && (at <= newest || page.first);
+
   for (const value of values) {
-    const inWindow =
-      oldest === null || newest === null
-        ? firstPage
-        : value.updatedAt >= oldest && (firstPage || value.updatedAt <= newest);
-    if (inWindow) entries.push({ kind: "value", at: value.updatedAt, value });
+    if (inWindow(value.updatedAt)) entries.push({ kind: "value", at: value.updatedAt, value });
+  }
+
+  /* At `bookedAt`, not `startsAt`. The spine is what has happened, and a viewing on Thursday
+     has not happened — putting it in the future would push every past call below a thing that
+     has not occurred yet. */
+  for (const appointment of appointments) {
+    if (inWindow(appointment.bookedAt)) {
+      entries.push({ kind: "appointment", at: appointment.bookedAt, appointment });
+    }
+  }
+
+  for (const consent of consentEvents) {
+    if (inWindow(consent.at)) entries.push({ kind: "consent", at: consent.at, consent });
   }
 
   /* ISO-8601 in one zone sorts lexically, which is what the API sends and what every other

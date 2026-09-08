@@ -5660,6 +5660,44 @@ rather than landed as inventory — the wave that needs them adds them wired.
       three are features, not layout — an origination control, a subject-access export, and
       duplicate detection across numbers — and each wants its own slice rather than a card
       with nothing behind it.
+- [x] **The contact record gets the width, the header, and the other two things that happen** (2026-09-08)
+      Held against the prototype the record was narrow and thin. Width first: the shell already
+      had a wide mode at 1600px that a page claims with `<WidePage />`, the way the campaign
+      detail page does, so this was opting in rather than a new mechanism.
+
+      The header is no longer `PageHeader`. A person is not a section of the console — the way
+      back sits above the name rather than opposite it, there is a face beside it, and the
+      consent verdict is inline, because whether you may ring somebody is the first thing you
+      want about them and the rail is a scroll away. `initialsOf` moved next to `nameOf` so the
+      circle you picked out of the directory is the circle at the top of the page you land on.
+
+      **The spine now carries appointments and consent, not calls and values alone** — which is
+      what the prototype's "Calls, values, appointments, consent" caption was promising.
+      `appointment_bookings` already keys on `contact_id` and `outbound_consent` on the number,
+      so both were a query away. An appointment sits at `bookedAt`, never `startsAt`: a viewing
+      on Thursday has not happened, and filing it forward would push a person's whole history
+      below an event that has not occurred. A grant and its withdrawal are two entries, because
+      the gap between them is the interesting part.
+
+      **A windowing bug fell out of writing the test for it.** The page window only ever reached
+      *forward* — on the first page it extended to now, but nothing extended back past the
+      oldest call on the page. Anything predating a person's first call was therefore held for
+      "an older page", and on the last page there is no older page: the import that created
+      them, the consent recorded before anybody rang, were invisible on every page at once. The
+      window now takes `{ first, last }` and reaches both ways. The prototype draws exactly this
+      row — "Added by import — August leads.csv", below the oldest call.
+
+      `handed to a human` joined Pattern, counted from the `escalated to a human` event rather
+      than from an end reason, because a call can be escalated and still end for some other
+      reason and counting end reasons would miss precisely those. On the one contact this
+      organisation has it reads **2**, which nothing in the console had ever shown.
+
+      **Still absent, and deliberately.** "Call now" places a real, billed call and wants more
+      than a button — the consent panel currently says this number may not be rung at all, which
+      is the first thing such a control has to handle. "Export everything" is a subject-access
+      response and wants its own shape. The merge suggestion is the largest: duplicate detection
+      across numbers, then a merge that moves calls, values and bookings onto one person without
+      losing provenance. Each is a slice, not a card.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

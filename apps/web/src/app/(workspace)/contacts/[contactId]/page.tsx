@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 
-import { Card, PageHeader, Pagination, Stack, Tag, buttonClass } from "@/components/ui";
+import { Card, Pagination, Stack, Tag, buttonClass } from "@/components/ui";
+import { WidePage } from "@/components/shell/wide-page";
 import { ContactConsent } from "@/features/contacts/components/contact-consent";
-import { nameOf } from "@/features/contacts/contacts.display";
+import { initialsOf, nameOf } from "@/features/contacts/contacts.display";
 import { callsThisWeek, daysSince, timelineOf } from "@/features/contacts/contact-timeline";
 import { readContactDetail } from "@/features/contacts/contacts.service";
 import { refusedWith } from "@/lib/api/server";
@@ -58,27 +59,72 @@ const ContactPage = async ({
   });
   if (detail === null) notFound();
 
-  const { contact, calls, consent } = detail;
+  const { contact, calls, consent, appointments, consentEvents, handedToHuman } = detail;
   const now = new Date();
-  const entries = timelineOf(calls.items, contact.values, calls.page === 1);
+  const entries = timelineOf(calls.items, contact.values, appointments, consentEvents, {
+    first: calls.page === 1,
+    /* The oldest page reaches back past the first call, which is where the import or the
+       consent that predates it belongs. `totalPages` is 0 on a person with no calls at all,
+       so that case is the last page too. */
+    last: calls.page >= calls.totalPages,
+  });
   const week = callsThisWeek(calls.items, calls.total, now);
   const sinceFirst = daysSince(contact.firstCallAt, now);
   const sinceLast = daysSince(contact.lastCallAt, now);
 
   return (
     <>
-      <PageHeader
-        eyebrow="Contact"
-        title={nameOf(contact)}
-        meta={`${phone(contact.phone)} · ${contact.callCount} call${contact.callCount === 1 ? "" : "s"}${
-          contact.firstCallAt === null ? "" : ` · first heard from ${when(contact.firstCallAt)}`
-        }`}
-        actions={
-          <Link href="/contacts" className={buttonClass()}>
-            All contacts
-          </Link>
-        }
-      />
+      <WidePage />
+
+      {/* Not `PageHeader`: this one carries a face and a verdict, and the way back sits above
+          the name rather than opposite it. A person is not a section of the console — the
+          back link is where it is on a record you opened *from* somewhere. */}
+      <header className="mb-6">
+        <Link
+          href="/contacts"
+          className={cn(buttonClass("secondary", "sm"), "mb-4 inline-flex")}
+        >
+          ← All contacts
+        </Link>
+
+        <div className="flex items-start gap-3.5">
+          <span
+            aria-hidden
+            className="mt-0.5 grid size-[42px] flex-none place-items-center rounded-full border border-[var(--hairline)] bg-[var(--surface-2)] font-mono text-[13px] font-semibold text-[var(--ink-2)]"
+          >
+            {initialsOf(contact)}
+          </span>
+          <div className="min-w-0 flex-1">
+            <h1 className="m-0 text-[27px] leading-tight font-[680] tracking-[-0.025em]">
+              {nameOf(contact)}
+            </h1>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px] text-[var(--ink-3)]">
+              <span className="font-mono text-[12.5px]">{phone(contact.phone)}</span>
+              <span aria-hidden>·</span>
+              <span>
+                {contact.callCount} call{contact.callCount === 1 ? "" : "s"}
+              </span>
+              {contact.firstCallAt !== null && (
+                <>
+                  <span aria-hidden>·</span>
+                  <span>first heard from {when(contact.firstCallAt)}</span>
+                </>
+              )}
+              {/* The verdict, where the name is. Whether you may ring somebody is the first
+                  thing you want to know about them and the rail is a scroll away. */}
+              <span
+                className={
+                  consent.allowed
+                    ? "inline-flex items-center rounded-[4px] border border-[color-mix(in_srgb,var(--ok)_34%,transparent)] bg-[color-mix(in_srgb,var(--ok)_12%,transparent)] px-1.5 py-px text-[11.5px] font-medium text-[var(--ok)]"
+                    : "inline-flex items-center rounded-[4px] border border-[color-mix(in_srgb,var(--bad)_34%,transparent)] bg-[color-mix(in_srgb,var(--bad)_12%,transparent)] px-1.5 py-px text-[11.5px] font-medium text-[var(--bad)]"
+                }
+              >
+                {consent.allowed ? "may call" : "may not call"}
+              </span>
+            </div>
+          </div>
+        </div>
+      </header>
 
       {/* The spine gets the width; what we know sits beside it. Below the breakpoint they
           stack, so the rail lands under the timeline rather than beside a squeezed one. */}
@@ -86,7 +132,12 @@ const ContactPage = async ({
         <div className="flex flex-col gap-3.5">
           <Card
             title="Everything that has happened"
-            description="Calls and confirmed values, newest first. A call opens where it was said."
+            description="Newest first. A call opens where it was said."
+            actions={
+              <span className="text-[12px] text-[var(--ink-3)]">
+                Calls, values, appointments, consent
+              </span>
+            }
           >
             {entries.length === 0 ? (
               <p className="text-[13px] text-[var(--ink-3)]">
@@ -117,6 +168,43 @@ const ContactPage = async ({
                         </span>
                         {entry.call.endReason !== null && <Tag>{humanise(entry.call.endReason)}</Tag>}
                       </Link>
+                    </li>
+                  ) : entry.kind === "appointment" ? (
+                    <li key={`appointment-${entry.appointment.id}`} className="relative py-1">
+                      <Marker kind="value" />
+                      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-1.5">
+                        <span className="w-[8.5rem] flex-none text-[11.5px] tabular-nums text-[var(--ink-3)]">
+                          {when(entry.appointment.bookedAt)}
+                        </span>
+                        <span className="min-w-0 flex-1 text-[13px] text-[var(--ink-2)]">
+                          <b className="font-medium text-[var(--ink)]">
+                            {humanise(entry.appointment.status)}
+                          </b>
+                          {entry.appointment.title === null ? "" : ` — ${entry.appointment.title}`}
+                          {/* What it is for, which is the part somebody reads. The entry itself
+                              sits at the moment it was arranged. */}
+                          <span className="block text-[12px] text-[var(--ink-3)]">
+                            for {when(entry.appointment.startsAt)}
+                          </span>
+                        </span>
+                      </div>
+                    </li>
+                  ) : entry.kind === "consent" ? (
+                    <li key={`consent-${entry.at}-${entry.consent.kind}`} className="relative py-1">
+                      <Marker kind="value" />
+                      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-1.5">
+                        <span className="w-[8.5rem] flex-none text-[11.5px] tabular-nums text-[var(--ink-3)]">
+                          {when(entry.at)}
+                        </span>
+                        <span className="min-w-0 flex-1 text-[13px] text-[var(--ink-2)]">
+                          <b className="font-medium text-[var(--ink)]">
+                            {entry.consent.kind === "granted"
+                              ? "Consent recorded"
+                              : "Consent withdrawn"}
+                          </b>
+                          {entry.consent.basis === null ? "" : ` — ${entry.consent.basis}`}
+                        </span>
+                      </div>
                     </li>
                   ) : (
                     <li key={`value-${entry.value.fieldKey}`} className="relative py-1">
@@ -202,6 +290,7 @@ const ContactPage = async ({
                 {week !== null && <Figure value={week} label="in the last week" />}
                 {sinceLast !== null && <Figure value={sinceLast} label="days since the last" />}
                 {sinceFirst !== null && <Figure value={sinceFirst} label="days since the first" />}
+                <Figure value={handedToHuman} label="handed to a human" />
               </div>
               {week === null && (
                 <p className="text-[11.5px] text-[var(--ink-3)]">

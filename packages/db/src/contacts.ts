@@ -343,6 +343,115 @@ export const readContactCalls = async (
   }));
 };
 
+/** An appointment this person holds, as the contact timeline needs it. */
+export interface ContactAppointment {
+  readonly id: string;
+  readonly startsAt: Date;
+  readonly status: string;
+  readonly title: string | null;
+  /** The call that booked or moved it, when one did. Null for an import or a console edit. */
+  readonly callId: string | null;
+  /** When the row last changed — which is when the *booking* happened, not when it is for. */
+  readonly bookedAt: Date;
+}
+
+/**
+ * What this person has booked.
+ *
+ * On the timeline the entry sits at `bookedAt`, not `startsAt`: the spine is a record of what
+ * has happened, and a viewing on Thursday has not happened yet. The date it is *for* is the
+ * detail line, which is the thing somebody actually reads.
+ */
+export const readContactAppointments = async (
+  scope: OrganizationScope,
+  contactId: string,
+): Promise<readonly ContactAppointment[]> => {
+  const rows = await scope.query<Record<string, unknown>>(
+    `select id, starts_at, status, title, call_id, updated_at
+       from appointment_bookings
+      where contact_id = $1
+      order by updated_at desc
+      limit 50`,
+    [contactId],
+  );
+  return rows.map((row) => ({
+    id: String(row["id"]),
+    startsAt: new Date(String(row["starts_at"])),
+    status: String(row["status"]),
+    title: row["title"] === null ? null : String(row["title"]),
+    callId: row["call_id"] === null ? null : String(row["call_id"]),
+    bookedAt: new Date(String(row["updated_at"])),
+  }));
+};
+
+/** A consent grant or withdrawal, as a moment on the spine. */
+export interface ContactConsentEvent {
+  readonly at: Date;
+  readonly kind: "granted" | "withdrawn";
+  readonly basis: string | null;
+}
+
+/**
+ * When this number's consent was recorded, and when it was withdrawn.
+ *
+ * Both halves are moments and both belong on the spine: "consent recorded — existing
+ * relationship" is the answer to "why were we allowed to ring them", and a withdrawal is the
+ * answer to why the calls stopped. The consent panel says what the position is *now*; this
+ * says when it changed, which is the question a complaint asks.
+ *
+ * Scoped by `app.current_organization()` like every other read here — a grant is evidence one
+ * organisation holds, and it is not another's to see.
+ */
+export const readContactConsentEvents = async (
+  scope: OrganizationScope,
+  phone: string,
+): Promise<readonly ContactConsentEvent[]> => {
+  const rows = await scope.query<Record<string, unknown>>(
+    `select granted_at, revoked_at, basis
+       from outbound_consent
+      where organization_id = app.current_organization() and phone_number = $1
+      order by granted_at desc
+      limit 20`,
+    [phone],
+  );
+
+  const events: ContactConsentEvent[] = [];
+  for (const row of rows) {
+    const basis = row["basis"] === null ? null : String(row["basis"]);
+    events.push({ at: new Date(String(row["granted_at"])), kind: "granted", basis });
+    /* A withdrawal is its own entry rather than a flag on the grant. They happened at two
+       different times and the gap between them is the interesting part. */
+    if (row["revoked_at"] !== null) {
+      events.push({ at: new Date(String(row["revoked_at"])), kind: "withdrawn", basis });
+    }
+  }
+  return events;
+};
+
+/**
+ * How many of this person's calls ended up with a human.
+ *
+ * Counted from the `escalated to a human` event rather than from an end reason, because that
+ * event is what the handoff path actually writes — a call can be escalated and still end for
+ * some other reason, and counting end reasons would miss exactly those.
+ *
+ * Across their whole history, not the page: unlike the weekly count, this figure cannot be
+ * wrong for a paged history, so there is no reason to withhold it.
+ */
+export const readContactHandoffs = async (
+  scope: OrganizationScope,
+  contactId: string,
+): Promise<number> => {
+  const rows = await scope.query<{ n: string }>(
+    `select count(distinct c.id) as n
+       from calls c
+       join call_events e on e.call_id = c.id
+      where c.contact_id = $1 and e.kind = 'escalated to a human'`,
+    [contactId],
+  );
+  return Number(rows[0]?.n ?? 0);
+};
+
 /**
  * Correct the name on a record.
  *
