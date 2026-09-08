@@ -5549,6 +5549,35 @@ rather than landed as inventory — the wave that needs them adds them wired.
       seconds before it is answered; warming there needs the gateway reachable from
       `OutboundModule`. Worth doing once a handset has proven the words are right.
 
+- [x] **`pnpm dev` loads `.env`, and the tunnel follows the API's port** (2026-09-08)
+      Starting the API in a clean shell died with `no DATABASE_URL`, then with `Missing
+      required environment variable: PUBLIC_BASE_URL`. Nothing in the repo loaded `.env` —
+      `env.ts` reads `process.env` and the dev scripts ran `nest start` directly, so `pnpm dev`
+      only ever worked in a terminal that had already exported everything by hand. That reads
+      as a broken checkout rather than a missing step, and it is the first thing a new machine
+      hits.
+
+      `scripts/with-env.mjs` now wraps both `dev` scripts: it reads the repo-root `.env` and
+      sets **only keys not already present**, so `PORT=4000 pnpm dev` and a CI runner's own
+      secrets still win. It stays in the dev script rather than moving into `main.ts` — a
+      deployed process should take its configuration from the real environment, not from a
+      file that happens to be in the working copy. It prints a count, never a name or a value.
+
+      **Two bugs in `pnpm tunnel`, both mine from the session that wrote it.** It hardcoded
+      `API_PORT:-3010` — the port the API happened to be on that night — while `.env` says
+      `PORT=3000`, so ngrok forwarded to a closed port and every telephony route answered 502
+      through the tunnel. Exactly the failure at `TASKS.md:5103`, one layer along: not a dead
+      tunnel this time but a live one pointed at nothing. The port now comes from `.env`.
+
+      The second only shows on a cold start. The script waited for ngrok's agent API to answer
+      before reading the served URL, but that endpoint returns `200` with an empty tunnel list
+      about a second before the tunnel registers — so it read no URL and aborted with a
+      mismatch against a tunnel that was seconds from being fine. It now waits for a URL rather
+      than for the agent. Verified both ways: warm reuse, and cold from `pkill ngrok`.
+
+      Both apps were then restarted with `PORT`, `DATABASE_URL` and `PUBLIC_BASE_URL`
+      explicitly unset in the shell, which is the only version of this test that proves
+      anything. API on 3000, console on 3100, `pnpm tunnel` green on the telephony routes.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

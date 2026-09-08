@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "generate": "pnpm --filter @ansa/api openapi -- --client ../web/src/lib/api/generated.ts",
-    "dev": "next dev --port 3100",
+    "dev": "node ../../scripts/with-env.mjs next dev --port 3100",
     "build": "next build",
     "start": "next start --port 3100",
     "lint": "eslint .",

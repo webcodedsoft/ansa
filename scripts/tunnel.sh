@@ -20,7 +20,12 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="$HERE/.env"
-PORT="${API_PORT:-3010}"
+# The port the API actually listens on, read from the same place the API reads it. This was
+# hardcoded to 3010 because that is where the API happened to be running when the script was
+# written; `.env` says PORT=3000, so `pnpm tunnel` pointed ngrok at nothing and every call
+# reached a 502. `API_PORT` still overrides, and 3000 is the app's own default.
+PORT="${API_PORT:-$(grep -oE '^PORT=[0-9]+' "$ENV_FILE" 2>/dev/null | cut -d= -f2)}"
+PORT="${PORT:-3000}"
 
 if ! command -v ngrok >/dev/null 2>&1; then
   echo "ngrok is not installed (brew install ngrok)" >&2
@@ -34,7 +39,18 @@ if [[ -z "$WANT" ]]; then
 fi
 DOMAIN="${WANT#https://}"
 
-if curl -s --max-time 3 http://127.0.0.1:4040/api/tunnels >/dev/null 2>&1; then
+# The URL ngrok is actually serving, or empty if it is not serving one yet. Empty covers every
+# not-ready case — agent down, no tunnel registered, malformed body — because the caller's next
+# move is the same for all three: wait, then give up.
+served() {
+  curl -s --max-time 3 http://127.0.0.1:4040/api/tunnels 2>/dev/null \
+    | python3 -c 'import sys,json
+try: t = json.load(sys.stdin).get("tunnels", [])
+except Exception: t = []
+print(t[0]["public_url"] if t else "")' 2>/dev/null || true
+}
+
+if [[ -n "$(served)" ]]; then
   echo "ngrok is already running; using the existing tunnel"
 else
   # --domain pins the reserved hostname, so PUBLIC_BASE_URL and Twilio's webhooks stay true.
@@ -42,14 +58,16 @@ else
   nohup ngrok http "$PORT" --domain="$DOMAIN" --log=stdout --log-format=json \
     > "${TMPDIR:-/tmp}/ansa-ngrok.log" 2>&1 &
   echo $! > "${TMPDIR:-/tmp}/ansa-ngrok.pid"
-  for _ in $(seq 1 20); do
-    curl -s --max-time 2 http://127.0.0.1:4040/api/tunnels >/dev/null 2>&1 && break
+  # Wait for a tunnel, not for the agent. The agent's API answers 200 with an empty list a
+  # second or so before the tunnel registers, so waiting on the endpoint alone returned "no
+  # URL" and the script reported a mismatch against a tunnel that was about to come up fine.
+  for _ in $(seq 1 40); do
+    [[ -n "$(served)" ]] && break
     sleep 0.5
   done
 fi
 
-GOT="$(curl -s --max-time 3 http://127.0.0.1:4040/api/tunnels \
-  | python3 -c 'import sys,json; t=json.load(sys.stdin).get("tunnels",[]); print(t[0]["public_url"] if t else "")')"
+GOT="$(served)"
 
 if [[ "$GOT" != "$WANT" ]]; then
   echo "ngrok is serving $GOT but PUBLIC_BASE_URL is $WANT" >&2
