@@ -5578,6 +5578,47 @@ rather than landed as inventory — the wave that needs them adds them wired.
       Both apps were then restarted with `PORT`, `DATABASE_URL` and `PUBLIC_BASE_URL`
       explicitly unset in the shell, which is the only version of this test that proves
       anything. API on 3000, console on 3100, `pnpm tunnel` green on the telephony routes.
+- [x] **The contacts page, brought to the design — and the reason it was empty** (2026-09-08)
+      Two screenshots were offered as "the design" and "what you built". They were the same
+      file: byte-identical but for rows 473–533, where one has a hover highlight on a row and
+      the other does not. Both were the prototype. So the divergence was found by reading the
+      built page instead, and then by opening it.
+
+      **What actually differed.** The search was a field plus a Search button on one line and
+      the Identified/Everyone filter as two loose pills on another — three controls for one
+      question, where the design has a field and a segmented control side by side. The list had
+      a Who/Calls/Last call header row the design does not, and no panel title. Each stat card
+      carried a trend line restating something already on the page. The count pill read "4
+      calls" where the design shows a bare figure, the avatar was a rounded square rather than
+      a circle, and the number rendered as a raw E.164 run while the calls table two clicks
+      away formats the same value with `phone()`.
+
+      The one that mattered was a whole missing column: **what the person wanted**. The design
+      carries "Lekki Phase 1 · ₦4.5m/yr" beside every name, and it is the column that turns a
+      list of numbers into a list of reasons to ring somebody back. `contextOf` builds it from
+      the captures already on the row, minus the name, which is the row's heading already.
+
+      **Then the page was opened, and it said "Nobody yet" over 24 calls.** Oakhaven holds 24
+      calls and held 0 contacts. Slice 2 shipped `contacts.identified` and `calls.contact_id`
+      and claimed every call files under a person; 0075's backfill is
+      `update calls … from contacts where ct.phone = <counterparty>`, which links a call to a
+      person who already exists and never creates one. Its whole reach was the people the old
+      capture path had already minted as a side effect — so on an organisation whose contacts
+      had been cleared it matched nothing and reported nothing, because an update that matches
+      no rows is not an error. Every historical call stayed unfiled, silently.
+
+      0080 mints and then links: 24 calls, 24 filed, 1 person — they all rang from one number,
+      which is the "no duplicate" half of the requirement holding. Guarded on `contact_id is
+      null` with `on conflict do nothing`, so it is a no-op on a database 0075 already served.
+
+      `identified` was deliberately left false for all of them, which exposed the last fault:
+      the default filter is Identified, so the directory still read "Nobody yet" while a real
+      caller sat one click away. That empty state now distinguishes the two nothings — no
+      people at all, versus people who have told us nothing — and links to Everyone.
+
+      **Not done, noted.** The context column has never been seen with content in it: this
+      organisation's one contact confirmed nothing, so the column renders empty exactly as
+      designed and unproven. It is covered by `contacts.display.test.ts`, not by a screen.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.
