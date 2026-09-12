@@ -1,6 +1,6 @@
 "use client";
 
-import { Building2 } from "lucide-react";
+import { SlidersHorizontal } from "lucide-react";
 import { useActionState } from "react";
 
 import { Button, Card, Notice, SubmitButton, TextField } from "@/components/ui";
@@ -27,7 +27,7 @@ export const DetailsForm = ({ organisation }: { readonly organisation: Organisat
     <Card
       title={
         <span className="inline-flex items-center gap-2">
-          <Building2 aria-hidden className="size-4 text-[var(--ink-3)]" />
+          <SlidersHorizontal aria-hidden className="size-4 text-[var(--ink-3)]" />
           General
         </span>
       }

@@ -7,6 +7,7 @@ import {
   PhoneOff,
   ScrollText,
   ShieldCheck,
+  SlidersHorizontal,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -46,7 +47,7 @@ type Section = (typeof SECTIONS)[number];
 
 const RAIL: readonly { readonly id: Section; readonly label: string; readonly Icon: LucideIcon }[] = [
   { id: "overview", label: "Overview", Icon: Building2 },
-  { id: "general", label: "General", Icon: Building2 },
+  { id: "general", label: "General", Icon: SlidersHorizontal },
   { id: "hours", label: "Hours", Icon: Clock },
   { id: "consent", label: "Consent & calling", Icon: ShieldCheck },
   { id: "recording", label: "Recording", Icon: Mic },
