@@ -22,7 +22,6 @@ import {
   callMetrics,
   callTrends,
   listCalls,
-  listReviewQueue,
 } from "@/features/calls/calls.service";
 
 export const dynamic = "force-dynamic";
@@ -147,7 +146,7 @@ const AgentWorkspacePage = async ({
 
   /* Counts and signals are decoration relative to the agent itself, and none of them may
      take the page down — so every one is settled rather than awaited outright. */
-  const [thisWeek, thisWeekClean, lastWeek, lastWeekClean, recent, trends, metrics, queue] =
+  const [thisWeek, thisWeekClean, lastWeek, lastWeekClean, recent, trends, metrics] =
     await Promise.allSettled([
       listCalls({ from: since, agentId, perPage: 1 }),
       listCalls({ from: since, agentId, endReason: RESOLVED, perPage: 1 }),
@@ -156,7 +155,6 @@ const AgentWorkspacePage = async ({
       listCalls({ agentId, perPage: RECENT }),
       callTrends(),
       callMetrics(),
-      listReviewQueue(),
     ]);
 
   const calls7d = totalOf(thisWeek);
@@ -185,18 +183,6 @@ const AgentWorkspacePage = async ({
   /* Only what somebody can act on, and only when there is something to act on. An
      attention list that always has three rows is furniture. */
   const attention: AttentionItem[] = [];
-
-  const flagged = queue.status === "fulfilled" ? queue.value.flagged : 0;
-  if (flagged > 0) {
-    attention.push({
-      id: "review",
-      label: "needs review",
-      tone: "warn",
-      detail: `${flagged} ${flagged === 1 ? "call is" : "calls are"} waiting on a verdict`,
-      actionLabel: "Review",
-      href: "/review",
-    });
-  }
 
   /* `detail`, not `title`. The titles are phrased as the state you want — "A number is
      attached", "Business hours are settled" — so pairing one with a "blocked" tag reads as

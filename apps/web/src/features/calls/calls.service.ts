@@ -105,19 +105,6 @@ export const callMetrics = async () => (await api()).calls.metrics();
 /** Quality by configuration version, so a rollout's effect is visible against the last one. */
 export const callTrends = async () => (await api()).calls.trends();
 
-/**
- * How the calls we placed are going, which is a different question from the ones we answered.
- *
- * Outbound only. An inbound call is answered by definition, so a connect rate computed across
- * both mostly measures how much inbound traffic there was.
- */
-export const outboundMetrics = async () => (await api()).calls.outbound();
-
-export type OutboundMetrics = Awaited<ReturnType<typeof outboundMetrics>>;
-
-/** Calls worth reviewing first, worst rated highest. */
-export const listReviewQueue = async () => (await api()).calls.reviewQueue({});
-
 export type CallPage = Awaited<ReturnType<typeof listCalls>>;
 export type CallSummary = CallPage["items"][number];
 export type CallDetail = NonNullable<Awaited<ReturnType<typeof findCall>>>;
@@ -126,8 +113,6 @@ export type CallEvent = CallDetail["events"][number];
 export type CallMetrics = Awaited<ReturnType<typeof callMetrics>>;
 export type CallTrends = Awaited<ReturnType<typeof callTrends>>;
 export type TrendRow = CallTrends["versions"][number];
-export type ReviewQueue = Awaited<ReturnType<typeof listReviewQueue>>;
-export type FlaggedCall = ReviewQueue["calls"][number];
 
 /**
  * Every value the agents collected, for the dataset page and its export.

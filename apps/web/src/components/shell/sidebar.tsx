@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  BarChart3, Bot, CalendarDays, ChevronsUpDown, ClipboardList, Contact, Hash, KeyRound,
-  ListChecks, LogOut, MailPlus, Megaphone, PhoneCall, Plus, ScrollText, ShieldCheck,
+  Bot, CalendarDays, ChevronsUpDown, ClipboardList, Contact, Hash, KeyRound,
+  LogOut, MailPlus, Megaphone, PhoneCall, Plus, ScrollText, ShieldCheck,
   Users, Webhook, Wrench,
 } from "lucide-react";
 import Link from "next/link";
@@ -26,7 +26,6 @@ import { NAV_GROUPS, allowedDestinations, type Destination } from "./navigation"
 const ICONS: Record<string, ComponentType<{ className?: string }>> = {
   "/calls": PhoneCall,
   // A signal, not a pulse: this is calls in progress, not health.
-  "/review": ListChecks,
   // What was collected on calls, as a table of answers.
   "/data": ClipboardList,
   "/contacts": Contact,
@@ -34,7 +33,6 @@ const ICONS: Record<string, ComponentType<{ className?: string }>> = {
   "/campaigns": Megaphone,
   "/appointments": CalendarDays,
   // Metrics are charts, not a document.
-  "/metrics": BarChart3,
   "/agents": Bot,
   "/agents/new": Plus,
   "/tools": Wrench,
