@@ -38,6 +38,7 @@ const CallDetailPage = async ({
   const outcome = outcomeOf(call.endReason, call.endedAt !== null);
   /* The circle beside each caller bubble: initials when we know a name, the number's last two
      digits when we do not — the same rule as the directory row, so the face matches. */
+  const agentWordsKept = call.transcripts.some((line) => line.speaker === "agent");
   const callerInitials = initialsOf({
     displayName: call.contact?.name ?? null,
     phone: counterparty ?? "",
@@ -105,21 +106,35 @@ const CallDetailPage = async ({
               <div className="grid items-start gap-3.5 lg:grid-cols-[minmax(0,1fr)_20rem]">
                 <Card
                   title="What was said"
-                  description={`${lines.length} lines${
-                    stats.interruptions === 0
-                      ? ""
-                      : ` · the caller interrupted ${stats.interruptions} ${
-                          stats.interruptions === 1 ? "time" : "times"
-                        }`
-                  }`}
+                  actions={
+                    <span className="text-[12px] text-[var(--ink-3)]">
+                      {lines.length} lines
+                      {stats.interruptions === 0
+                        ? ""
+                        : ` · interrupted ${stats.interruptions} ${
+                            stats.interruptions === 1 ? "time" : "times"
+                          }`}
+                    </span>
+                  }
                 >
                   {/* Above the words, because it is the evidence they are checked against —
                       and a button rather than a player, because asking for the audio is
                       logged. */}
                   <div className="mb-3.5 border-b border-[var(--surface-line)] pb-3.5">
                     <CallRecording callId={call.id} />
+                    {!agentWordsKept && (
+                      <p className="mt-2 mb-0 text-[11.5px] text-[var(--ink-3)]">
+                        Only the caller&apos;s words are here. This call was recorded before the
+                        agent&apos;s side was kept; every call since carries both.
+                      </p>
+                    )}
                   </div>
-                  <CallTimeline callId={call.id} lines={lines} callerInitials={callerInitials} />
+                  <CallTimeline
+                    callId={call.id}
+                    lines={lines}
+                    callerInitials={callerInitials}
+                    agentWordsKept={agentWordsKept}
+                  />
                 </Card>
 
                 <div className="flex flex-col gap-3.5">

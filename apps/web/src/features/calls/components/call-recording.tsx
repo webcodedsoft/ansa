@@ -2,7 +2,9 @@
 
 import { startTransition, useActionState } from "react";
 
-import { Button, Notice } from "@/components/ui";
+import { Play } from "lucide-react";
+
+import { Notice } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
 import { fetchRecording, type RecordingState } from "../calls.actions";
@@ -51,22 +53,31 @@ export const CallRecording = ({ callId }: { readonly callId: string }) => {
 
   return (
     <div className="flex flex-col gap-2">
-      <div>
-        <Button
-          size="sm"
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
           disabled={pending}
+          aria-label="Play the recording"
           onClick={() => {
             const form = new FormData();
             form.set("callId", callId);
             startTransition(() => action(form));
           }}
+          className="grid size-9 flex-none place-items-center rounded-full bg-[var(--accent)] text-[var(--accent-on)] shadow-[var(--shadow-s)] transition-[transform,filter] hover:brightness-110 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-55"
         >
-          {pending ? "Fetching…" : "▶ Play the recording"}
-        </Button>
+          <Play aria-hidden className="ml-0.5 size-4 fill-current" />
+        </button>
+        {/* The bar a waveform would sit in. It is drawn flat rather than pretending: a
+            waveform needs the audio decoded, and the audio is not asked for until the button
+            is pressed — which is the point of the button. */}
+        <span aria-hidden className="h-1.5 min-w-0 flex-1 rounded-full bg-[var(--surface-2)]" />
+        <span className="flex-none text-[12.5px] text-[var(--ink-3)]">
+          {pending ? "Fetching…" : "Play the recording"}
+        </span>
       </div>
       {state.status === "failed" && <Notice tone="warn">{state.message}</Notice>}
       {state.status !== "failed" && (
-        <p className="text-[11.5px] text-[var(--ink-3)]">
+        <p className="m-0 text-[11.5px] text-[var(--ink-3)]">
           Listening is recorded against your name, so the person whose voice it is can be told
           who has heard it.
         </p>

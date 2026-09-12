@@ -12,11 +12,20 @@ export const CallTimeline = ({
   callId,
   lines,
   callerInitials,
+  agentWordsKept,
 }: {
   readonly callId: string;
   readonly lines: readonly TimelineLine[];
   /** Two letters for the caller's circle — their initials when we know a name, digits when not. */
   readonly callerInitials: string;
+  /**
+   * Whether this call stored the agent's words at all.
+   *
+   * False on every call before 0076, where "spoke, too briefly to transcribe" under each
+   * agent turn read as the transcriber failing forty times in a row. It did not fail; nothing
+   * was asked to keep the words. Two different absences, two different sentences.
+   */
+  readonly agentWordsKept: boolean;
 }) => {
   if (lines.length === 0) {
     return (
@@ -90,10 +99,10 @@ export const CallTimeline = ({
                 )}
               >
                 {line.transcript === null ? (
-                  /* Rare now: a turn that made a sound and left no words. Before 0076 this
-                     was every agent turn on every call. */
                   <span className="text-[13px] text-[var(--ink-3)]">
-                    spoke, too briefly to transcribe
+                    {line.speaker === "agent" && !agentWordsKept
+                      ? "the agent's words were not kept on this call"
+                      : "spoke, too briefly to transcribe"}
                   </span>
                 ) : (
                   <TranscriptLine callId={callId} transcript={line.transcript} />
