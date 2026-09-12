@@ -1,7 +1,7 @@
 "use client";
 
 import { ShieldOff } from "lucide-react";
-import { startTransition, useActionState, useState } from "react";
+import { startTransition, useActionState, useEffect, useState } from "react";
 
 import { Button, ConfirmDialog, Notice, Row, SelectField, SubmitButton, Tag, Td, Tr } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -66,8 +66,16 @@ export const MemberRow = ({
 
   const roleLocked = isSelf || isLastOwner;
   const removed = removeState.status === "succeeded";
-  const latest = [revokeState, restoreState].find((one) => one.status === "succeeded");
-  const suspended = latest?.data?.suspended ?? member.suspendedAt !== null;
+  /* The most recent outcome wins, whichever action produced it. Both states keep their
+     last result, so reading "the succeeded one" would report a revoke that has since been
+     undone; each result overwrites the row's own answer as it arrives instead. */
+  const [suspended, setSuspended] = useState(member.suspendedAt !== null);
+  useEffect(() => {
+    if (revokeState.status === "succeeded") setSuspended(true);
+  }, [revokeState]);
+  useEffect(() => {
+    if (restoreState.status === "succeeded") setSuspended(false);
+  }, [restoreState]);
   const accessError =
     revokeState.status === "failed"
       ? revokeState.message
