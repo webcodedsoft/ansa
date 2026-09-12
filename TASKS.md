@@ -6032,6 +6032,12 @@ rather than landed as inventory — the wave that needs them adds them wired.
       Ansa — so the page never leaves what it holds. Under it, what this deployment can do,
       from the API. `lastCallAt` joined onto each held number for the card. Seen on screen
       with the two real numbers, both webhooks reading "matches".
+- [x] **Bring your own is a dialog** (2026-09-12)
+      From the design's door: title, the one-sentence proof, the import URL with Copy, the
+      three steps, the password warning — and, in the footer, Create the import URL when
+      there is none yet or Rotate the URL (confirmed) when there is. Opened from the header
+      button and from the Add card when the deployment cannot offer numbers. The old import
+      card is gone; its copy and rotate logic moved into the dialog unchanged.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

@@ -7,18 +7,19 @@ import { Button, Card, Notice, PageHeader, SectionHead, Tag } from "@/components
 
 import type { ClaimWebhook, NumberCountries, NumberProvisioning, NumberSummary } from "../connect.service";
 import { BuyNumber } from "./buy-number";
-import { ImportNumber } from "./import-number";
+import { BringYourOwnModal } from "./bring-your-own-modal";
 import { NumberCard, type RoutableAgent } from "./number-card";
 
-type Panel = "own" | "get" | null;
+type Panel = "get" | null;
 
 /**
  * The Numbers page, as number cards.
  *
- * Each number is a card; a dashed card at the end adds one. "Bring your own" and "Get a
- * number" — in the header and on the add card — open the same two panels under the grid,
- * so the page never navigates away from what it already holds. Under it all, what this
- * deployment can do, straight from the API.
+ * Each number is a card; a dashed card at the end adds one. "Bring your own" opens a dialog
+ * with the import URL and its three steps; "Get a number" opens the catalogue under the
+ * grid. Both are reachable from the header and from the add card, so the page never
+ * navigates away from what it already holds. Under it all, what this deployment can do,
+ * straight from the API.
  */
 export const NumbersBoard = ({
   numbers,
@@ -36,7 +37,8 @@ export const NumbersBoard = ({
   readonly catalogue: { readonly countries: NumberCountries | null; readonly refusal: string | null } | null;
   readonly organisationName: string;
 }) => {
-  const [panel, setPanel] = useState<Panel>(numbers.length === 0 ? "own" : null);
+  const [panel, setPanel] = useState<Panel>(null);
+  const [bringing, setBringing] = useState(false);
   const fromPlan = numbers.filter((one) => one.managedBy === "platform").length;
   const canGet = catalogue?.countries !== null && catalogue !== null && catalogue !== undefined;
   const moreCountries = catalogue?.countries === null || catalogue == null ? null : Math.max(0, catalogue.countries.items.length - 4);
@@ -58,7 +60,7 @@ export const NumbersBoard = ({
         actions={
           <>
             {webhook !== null && (
-              <Button variant="secondary" onClick={() => setPanel(panel === "own" ? null : "own")} aria-pressed={panel === "own"}>
+              <Button variant="secondary" onClick={() => setBringing(true)}>
                 <Webhook aria-hidden className="size-3.5" />
                 Bring your own
               </Button>
@@ -79,7 +81,7 @@ export const NumbersBoard = ({
         ))}
         <button
           type="button"
-          onClick={() => setPanel(panel === null ? (catalogue !== null ? "get" : "own") : null)}
+          onClick={() => (catalogue !== null ? setPanel(panel === "get" ? null : "get") : setBringing(true))}
           className="grid min-h-[250px] cursor-pointer place-items-center content-center gap-2 rounded-[14px] border border-dashed border-[var(--hairline)] p-[18px] text-center text-[var(--ink-3)] transition-colors hover:border-[var(--ink-3)] focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
         >
           <Plus aria-hidden className="size-[22px]" />
@@ -88,11 +90,8 @@ export const NumbersBoard = ({
         </button>
       </div>
 
-      {panel === "own" && webhook !== null && (
-        <div className="mt-[26px]">
-          <SectionHead>Bring a number you already hold</SectionHead>
-          <ImportNumber webhook={webhook} />
-        </div>
+      {webhook !== null && (
+        <BringYourOwnModal open={bringing} onClose={() => setBringing(false)} webhook={webhook} />
       )}
       {panel === "get" && catalogue !== null && (
         <div className="mt-[26px]">
