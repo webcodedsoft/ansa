@@ -44,7 +44,6 @@ export const DESTINATIONS: readonly Destination[] = [
   { href: "/credentials", label: "Credentials", group: "Connect", capability: "config:write" },
 
   { href: "/members", label: "Members", group: "Organisation", capability: "members:read" },
-  { href: "/invitations", label: "Invitations", group: "Organisation", capability: "invitations:read" },
   { href: "/consent", label: "Consent & do-not-call", group: "Organisation", capability: "config:read" },
   { href: "/audit", label: "Audit log", group: "Organisation", capability: "calls:read" },
 ];

@@ -3,10 +3,11 @@
 import { useActionState, useState } from "react";
 
 import { Button, Notice, Row, SelectField, SubmitButton, Tag, Td, Tr } from "@/components/ui";
-import { when } from "@/lib/format";
+import { dayLabel } from "@/lib/format";
 import { idleForm } from "@/lib/form-state";
 
 import { changeRole, removeMemberAction, type ChangeRoleState, type RemoveMemberState } from "../org.actions";
+import { initials } from "../invitations.display";
 import type { MemberSummary } from "../org.service";
 import type { Role } from "../org.schema";
 
@@ -51,8 +52,21 @@ export const MemberRow = ({
   return (
     <Tr>
       <Td>
-        <div className="font-medium">{member.displayName}</div>
-        <div className="font-mono text-[12px] text-[var(--ink-3)]">{member.email}</div>
+        <div className="flex items-center gap-3">
+          <span
+            aria-hidden
+            className="grid size-[30px] flex-none place-items-center rounded-full border border-[var(--hairline)] bg-[var(--surface-2)] font-mono text-[11px] font-semibold text-[var(--ink-2)]"
+          >
+            {initials(member.displayName, member.email)}
+          </span>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="truncate font-medium">{member.displayName}</span>
+              {isSelf && <Tag>you</Tag>}
+            </div>
+            <div className="truncate font-mono text-[12px] text-[var(--ink-3)]">{member.email}</div>
+          </div>
+        </div>
       </Td>
       <Td>
         {canWrite && !roleLocked ? (
@@ -89,7 +103,7 @@ export const MemberRow = ({
           </div>
         )}
       </Td>
-      <Td className="text-[var(--ink-3)]">{when(member.createdAt)}</Td>
+      <Td className="text-[12.5px] whitespace-nowrap text-[var(--ink-3)]">{dayLabel(member.createdAt)}</Td>
       <Td>
         {canWrite && (
           <form action={removeAction}>

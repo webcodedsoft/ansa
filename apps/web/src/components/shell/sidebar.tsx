@@ -2,7 +2,7 @@
 
 import {
   Bot, CalendarDays, ChevronsUpDown, ClipboardList, Contact, Hash, KeyRound,
-  LogOut, MailPlus, Megaphone, PhoneCall, Plus, ScrollText, ShieldCheck,
+  LogOut, Megaphone, PhoneCall, Plus, ScrollText, ShieldCheck,
   Users, Webhook, Wrench,
 } from "lucide-react";
 import Link from "next/link";
@@ -42,7 +42,6 @@ const ICONS: Record<string, ComponentType<{ className?: string }>> = {
   "/credentials": KeyRound,
   "/members": Users,
   // An invitation is a letter not yet answered, which is not the same as a member.
-  "/invitations": MailPlus,
   "/consent": ShieldCheck,
   "/audit": ScrollText,
 };

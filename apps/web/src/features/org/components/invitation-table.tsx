@@ -9,10 +9,10 @@ import { InvitationRow } from "./invitation-row";
  * are still declared here so the header cannot drift from what the rows draw.
  */
 const COLUMNS: readonly Column<InvitationSummary>[] = [
-  { key: "email", header: "Email", cell: (i) => i.email },
-  { key: "role", header: "Role", cell: (i) => i.role },
+  { key: "email", header: "Invited", cell: () => null },
+  { key: "role", header: "As", cell: () => null },
   { key: "status", header: "Status", cell: () => null },
-  { key: "expires", header: "Expires", cell: () => null },
+  { key: "when", header: "When", cell: () => null },
   { key: "actions", header: "Revoke", headerHidden: true, cell: () => null },
 ];
 
@@ -27,7 +27,7 @@ export const InvitationTable = ({
     rows={invitations}
     columns={COLUMNS}
     rowKey={(invitation) => invitation.id}
-    empty={{ title: "No invitations", description: "Nobody has been invited yet." }}
+    empty={{ title: "Nobody is waiting to join", description: "Invitations you send appear here until they are accepted." }}
     renderRow={(invitation) => (
       <InvitationRow key={invitation.id} invitation={invitation} canWrite={canWrite} />
     )}

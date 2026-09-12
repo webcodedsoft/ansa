@@ -3,20 +3,14 @@
 import { useActionState } from "react";
 
 import { Notice, SubmitButton, Tag, Td, Tr } from "@/components/ui";
-import { when } from "@/lib/format";
+import { dayLabel } from "@/lib/format";
 import { idleForm } from "@/lib/form-state";
 
 import { revokeInvitationAction, type RevokeInvitationState } from "../org.actions";
+import { STATUS_TONE, expiry, initials, statusOf } from "../invitations.display";
 import type { InvitationSummary } from "../org.service";
 
 const START: RevokeInvitationState = idleForm();
-
-const statusOf = (invitation: InvitationSummary): { readonly label: string; readonly tone: "ok" | "bad" | "warn" | "neutral" } => {
-  if (invitation.revokedAt !== null) return { label: "revoked", tone: "bad" };
-  if (invitation.acceptedAt !== null) return { label: "accepted", tone: "ok" };
-  if (new Date(invitation.expiresAt).getTime() < Date.now()) return { label: "expired", tone: "warn" };
-  return { label: "pending", tone: "neutral" };
-};
 
 export const InvitationRow = ({
   invitation,
@@ -27,20 +21,32 @@ export const InvitationRow = ({
 }) => {
   const [state, action, pending] = useActionState(revokeInvitationAction, START);
   const status = statusOf(invitation);
-  const revocable = canWrite && status.label === "pending";
+  const revocable = canWrite && status === "pending";
 
   if (state.status === "succeeded") return null;
 
   return (
     <Tr>
-      <Td className="font-mono text-[13px]">{invitation.email}</Td>
+      <Td>
+        <div className="flex items-center gap-3">
+          <span
+            aria-hidden
+            className="grid size-[30px] flex-none place-items-center rounded-full border border-dashed border-[var(--hairline)] font-mono text-[11px] font-semibold text-[var(--ink-3)]"
+          >
+            {initials(null, invitation.email)}
+          </span>
+          <span className="truncate font-mono text-[13px]">{invitation.email}</span>
+        </div>
+      </Td>
       <Td>
         <Tag tone={invitation.role === "owner" ? "accent" : "neutral"}>{invitation.role}</Tag>
       </Td>
       <Td>
-        <Tag tone={status.tone}>{status.label}</Tag>
+        <Tag tone={STATUS_TONE[status]}>{status}</Tag>
       </Td>
-      <Td className="text-[var(--ink-3)]">{when(invitation.expiresAt)}</Td>
+      <Td className="text-[12.5px] whitespace-nowrap text-[var(--ink-3)]">
+        {status === "pending" || status === "expired" ? expiry(invitation.expiresAt) : dayLabel(invitation.createdAt)}
+      </Td>
       <Td>
         {revocable && (
           <form action={action}>

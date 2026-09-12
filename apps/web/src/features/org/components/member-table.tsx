@@ -36,7 +36,7 @@ export const MemberTable = ({
       rows={members}
       columns={COLUMNS}
       rowKey={(member) => member.userId}
-      empty={{ title: "No members", description: "This organisation has nobody in it yet." }}
+      empty={{ title: "Nobody yet", description: "Invite someone and they will appear here once they accept." }}
       renderRow={(member) => (
         <MemberRow
           key={member.userId}

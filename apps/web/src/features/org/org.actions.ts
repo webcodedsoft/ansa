@@ -106,7 +106,7 @@ export const invite = async (_previous: InviteState, form: FormData): Promise<In
 
   try {
     const result = await inviteMember(parsed.data);
-    revalidatePath("/invitations");
+    revalidatePath("/members");
     return succeededForm({
       id: result.invitation.id,
       email: result.invitation.email,
@@ -130,7 +130,7 @@ export const revokeInvitationAction = async (
 
   try {
     await revokeInvitation(parsed.data);
-    revalidatePath("/invitations");
+    revalidatePath("/members");
     return succeededForm({ id: parsed.data.id }, "Revoked.");
   } catch (error) {
     return failedForm(failureMessage(error));
