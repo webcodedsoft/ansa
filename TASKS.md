@@ -5942,6 +5942,21 @@ rather than landed as inventory — the wave that needs them adds them wired.
       invitation), an "access revoked" tag, and Restore access. Pinned in `rls.test.ts`:
       suspended not offered at sign-in and offered again once restored; the last owner
       cannot be suspended.
+- [x] **Your account: name and password** (2026-09-12)
+      There was nowhere a signed-in person could change anything about themselves — the
+      only account surface was the sidebar footer's name, role and Sign out. `/account`,
+      reached from your name in that footer, holds the two things that are yours alone: the
+      name you are shown as (`PATCH /auth/me`) and your password (`PUT /auth/me/password`).
+      The email stays read-only, because it is the sign-in identity and a new address is a
+      new invitation the owners see; the role is the organisation's to set.
+
+      A password change verifies the current one with the same constant-cost check sign-in
+      uses, is rate-limited like sign-in, and ends every other session the person holds —
+      in every organisation, on every device. That last part needed migration 0084:
+      `sessions` is isolated per organisation, so a scoped update reaches one; the definer
+      function `app.end_other_sessions(user, keep)` reaches all, and insists the kept
+      session belongs to the user so holding somebody's id is not enough to sign them out.
+      Nothing typed on the password form is held in state after the submit.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

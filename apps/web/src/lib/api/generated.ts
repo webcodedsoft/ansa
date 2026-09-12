@@ -1045,6 +1045,41 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       }>(options, "GET", `/api/v1/auth/me`, {}),
 
     /**
+     * Change your own display name
+     * The name you are shown as, everywhere your name appears. Your email is your sign-in identity and is not changed here — a new address is a new invitation, so the organisation's owners see it happen.
+     */
+    updateProfile: (input: {
+        readonly body: {
+          readonly displayName: string;
+        };
+      }) =>
+      send<{
+        readonly user: {
+        readonly id: string;
+        readonly email: string;
+        readonly displayName: string;
+      };
+        readonly organisation: {
+        readonly id: string;
+        readonly name: string;
+      };
+        readonly role: "owner" | "admin" | "member";
+        readonly capabilities: readonly ("calls:read" | "calls:write" | "contacts:read" | "contacts:write" | "campaigns:read" | "campaigns:write" | "members:read" | "members:write" | "invitations:read" | "invitations:write" | "appointments:read" | "appointments:write" | "config:read" | "config:write")[];
+      }>(options, "PATCH", `/api/v1/auth/me`, input),
+
+    /**
+     * Change your own password
+     * Takes the current password and the new one. Every other session you hold — in every organisation, on every device — is signed out; the session making this request stays. A wrong current password is a 422 on `currentPassword`, and is rate-limited like sign-in.
+     */
+    changePassword: (input: {
+        readonly body: {
+          readonly currentPassword: string;
+          readonly newPassword: string;
+        };
+      }) =>
+      send<void>(options, "PUT", `/api/v1/auth/me/password`, input),
+
+    /**
      * List the organisations an email and password can sign in to
      * Returns an empty list for a wrong password and for an address with no account, and takes the same time to do it.
      */

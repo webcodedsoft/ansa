@@ -1,7 +1,19 @@
-import { revokeSession } from "@ansa/db";
-import { Controller, Delete, Get, Headers, Inject, Post, UnauthorizedException } from "@nestjs/common";
+import { endOtherSessions, passwordHashOf, renameUser, revokeSession, setPasswordHash } from "@ansa/db";
+import {
+  Controller,
+  Delete,
+  Get,
+  Headers,
+  Inject,
+  NotFoundException,
+  Patch,
+  Post,
+  Put,
+  UnauthorizedException,
+} from "@nestjs/common";
 
 import { Endpoint } from "../http/endpoint";
+import { ValidationFailed } from "../http/problem";
 import { apiRoute, FromBody } from "../http/request";
 import { choice, flag, list, object, text, type Infer } from "../http/schema";
 import { email, organisation, role, timestamp, uuid } from "../schemas";
@@ -9,7 +21,7 @@ import { OrganizationContext } from "../tenancy/organization-context";
 import { AuthService } from "./auth.service";
 import { ALL_CAPABILITIES, capabilitiesOf } from "./capability";
 import { Caller, type Principal } from "./principal";
-import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from "./password";
+import { hashPassword, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, verifyPassword } from "./password";
 
 /**
  * Sign in, sign out, and find out who you are.
@@ -116,6 +128,21 @@ const me = object({
    */
   capabilities: list(choice(ALL_CAPABILITIES)),
 });
+
+/** What a person may change about themselves. The email is the sign-in identity and stays. */
+const profile = object({ displayName: text({ minLength: 1, maxLength: 200 }) });
+
+const passwordChange = object({
+  currentPassword: offeredPassword(),
+  newPassword: newPassword(),
+});
+
+/**
+ * Ten guesses at the current password in five minutes, per session. The sign-in limit is
+ * keyed by address because there is no session yet; here there is, and the person guessing
+ * is whoever holds it.
+ */
+const PASSWORD_CHANGE_LIMIT = { limit: 10, windowMs: 5 * 60_000, by: "ip" } as const;
 
 @Controller(apiRoute("auth"))
 export class AuthController {
@@ -229,6 +256,11 @@ export class AuthController {
     response: me,
   })
   async me(@Caller() caller: Principal): Promise<Infer<typeof me>> {
+    return this.describe(caller, caller.displayName);
+  }
+
+  /** The `me` document, with the display name as it is now — which after a rename is not the one on the session. */
+  private async describe(caller: Principal, displayName: string): Promise<Infer<typeof me>> {
     // RLS restricts `organizations` to the row whose id is the current organization, so this reads the
     // caller's own organisation and could not read another even without the where clause.
     const rows = await this.db.tx((scope) =>
@@ -236,10 +268,58 @@ export class AuthController {
     );
 
     return {
-      user: { id: caller.userId, email: caller.email, displayName: caller.displayName },
+      user: { id: caller.userId, email: caller.email, displayName },
       organisation: { id: caller.organizationId, name: rows[0]?.name ?? "" },
       role: caller.role,
       capabilities: capabilitiesOf(caller.role),
     };
+  }
+
+  @Patch("me")
+  @Endpoint({
+    summary: "Change your own display name",
+    description:
+      "The name you are shown as, everywhere your name appears. Your email is your sign-in identity and is not changed here — a new address is a new invitation, so the organisation's owners see it happen.",
+    capability: "authenticated",
+    body: profile,
+    response: me,
+  })
+  async updateProfile(
+    @Caller() caller: Principal,
+    @FromBody() body: Infer<typeof profile>,
+  ): Promise<Infer<typeof me>> {
+    const renamed = await this.db.tx((scope) => renameUser(scope, caller.userId, body.displayName));
+    // Only reachable if the account was deleted under a live session.
+    if (!renamed) throw new NotFoundException();
+    return this.describe(caller, body.displayName);
+  }
+
+  @Put("me/password")
+  @Endpoint({
+    summary: "Change your own password",
+    description:
+      "Takes the current password and the new one. Every other session you hold — in every organisation, on every device — is signed out; the session making this request stays. A wrong current password is a 422 on `currentPassword`, and is rate-limited like sign-in.",
+    capability: "authenticated",
+    body: passwordChange,
+    rateLimit: PASSWORD_CHANGE_LIMIT,
+    status: 204,
+  })
+  async changePassword(
+    @Caller() caller: Principal,
+    @FromBody() body: Infer<typeof passwordChange>,
+  ): Promise<void> {
+    const stored = await this.db.tx((scope) => passwordHashOf(scope, caller.userId));
+    /* Verified before anything is written, and with the same constant-cost check sign-in
+       uses, so a wrong guess costs a full scrypt whether or not the account exists. */
+    const verified = await verifyPassword(stored, body.currentPassword);
+    if (!verified || stored === null) {
+      throw new ValidationFailed([{ path: "body.currentPassword", message: "is not your current password" }]);
+    }
+    const replacement = await hashPassword(body.newPassword);
+    await this.db.tx(async (scope) => {
+      const changed = await setPasswordHash(scope, caller.userId, replacement);
+      if (!changed) throw new NotFoundException();
+      await endOtherSessions(scope, caller.userId, caller.sessionId);
+    });
   }
 }

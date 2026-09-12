@@ -153,6 +153,68 @@ export const revokeSession = async (
 };
 
 // ---------------------------------------------------------------------------
+// The signed-in person's own account
+// ---------------------------------------------------------------------------
+
+/**
+ * What a person may change about themselves, and only themselves: the name they are shown
+ * as. The email is the sign-in identity and is not changed here — a new address is a new
+ * invitation, so the organisation's owners see it happen.
+ *
+ * `users` is reachable through a live membership in the current organisation, which the
+ * caller has by definition. `mutate`, for the reason every update in this package says.
+ */
+export const renameUser = async (
+  scope: OrganizationScope,
+  userId: string,
+  displayName: string,
+): Promise<boolean> => {
+  const rows = await scope.mutate<{ id: string }>(
+    `update users set display_name = $2 where id = $1 and deleted_at is null returning id`,
+    [userId, displayName],
+  );
+  return rows.length > 0;
+};
+
+/** For verifying the current password before it is replaced. Null when the row is not visible. */
+export const passwordHashOf = async (scope: OrganizationScope, userId: string): Promise<string | null> => {
+  const rows = await scope.query<{ password_hash: string }>(
+    `select password_hash from users where id = $1 and deleted_at is null`,
+    [userId],
+  );
+  return rows[0]?.password_hash ?? null;
+};
+
+export const setPasswordHash = async (
+  scope: OrganizationScope,
+  userId: string,
+  passwordHash: string,
+): Promise<boolean> => {
+  const rows = await scope.mutate<{ id: string }>(
+    `update users set password_hash = $2 where id = $1 and deleted_at is null returning id`,
+    [userId, passwordHash],
+  );
+  return rows.length > 0;
+};
+
+/**
+ * Every session this person holds, in every organisation, except the one making the
+ * request. Crosses organisations through `app.end_other_sessions` (migration 0084), which
+ * insists the kept session belongs to them. Returns how many it ended.
+ */
+export const endOtherSessions = async (
+  scope: OrganizationScope,
+  userId: string,
+  keepSessionId: string,
+): Promise<number> => {
+  const rows = await scope.query<{ ended: number }>(
+    `select app.end_other_sessions($1, $2) as ended`,
+    [userId, keepSessionId],
+  );
+  return Number(rows[0]?.ended ?? 0);
+};
+
+// ---------------------------------------------------------------------------
 // Members
 // ---------------------------------------------------------------------------
 

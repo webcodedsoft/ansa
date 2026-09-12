@@ -90,6 +90,14 @@ export const acceptInvitation = async (
 /** The signed-in user, their organisation, and what they may do in it. */
 export const currentPrincipal = async () => (await api()).auth.me();
 
+/** The name you are shown as. Nothing else about the account changes here. */
+export const updateProfile = async (displayName: string) =>
+  (await api()).auth.updateProfile({ body: { displayName } });
+
+/** Every other session — every organisation, every device — is signed out by the API. */
+export const changePassword = async (currentPassword: string, newPassword: string) =>
+  (await api()).auth.changePassword({ body: { currentPassword, newPassword } });
+
 /**
  * End the session here and revoke it there.
  *

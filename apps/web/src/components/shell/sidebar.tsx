@@ -160,15 +160,25 @@ export const Sidebar = ({
           collapsed && "flex-col",
         )}
       >
-        <span className="grid size-[27px] flex-none place-items-center rounded-full border border-[var(--hairline)] bg-[var(--surface-2)] text-[11px] font-semibold text-[var(--ink-2)]">
-          {user.slice(0, 2).toUpperCase()}
-        </span>
-        {!collapsed && (
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-[12.5px] font-medium">{user}</span>
-            <span className="block truncate text-[11px] text-[var(--ink-3)] capitalize">{role}</span>
+        <Link
+          href="/account"
+          title="Your account"
+          aria-current={pathname.startsWith("/account") ? "page" : undefined}
+          className={cn(
+            "flex min-w-0 flex-1 items-center gap-2.5 rounded-md hover:bg-[var(--surface-2)]",
+            collapsed ? "justify-center p-0.5" : "-m-1 p-1",
+          )}
+        >
+          <span className="grid size-[27px] flex-none place-items-center rounded-full border border-[var(--hairline)] bg-[var(--surface-2)] text-[11px] font-semibold text-[var(--ink-2)]">
+            {user.slice(0, 2).toUpperCase()}
           </span>
-        )}
+          {!collapsed && (
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[12.5px] font-medium">{user}</span>
+              <span className="block truncate text-[11px] text-[var(--ink-3)] capitalize">{role}</span>
+            </span>
+          )}
+        </Link>
         <form action={signOut}>
           <IconButton
             type="submit"

@@ -1,18 +1,27 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { failureMessage } from "@/lib/api/server";
 import { failedForm, invalidForm, succeededForm, type FormState } from "@/lib/form-state";
 
-import { acceptInvitationSchema, credentialsSchema, signUpSchema } from "./auth.schema";
+import {
+  acceptInvitationSchema,
+  credentialsSchema,
+  passwordChangeSchema,
+  profileSchema,
+  signUpSchema,
+} from "./auth.schema";
 import {
   acceptInvitation,
+  changePassword as changePasswordOnApi,
   createOrganisation,
   organisationsFor,
   signInTo,
   signOutEverywhere,
   type OrganisationChoice,
+  updateProfile,
 } from "./auth.service";
 
 /**
@@ -155,5 +164,51 @@ export const acceptInvite = async (
     return succeededForm({ createdUser: result.createdUser });
   } catch (error) {
     return failedForm(failureMessage(error));
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Your own account
+// ---------------------------------------------------------------------------
+
+export type ProfileState = FormState<{ readonly displayName: string }>;
+
+/**
+ * The name you are shown as. Revalidates the whole tree: it is in the sidebar footer and on
+ * every row that names you, so a narrower revalidation would leave the old name around.
+ */
+export const saveProfile = async (_previous: ProfileState, form: FormData): Promise<ProfileState> => {
+  const parsed = profileSchema.safeParse({ displayName: form.get("displayName") ?? "" });
+  if (!parsed.success) return invalidForm(parsed.error);
+  try {
+    const saved = await updateProfile(parsed.data.displayName);
+    revalidatePath("/", "layout");
+    return succeededForm({ displayName: saved.user.displayName }, "Saved.");
+  } catch (error) {
+    return failedForm(failureMessage(error, { within: "body" }));
+  }
+};
+
+export type PasswordState = FormState<{ readonly changedAt: string }>;
+
+/**
+ * Nothing about the passwords is kept in the state that comes back — a form that echoes a
+ * password into React state has put it somewhere it did not need to be.
+ */
+export const changePassword = async (_previous: PasswordState, form: FormData): Promise<PasswordState> => {
+  const parsed = passwordChangeSchema.safeParse({
+    currentPassword: form.get("currentPassword") ?? "",
+    newPassword: form.get("newPassword") ?? "",
+    confirmPassword: form.get("confirmPassword") ?? "",
+  });
+  if (!parsed.success) return invalidForm(parsed.error);
+  try {
+    await changePasswordOnApi(parsed.data.currentPassword, parsed.data.newPassword);
+    return succeededForm(
+      { changedAt: new Date().toISOString() },
+      "Password changed. Every other session you had is signed out.",
+    );
+  } catch (error) {
+    return failedForm(failureMessage(error, { within: "body" }));
   }
 };

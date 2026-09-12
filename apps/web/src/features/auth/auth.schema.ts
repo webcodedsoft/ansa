@@ -44,6 +44,29 @@ const newPassword = z.string().min(MIN_PASSWORD, `Use at least ${MIN_PASSWORD} c
  * the password it already has — so this is not only a "new user" form, and the API refuses a
  * wrong password with the same answer a failed sign-in gets.
  */
+/** Your own account. The email is the sign-in identity and is not on this form. */
+export const profileSchema = z.object({
+  displayName: z.string().trim().min(1, "Enter the name you want to be shown as.").max(200, "Use at most 200 characters."),
+});
+export type ProfileInput = z.infer<typeof profileSchema>;
+
+/**
+ * The current password is not length-checked, for the reason sign-in does not check it:
+ * whatever they have is what they have. The new one meets the minimum, and the confirmation
+ * catches the typo that would otherwise lock them out of their own account.
+ */
+export const passwordChangeSchema = z
+  .object({
+    currentPassword: z.string().min(1, "Enter your current password."),
+    newPassword,
+    confirmPassword: z.string(),
+  })
+  .refine((v) => v.newPassword === v.confirmPassword, {
+    path: ["confirmPassword"],
+    message: "This does not match the new password.",
+  });
+export type PasswordChangeInput = z.infer<typeof passwordChangeSchema>;
+
 export const signUpSchema = z
   .object({
     organisationName: z
