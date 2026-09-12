@@ -154,7 +154,9 @@ const CallDetailPage = async ({
                 </Card>
                 </MaybeRecording>
 
-                <div className="flex flex-col gap-3.5">
+                {/* Sticky, so the summary stays beside whichever part of the conversation is
+                    in view — a citation and the line it points at are on screen together. */}
+                <div className="flex flex-col gap-3.5 lg:sticky lg:top-6">
                   {/* First in the rail: it is the answer, and the conversation beside it is
                       the evidence. Its citations scroll to the line each sentence came from. */}
                   <CallSummary summary={call.summary} />

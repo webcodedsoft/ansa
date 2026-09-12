@@ -54,11 +54,13 @@ export const CallTimeline = ({
    * side "me" sits on in any messaging app, and the console is read by the organisation.
    */
   return (
-    /* A floor under the conversation. A three-line call beside a rail of three cards left the
-       page's main column shorter than its sidebar, and the eye read the empty space as the
-       call being cut off. The floor is roughly the rail's height, so the two columns bottom
-       out together; a long call simply grows past it. */
-    <div className="flex min-h-[34rem] flex-col gap-2.5">
+    /* A floor and a ceiling. The floor: a three-line call beside a rail of three cards left
+       the main column shorter than its sidebar, and the empty space read as the call being
+       cut off. The ceiling: a forty-line call made the page itself the scroll, so the summary
+       and its citations were a screen away from the words they cite. The conversation scrolls
+       inside its card; the rail stays where it is. `scrollIntoView` from a citation finds the
+       nearest scrolling ancestor, so a click still lands on its line. */
+    <div className="flex max-h-[calc(100vh-18rem)] min-h-[34rem] flex-col gap-2.5 overflow-y-auto pr-1">
       {lines.map((line) =>
         line.speaker === "tool" ? (
           <div key={line.key} className="flex justify-center">
