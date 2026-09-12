@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { WidePage } from "@/components/shell/wide-page";
-import { Card, Tabs, Tag, buttonClass } from "@/components/ui";
+import { Card, Tabs, buttonClass } from "@/components/ui";
 import { findCall } from "@/features/calls/calls.service";
 import { CallDirection } from "@/features/calls/components/call-direction";
 import { CallFlags } from "@/features/calls/components/call-flags";
@@ -115,14 +115,7 @@ const CallDetailPage = async ({
               <div className="grid items-start gap-3.5 lg:grid-cols-[minmax(0,1fr)_20rem]">
                 <RecordingProvider>
                 <Card
-                  title={
-                    <span className="inline-flex items-center gap-2">
-                      What was said
-                      <Tag tone={agentWordsKept ? "accent" : "neutral"}>
-                        {agentWordsKept ? "both sides" : "caller only"}
-                      </Tag>
-                    </span>
-                  }
+                  title="What was said"
                   actions={
                     <span className="text-[12px] text-[var(--ink-3)]">
                       Click any message to hear it
