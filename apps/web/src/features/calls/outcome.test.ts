@@ -12,17 +12,17 @@ describe("what a call's end reason is called on screen", () => {
       "listen socket closed with code 1006",
       "deepgram socket closed with code 1011",
     ]) {
-      expect(outcomeOf(raw, true)).toEqual({ label: "ended", tone: "neutral" });
+      expect(outcomeOf(raw, true)).toEqual({ label: "ended", tone: "neutral", icon: "ended" });
     }
   });
 
   it("keeps the outcomes that mean something", () => {
-    expect(outcomeOf("completed", true)).toEqual({ label: "completed", tone: "ok" });
-    expect(outcomeOf("escalated", true)).toEqual({ label: "handed to a human", tone: "warn" });
-    expect(outcomeOf("no-answer", true)).toEqual({ label: "no answer", tone: "warn" });
-    expect(outcomeOf("failed", true)).toEqual({ label: "failed", tone: "bad" });
+    expect(outcomeOf("completed", true)).toEqual({ label: "completed", tone: "ok", icon: "done" });
+    expect(outcomeOf("escalated", true)).toEqual({ label: "handed to a human", tone: "warn", icon: "human" });
+    expect(outcomeOf("no-answer", true)).toEqual({ label: "no answer", tone: "warn", icon: "missed" });
+    expect(outcomeOf("failed", true)).toEqual({ label: "failed", tone: "bad", icon: "failed" });
     // Plain English already, and neutral: people hang up when they are finished.
-    expect(outcomeOf("caller hung up", true)).toEqual({ label: "caller hung up", tone: "neutral" });
+    expect(outcomeOf("caller hung up", true)).toEqual({ label: "caller hung up", tone: "neutral", icon: "hung-up" });
   });
 
   it("says live only while the call is actually up", () => {

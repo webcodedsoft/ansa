@@ -1,3 +1,4 @@
+import { ArrowLeft, CalendarCheck, CalendarClock, ClipboardCheck, Phone, ShieldCheck, ShieldOff } from "lucide-react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -13,6 +14,7 @@ import { readPaging } from "@/lib/paging";
 import { cn } from "@/lib/cn";
 import { dayLabel, duration, humanise, phone, timeOfDay, when } from "@/lib/format";
 import { CallDirection } from "@/features/calls/components/call-direction";
+import { OutcomeTag } from "@/features/calls/components/outcome-tag";
 import { outcomeOf } from "@/features/calls/outcome";
 
 export const metadata: Metadata = { title: "Contact · Ansa" };
@@ -90,9 +92,10 @@ const ContactPage = async ({
       <header className="mb-6">
         <Link
           href="/contacts"
-          className={cn(buttonClass("secondary", "sm"), "mb-4 inline-flex")}
+          className={cn(buttonClass("secondary", "sm"), "mb-4 inline-flex items-center gap-1.5")}
         >
-          ← All contacts
+          <ArrowLeft aria-hidden className="size-3.5" />
+          All contacts
         </Link>
 
         <div className="flex items-start gap-3.5">
@@ -127,6 +130,11 @@ const ContactPage = async ({
                     : "inline-flex items-center rounded-[4px] border border-[color-mix(in_srgb,var(--bad)_34%,transparent)] bg-[color-mix(in_srgb,var(--bad)_12%,transparent)] px-1.5 py-px text-[11.5px] font-medium text-[var(--bad)]"
                 }
               >
+                {consent.allowed ? (
+                  <ShieldCheck aria-hidden className="mr-1 size-3" />
+                ) : (
+                  <ShieldOff aria-hidden className="mr-1 size-3" />
+                )}
                 {consent.allowed ? "may call" : "may not call"}
               </span>
             </div>
@@ -153,7 +161,7 @@ const ContactPage = async ({
             ) : (
               /* The rule is drawn on the list rather than per row, so it runs unbroken behind
                  every marker instead of restarting at each one. */
-              <ol className="relative m-0 list-none p-0 pl-5 before:absolute before:top-2 before:bottom-2 before:left-[5px] before:w-px before:bg-[var(--surface-line)] before:content-['']">
+              <ol className="relative m-0 list-none p-0 pl-6 before:absolute before:top-2 before:bottom-2 before:left-[8px] before:w-px before:bg-[var(--surface-line)] before:content-['']">
                 {entries.map((entry) =>
                   entry.kind === "call" ? (
                     <li key={`call-${entry.call.callId}`} className="relative py-1">
@@ -194,7 +202,7 @@ const ContactPage = async ({
                     </li>
                   ) : entry.kind === "appointment" ? (
                     <li key={`appointment-${entry.appointment.id}`} className="relative py-1">
-                      <Marker kind="value" />
+                      <Marker kind="appointment" />
                       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-1.5">
                         <span className="w-[8.5rem] flex-none text-[11.5px] tabular-nums text-[var(--ink-3)]">
                           <Moment at={entry.appointment.bookedAt} />
@@ -214,7 +222,7 @@ const ContactPage = async ({
                     </li>
                   ) : entry.kind === "consent" ? (
                     <li key={`consent-${entry.at}-${entry.consent.kind}`} className="relative py-1">
-                      <Marker kind="value" />
+                      <Marker kind="consent" />
                       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-1.5">
                         <span className="w-[8.5rem] flex-none text-[11.5px] tabular-nums text-[var(--ink-3)]">
                           <Moment at={entry.at} />
@@ -358,26 +366,46 @@ const CallOutcome = ({
   readonly bookedOn: ReadonlyMap<string, string>;
 }) => {
   const booked = bookedOn.get(call.callId);
-  if (booked !== undefined) return <Tag tone="ok">{humanise(booked)}</Tag>;
-  const outcome = outcomeOf(call.endReason, call.endedAt !== null);
-  return <Tag tone={outcome.tone}>{outcome.label}</Tag>;
+  if (booked !== undefined) {
+    return (
+      <Tag tone="ok">
+        <CalendarCheck aria-hidden className="size-3 flex-none" />
+        {humanise(booked)}
+      </Tag>
+    );
+  }
+  return <OutcomeTag outcome={outcomeOf(call.endReason, call.endedAt !== null)} />;
 };
 
 /**
- * The dot on the spine. A call is the accent and filled; anything else is hollow — the
- * difference says "this one opens" before the cursor gets there.
+ * The glyph on the spine, saying what kind of thing this is before the text does.
+ *
+ * It was a dot — filled for a call, hollow for anything else — which distinguished two kinds.
+ * There are four now, and "anything else" was a confirmed value, a booking and a consent
+ * record sharing one hollow circle. A call keeps the accent because it is the one entry that
+ * opens; the rest are quiet, and told apart by shape.
  */
-const Marker = ({ kind }: { readonly kind: "call" | "value" }) => (
-  <span
-    aria-hidden
-    className={cn(
-      "absolute top-[1.05rem] -left-[1.03rem] size-[7px] rounded-full border-[1.5px]",
-      kind === "call"
-        ? "border-[var(--accent)] bg-[var(--accent)]"
-        : "border-[var(--ink-3)] bg-[var(--surface-solid)]",
-    )}
-  />
-);
+const MARKERS = {
+  call: { Icon: Phone, className: "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-on)]" },
+  value: { Icon: ClipboardCheck, className: "border-[var(--hairline)] bg-[var(--surface-solid)] text-[var(--ink-3)]" },
+  appointment: { Icon: CalendarClock, className: "border-[var(--hairline)] bg-[var(--surface-solid)] text-[var(--ink-3)]" },
+  consent: { Icon: ShieldCheck, className: "border-[var(--hairline)] bg-[var(--surface-solid)] text-[var(--ink-3)]" },
+} as const;
+
+const Marker = ({ kind }: { readonly kind: keyof typeof MARKERS }) => {
+  const { Icon, className } = MARKERS[kind];
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "absolute top-[0.8rem] -left-[1.33rem] grid size-[17px] place-items-center rounded-full border",
+        className,
+      )}
+    >
+      <Icon className="size-[9px]" />
+    </span>
+  );
+};
 
 const Figure = ({ value, label }: { readonly value: number; readonly label: string }) => (
   <div>

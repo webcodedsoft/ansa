@@ -5746,6 +5746,21 @@ rather than landed as inventory — the wave that needs them adds them wired.
       **Still absent, deliberately:** "Call now", "Export everything", and the merge banner —
       each a feature, argued on 2026-09-08. Latency p50 stays on the calls list: CLAUDE.md
       says latency is a correctness property, and that column is how somebody sees it.
+- [x] **Icons where they carry a distinction, and four wording changes** (2026-09-12)
+      The rule was already written in `feedback.tsx`: an icon has to mean something, or it
+      teaches people to ignore the ones that do. So they went where a label was doing the work
+      of a shape. The outcome column has seven meanings and now seven glyphs — `OutcomeTag`
+      over `outcomeOf`, one place. The contact spine had four kinds of entry sharing two dots;
+      each kind has its own marker. Direction is "Incoming Call" / "Outgoing Call" with the
+      arrow the Test call button already uses. The consent verdict carries a shield, the
+      actions carry what they do (import, add, do-not-call, back), and `Stat` and `EmptyState`
+      gained an optional glyph, used on the contacts page. Nothing decorative.
+
+      Wording: "Length" is "Duration" and durations carry units — `1m 44s`, `38s` — because
+      `1:44` beside a time of day like `00:10` read as a second clock. The `duration()` doc had
+      argued the other way; the argument is replaced, not left contradicting the code. Latency
+      p50 is off the calls list — it stays on the call page and Metrics, where it is read — and
+      `millis()` went with it rather than staying as inventory.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

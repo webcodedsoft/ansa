@@ -146,15 +146,21 @@ export const Stat = ({
   unit,
   trend,
   tone = "flat",
+  icon,
 }: {
   readonly label: ReactNode;
   readonly value: ReactNode;
   readonly unit?: string;
   readonly trend?: ReactNode;
   readonly tone?: "up" | "down" | "flat";
+  /** A small glyph beside the label, for a row of figures that count different kinds of thing. */
+  readonly icon?: ReactNode;
 }) => (
   <Panel className="px-4 py-[15px]">
-    <div className="text-[12px] text-[var(--ink-3)]">{label}</div>
+    <div className="flex items-center gap-1.5 text-[12px] text-[var(--ink-3)]">
+      {icon !== undefined && <span aria-hidden className="flex-none [&>svg]:size-3.5">{icon}</span>}
+      {label}
+    </div>
     {/* The figure carries the card, so it is set well above the label rather than a step
         up from it — at 27px the two read as one block and the eye has nowhere to land. */}
     <div className="mt-1.5 text-[33px] leading-[1.05] font-[680] tracking-[-0.035em] tabular-nums">

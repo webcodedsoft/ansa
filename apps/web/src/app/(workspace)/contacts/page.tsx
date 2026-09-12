@@ -1,4 +1,4 @@
-import { Search } from "lucide-react";
+import { BadgeCheck, Repeat, Search, UserPlus, Users } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -82,10 +82,10 @@ const ContactsPage = async ({
           describes, and the filter's own "5 of 7" says what the percentage said. A sub-line
           that repeats the page costs a third of the card's height to say it twice. */}
       <div className="grid gap-3.5 sm:grid-cols-4">
-        <Stat label="People" value={stats.people} />
-        <Stat label="Identified" value={stats.identified} />
-        <Stat label="Rang more than once" value={stats.repeatCallers} />
-        <Stat label="New this week" value={stats.newThisWeek} />
+        <Stat label="People" value={stats.people} icon={<Users />} />
+        <Stat label="Identified" value={stats.identified} icon={<BadgeCheck />} />
+        <Stat label="Rang more than once" value={stats.repeatCallers} icon={<Repeat />} />
+        <Stat label="New this week" value={stats.newThisWeek} icon={<UserPlus />} />
       </div>
 
       {/* One row: the field, and the filter it is filtered by. They were stacked, with a

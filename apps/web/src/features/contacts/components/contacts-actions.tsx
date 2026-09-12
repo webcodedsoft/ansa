@@ -1,5 +1,6 @@
 "use client";
 
+import { Upload, UserPlus } from "lucide-react";
 import { useState } from "react";
 
 import { Button, Modal } from "@/components/ui";
@@ -29,9 +30,11 @@ export const ContactsActions = () => {
   return (
     <>
       <Button variant="secondary" onClick={() => setMode("import")}>
+        <Upload aria-hidden className="size-3.5" />
         Import contacts
       </Button>
       <Button variant="primary" onClick={() => setMode("add")}>
+        <UserPlus aria-hidden className="size-3.5" />
         Add a contact
       </Button>
 

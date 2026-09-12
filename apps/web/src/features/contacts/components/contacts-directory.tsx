@@ -1,3 +1,4 @@
+import { UserSearch, Users } from "lucide-react";
 import Link from "next/link";
 
 import { EmptyState, GroupRow, Panel, Table, Td } from "@/components/ui";
@@ -89,12 +90,12 @@ export const ContactsDirectory = ({
     return (
       <Panel>
         {total === 0 ? (
-          <EmptyState title="Nobody yet">
+          <EmptyState title="Nobody yet" icon={<Users />}>
             A person appears here the first time a call arrives carrying a number. Calls from a
             withheld number have nobody to file them under and stay on the call record alone.
           </EmptyState>
         ) : (
-          <EmptyState title="Nobody has told us anything yet">
+          <EmptyState title="Nobody has told us anything yet" icon={<UserSearch />}>
             {total === 1 ? "One person has" : `${total} people have`} called, and none of them
             confirmed a name or any other value — so they are all behind{" "}
             <Link href={everyoneHref} className="text-[var(--accent)] underline underline-offset-2">

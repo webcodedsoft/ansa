@@ -24,17 +24,23 @@ export const when = (iso: string): string =>
   new Date(iso).toLocaleString(LOCALE, { dateStyle: "medium", timeStyle: "short" });
 
 /**
- * A call's length as `m:ss`. Null when the call never ended, which is not zero.
+ * A call's length with its units: `1m 44s`, `38s`, `1h 02m`. Null when the call never ended,
+ * which is not zero.
  *
- * Clock notation rather than "1m 07s" because these sit in a column and are
- * read against each other — `1:07` over `0:42` compares at a glance in a way
- * that two different unit suffixes do not.
+ * This was clock notation — `1:44` — on the argument that a column compares at a glance when
+ * every cell has the same shape. The argument lost to a plainer one: `1:44` beside a time of
+ * day like `00:10` reads as another clock, and a person had to work out which was which. The
+ * units say what the figure is. Seconds drop out above an hour, where they stop mattering.
  */
 export const duration = (seconds: number | null): string => {
   if (seconds === null) return "—";
-  const minutes = Math.floor(seconds / 60);
-  const rest = seconds % 60;
-  return `${minutes}:${String(rest).padStart(2, "0")}`;
+  const whole = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(whole / 3600);
+  const minutes = Math.floor((whole % 3600) / 60);
+  const rest = whole % 60;
+  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, "0")}m`;
+  if (minutes > 0) return `${minutes}m ${String(rest).padStart(2, "0")}s`;
+  return `${rest}s`;
 };
 
 /**
@@ -50,8 +56,6 @@ export const phone = (value: string): string => {
   return match === null ? value : `+234 ${match[1]} ${match[2]} ${match[3]}`;
 };
 
-/** Milliseconds as a column value. Null is "not measured", never "fast". */
-export const millis = (ms: number | null): string => (ms === null ? "—" : `${ms} ms`);
 
 /**
  * A position within a call, as `m:ss.t`.

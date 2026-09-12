@@ -18,24 +18,41 @@ import type { Tone } from "@/components/ui";
  * than guessed at, because a new reason nobody has looked at yet is exactly the kind of string
  * that should not be shown to a customer's staff verbatim.
  */
+/**
+ * Which glyph goes with the label. A name rather than a component, so this file stays a pure
+ * mapping a test can import without React; `OutcomeTag` turns the name into the drawing.
+ */
+export type OutcomeIcon =
+  | "live"
+  | "done"
+  | "human"
+  | "forwarded"
+  | "missed"
+  | "busy"
+  | "voicemail"
+  | "failed"
+  | "hung-up"
+  | "ended";
+
 export interface Outcome {
   readonly label: string;
   readonly tone: Tone;
+  readonly icon: OutcomeIcon;
 }
 
 const KNOWN: Readonly<Record<string, Outcome>> = {
-  completed: { label: "completed", tone: "ok" },
+  completed: { label: "completed", tone: "ok", icon: "done" },
   /* Both mean a person took over, and both are worth noticing — but not as failures. A
      handover is the product doing the right thing with a call it could not finish. */
-  escalated: { label: "handed to a human", tone: "warn" },
-  transferred: { label: "transferred", tone: "warn" },
-  "no-answer": { label: "no answer", tone: "warn" },
-  busy: { label: "busy", tone: "warn" },
-  voicemail: { label: "voicemail", tone: "bad" },
-  failed: { label: "failed", tone: "bad" },
+  escalated: { label: "handed to a human", tone: "warn", icon: "human" },
+  transferred: { label: "transferred", tone: "warn", icon: "forwarded" },
+  "no-answer": { label: "no answer", tone: "warn", icon: "missed" },
+  busy: { label: "busy", tone: "warn", icon: "busy" },
+  voicemail: { label: "voicemail", tone: "bad", icon: "voicemail" },
+  failed: { label: "failed", tone: "bad", icon: "failed" },
   /* Plain English already, and deliberately neutral: people hang up when they are finished,
      and painting that amber would teach everyone to ignore amber. */
-  "caller hung up": { label: "caller hung up", tone: "neutral" },
+  "caller hung up": { label: "caller hung up", tone: "neutral", icon: "hung-up" },
 };
 
 /**
@@ -43,10 +60,10 @@ const KNOWN: Readonly<Record<string, Outcome>> = {
  * transport writes — means only that the call is over. Which one you got says more about the
  * socket than about the person, so they all read the same.
  */
-const ENDED: Outcome = { label: "ended", tone: "neutral" };
+const ENDED: Outcome = { label: "ended", tone: "neutral", icon: "ended" };
 
 export const outcomeOf = (endReason: string | null, ended: boolean): Outcome => {
-  if (!ended) return { label: "live", tone: "accent" };
+  if (!ended) return { label: "live", tone: "accent", icon: "live" };
   if (endReason === null) return ENDED;
   return KNOWN[endReason] ?? ENDED;
 };

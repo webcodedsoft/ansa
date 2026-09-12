@@ -15,6 +15,7 @@ import {
   type Tone,
 } from "@/components/ui";
 import type { CallSummary } from "@/features/calls/calls.service";
+import { OutcomeTag } from "@/features/calls/components/outcome-tag";
 import { outcomeOf } from "@/features/calls/outcome";
 import { duration, phone, timeOfDay } from "@/lib/format";
 
@@ -158,7 +159,7 @@ export const OverviewTab = ({
             <tr>
               <Th className="w-[96px]">When</Th>
               <Th>Number</Th>
-              <Th className="w-[100px] text-right">Length</Th>
+              <Th className="w-[100px] text-right">Duration</Th>
               <Th className="w-[190px]">Outcome</Th>
             </tr>
           </thead>
@@ -181,9 +182,7 @@ export const OverviewTab = ({
                       live
                     </Tag>
                   ) : (
-                    <Tag tone={outcomeOf(call.endReason, call.endedAt !== null).tone}>
-                      {outcomeOf(call.endReason, call.endedAt !== null).label}
-                    </Tag>
+                    <OutcomeTag outcome={outcomeOf(call.endReason, call.endedAt !== null)} />
                   )}
                 </Td>
               </tr>

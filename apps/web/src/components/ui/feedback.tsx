@@ -79,12 +79,23 @@ export const EmptyState = ({
   title,
   children,
   action,
+  icon,
 }: {
   readonly title: ReactNode;
   readonly children?: ReactNode;
   readonly action?: ReactNode;
+  /** What kind of thing is missing, drawn once above the title. */
+  readonly icon?: ReactNode;
 }) => (
   <div className="px-6 py-14 text-center">
+    {icon !== undefined && (
+      <span
+        aria-hidden
+        className="mx-auto mb-3.5 grid size-10 place-items-center rounded-full border border-[var(--hairline)] bg-[var(--surface-2)] text-[var(--ink-3)] [&>svg]:size-[18px]"
+      >
+        {icon}
+      </span>
+    )}
     <h3 className="mb-1.5 text-[15.5px] font-semibold tracking-[-0.015em]">{title}</h3>
     {children !== undefined && (
       <p className="mx-auto mb-4 max-w-[44ch] text-[13.5px] text-[var(--ink-3)]">{children}</p>

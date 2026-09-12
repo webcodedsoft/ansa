@@ -1,11 +1,12 @@
 import Link from "next/link";
 
-import { Blip, GroupRow, Table, Tag, Td, Th } from "@/components/ui";
-import { dayLabel, duration, millis, phone, timeOfDay } from "@/lib/format";
+import { GroupRow, Table, Tag, Td, Th } from "@/components/ui";
+import { dayLabel, duration, phone, timeOfDay } from "@/lib/format";
 
 import type { CallSummary } from "../calls.service";
 import { outcomeOf } from "../outcome";
 import { CallDirection } from "./call-direction";
+import { OutcomeTag } from "./outcome-tag";
 
 /** The far end of a call, whichever end that is. Our own number is never the useful one. */
 const counterparty = (call: CallSummary): string =>
@@ -14,18 +15,15 @@ const counterparty = (call: CallSummary): string =>
 
 /* One reading of `end_reason` for the whole console — see `outcomeOf`. The transport's exit
    codes never reach this column; they live in the call page's event log. */
-const Outcome = ({ call }: { readonly call: CallSummary }) => {
-  const outcome = outcomeOf(call.endReason, call.endedAt !== null);
-  return (
-    <Tag tone={outcome.tone}>
-      {call.endedAt === null && <Blip pulse />}
-      {outcome.label}
-    </Tag>
-  );
-};
+const Outcome = ({ call }: { readonly call: CallSummary }) => (
+  <OutcomeTag outcome={outcomeOf(call.endReason, call.endedAt !== null)} />
+);
 
 /** Every column, once, so the group rows span exactly this many. */
-const COLUMNS = 6;
+/* Latency used to be the sixth. It is a correctness property of the product and it stays
+   on the call page and on Metrics, where an engineer reads it; on the list a receptionist
+   reads, a column of milliseconds was one more thing to look past to find the caller. */
+const COLUMNS = 5;
 
 /**
  * One table, with the days marked inside it.
@@ -57,9 +55,8 @@ export const CallTable = ({ calls }: { readonly calls: readonly CallSummary[] })
             <Th className="w-[86px]">When</Th>
             <Th className="w-[124px]">Direction</Th>
             <Th>Number</Th>
-            <Th className="w-[92px] text-right">Length</Th>
+            <Th className="w-[92px] text-right">Duration</Th>
             <Th className="w-[176px]">Outcome</Th>
-            <Th className="w-[124px] text-right">Latency p50</Th>
           </tr>
         </thead>
         {/* A tbody per day rather than one holding everything: it is the element
@@ -104,9 +101,6 @@ export const CallTable = ({ calls }: { readonly calls: readonly CallSummary[] })
                   <Td className="text-right tabular-nums">{duration(call.durationSeconds)}</Td>
                   <Td>
                     <Outcome call={call} />
-                  </Td>
-                  <Td className="text-right font-mono text-[13px] tabular-nums text-[var(--ink-2)]">
-                    {millis(call.responseP50Ms)}
                   </Td>
                 </tr>
               ))}

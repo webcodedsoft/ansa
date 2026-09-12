@@ -1,5 +1,6 @@
 "use client";
 
+import { PhoneOff, ShieldCheck, ShieldOff } from "lucide-react";
 import { useActionState, useState } from "react";
 
 import { Button, Card, Tag } from "@/components/ui";
@@ -60,6 +61,11 @@ export const ContactConsent = ({
                 : "inline-flex items-center rounded-[4px] border border-[color-mix(in_srgb,var(--bad)_34%,transparent)] bg-[color-mix(in_srgb,var(--bad)_12%,transparent)] px-2 py-0.5 text-[12px] font-medium text-[var(--bad)]"
             }
           >
+            {consent.allowed ? (
+              <ShieldCheck aria-hidden className="mr-1 size-3" />
+            ) : (
+              <ShieldOff aria-hidden className="mr-1 size-3" />
+            )}
             {consent.allowed ? "may call" : "may not call"}
           </span>
           <Tag>{policyLabel}</Tag>
@@ -107,6 +113,7 @@ export const ContactConsent = ({
               </div>
             ) : (
               <Button type="button" variant="secondary" onClick={() => setConfirming(true)}>
+                <PhoneOff aria-hidden className="size-3.5" />
                 Add to do-not-call
               </Button>
             )}
