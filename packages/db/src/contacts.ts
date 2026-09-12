@@ -301,6 +301,10 @@ export interface ContactCall {
   readonly endReason: string | null;
   readonly durationSeconds: number | null;
   readonly direction: string;
+  /** Null while the call is still up. The only honest way to tell "live" from "ended quietly". */
+  readonly endedAt: Date | null;
+  /** What the call came to, when the sweeper has written it. Null until then. */
+  readonly summary: string | null;
 }
 
 /**
@@ -324,10 +328,14 @@ export const readContactCalls = async (
   /* The contact id binds first, so the limit and offset start at $2 — `pageOrder`'s `from`
      exists for exactly this, and without it a filtered list has to bind its own parameter
      after the limit, which is how a uuid ends up bound to `limit`. */
+  /* The summary rides along so the timeline can say what each call was about under its
+     title, which is the line somebody actually reads. Left-joined: a call summarised later
+     than this page loads simply has null here, not a missing row. */
   const rows = await scope.query<Record<string, unknown> & WithTotal>(
-    `select c.id, c.carrier_call_id, c.agent_id, c.created_at, c.end_reason,
-            c.duration_seconds, c.direction, ${TOTAL_COLUMN}
+    `select c.id, c.carrier_call_id, c.agent_id, c.created_at, c.ended_at, c.end_reason,
+            c.duration_seconds, c.direction, s.summary, ${TOTAL_COLUMN}
        from calls c
+       left join call_summaries s on s.call_id = c.id
       where c.contact_id = $1
       ${pageOrder("c.created_at", "c.id", 2)}`,
     [contactId, ...pageParams(page)],
@@ -337,9 +345,11 @@ export const readContactCalls = async (
     carrierCallId: String(row["carrier_call_id"]),
     agentId: row["agent_id"] === null ? null : String(row["agent_id"]),
     calledAt: new Date(String(row["created_at"])),
+    endedAt: row["ended_at"] === null ? null : new Date(String(row["ended_at"])),
     endReason: row["end_reason"] === null ? null : String(row["end_reason"]),
     durationSeconds: row["duration_seconds"] === null ? null : Number(row["duration_seconds"]),
     direction: String(row["direction"]),
+    summary: row["summary"] === null || row["summary"] === undefined ? null : String(row["summary"]),
   }));
 };
 

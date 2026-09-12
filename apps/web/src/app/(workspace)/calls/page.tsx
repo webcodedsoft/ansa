@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button, PageHeader, Pagination, SelectField, TextField, buttonClass } from "@/components/ui";
 import { readPaging } from "@/lib/paging";
 import { currentConfiguration, soleLiveAgentId } from "@/features/agents/agents.service";
+import { FILTERABLE_OUTCOMES } from "@/features/calls/outcome";
 import { listCalls, type CallFilters } from "@/features/calls/calls.service";
 import { CallTable } from "@/features/calls/components/call-table";
 import { TestCallForm } from "@/features/calls/components/test-call-form";
@@ -13,7 +14,6 @@ export const metadata: Metadata = { title: "Calls · Ansa" };
 export const dynamic = "force-dynamic";
 
 /** The endings the API writes; the filter offers exactly these and no others. */
-const END_REASONS = ["completed", "caller hung up", "transferred", "voicemail", "no-answer", "busy", "failed"];
 
 /**
  * Declared as a type alias, not an interface, and that is load-bearing:
@@ -133,9 +133,9 @@ const CallsPage = async ({
             <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
               <SelectField label="Ended because" name="endReason" defaultValue={search.endReason ?? ""}>
                 <option value="">Any</option>
-                {END_REASONS.map((reason) => (
-                  <option key={reason} value={reason}>
-                    {reason}
+                {FILTERABLE_OUTCOMES.map((outcome) => (
+                  <option key={outcome.value} value={outcome.value}>
+                    {outcome.label}
                   </option>
                 ))}
               </SelectField>

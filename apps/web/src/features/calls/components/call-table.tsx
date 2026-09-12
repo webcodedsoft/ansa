@@ -1,42 +1,27 @@
 import Link from "next/link";
 
-import { Blip, GroupRow, Table, Tag, Td, Th, type Tone } from "@/components/ui";
-import { dayLabel, directionLabel, duration, humanise, millis, phone, timeOfDay } from "@/lib/format";
+import { Blip, GroupRow, Table, Tag, Td, Th } from "@/components/ui";
+import { dayLabel, directionLabel, duration, millis, phone, timeOfDay } from "@/lib/format";
 
 import type { CallSummary } from "../calls.service";
+import { outcomeOf } from "../outcome";
 
 /** The far end of a call, whichever end that is. Our own number is never the useful one. */
 const counterparty = (call: CallSummary): string =>
   call.direction === "outbound" ? call.dialled : (call.caller ?? "unknown");
 
-/**
- * What an ending means, as a colour.
- *
- * Only the reasons the API actually writes are mapped; anything new falls back
- * to neutral rather than being guessed at. "Caller hung up" is deliberately
- * neutral — people hang up when they are finished, and painting that amber
- * would teach everyone to ignore amber.
- */
-const OUTCOME_TONE: Record<string, Tone> = {
-  completed: "ok",
-  transferred: "warn",
-  "no-answer": "warn",
-  busy: "warn",
-  voicemail: "bad",
-  failed: "bad",
-};
 
-const Outcome = ({ call }: { readonly call: CallSummary }) =>
-  call.endedAt === null ? (
-    <Tag tone="accent">
-      <Blip pulse />
-      live
-    </Tag>
-  ) : (
-    <Tag tone={OUTCOME_TONE[call.endReason ?? ""] ?? "neutral"}>
-      {humanise(call.endReason ?? "ended")}
+/* One reading of `end_reason` for the whole console — see `outcomeOf`. The transport's exit
+   codes never reach this column; they live in the call page's event log. */
+const Outcome = ({ call }: { readonly call: CallSummary }) => {
+  const outcome = outcomeOf(call.endReason, call.endedAt !== null);
+  return (
+    <Tag tone={outcome.tone}>
+      {call.endedAt === null && <Blip pulse />}
+      {outcome.label}
     </Tag>
   );
+};
 
 /** Every column, once, so the group rows span exactly this many. */
 const COLUMNS = 6;

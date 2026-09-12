@@ -28,8 +28,10 @@ export interface WrittenSummary {
  * Calls that have ended, have words, and have no summary.
  *
  * Unscoped, like `startDueCampaigns` and for the same reason: a sweeper holds no organisation.
- * It returns the organisation with each call so the write happens inside that organisation's
- * own scope rather than under a second unscoped statement.
+ * And, like it, unscoped *through a definer function* — a raw select as `ansa_app` with no
+ * organisation is not unscoped, it is empty. It returns the organisation with each call so the
+ * write happens inside that organisation's own scope rather than under a second unscoped
+ * statement.
  *
  * The settling delay is what stops this describing half a call. The recorder batches
  * transcripts every five seconds, so a call summarised the instant it hung up would be missing
@@ -40,20 +42,18 @@ export const readCallsNeedingSummary = async (
   settledForSeconds: number,
   limit: number,
 ): Promise<readonly { readonly callId: string; readonly organizationId: OrganizationId }[]> => {
+  /* Through a `security definer` function (0081), not a plain select. The plain select was
+     the bug: as `ansa_app` with no organisation set, RLS answered it with zero rows — not an
+     error, not an empty table, just nothing — and the sweeper found "nothing to do" every
+     minute for as long as it had existed. `start_due_campaigns` is the same shape for the
+     same reason. */
   const rows = (await dataSource.query(
-    `select c.id, c.organization_id
-       from calls c
-      where c.ended_at is not null
-        and c.ended_at < now() - make_interval(secs => $1)
-        and not exists (select 1 from call_summaries s where s.call_id = c.id)
-        and exists (select 1 from transcripts t where t.call_id = c.id)
-      order by c.ended_at
-      limit $2`,
+    "select call_id, organization_id from app.calls_needing_summary($1, $2)",
     [settledForSeconds, limit],
   )) as Record<string, unknown>[];
 
   return rows.map((row) => ({
-    callId: String(row["id"]),
+    callId: String(row["call_id"]),
     organizationId: String(row["organization_id"]) as OrganizationId,
   }));
 };

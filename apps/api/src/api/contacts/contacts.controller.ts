@@ -112,9 +112,12 @@ const contactCall = object({
   carrierCallId: text({ maxLength: 128 }),
   agentId: nullable(uuid()),
   calledAt: timestamp(),
+  endedAt: nullable(timestamp()),
   endReason: nullable(text({ maxLength: 64 })),
   durationSeconds: nullable(integer({ minimum: 0 })),
   direction: text({ maxLength: 16 }),
+  /** The grounded summary, once written. Null while the sweeper has not reached this call. */
+  summary: nullable(text({ maxLength: 4000 })),
 });
 
 /**
@@ -451,9 +454,11 @@ export class ContactsController {
             carrierCallId: call.carrierCallId,
             agentId: call.agentId,
             calledAt: call.calledAt.toISOString(),
+            endedAt: call.endedAt === null ? null : call.endedAt.toISOString(),
             endReason: call.endReason,
             durationSeconds: call.durationSeconds,
             direction: call.direction,
+            summary: call.summary,
           })),
           total: found.calls.total,
         },

@@ -15,7 +15,8 @@ import {
   type Tone,
 } from "@/components/ui";
 import type { CallSummary } from "@/features/calls/calls.service";
-import { duration, humanise, phone, timeOfDay } from "@/lib/format";
+import { outcomeOf } from "@/features/calls/outcome";
+import { duration, phone, timeOfDay } from "@/lib/format";
 
 import { TestCallCard } from "./test-call-card";
 
@@ -79,14 +80,6 @@ const Movement = ({ delta }: { readonly delta: Delta }) => {
   );
 };
 
-const OUTCOME_TONE: Record<string, Tone> = {
-  completed: "ok",
-  transferred: "warn",
-  "no-answer": "warn",
-  busy: "warn",
-  voicemail: "bad",
-  failed: "bad",
-};
 
 export const OverviewTab = ({
   stats,
@@ -188,8 +181,8 @@ export const OverviewTab = ({
                       live
                     </Tag>
                   ) : (
-                    <Tag tone={OUTCOME_TONE[call.endReason ?? ""] ?? "neutral"}>
-                      {humanise(call.endReason ?? "ended")}
+                    <Tag tone={outcomeOf(call.endReason, call.endedAt !== null).tone}>
+                      {outcomeOf(call.endReason, call.endedAt !== null).label}
                     </Tag>
                   )}
                 </Td>

@@ -5698,6 +5698,45 @@ rather than landed as inventory — the wave that needs them adds them wired.
       response and wants its own shape. The merge suggestion is the largest: duplicate detection
       across numbers, then a merge that moves calls, values and bookings onto one person without
       losing provenance. Each is a slice, not a card.
+- [x] **The transport's exit codes leave every screen, and the summary sweeper wakes up** (2026-09-12)
+      "carrier sent stop" and "socket closed with code 1005" were in the outcome column of the
+      calls list, the review queue, the agent overview, the call page's own header and the
+      contact timeline — five places printing `end_reason` through `humanise`, two of them with
+      their own copy of the same tone map. Those strings are how the socket closed. Real to an
+      engineer taking a call apart; to a receptionist beside a caller's name they read as
+      something being broken.
+
+      `features/calls/outcome.ts` is now the one reading of that column. The outcomes that mean
+      something keep their names — completed, no answer, handed to a human — and everything the
+      transport writes is "ended", including whatever the next transport writes, because a
+      string nobody has looked at is exactly what should not reach a customer's staff verbatim.
+      The raw reason survives in one place: the call page's event log behind its `<details>`,
+      which is where evaluation happens. The filter menu offers only the meaningful outcomes,
+      labelled as the column labels them.
+
+      **The contact timeline took the prototype's shape** — a title, what the call was about
+      beneath it, and what it came to as the tag. The middle line is the first sentence of the
+      grounded summary. Which is how the next thing was found.
+
+      **The summary sweeper had never written a row.** `readCallsNeedingSummary` ran a plain
+      `select … from calls` as `ansa_app` with no organisation set. Under RLS that is zero rows
+      — not an error, not an empty table — so the sweeper woke every sixty seconds, found
+      nothing to do, and went back to sleep with nothing to log. Two sessions of "not written
+      yet" over every call. Same trap as `start_due_campaigns` avoids: 0081 adds
+      `app.calls_needing_summary(settled, batch)` as a `security definer` function with no
+      organisation argument to point elsewhere. As `ansa_app`, the raw select saw 0 ended calls
+      and the function saw 61. Within a minute of the restart it was writing five a minute;
+      the model's sentences are grounded and readable, and calls whose transcript yields
+      nothing citable fall back to the quoted first-and-last-words row with `model: null`, as
+      designed.
+
+      A call that booked or moved an appointment shows "booked" or "rescheduled" as its outcome
+      rather than how it ended, because that is what the call came to. Dates on the spine are
+      "Today 14:12" / "23 August 22:40" — the year was noise in a narrow column.
+
+      **Still absent, deliberately:** "Call now", "Export everything", and the merge banner —
+      each a feature, argued on 2026-09-08. Latency p50 stays on the calls list: CLAUDE.md
+      says latency is a correctness property, and that column is how somebody sees it.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

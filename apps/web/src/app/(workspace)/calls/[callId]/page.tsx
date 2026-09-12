@@ -9,8 +9,9 @@ import { CallStats, computeCallStats } from "@/features/calls/components/call-st
 import { CallSummary } from "@/features/calls/components/call-summary";
 import { linesOf } from "@/features/calls/call-conversation";
 import { CallTimeline, EventTable } from "@/features/calls/components/call-timeline";
+import { outcomeOf } from "@/features/calls/outcome";
 import { CollectedValues } from "@/features/calls/components/collected-values";
-import { directionLabel, duration, humanise, when } from "@/lib/format";
+import { directionLabel, duration, when } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +41,7 @@ const CallDetailPage = async ({
         }
         meta={`${when(call.createdAt)} · ${directionLabel(call.direction)} · ${duration(
           call.durationSeconds,
-        )} · ${call.endedAt === null ? "in progress" : humanise(call.endReason)}${
+        )} · ${outcomeOf(call.endReason, call.endedAt !== null).label}${
           call.configVersion === null ? "" : ` · configuration version ${call.configVersion}`
         }`}
       />
@@ -97,6 +98,14 @@ const CallDetailPage = async ({
           description="Every step, in order, on the media clock."
           className="mt-3.5"
         >
+          {/* The transport's own words for how this ended — "carrier sent stop", "socket closed
+              with code 1005". Everywhere else the console says "ended"; here, where a call is
+              being taken apart, the exact exit is the point. */}
+          {call.endReason !== null && (
+            <p className="mb-3 text-[12.5px] text-[var(--ink-3)]">
+              Ended because: <code className="font-mono text-[12px] text-[var(--ink-2)]">{call.endReason}</code>
+            </p>
+          )}
           <EventTable events={call.events} />
         </Card>
       </details>

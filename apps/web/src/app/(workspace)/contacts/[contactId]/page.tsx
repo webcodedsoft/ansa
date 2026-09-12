@@ -11,7 +11,8 @@ import { readContactDetail } from "@/features/contacts/contacts.service";
 import { refusedWith } from "@/lib/api/server";
 import { readPaging } from "@/lib/paging";
 import { cn } from "@/lib/cn";
-import { directionLabel, duration, humanise, phone, when } from "@/lib/format";
+import { dayLabel, directionLabel, duration, humanise, phone, timeOfDay, when } from "@/lib/format";
+import { outcomeOf } from "@/features/calls/outcome";
 
 export const metadata: Metadata = { title: "Contact · Ansa" };
 export const dynamic = "force-dynamic";
@@ -68,6 +69,12 @@ const ContactPage = async ({
        so that case is the last page too. */
     last: calls.page >= calls.totalPages,
   });
+  /* A call that booked or moved an appointment says so as its outcome, because "booked" is
+     what that call came to and "completed" is merely how it ended. */
+  const bookedOn = new Map<string, string>();
+  for (const appointment of appointments) {
+    if (appointment.callId !== null) bookedOn.set(appointment.callId, appointment.status);
+  }
   const week = callsThisWeek(calls.items, calls.total, now);
   const sinceFirst = daysSince(contact.firstCallAt, now);
   const sinceLast = daysSince(contact.lastCallAt, now);
@@ -132,7 +139,6 @@ const ContactPage = async ({
         <div className="flex flex-col gap-3.5">
           <Card
             title="Everything that has happened"
-            description="Newest first. A call opens where it was said."
             actions={
               <span className="text-[12px] text-[var(--ink-3)]">
                 Calls, values, appointments, consent
@@ -153,20 +159,30 @@ const ContactPage = async ({
                       <Marker kind="call" />
                       <Link
                         href={`/calls/${entry.call.callId}`}
-                        className="-mx-2 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 rounded-lg px-2 py-1.5 hover:bg-[var(--surface-2)]"
+                        className="-mx-2 flex flex-wrap items-start gap-x-3 gap-y-0.5 rounded-lg px-2 py-1.5 hover:bg-[var(--surface-2)]"
                       >
-                        <span className="w-[8.5rem] flex-none text-[11.5px] tabular-nums text-[var(--ink-3)]">
-                          {when(entry.call.calledAt)}
+                        <span className="w-[8.5rem] flex-none pt-px text-[11.5px] tabular-nums text-[var(--ink-3)]">
+                          <Moment at={entry.call.calledAt} />
                         </span>
-                        <span className="min-w-0 flex-1 text-[13px]">
-                          <b className="font-medium">{directionLabel(entry.call.direction)} call</b>
-                          <span className="text-[var(--ink-3)]">
-                            {entry.call.durationSeconds === null
-                              ? ""
-                              : ` · ${duration(entry.call.durationSeconds)}`}
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-[13px]">
+                            <b className="font-medium">{directionLabel(entry.call.direction)} call</b>
+                            <span className="text-[var(--ink-3)]">
+                              {entry.call.durationSeconds === null
+                                ? ""
+                                : ` · ${duration(entry.call.durationSeconds)}`}
+                            </span>
                           </span>
+                          {/* What it was about — the line somebody actually reads. The first
+                              sentence of the grounded summary, so it is something the call
+                              can be held to rather than a paraphrase of a paraphrase. */}
+                          {firstSentence(entry.call.summary) !== null && (
+                            <span className="mt-0.5 block text-[12px] leading-snug text-[var(--ink-3)]">
+                              {firstSentence(entry.call.summary)}
+                            </span>
+                          )}
                         </span>
-                        {entry.call.endReason !== null && <Tag>{humanise(entry.call.endReason)}</Tag>}
+                        <CallOutcome call={entry.call} bookedOn={bookedOn} />
                       </Link>
                     </li>
                   ) : entry.kind === "appointment" ? (
@@ -174,7 +190,7 @@ const ContactPage = async ({
                       <Marker kind="value" />
                       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-1.5">
                         <span className="w-[8.5rem] flex-none text-[11.5px] tabular-nums text-[var(--ink-3)]">
-                          {when(entry.appointment.bookedAt)}
+                          <Moment at={entry.appointment.bookedAt} />
                         </span>
                         <span className="min-w-0 flex-1 text-[13px] text-[var(--ink-2)]">
                           <b className="font-medium text-[var(--ink)]">
@@ -194,7 +210,7 @@ const ContactPage = async ({
                       <Marker kind="value" />
                       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-1.5">
                         <span className="w-[8.5rem] flex-none text-[11.5px] tabular-nums text-[var(--ink-3)]">
-                          {when(entry.at)}
+                          <Moment at={entry.at} />
                         </span>
                         <span className="min-w-0 flex-1 text-[13px] text-[var(--ink-2)]">
                           <b className="font-medium text-[var(--ink)]">
@@ -211,7 +227,7 @@ const ContactPage = async ({
                       <Marker kind="value" />
                       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-1.5">
                         <span className="w-[8.5rem] flex-none text-[11.5px] tabular-nums text-[var(--ink-3)]">
-                          {when(entry.value.updatedAt)}
+                          <Moment at={entry.value.updatedAt} />
                         </span>
                         <span className="min-w-0 flex-1 text-[13px] text-[var(--ink-2)]">
                           Confirmed{" "}
@@ -304,6 +320,47 @@ const ContactPage = async ({
       </div>
     </>
   );
+};
+
+/**
+ * A moment on the spine: "Today 14:12", "23 August 22:40".
+ *
+ * Shorter than `when()` because the column is narrow and the year is nearly always this one;
+ * the day label already says "Today" and "Yesterday", which is what somebody scanning a
+ * timeline is actually asking.
+ */
+const Moment = ({ at }: { readonly at: string }) => (
+  <>
+    {dayLabel(at)} {timeOfDay(at)}
+  </>
+);
+
+/** The first sentence of a summary, or null when there is no summary to take one from. */
+const firstSentence = (summary: string | null): string | null => {
+  if (summary === null) return null;
+  const sentence = summary.split(/(?<=[.!?])\s+/)[0]?.trim() ?? "";
+  return sentence === "" ? null : sentence;
+};
+
+/**
+ * What a call on the spine came to.
+ *
+ * Booking something outranks how the socket closed: a call that made an appointment is
+ * "booked" whether it then ended by hangup, by transfer or by the carrier sending stop. For
+ * everything else it is the console's one reading of `end_reason` — see `outcomeOf` — so the
+ * transport's exit codes never appear here either.
+ */
+const CallOutcome = ({
+  call,
+  bookedOn,
+}: {
+  readonly call: { readonly callId: string; readonly endReason: string | null; readonly endedAt: string | null };
+  readonly bookedOn: ReadonlyMap<string, string>;
+}) => {
+  const booked = bookedOn.get(call.callId);
+  if (booked !== undefined) return <Tag tone="ok">{humanise(booked)}</Tag>;
+  const outcome = outcomeOf(call.endReason, call.endedAt !== null);
+  return <Tag tone={outcome.tone}>{outcome.label}</Tag>;
 };
 
 /**

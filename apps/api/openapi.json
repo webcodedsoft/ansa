@@ -19742,6 +19742,13 @@
                                 "type": "string",
                                 "format": "date-time"
                               },
+                              "endedAt": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "date-time"
+                              },
                               "endReason": {
                                 "type": [
                                   "string",
@@ -19759,6 +19766,13 @@
                               "direction": {
                                 "type": "string",
                                 "maxLength": 16
+                              },
+                              "summary": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "maxLength": 4000
                               }
                             },
                             "required": [
@@ -19766,9 +19780,11 @@
                               "carrierCallId",
                               "agentId",
                               "calledAt",
+                              "endedAt",
                               "endReason",
                               "durationSeconds",
-                              "direction"
+                              "direction",
+                              "summary"
                             ],
                             "additionalProperties": false
                           }

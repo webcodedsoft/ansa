@@ -4,6 +4,7 @@ import { DataTable, Tag, type Column, type Tone } from "@/components/ui";
 import { humanise, when } from "@/lib/format";
 
 import type { FlaggedCall } from "../calls.service";
+import { outcomeOf } from "../outcome";
 
 /** Severity orders the list and means nothing else — this only decides how loud the tag looks. */
 const severityTone = (severity: number): Tone =>
@@ -34,7 +35,7 @@ const COLUMNS: readonly Column<FlaggedCall>[] = [
     key: "ended",
     header: "Ended",
     className: "text-[var(--ink-3)]",
-    cell: (call) => (call.endReason === null ? "in progress" : humanise(call.endReason)),
+    cell: (call) => outcomeOf(call.endReason, call.endReason !== null).label,
   },
   {
     key: "reviewed",

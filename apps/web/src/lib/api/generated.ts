@@ -2874,9 +2874,11 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly carrierCallId: string;
         readonly agentId: string | null;
         readonly calledAt: string;
+        readonly endedAt: string | null;
         readonly endReason: string | null;
         readonly durationSeconds: number | null;
         readonly direction: string;
+        readonly summary: string | null;
       })[];
         readonly page: number;
         readonly perPage: number;
