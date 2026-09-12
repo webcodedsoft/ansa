@@ -24,6 +24,7 @@ const state = (over: Partial<DialogueState> = {}): DialogueState => ({
   escalationOffered: false,
   read: null,
   contactsThisWeek: 0,
+  canTransfer: true,
   ...over,
 });
 
@@ -102,5 +103,25 @@ describe("taking the tools away", () => {
       state({ contactsThisWeek: 4, failedTurns: 3, read: read({ emotion: "angry", trust: "low" }) }),
     );
     expect(c.reason).toContain("4 times this week");
+  });
+});
+
+
+describe("when there is nobody to hand the call to", () => {
+  /**
+   * The Tolu call: a fourth call in a week, no transfer line configured. The old rule
+   * withdrew every tool but transfer, transfer had nowhere to go, and the agent asked the
+   * same question four times because recording the answer was no longer allowed.
+   */
+  it("still names the reason, but leaves the agent its tools", () => {
+    const c = computeConstraints(state({ contactsThisWeek: 4, canTransfer: false }));
+    expect(c.escalationRequired).toBe(true);
+    expect(c.reason).toContain("4 times this week");
+    expect(c.allowedTools).toBeNull();
+  });
+
+  it("withdraws the tools as before when a line exists", () => {
+    const c = computeConstraints(state({ contactsThisWeek: 4, canTransfer: true }));
+    expect(c.allowedTools).toEqual(["transfer_to_human", "end_call"]);
   });
 });

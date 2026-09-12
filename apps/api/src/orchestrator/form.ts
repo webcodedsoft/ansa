@@ -252,7 +252,7 @@ export const renderGuidance = (guidance: Guidance): string => {
           : `- Next, ask: "${next.prompt}" The answer is one of ${options}.`,
       );
       lines.push(
-        `- When they have answered, record it with record_answer (field "${next.key}") using exactly one of those options. Do not move on until it is recorded.`,
+        `- When they have answered, record it with record_answer (field "${next.key}"): the listed answer they meant, or their own words if it is none of them — the call carries on either way. Never ask the same question twice in the same words; if you must ask again, offer the choices.`,
       );
       lines.push(TAKE_WHAT_THEY_GIVE);
       break;

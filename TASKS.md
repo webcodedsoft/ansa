@@ -6255,6 +6255,33 @@ rather than landed as inventory — the wave that needs them adds them wired.
       `FormData(form)` includes fields bound by id) inside a transition — the same save,
       no submission, no reset. Seen live: the same probe reverted before the change and
       stayed after it, with zero submit and zero reset events on the form.
+- [x] **Tolu asked "What are you calling about today?" four times** (2026-09-12)
+      Read off the call at 22:35: the caller said "I want to get my policy details" four ways
+      and the agent asked the same question four times in the same words, eight tokens a
+      turn, no tool call. Two faults stacked. First, the repeat-caller rule: the number had
+      called four times that week, so `computeConstraints` required a person and cut the
+      tool list to transfer and end — but Tolu has no transfer line, nothing in the prompt
+      said a person was required (only the log did), and the graph went on steering the
+      model to ask its question and record the answer with a tool it was no longer offered.
+      Now `DialogueState.canTransfer` (from whether a handoff is built) keeps the reason but
+      leaves the tools when there is nobody to hand to; and when there is, the steering for
+      the turn becomes "this call has to go to a person now: <reason> — say so and use
+      transfer_to_human", so the words and the tool list agree. Second, the choice question
+      itself: `record_answer` accepted only an exact listed answer, and "get my policy
+      details" is none of "make a claim", "renew my policy"… so even without the policy the
+      model would have been refused and told to ask again. `closestOption` now hears the
+      listed answer in what was said — whole, contained ("I want to renew" → "renew my
+      policy"), or by the one answer sharing the most distinctive words ("I want to pay" →
+      "pay a premium") — and refuses to guess when answers tie ("policy" is in three). An
+      answer that is none of them is recorded in the caller's own words, which is what a
+      branch's "otherwise" arm is for, and the three places the model is told how to record
+      a choice now say so. Fourteen matcher tests, two policy tests, two orchestrator tests
+      rewritten from "refuses" to "records". API restarted.
+      **Not yet heard on a phone.** The next call to Tolu from the same number is the proof:
+      it should record "get my policy details" and follow the otherwise arm rather than ask
+      again. The 22:30 call also shows the other half of the report — "Sikiru" heard as
+      "Sequium", "FST901EE" heard three ways — which is transcription on an 8kHz line, not
+      this; keyterms for names and plate formats are the lever there, not the flow.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

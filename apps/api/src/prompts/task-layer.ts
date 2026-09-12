@@ -104,7 +104,7 @@ const questionLine = (field: CollectedField): string => {
   const need = field.required ? "needed" : "optional — move on if they won't say";
   if (field.type === "choice") {
     const options = field.options.map((option) => `"${option}"`).join(", ");
-    return `- ${field.key}: ${asked} — one of ${options}; record their answer with record_answer, using exactly one of those (${need})`;
+    return `- ${field.key}: ${asked} — one of ${options}; record their answer with record_answer as the listed answer they meant, or in their own words if it is none of them (${need})`;
   }
   if (field.type === "text") {
     return `- ${field.key}: ${asked} — in their own words; record a short summary of their answer with record_answer (${need})`;

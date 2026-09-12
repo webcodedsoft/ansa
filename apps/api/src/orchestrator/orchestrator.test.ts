@@ -3129,7 +3129,11 @@ describe("tool calling", () => {
      * because the registry has no idea the conversation is coming apart.
      */
     const tools = toolHarness([READ_TOOL]);
-    const h = setup({ makeTools: tools.makeTools });
+    /* With a line to hand the call to. Without one the policy still names its reason but
+       leaves the agent its tools — withdrawing them when nobody can take the call left a
+       caller with an agent that could neither help nor transfer. */
+    const spy = spyHandoff();
+    const h = setup({ makeTools: tools.makeTools, makeHandoff: spy.make });
     started(h);
 
     // Two turns that went nowhere: the turn before the hard rule transfers.
@@ -3633,7 +3637,14 @@ describe("the platform tools on a call", () => {
       expect(next).not.toContain("deposit");
     });
 
-    it("refuses an answer that is not one of the options and names them, so the model can ask again", async () => {
+    /**
+     * The call this was written from: "I want to get my policy details" was none of the
+     * listed answers, the record was refused, and the agent asked "What are you calling
+     * about today?" four times in the same words. An answer outside the list is still an
+     * answer: it is kept in the caller's words, and the graph's "anything else" arm is
+     * what receives it.
+     */
+    it("records an answer that is none of the options in the caller's own words, rather than refusing", async () => {
       const captured: unknown[] = [];
       const h = setup({
         flow: rentOrBuy,
@@ -3649,9 +3660,28 @@ describe("the platform tools on a call", () => {
       h.llm.last().callTools([{ name: "record_answer", args: { field: "intent", answer: "lease" } }]);
       await settle();
 
-      expect(captured).toEqual([]);
+      expect(captured).toMatchObject([{ fieldKey: "intent", value: "lease" }]);
       const told = h.llm.last().request.messages.map((m) => m.content).join("\n");
-      expect(told).toContain('"rent", "buy"');
+      expect(told).toContain("Recorded intent: lease");
+    });
+
+    it("records the listed answer the caller meant when they say it their own way", async () => {
+      const captured: unknown[] = [];
+      const h = setup({
+        flow: rentOrBuy,
+        makeTools: platform(),
+        recorder: {
+          started: () => undefined, event: () => undefined, transcript: () => undefined,
+          turn: () => undefined, latency: () => undefined,
+          capture: (c: unknown) => captured.push(c), ended: () => undefined,
+        } as unknown as CallRecorder,
+      });
+      started(h);
+      h.listen.final("I'm looking to buy, I think.");
+      h.llm.last().callTools([{ name: "record_answer", args: { field: "intent", answer: "looking to buy" } }]);
+      await settle();
+
+      expect(captured).toMatchObject([{ fieldKey: "intent", value: "buy" }]);
     });
 
     it("refuses to record a value the engine owns, so a model-supplied number cannot skip its readback", async () => {

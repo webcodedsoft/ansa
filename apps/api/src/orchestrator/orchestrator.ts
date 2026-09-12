@@ -53,6 +53,7 @@ import {
 } from "../conversation/emotional-read";
 import { describeSituation, renderSituation } from "../conversation/situation";
 import { asksToNotBeCalled } from "../outbound/stop-calling";
+import { closestOption } from "./choice-match";
 import { computeConstraints, type TurnConstraints } from "./dialogue-policy";
 import { driftIn } from "./drift";
 import { guardOutput, HOLDING_LINE } from "./output-guard";
@@ -1212,19 +1213,22 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     }
     const spoken = answer.trim();
     let stored = spoken.slice(0, MAX_RECORDED_ANSWER);
+    let listed = true;
     if (question.options.length > 0) {
-      const option = question.options.find((each) => each.trim().toLowerCase() === spoken.toLowerCase());
-      if (option === undefined) {
-        return {
-          accepted: false,
-          reason: `the answer must be one of ${question.options.map((each) => `"${each}"`).join(", ")}`,
-        };
-      }
-      stored = option;
+      /* The listed answer they meant, or their own words when it is none of them. This used
+         to refuse anything but an exact listed answer, and the refusal was the loop a caller
+         heard: "I want to get my policy details" matched nothing, the model was told the
+         list again, and it asked "What are you calling about today?" again in the same
+         words — four times on one call. An answer outside the list is still an answer; it
+         is what a flow's "anything else" branch exists to receive. */
+      const option = closestOption(question.options, spoken);
+      if (option !== null) stored = option;
+      else listed = false;
     }
     form.satisfy(field, stored, false);
     record.capture({ fieldKey: field, fieldType: question.type, value: stored, attempts: 1 });
-    log.info("the model recorded an answer", { field, type: question.type });
+    if (!listed) record.event("answer_off_list", { field, options: question.options.length });
+    log.info("the model recorded an answer", { field, type: question.type, listed });
     armNextField();
     followTheGraph();
     return { accepted: true, field, answer: stored };
@@ -1368,6 +1372,11 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
       escalationOffered: watch.handedOver(),
       read,
       contactsThisWeek: deps.callerHistory()?.contactsThisWeek ?? 0,
+      /* `handoff` is built further down and read here per turn, long after. Without one
+         there is nobody to hand the call to, and a policy that withdrew every tool would
+         leave the caller with an agent that can neither help nor transfer — which is what
+         Tolu did: four callers' worth of "What are you calling about today?". */
+      canTransfer: handoff !== null,
     });
 
   const speechGate = createSpeechGate();
@@ -2359,7 +2368,16 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     if (steered !== null && steered.cover.length > 0) {
       coverShownOn.set(seq, [...shownThisTurn, ...steered.cover]);
     }
-    const steering = steered === null ? "" : renderGuidance(steered);
+    const steeringFromGraph = steered === null ? "" : renderGuidance(steered);
+    /* The tool list has already been cut to transfer and end; the steering must agree with
+       it. Left as it was, the graph told the model to ask its next question and record the
+       answer with a tool it was no longer offered, and the model — refused every way but
+       one — asked the question again. Nothing in the prompt said a person had to take the
+       call; only the log did. */
+    const steering =
+      constraints.escalationRequired && constraints.allowedTools !== null
+        ? `- This call has to go to a person now: ${constraints.reason ?? "the policy says so"}. Say so in one sentence, use transfer_to_human, and ask nothing else.`
+        : steeringFromGraph;
     /* The graph has ended and this turn is being told to say goodbye, so this is the turn
        the hangup waits for. Once: a caller who starts talking over the goodbye cancels the
        hangup, and the model — still steered to wrap up — ends the call itself when they are

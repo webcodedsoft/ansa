@@ -33,6 +33,12 @@ export interface DialogueState {
   readonly read: EmotionalRead | null;
   /** Calls from this number in the seven days before this one. */
   readonly contactsThisWeek: number;
+  /**
+   * Whether there is anybody to hand the call to. Without a handoff line, requiring a
+   * person and withdrawing every tool leaves the caller with an agent that can do neither —
+   * so the reason is still recorded, and the agent keeps its tools and carries on.
+   */
+  readonly canTransfer: boolean;
 }
 
 export interface TurnConstraints {
@@ -83,7 +89,7 @@ export const computeConstraints = (state: DialogueState): TurnConstraints => {
   const permit = (reason: string | null): TurnConstraints =>
     reason === null
       ? { escalationRequired: false, reason: null, allowedTools: null }
-      : { escalationRequired: true, reason, allowedTools: WHEN_ESCALATING };
+      : { escalationRequired: true, reason, allowedTools: state.canTransfer ? WHEN_ESCALATING : null };
 
   if (state.contactsThisWeek >= CONTACTS_THIS_WEEK) {
     return permit(`they have called ${state.contactsThisWeek} times this week`);

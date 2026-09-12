@@ -374,7 +374,7 @@ const RECORD_ANSWER: ToolDefinition = {
   description:
     "Record the caller's answer to one of the choice or free-text questions in your instructions. " +
     "Only for those: names, numbers and identifiers are heard and confirmed for you. " +
-    "For a question with listed answers, record exactly one of the listed answers.",
+    "For a question with listed answers, record the listed answer they meant; if what they said is none of them, record it in their own words rather than asking again.",
   parameters: ANSWER_PARAMETERS,
   riskTier: "read",
   summarise: (result) => {
