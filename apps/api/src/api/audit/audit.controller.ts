@@ -24,7 +24,7 @@ const auditEvent = object({
   actorName: nullable(text({ maxLength: 200 })),
   action: choice(AUDIT_ACTIONS),
   subjectKind: nullable(
-    choice(["account", "member", "invitation", "agent", "call", "contact", "organisation", "credential"] as const),
+    choice(["account", "member", "invitation", "agent", "call", "contact", "organisation", "credential", "number"] as const),
   ),
   subjectId: nullable(text({ maxLength: 200 })),
   subjectLabel: nullable(text({ maxLength: 500 })),

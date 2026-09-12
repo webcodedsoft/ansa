@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 
 import { Card, Notice, PageHeader, SectionHead, SettingRow, Stack, Tag } from "@/components/ui";
-import { claimWebhook, listNumbers, numberProvisioning } from "@/features/connect/connect.service";
+import { claimWebhook, listNumbers, numberCountries, numberProvisioning } from "@/features/connect/connect.service";
+import { BuyNumber } from "@/features/connect/components/buy-number";
+import { organisation } from "@/features/org/org.service";
 import { ImportNumber } from "@/features/connect/components/import-number";
 import { NumbersTable } from "@/features/connect/components/numbers-table";
 
@@ -23,6 +25,17 @@ const NumbersPage = async () => {
      numbers list down for exactly the people who cannot act on it anyway. Null hides the
      import card, which is the right thing to show somebody who could not use it. */
   const webhook = await claimWebhook().catch(() => null);
+
+  /* The catalogue, when the deployment can buy at all. A refusal from the carrier — wrong or
+     inactive credentials — is shown in the carrier's words rather than hiding the card, because
+     "buying is off" and "the carrier account is not active" are different things to fix. */
+  const catalogue = provisioning.claim.available
+    ? await numberCountries().then(
+        (countries) => ({ countries, refusal: null as string | null }),
+        (error: unknown) => ({ countries: null, refusal: error instanceof Error ? error.message : "the carrier did not answer" }),
+      )
+    : null;
+  const org = catalogue?.countries === null || catalogue === null ? null : await organisation();
 
   return (
     <>
@@ -59,6 +72,20 @@ const NumbersPage = async () => {
 
           <SectionHead>Bring another number</SectionHead>
           {webhook !== null && <ImportNumber webhook={webhook} />}
+        </>
+      )}
+
+      {catalogue !== null && (
+        <>
+          <SectionHead>Buy a number</SectionHead>
+          {catalogue.countries !== null && org !== null ? (
+            <BuyNumber countries={catalogue.countries} organisationName={org.name} />
+          ) : (
+            <Notice tone="error">
+              Buying is unavailable right now: {catalogue.refusal}. Whoever runs the platform needs to
+              look at its carrier account; bringing your own number still works.
+            </Notice>
+          )}
         </>
       )}
 

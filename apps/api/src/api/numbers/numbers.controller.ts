@@ -1,12 +1,23 @@
 import { randomBytes } from "node:crypto";
 
-import { listHeldNumbers, readClaimToken, setClaimToken } from "@ansa/db";
-import { Controller, Get, Inject, NotFoundException, Post } from "@nestjs/common";
+import { attachPurchasedNumber, listHeldNumbers, readClaimToken, releasePurchasedNumber, setClaimToken } from "@ansa/db";
+import {
+  BadGatewayException,
+  ConflictException,
+  Controller,
+  Delete,
+  Get,
+  Inject,
+  NotFoundException,
+  Post,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 
 import { uuid } from "../schemas";
 import { Endpoint } from "../http/endpoint";
-import { apiRoute } from "../http/request";
-import { choice, flag, list, nullable, object, text, type Infer } from "../http/schema";
+import { audit } from "../audit/audit";
+import { apiRoute, FromBody, FromPath, FromQuery } from "../http/request";
+import { choice, flag, list, nullable, object, optional, text, type Infer } from "../http/schema";
 import { OrganizationContext } from "../tenancy/organization-context";
 
 import { expectedVoiceWebhookUrl, loadNumbersEnvironment, VOICE_WEBHOOK_PATH } from "./environment";
@@ -71,8 +82,11 @@ const attachedNumber = object({
    * them; a second value here would be a feature gated behind Slice 7a, not a field.
    */
   use: choice(["inbound"]),
-  /** Who may change the attachment. See the file comment for why it is never the organisation. */
-  managedBy: choice(["operator"]),
+  /** `holder`: their own line at their own carrier. `platform`: bought from the console, billed to the platform, releasable here. */
+  managedBy: choice(["holder", "platform"]),
+  country: nullable(text({ maxLength: 2 })),
+  /** What the carrier charges each month for a platform-bought number, as the carrier states it. */
+  monthlyPrice: nullable(text({ maxLength: 32 })),
   /**
    * Which agent answers this number, or null when the organisation holds it and nothing does.
    *
@@ -114,7 +128,11 @@ const provisioning = object({
   carrier: nullable(text({ maxLength: 32 })),
   claim: object({
     available: flag(),
-    reason: choice(["no-nigerian-inventory"]),
+    /* `carrier-catalogue` since 0087: buying is offered wherever the platform's carrier
+       sells, which does not include Nigeria. `no-carrier` when the deployment has no carrier
+       credentials at all, and `no-address` when it does not know its own public URL and so
+       could not tell a bought number where to send calls. */
+    reason: choice(["no-nigerian-inventory", "carrier-catalogue", "no-carrier", "no-address"]),
     detail: text({ maxLength: 800 }),
   }),
   attach: object({
@@ -133,7 +151,47 @@ const provisioning = object({
 });
 
 const CLAIM_DETAIL =
-  "A number cannot be bought through this API. The carrier this platform holds an account with sells no Nigerian numbers, so there is no inventory to offer and no endpoint that would succeed. Bring a number you already hold with your own carrier.";
+  "Numbers can be bought from the console in any country the platform's carrier sells in — which does not include Nigeria. For a Nigerian line, bring a number you already hold with your own carrier.";
+
+const NO_CARRIER_DETAIL =
+  "This deployment holds no carrier credentials, so nothing can be bought from here. Bring a number you already hold with your own carrier.";
+
+const NO_ADDRESS_DETAIL =
+  "This deployment does not know its own public address, so a bought number could not be told where to send calls. Set PUBLIC_BASE_URL and try again.";
+
+const countryList = object({
+  items: list(object({ code: text({ maxLength: 2 }), name: text({ maxLength: 80 }) })),
+  /** True when the carrier sells Nigerian numbers — it does not today, and the page says so rather than hiding the country. */
+  nigeria: flag(),
+});
+
+const availableQuery = object({
+  country: text({ minLength: 2, maxLength: 2, pattern: /^[A-Z]{2}$/ }),
+  /** Digits the number should contain; the carrier's own filter. */
+  contains: optional(text({ maxLength: 12, pattern: /^[0-9*]*$/ })),
+});
+
+const availableNumber = object({
+  number: text({ maxLength: NUMBER_LIMIT }),
+  country: text({ maxLength: 2 }),
+  locality: nullable(text({ maxLength: 120 })),
+  monthlyPrice: nullable(text({ maxLength: 32 })),
+  currency: nullable(text({ maxLength: 8 })),
+});
+
+const availableList = object({ items: list(availableNumber) });
+
+const purchase = object({
+  number: text({ maxLength: NUMBER_LIMIT, pattern: /^\+[1-9][0-9]{6,14}$/ }),
+  country: text({ minLength: 2, maxLength: 2, pattern: /^[A-Z]{2}$/ }),
+});
+
+const numberPath = object({ number: text({ maxLength: NUMBER_LIMIT, pattern: /^\+[1-9][0-9]{6,14}$/ }) });
+
+/** The carrier's refusal, in its words, as the status it is: the carrier is upstream of this API. */
+const asCarrierFailure = (error: unknown): never => {
+  throw new BadGatewayException(error instanceof Error ? error.message : "the carrier did not answer");
+};
 
 const ATTACH_DETAIL =
   "Point your carrier's voice webhook at the URL below and call the number once. The call proves you hold it — only the holder can say where a number sends its calls — and the number attaches itself. Nothing is typed in, because a number somebody types is a number they might not own.";
@@ -177,7 +235,9 @@ export class NumbersController {
         return {
           number: clamp(entry.number, NUMBER_LIMIT),
           use: "inbound" as const,
-          managedBy: "operator" as const,
+          managedBy: entry.managedBy,
+          country: entry.country,
+          monthlyPrice: entry.monthlyPrice,
           answeredBy:
             entry.agentId === null || entry.agentName === null
               ? null
@@ -266,9 +326,15 @@ export class NumbersController {
   })
   provisioning(): Infer<typeof provisioning> {
     const environment = loadNumbersEnvironment();
+    const claim =
+      environment.carrier === null
+        ? { available: false, reason: "no-carrier" as const, detail: NO_CARRIER_DETAIL }
+        : environment.publicBaseUrl === null
+          ? { available: false, reason: "no-address" as const, detail: NO_ADDRESS_DETAIL }
+          : { available: true, reason: "carrier-catalogue" as const, detail: CLAIM_DETAIL };
     return {
       carrier: carrierDirectoryFor(environment)?.name ?? null,
-      claim: { available: false, reason: "no-nigerian-inventory", detail: CLAIM_DETAIL },
+      claim,
       attach: { selfService: true, reason: "prove-by-webhook", detail: ATTACH_DETAIL },
       voiceWebhook: {
         url: expectedVoiceWebhookUrl(environment)?.slice(0, URL_LIMIT) ?? null,
@@ -276,5 +342,139 @@ export class NumbersController {
         detail: WEBHOOK_DETAIL,
       },
     };
+  }
+
+  /** The carrier store, or the reason there is none — said as a 503, because nothing about the request is wrong. */
+  private store() {
+    const environment = loadNumbersEnvironment();
+    const store = carrierDirectoryFor(environment);
+    if (store === null) throw new ServiceUnavailableException(NO_CARRIER_DETAIL);
+    return { environment, store };
+  }
+
+  @Get("countries")
+  @Endpoint({
+    summary: "The countries a number can be bought in",
+    description:
+      "Straight from the platform's carrier. Nigeria is not among them today, and `nigeria` says so explicitly so a page can explain rather than leave people searching for it.",
+    capability: "config:write",
+    response: countryList,
+  })
+  async countries(): Promise<Infer<typeof countryList>> {
+    const { store } = this.store();
+    const countries = await store.countries().catch(asCarrierFailure);
+    return {
+      items: countries.map((one) => ({ code: one.code.slice(0, 2), name: clamp(one.name, 80) })),
+      nigeria: countries.some((one) => one.code === "NG"),
+    };
+  }
+
+  @Get("available")
+  @Endpoint({
+    summary: "Numbers for sale in a country",
+    description:
+      "Up to ten voice-capable local numbers the carrier would sell right now, with the carrier's monthly price for that country where it states one. `contains` narrows to numbers holding those digits. Nothing is reserved by searching.",
+    capability: "config:write",
+    query: availableQuery,
+    response: availableList,
+  })
+  async available(@FromQuery() query: Infer<typeof availableQuery>): Promise<Infer<typeof availableList>> {
+    const { store } = this.store();
+    const found = await store
+      .searchAvailable(query.country, { contains: query.contains, limit: 10 })
+      .catch(asCarrierFailure);
+    return {
+      items: found.map((one) => ({
+        number: clamp(one.number, NUMBER_LIMIT),
+        country: one.country.slice(0, 2),
+        locality: one.locality === null ? null : clamp(one.locality, 120),
+        monthlyPrice: one.monthlyPrice,
+        currency: one.currency,
+      })),
+    };
+  }
+
+  @Post()
+  @Endpoint({
+    summary: "Buy a number and attach it to this organisation",
+    description:
+      "Bought in the platform's carrier account, pointed at this deployment's voice webhook, and attached to this organisation in one step, so a caller can ring it the moment this returns. Billed to the platform monthly at the carrier's price. If the number cannot be recorded here after the carrier sold it — somebody else holds it — it is released again rather than left paid for and unattached. Route an agent to it afterwards, as with any number.",
+    capability: "config:write",
+    body: purchase,
+    response: numberList,
+    status: 201,
+  })
+  async buy(@FromBody() body: Infer<typeof purchase>): Promise<Infer<typeof numberList>> {
+    const { environment, store } = this.store();
+    const voiceUrl = expectedVoiceWebhookUrl(environment);
+    if (voiceUrl === null) throw new ConflictException(NO_ADDRESS_DETAIL);
+
+    const organisationName = await this.db.tx(async (scope) => {
+      const rows = await scope.query<{ name: string }>("select name from organizations limit 1");
+      return rows[0]?.name ?? "Ansa";
+    });
+    const bought = await store
+      .buy(body.number, { voiceUrl, label: `${organisationName} · Ansa` })
+      .catch(asCarrierFailure);
+
+    /* Priced after the fact and best-effort: the search carried a price, but the purchase
+       body does not, and a number recorded without one is better than a purchase refused
+       for want of a decoration. */
+    const priced = await store.searchAvailable(body.country, { limit: 1 }).catch(() => []);
+    const monthlyPrice = priced[0]?.monthlyPrice ?? null;
+
+    const attached = await this.db.tx(async (scope) => {
+      const ok = await attachPurchasedNumber(scope, {
+        number: bought.number,
+        carrierSid: bought.carrierSid,
+        country: body.country,
+        monthlyPrice,
+      });
+      if (ok) {
+        await audit(scope, this.db.caller, {
+          action: "number_bought",
+          subjectKind: "number",
+          subjectId: bought.number,
+          subjectLabel: bought.number,
+          detail: { country: body.country, monthlyPrice },
+        });
+      }
+      return ok;
+    });
+    if (!attached) {
+      /* Sold to us, but somebody already holds it here. Give it back rather than pay for a
+         number nobody can see; if that fails too, say so — a paid, invisible number is the
+         one state that must not be silent. */
+      await store.release(bought.carrierSid).catch(asCarrierFailure);
+      throw new ConflictException(`${bought.number} is already attached to an organisation on this deployment`);
+    }
+    return this.list();
+  }
+
+  @Delete(":number")
+  @Endpoint({
+    summary: "Release a number the platform bought",
+    description:
+      "Only for a number bought from the console — a number you brought stays yours at your carrier and is not touched here. Any agent routed to it is un-routed first. Released at the carrier as well, so the monthly charge stops; if the carrier refuses, the number is already gone from here and the refusal is reported so it can be released by hand.",
+    capability: "config:write",
+    params: numberPath,
+    status: 204,
+  })
+  async release(@FromPath() path: Infer<typeof numberPath>): Promise<void> {
+    const { store } = this.store();
+    const sid = await this.db.tx(async (scope) => {
+      const released = await releasePurchasedNumber(scope, path.number);
+      if (released !== null) {
+        await audit(scope, this.db.caller, {
+          action: "number_released",
+          subjectKind: "number",
+          subjectId: path.number,
+          subjectLabel: path.number,
+        });
+      }
+      return released;
+    });
+    if (sid === null) throw new NotFoundException();
+    await store.release(sid).catch(asCarrierFailure);
   }
 }

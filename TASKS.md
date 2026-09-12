@@ -5988,6 +5988,28 @@ rather than landed as inventory — the wave that needs them adds them wired.
       it says who listened to which recording. The page renders each row as a sentence.
       Known gap: accepting an invitation writes no row today (the acceptance runs outside a
       scope), so a join shows only as the sign-in that follows it.
+- [x] **Self-serve numbers: buy and release from the console** (2026-09-12)
+      Bringing your own number was already self-serve (0054, proved by webhook). Buying was
+      not: `provisioning` said "no Nigerian inventory" and stopped there. Now the carrier
+      adapter is a store as well as a directory — `countries`, `searchAvailable`, `buy`,
+      `release`, all Twilio REST, no SDK, tested against a fake `fetch` — and 0087 marks
+      `organization_numbers` rows `holder` or `platform`, with the carrier's sid and the
+      monthly price, through two more definer holes scoped to the current organisation.
+      `GET /numbers/countries`, `GET /numbers/available?country=`, `POST /numbers` (buy,
+      point at this deployment's voice webhook, attach, audit — released again if somebody
+      else already holds it here) and `DELETE /numbers/:number` (un-route any agent, forget
+      the row, release at the carrier, audit). The Numbers page has a Buy card: country,
+      digit filter, what is for sale with the price, one confirmation per number that
+      repeats the price; bought numbers show "bought here" with a Release button.
+
+      Proven end to end in `purchase.test.ts` against a fake Twilio answering on
+      `TWILIO_API_BASE_URL`: countries, search with price, buy (the carrier saw the right
+      VoiceUrl), the row and the audit rows, release here then at the carrier, and a second
+      release refused. Not proven against the real carrier, and it cannot be today: the
+      platform's Twilio account answers "authentication failed … status 4 is not active" to
+      every call, which the page now shows in the carrier's words under Buy a number. That
+      also means no call can be placed or answered until the account is reactivated.
+      Nigeria stays bring-your-own — Twilio sells no Nigerian numbers — and the card says so.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

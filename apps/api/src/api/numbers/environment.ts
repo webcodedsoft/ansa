@@ -18,6 +18,13 @@ import { Buffer } from "node:buffer";
 export interface CarrierCredentials {
   readonly accountSid: string;
   readonly authToken: string;
+  /**
+   * Where the carrier's REST API answers. Unset in every real deployment; set by the test
+   * that walks a purchase through a fake carrier, because the alternative proof costs money
+   * every month.
+   */
+  readonly apiBaseUrl: string | undefined;
+  readonly pricingBaseUrl: string | undefined;
 }
 
 export interface VoiceCredentials {
@@ -91,7 +98,12 @@ const carrierFrom = (env: NodeJS.ProcessEnv): CarrierCredentials | null => {
   // Both or neither. Half a credential produces a 401 from the carrier, which would be
   // reported as "could not check" — true, but it hides that nobody configured this.
   if (accountSid === null || authToken === null) return null;
-  return { accountSid, authToken };
+  return {
+    accountSid,
+    authToken,
+    apiBaseUrl: trimmed(env, "TWILIO_API_BASE_URL") ?? undefined,
+    pricingBaseUrl: trimmed(env, "TWILIO_PRICING_BASE_URL") ?? undefined,
+  };
 };
 
 const voiceFrom = (env: NodeJS.ProcessEnv): VoiceCredentials | null => {

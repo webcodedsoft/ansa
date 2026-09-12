@@ -1,6 +1,7 @@
 import { DataTable, Tag, type Column, type Tone } from "@/components/ui";
 
 import type { NumberSummary } from "../connect.service";
+import { ReleaseNumber } from "./release-number";
 
 type CarrierWebhookState = NumberSummary["carrierWebhook"]["state"];
 
@@ -50,7 +51,21 @@ const COLUMNS: readonly Column<NumberSummary>[] = [
         number.answeredBy.name
       ),
   },
-  { key: "managedBy", header: "Managed by", cell: (number) => <Tag>{number.managedBy}</Tag> },
+  {
+    key: "managedBy",
+    header: "Held",
+    cell: (number) =>
+      number.managedBy === "platform" ? (
+        <span className="flex flex-col gap-0.5">
+          <Tag tone="accent">bought here</Tag>
+          {number.monthlyPrice !== null && (
+            <span className="text-[11.5px] text-[var(--ink-3)]">{number.monthlyPrice} a month</span>
+          )}
+        </span>
+      ) : (
+        <Tag>your own</Tag>
+      ),
+  },
   {
     key: "webhook",
     header: "Carrier webhook",
@@ -71,6 +86,15 @@ const COLUMNS: readonly Column<NumberSummary>[] = [
         </div>
       );
     },
+  },
+  {
+    key: "release",
+    header: "Release",
+    headerHidden: true,
+    cell: (number) =>
+      number.managedBy === "platform" ? (
+        <ReleaseNumber number={number.number} agentName={number.answeredBy?.name ?? null} />
+      ) : null,
   },
 ];
 

@@ -10689,7 +10689,9 @@
                               "hours_changed",
                               "credential_saved",
                               "credential_removed",
-                              "webhooks_saved"
+                              "webhooks_saved",
+                              "number_bought",
+                              "number_released"
                             ]
                           },
                           "subjectKind": {
@@ -10705,7 +10707,8 @@
                               "call",
                               "contact",
                               "organisation",
-                              "credential"
+                              "credential",
+                              "number"
                             ]
                           },
                           "subjectId": {
@@ -23815,8 +23818,23 @@
                           "managedBy": {
                             "type": "string",
                             "enum": [
-                              "operator"
+                              "holder",
+                              "platform"
                             ]
+                          },
+                          "country": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 2
+                          },
+                          "monthlyPrice": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 32
                           },
                           "answeredBy": {
                             "type": [
@@ -23888,6 +23906,8 @@
                           "number",
                           "use",
                           "managedBy",
+                          "country",
+                          "monthlyPrice",
                           "answeredBy",
                           "carrierWebhook"
                         ],
@@ -23915,6 +23935,554 @@
           },
           "403": {
             "description": "The caller's role does not hold config:read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "numbers.buy",
+        "tags": [
+          "numbers"
+        ],
+        "summary": "Buy a number and attach it to this organisation",
+        "description": "Bought in the platform's carrier account, pointed at this deployment's voice webhook, and attached to this organisation in one step, so a caller can ring it the moment this returns. Billed to the platform monthly at the carrier's price. If the number cannot be recorded here after the carrier sold it — somebody else holds it — it is released again rather than left paid for and unattached. Route an agent to it afterwards, as with any number.",
+        "x-ansa-capability": "config:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "number": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "pattern": "^\\+[1-9][0-9]{6,14}$"
+                  },
+                  "country": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 2,
+                    "pattern": "^[A-Z]{2}$"
+                  }
+                },
+                "required": [
+                  "number",
+                  "country"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "number": {
+                            "type": "string",
+                            "maxLength": 64
+                          },
+                          "use": {
+                            "type": "string",
+                            "enum": [
+                              "inbound"
+                            ]
+                          },
+                          "managedBy": {
+                            "type": "string",
+                            "enum": [
+                              "holder",
+                              "platform"
+                            ]
+                          },
+                          "country": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 2
+                          },
+                          "monthlyPrice": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 32
+                          },
+                          "answeredBy": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "agentId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                              },
+                              "name": {
+                                "type": "string",
+                                "maxLength": 200
+                              }
+                            },
+                            "required": [
+                              "agentId",
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "carrierWebhook": {
+                            "type": "object",
+                            "properties": {
+                              "state": {
+                                "type": "string",
+                                "enum": [
+                                  "matches",
+                                  "points-elsewhere",
+                                  "not-set",
+                                  "not-in-carrier-account",
+                                  "unchecked"
+                                ]
+                              },
+                              "expected": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "maxLength": 2048
+                              },
+                              "observed": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "maxLength": 2048
+                              },
+                              "reason": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "maxLength": 400
+                              }
+                            },
+                            "required": [
+                              "state",
+                              "expected",
+                              "observed",
+                              "reason"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "number",
+                          "use",
+                          "managedBy",
+                          "country",
+                          "monthlyPrice",
+                          "answeredBy",
+                          "carrierWebhook"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/numbers/{number}": {
+      "delete": {
+        "operationId": "numbers.release",
+        "tags": [
+          "numbers"
+        ],
+        "summary": "Release a number the platform bought",
+        "description": "Only for a number bought from the console — a number you brought stays yours at your carrier and is not touched here. Any agent routed to it is un-routed first. Released at the carrier as well, so the monthly charge stops; if the carrier refuses, the number is already gone from here and the refusal is reported so it can be released by hand.",
+        "x-ansa-capability": "config:write",
+        "parameters": [
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^\\+[1-9][0-9]{6,14}$"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record in this organisation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/numbers/available": {
+      "get": {
+        "operationId": "numbers.available",
+        "tags": [
+          "numbers"
+        ],
+        "summary": "Numbers for sale in a country",
+        "description": "Up to ten voice-capable local numbers the carrier would sell right now, with the carrier's monthly price for that country where it states one. `contains` narrows to numbers holding those digits. Nothing is reserved by searching.",
+        "x-ansa-capability": "config:write",
+        "parameters": [
+          {
+            "name": "country",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 2,
+              "pattern": "^[A-Z]{2}$"
+            }
+          },
+          {
+            "name": "contains",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 12,
+              "pattern": "^[0-9*]*$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "number": {
+                            "type": "string",
+                            "maxLength": 64
+                          },
+                          "country": {
+                            "type": "string",
+                            "maxLength": 2
+                          },
+                          "locality": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 120
+                          },
+                          "monthlyPrice": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 32
+                          },
+                          "currency": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 8
+                          }
+                        },
+                        "required": [
+                          "number",
+                          "country",
+                          "locality",
+                          "monthlyPrice",
+                          "currency"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/numbers/countries": {
+      "get": {
+        "operationId": "numbers.countries",
+        "tags": [
+          "numbers"
+        ],
+        "summary": "The countries a number can be bought in",
+        "description": "Straight from the platform's carrier. Nigeria is not among them today, and `nigeria` says so explicitly so a page can explain rather than leave people searching for it.",
+        "x-ansa-capability": "config:write",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string",
+                            "maxLength": 2
+                          },
+                          "name": {
+                            "type": "string",
+                            "maxLength": 80
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "name"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "nigeria": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nigeria"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:write",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -23979,7 +24547,10 @@
                         "reason": {
                           "type": "string",
                           "enum": [
-                            "no-nigerian-inventory"
+                            "no-nigerian-inventory",
+                            "carrier-catalogue",
+                            "no-carrier",
+                            "no-address"
                           ]
                         },
                         "detail": {

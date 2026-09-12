@@ -7,10 +7,14 @@ import { failedForm, invalidForm, succeededForm, type FormState } from "@/lib/fo
 
 import { credentialDeleteSchema, credentialFormSchema, webhooksFormSchema } from "./connect.schema";
 import {
+  buyNumber,
   putCredential,
+  releaseNumber,
   removeCredential,
   replaceSubscriptions,
   rotateClaimWebhook,
+  searchNumbers,
+  type AvailableNumber,
 } from "./connect.service";
 
 // ---------------------------------------------------------------------------
@@ -167,6 +171,63 @@ export const deleteCredential = async (
     await removeCredential(parsed.data.ref);
     revalidatePath("/credentials");
     return succeededForm({ ref: parsed.data.ref });
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Buying and releasing numbers
+// ---------------------------------------------------------------------------
+
+export type SearchNumbersState = FormState<{ readonly country: string; readonly items: readonly AvailableNumber[] }>;
+
+const COUNTRY = /^[A-Z]{2}$/;
+const DIGITS = /^[0-9*]{0,12}$/;
+
+/** Ask the carrier what it would sell. Nothing is reserved by asking. */
+export const searchNumbersAction = async (_previous: SearchNumbersState, form: FormData): Promise<SearchNumbersState> => {
+  const country = String(form.get("country") ?? "").toUpperCase();
+  const contains = String(form.get("contains") ?? "").trim();
+  if (!COUNTRY.test(country)) return failedForm("Choose a country.");
+  if (!DIGITS.test(contains)) return failedForm("Digits only in the filter, up to twelve.");
+  try {
+    const found = await searchNumbers(country, contains);
+    return succeededForm({ country, items: found.items });
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+};
+
+export type BuyNumberState = FormState<{ readonly number: string }>;
+
+/**
+ * Buy it. The API buys at the carrier, points it here and attaches it in one step, so the
+ * number rings the moment this returns — which is why the confirmation lives before this
+ * and not after.
+ */
+export const buyNumberAction = async (_previous: BuyNumberState, form: FormData): Promise<BuyNumberState> => {
+  const number = String(form.get("number") ?? "").trim();
+  const country = String(form.get("country") ?? "").toUpperCase();
+  if (!/^\+[1-9][0-9]{6,14}$/.test(number) || !COUNTRY.test(country)) return failedForm("Pick a number from the list.");
+  try {
+    await buyNumber(number, country);
+    revalidatePath("/numbers");
+    return succeededForm({ number }, `${number} is attached and ringing here.`);
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+};
+
+export type ReleaseNumberState = FormState<{ readonly number: string }>;
+
+export const releaseNumberAction = async (_previous: ReleaseNumberState, form: FormData): Promise<ReleaseNumberState> => {
+  const number = String(form.get("number") ?? "").trim();
+  if (!/^\+[1-9][0-9]{6,14}$/.test(number)) return failedForm("That is not a number this organisation holds.");
+  try {
+    await releaseNumber(number);
+    revalidatePath("/numbers");
+    return succeededForm({ number }, `${number} is released. The monthly charge stops.`);
   } catch (error) {
     return failedForm(failureMessage(error));
   }

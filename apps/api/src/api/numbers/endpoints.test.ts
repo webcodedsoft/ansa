@@ -138,7 +138,7 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)(
 
       const items = reply.body["items"] as Record<string, unknown>[];
       expect(items).toHaveLength(1);
-      expect(items[0]).toMatchObject({ number: DIALLED, use: "inbound", managedBy: "operator" });
+      expect(items[0]).toMatchObject({ number: DIALLED, use: "inbound", managedBy: "holder" });
 
       const webhook = items[0]?.["carrierWebhook"] as Record<string, unknown>;
       expect(webhook["state"]).toBe("unchecked");
@@ -147,16 +147,18 @@ describe.skipIf(ownerUrl === undefined || appUrl === undefined)(
     });
 
     /** The two unavailable things, stated rather than discovered as a failing request. */
-    it("says what cannot be done and gives the URL an operator needs", async () => {
+    it("says what can be done and gives the URL an operator needs", async () => {
       const reply = await get("/api/v1/numbers/provisioning");
       expect(reply.status, JSON.stringify(reply.body)).toBe(200);
       expect(reply.body).toMatchObject({
         carrier: null,
-        claim: { available: false, reason: "no-nigerian-inventory" },
+        /* No carrier credentials in this environment, so nothing can be bought, and the
+           reason says that rather than something about inventory. With credentials and a
+           public address the answer is `carrier-catalogue` — see 0087. */
+        claim: { available: false, reason: "no-carrier" },
         /* Self-service since migration 0054, and the reason names how rather than refusing:
            an organisation points its carrier at the tokened webhook and calls the number
-           once, which proves it holds the line. Buying one is still unavailable — the carrier
-           this deployment holds an account with sells no Nigerian inventory. */
+           once, which proves it holds the line. */
         attach: { selfService: true, reason: "prove-by-webhook" },
         voiceWebhook: { url: "https://readiness.test/telephony/voice", method: "POST" },
       });

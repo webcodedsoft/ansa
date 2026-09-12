@@ -83,6 +83,13 @@ export const describeAudit = (row: Row): AuditLine => {
       return { text: `saved the credential ${what(row, "")}`.trim(), tone: "accent" };
     case "credential_removed":
       return { text: `removed the credential ${what(row, "")}`.trim(), tone: "bad" };
+    case "number_bought":
+      return {
+        text: `bought the number ${what(row, "")}${d["country"] ? ` (${d["country"]}${d["monthlyPrice"] ? `, ${d["monthlyPrice"]} a month` : ""})` : ""}`.trim(),
+        tone: "accent",
+      };
+    case "number_released":
+      return { text: `released the number ${what(row, "")}`.trim(), tone: "warn" };
     case "webhooks_saved":
       return { text: `saved the webhook settings${d["receivers"] ? ` (${d["receivers"]} receiver${d["receivers"] === "1" ? "" : "s"})` : ""}`, tone: "accent" };
     default:
@@ -124,6 +131,7 @@ const KIND_OF_ACTION: Readonly<Record<string, string>> = {
   recording_listened: "calls", do_not_call_added: "calls",
   organisation_renamed: "organisation", recording_turned_on: "organisation", recording_turned_off: "organisation",
   hours_changed: "organisation", credential_saved: "organisation", credential_removed: "organisation", webhooks_saved: "organisation",
+  number_bought: "organisation", number_released: "organisation",
 };
 
 /** The bucket an action belongs to, as the filter chips name it. */

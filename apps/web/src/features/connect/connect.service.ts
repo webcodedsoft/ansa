@@ -27,6 +27,24 @@ export const listNumbers = async () => (await api()).numbers.list();
 /** What this organisation can and cannot do to get a number, and who to ask instead. */
 export const numberProvisioning = async () => (await api()).numbers.provisioning();
 
+/** Where a number can be bought. Fails loudly when the carrier refuses the platform's credentials. */
+export const numberCountries = async () => (await api()).numbers.countries();
+
+/** Up to ten numbers for sale in a country; nothing is reserved by looking. */
+export const searchNumbers = async (country: string, contains: string) =>
+  (await api()).numbers.available({ query: { country, ...(contains === "" ? {} : { contains }) } });
+
+/** Bought, pointed at this deployment, attached — one call. Billed to the platform monthly. */
+export const buyNumber = async (number: string, country: string) =>
+  (await api()).numbers.buy({ body: { number, country } });
+
+/** Only for a number the platform bought; a number you brought is yours and stays. */
+export const releaseNumber = async (number: string) => (await api()).numbers.release({ path: { number } });
+
+export type NumberCountries = Awaited<ReturnType<typeof numberCountries>>;
+export type AvailableNumbers = Awaited<ReturnType<typeof searchNumbers>>;
+export type AvailableNumber = AvailableNumbers["items"][number];
+
 export type NumbersList = Awaited<ReturnType<typeof listNumbers>>;
 export type NumberSummary = NumbersList["items"][number];
 export type NumberProvisioning = Awaited<ReturnType<typeof numberProvisioning>>;

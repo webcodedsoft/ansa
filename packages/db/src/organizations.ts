@@ -272,6 +272,10 @@ export interface HeldNumber {
   /** Null when the number is held but routed to nobody, which is a real and visible state. */
   readonly agentId: string | null;
   readonly agentName: string | null;
+  /** `holder`: their own line at their own carrier. `platform`: bought from the console (0087). */
+  readonly managedBy: "holder" | "platform";
+  readonly country: string | null;
+  readonly monthlyPrice: string | null;
 }
 
 /**
@@ -289,10 +293,13 @@ export const listHeldNumbers = async (scope: OrganizationScope): Promise<readonl
   const rows = await scope.query<{
     number: string;
     note: string | null;
+    managed_by: string;
+    country: string | null;
+    monthly_price: string | null;
     agent_id: string | null;
     agent_name: string | null;
   }>(
-    `select n.number, n.note, a.id as agent_id, a.name as agent_name
+    `select n.number, n.note, n.managed_by, n.country, n.monthly_price, a.id as agent_id, a.name as agent_name
        from organization_numbers n
        left join agents a
          on a.dialled_number = n.number and a.deleted_at is null
@@ -303,7 +310,45 @@ export const listHeldNumbers = async (scope: OrganizationScope): Promise<readonl
     note: row.note,
     agentId: row.agent_id,
     agentName: row.agent_name,
+    managedBy: row.managed_by === "platform" ? "platform" : "holder",
+    country: row.country,
+    monthlyPrice: row.monthly_price,
   }));
+};
+
+/**
+ * Record a number the platform just bought for this organisation (migration 0087).
+ *
+ * Through the definer function, because `ansa_app` cannot insert into the ownership table
+ * directly and should not be able to: this is one of three narrow holes, and it can only
+ * write a row for the organisation the scope is opened as. False when the number already
+ * belongs to somebody else, which the caller must treat as "release it again".
+ */
+export const attachPurchasedNumber = async (
+  scope: OrganizationScope,
+  purchase: {
+    readonly number: string;
+    readonly carrierSid: string;
+    readonly country: string;
+    readonly monthlyPrice: string | null;
+  },
+): Promise<boolean> => {
+  const rows = await scope.query<{ attached: boolean }>(
+    `select app.attach_purchased_number($1, $2, $3, $4) as attached`,
+    [purchase.number, purchase.carrierSid, purchase.country, purchase.monthlyPrice],
+  );
+  return rows[0]?.attached === true;
+};
+
+/**
+ * Forget a platform-bought number, and un-route any agent that answered it.
+ *
+ * Returns the carrier's id so the caller can release it there too. Null when the number is
+ * not this organisation's, or not one the platform bought.
+ */
+export const releasePurchasedNumber = async (scope: OrganizationScope, number: string): Promise<string | null> => {
+  const rows = await scope.query<{ sid: string | null }>(`select app.release_purchased_number($1) as sid`, [number]);
+  return rows[0]?.sid ?? null;
 };
 
 /**

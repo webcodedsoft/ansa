@@ -34,21 +34,23 @@ export const AUDIT_ACTIONS = [
   "credential_saved",
   "credential_removed",
   "webhooks_saved",
+  "number_bought",
+  "number_released",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
-export type AuditSubjectKind = "account" | "member" | "invitation" | "agent" | "call" | "contact" | "organisation" | "credential";
+export type AuditSubjectKind = "account" | "member" | "invitation" | "agent" | "call" | "contact" | "organisation" | "credential" | "number";
 
 /** What is being read from the log: the buckets the console filters by. */
 export const AUDIT_KINDS = ["people", "agents", "calls", "organisation", "security"] as const;
 export type AuditKind = (typeof AUDIT_KINDS)[number];
 
-export const ACTIONS_OF_KIND: Readonly<Record<AuditKind, readonly AuditAction[]>> = {
+const ACTIONS_OF_KIND: Readonly<Record<AuditKind, readonly AuditAction[]>> = {
   people: ["member_invited", "invitation_accepted", "invitation_revoked", "member_role_changed", "member_removed", "access_revoked", "access_restored"],
   agents: ["agent_created", "agent_retired", "agent_published", "agent_rolled_back"],
   calls: ["recording_listened", "do_not_call_added"],
-  organisation: ["organisation_renamed", "recording_turned_on", "recording_turned_off", "hours_changed", "credential_saved", "credential_removed", "webhooks_saved"],
+  organisation: ["organisation_renamed", "recording_turned_on", "recording_turned_off", "hours_changed", "credential_saved", "credential_removed", "webhooks_saved", "number_bought", "number_released"],
   security: ["signed_in", "signed_out", "password_changed", "account_closed"],
 };
 

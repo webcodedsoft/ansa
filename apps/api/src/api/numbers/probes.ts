@@ -1,4 +1,4 @@
-import { createTwilioNumberDirectory, type CarrierNumberDirectory } from "@ansa/telephony";
+import { createTwilioNumberDirectory, type CarrierNumberDirectory, type CarrierNumberStore } from "@ansa/telephony";
 import { createElevenLabsVoiceCatalogue, type VoiceCatalogue } from "@ansa/tts";
 
 import { expectedVoiceWebhookUrl, type NumbersEnvironment } from "./environment";
@@ -169,12 +169,14 @@ export const probeVoice = async (
  */
 export const carrierDirectoryFor = (
   environment: NumbersEnvironment,
-): CarrierNumberDirectory | null =>
+): CarrierNumberStore | null =>
   environment.carrier === null
     ? null
     : createTwilioNumberDirectory({
         accountSid: environment.carrier.accountSid,
         authToken: environment.carrier.authToken,
+        apiBaseUrl: environment.carrier.apiBaseUrl,
+        pricingBaseUrl: environment.carrier.pricingBaseUrl,
       });
 
 export const voiceCatalogueFor = (environment: NumbersEnvironment): VoiceCatalogue | null => {

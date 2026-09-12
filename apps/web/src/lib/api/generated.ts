@@ -1043,8 +1043,8 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly occurredAt: string;
         readonly actorUserId: string | null;
         readonly actorName: string | null;
-        readonly action: "signed_in" | "signed_out" | "password_changed" | "account_closed" | "member_invited" | "invitation_accepted" | "invitation_revoked" | "member_role_changed" | "member_removed" | "access_revoked" | "access_restored" | "agent_created" | "agent_retired" | "agent_published" | "agent_rolled_back" | "recording_listened" | "do_not_call_added" | "organisation_renamed" | "recording_turned_on" | "recording_turned_off" | "hours_changed" | "credential_saved" | "credential_removed" | "webhooks_saved";
-        readonly subjectKind: "account" | "member" | "invitation" | "agent" | "call" | "contact" | "organisation" | "credential" | null;
+        readonly action: "signed_in" | "signed_out" | "password_changed" | "account_closed" | "member_invited" | "invitation_accepted" | "invitation_revoked" | "member_role_changed" | "member_removed" | "access_revoked" | "access_restored" | "agent_created" | "agent_retired" | "agent_published" | "agent_rolled_back" | "recording_listened" | "do_not_call_added" | "organisation_renamed" | "recording_turned_on" | "recording_turned_off" | "hours_changed" | "credential_saved" | "credential_removed" | "webhooks_saved" | "number_bought" | "number_released";
+        readonly subjectKind: "account" | "member" | "invitation" | "agent" | "call" | "contact" | "organisation" | "credential" | "number" | null;
         readonly subjectId: string | null;
         readonly subjectLabel: string | null;
         readonly detail: Readonly<Record<string, string | null>>;
@@ -3437,7 +3437,9 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly items: readonly ({
         readonly number: string;
         readonly use: "inbound";
-        readonly managedBy: "operator";
+        readonly managedBy: "holder" | "platform";
+        readonly country: string | null;
+        readonly monthlyPrice: string | null;
         readonly answeredBy: {
         readonly agentId: string;
         readonly name: string;
@@ -3452,6 +3454,80 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       }>(options, "GET", `/api/v1/numbers`, {}),
 
     /**
+     * Buy a number and attach it to this organisation
+     * Bought in the platform's carrier account, pointed at this deployment's voice webhook, and attached to this organisation in one step, so a caller can ring it the moment this returns. Billed to the platform monthly at the carrier's price. If the number cannot be recorded here after the carrier sold it — somebody else holds it — it is released again rather than left paid for and unattached. Route an agent to it afterwards, as with any number.
+     */
+    buy: (input: {
+        readonly body: {
+          readonly number: string;
+          readonly country: string;
+        };
+      }) =>
+      send<{
+        readonly items: readonly ({
+        readonly number: string;
+        readonly use: "inbound";
+        readonly managedBy: "holder" | "platform";
+        readonly country: string | null;
+        readonly monthlyPrice: string | null;
+        readonly answeredBy: {
+        readonly agentId: string;
+        readonly name: string;
+      } | null;
+        readonly carrierWebhook: {
+        readonly state: "matches" | "points-elsewhere" | "not-set" | "not-in-carrier-account" | "unchecked";
+        readonly expected: string | null;
+        readonly observed: string | null;
+        readonly reason: string | null;
+      };
+      })[];
+      }>(options, "POST", `/api/v1/numbers`, input),
+
+    /**
+     * Release a number the platform bought
+     * Only for a number bought from the console — a number you brought stays yours at your carrier and is not touched here. Any agent routed to it is un-routed first. Released at the carrier as well, so the monthly charge stops; if the carrier refuses, the number is already gone from here and the refusal is reported so it can be released by hand.
+     */
+    release: (input: {
+        readonly path: {
+          readonly number: string;
+        };
+      }) =>
+      send<void>(options, "DELETE", `/api/v1/numbers/${encodeURIComponent(input.path.number)}`, input),
+
+    /**
+     * Numbers for sale in a country
+     * Up to ten voice-capable local numbers the carrier would sell right now, with the carrier's monthly price for that country where it states one. `contains` narrows to numbers holding those digits. Nothing is reserved by searching.
+     */
+    available: (input: {
+        readonly query: {
+          readonly country: string;
+          readonly contains?: string;
+        };
+      }) =>
+      send<{
+        readonly items: readonly ({
+        readonly number: string;
+        readonly country: string;
+        readonly locality: string | null;
+        readonly monthlyPrice: string | null;
+        readonly currency: string | null;
+      })[];
+      }>(options, "GET", `/api/v1/numbers/available`, input),
+
+    /**
+     * The countries a number can be bought in
+     * Straight from the platform's carrier. Nigeria is not among them today, and `nigeria` says so explicitly so a page can explain rather than leave people searching for it.
+     */
+    countries: () =>
+      send<{
+        readonly items: readonly ({
+        readonly code: string;
+        readonly name: string;
+      })[];
+        readonly nigeria: boolean;
+      }>(options, "GET", `/api/v1/numbers/countries`, {}),
+
+    /**
      * What this organisation can and cannot do to get a number
      * Two things are unavailable and both are stated here rather than discovered as a failing request: a number cannot be bought through this API, because the carrier sells no Nigerian inventory; and a number cannot be attached self-service, because the attached number routes every inbound call on the deployment and nothing yet proves an organisation controls the number it names. The webhook URL is this deployment's real ingress address, which is the value an operator needs at the carrier.
      */
@@ -3460,7 +3536,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly carrier: string | null;
         readonly claim: {
         readonly available: boolean;
-        readonly reason: "no-nigerian-inventory";
+        readonly reason: "no-nigerian-inventory" | "carrier-catalogue" | "no-carrier" | "no-address";
         readonly detail: string;
       };
         readonly attach: {

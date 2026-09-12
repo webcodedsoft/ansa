@@ -293,6 +293,50 @@ export interface CarrierNumber {
  * serves the dashboard and not the phone can hold one without the other. Fusing them
  * would also mean every test fake of the call path grew a method it never calls.
  */
+/** A country the carrier sells numbers in. */
+export interface CarrierCountry {
+  /** ISO 3166-1 alpha-2, as the carrier spells it: "US", "GB", "ZA". */
+  readonly code: string;
+  readonly name: string;
+}
+
+/** One number the carrier would sell, with what it costs each month if the carrier says. */
+export interface AvailableNumber {
+  readonly number: string;
+  readonly country: string;
+  /** "Lagos", "London", or whatever the carrier files the number under. Null when it says nothing. */
+  readonly locality: string | null;
+  /** The carrier's monthly price for this number type, as a decimal string, or null when unpriced. */
+  readonly monthlyPrice: string | null;
+  readonly currency: string | null;
+}
+
+export interface PurchasedNumber {
+  readonly number: string;
+  /** The carrier's own id for the number; what releasing it needs. */
+  readonly carrierSid: string;
+  readonly voiceUrl: string | null;
+}
+
+/**
+ * Buying and releasing numbers, on top of reading them.
+ *
+ * A separate interface because it needs a credential that can spend money, and a deployment
+ * that can read the carrier's records may not want to hand the dashboard that. Everything
+ * here is one REST call, and every one can fail in a way the caller has to see — a refused
+ * purchase is a different fact from a purchased number, and a released number that is
+ * still billed is worse than one the release failed on loudly.
+ */
+export interface CarrierNumberStore extends CarrierNumberDirectory {
+  countries(): Promise<readonly CarrierCountry[]>;
+  searchAvailable(
+    country: string,
+    options: { readonly contains?: string; readonly limit?: number },
+  ): Promise<readonly AvailableNumber[]>;
+  buy(number: string, options: { readonly voiceUrl: string; readonly label: string }): Promise<PurchasedNumber>;
+  release(carrierSid: string): Promise<void>;
+}
+
 export interface CarrierNumberDirectory {
   readonly name: string;
   /**
