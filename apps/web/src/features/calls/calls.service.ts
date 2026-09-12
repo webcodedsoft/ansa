@@ -99,11 +99,6 @@ export const recordCorrection = async (input: CorrectionInput) =>
 export const recordingLink = async (callId: string) =>
   (await api()).calls.recording({ path: { callId } });
 
-export const listLiveCalls = async () => {
-  const { items } = await listCalls();
-  return items.filter((call) => call.endedAt === null);
-};
-
 /** Quality metrics over this organisation's recent calls. */
 export const callMetrics = async () => (await api()).calls.metrics();
 
@@ -128,7 +123,6 @@ export type CallSummary = CallPage["items"][number];
 export type CallDetail = NonNullable<Awaited<ReturnType<typeof findCall>>>;
 export type CallTranscript = CallDetail["transcripts"][number];
 export type CallEvent = CallDetail["events"][number];
-export type LiveCall = Awaited<ReturnType<typeof listLiveCalls>>[number];
 export type CallMetrics = Awaited<ReturnType<typeof callMetrics>>;
 export type CallTrends = Awaited<ReturnType<typeof callTrends>>;
 export type TrendRow = CallTrends["versions"][number];

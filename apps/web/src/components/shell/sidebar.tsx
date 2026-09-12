@@ -2,7 +2,7 @@
 
 import {
   BarChart3, Bot, CalendarDays, ChevronsUpDown, ClipboardList, Contact, Hash, KeyRound,
-  ListChecks, LogOut, MailPlus, Megaphone, PhoneCall, Plus, Radio, ScrollText, ShieldCheck,
+  ListChecks, LogOut, MailPlus, Megaphone, PhoneCall, Plus, ScrollText, ShieldCheck,
   Users, Webhook, Wrench,
 } from "lucide-react";
 import Link from "next/link";
@@ -26,7 +26,6 @@ import { NAV_GROUPS, allowedDestinations, type Destination } from "./navigation"
 const ICONS: Record<string, ComponentType<{ className?: string }>> = {
   "/calls": PhoneCall,
   // A signal, not a pulse: this is calls in progress, not health.
-  "/live": Radio,
   "/review": ListChecks,
   // What was collected on calls, as a table of answers.
   "/data": ClipboardList,

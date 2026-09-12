@@ -30,7 +30,6 @@ export const NAV_GROUPS: readonly NavGroup[] = ["Operate", "Agents", "Connect", 
 
 export const DESTINATIONS: readonly Destination[] = [
   { href: "/calls", label: "Calls", group: "Operate", capability: "calls:read" },
-  { href: "/live", label: "Live", group: "Operate", capability: "calls:read" },
   { href: "/review", label: "Review queue", group: "Operate", capability: "calls:read" },
   { href: "/data", label: "Collected data", group: "Operate", capability: "calls:read" },
   { href: "/contacts", label: "Contacts", group: "Operate", capability: "contacts:read" },
