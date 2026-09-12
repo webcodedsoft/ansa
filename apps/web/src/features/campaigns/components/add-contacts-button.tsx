@@ -6,9 +6,9 @@ import { useActionState, useEffect, useMemo, useState } from "react";
 import {
   Button,
   buttonClass,
-  CONTROL,
   Modal,
   Notice,
+  SearchField,
   Stack,
   SubmitButton,
 } from "@/components/ui";
@@ -147,12 +147,11 @@ export const AddContactsButton = ({
           <form id="enqueue-contacts" action={action}>
             <input type="hidden" name="campaignId" value={campaignId} />
             <Stack gap="sm">
-              <input
-                type="search"
+              <SearchField
+                label="Filter contacts"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Filter by name or number"
-                className={CONTROL}
               />
 
               <div className="max-h-[46vh] overflow-y-auto rounded-lg border border-[var(--hairline)]">

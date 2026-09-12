@@ -1,9 +1,8 @@
-import { BadgeCheck, Repeat, Search, UserPlus, Users } from "lucide-react";
+import { BadgeCheck, Repeat, UserPlus, Users } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { PageHeader, Pagination, Stat } from "@/components/ui";
-import { CONTROL } from "@/components/ui";
+import { PageHeader, Pagination, SearchField, Stat } from "@/components/ui";
 import { currentPrincipal } from "@/features/auth/auth.service";
 import { ContactsActions } from "@/features/contacts/components/contacts-actions";
 import { ContactsDirectory } from "@/features/contacts/components/contacts-directory";
@@ -94,20 +93,12 @@ const ContactsPage = async ({
           in rather than a box to type in — and a screen reader still gets an explicit submit. */}
       <div className="mt-[26px] flex items-center gap-2">
         <form method="get" className="min-w-0 flex-1">
-          <label className="relative flex items-center">
-            <Search
-              aria-hidden
-              className="pointer-events-none absolute left-3 size-4 text-[var(--ink-3)]"
-            />
-            <span className="sr-only">Search contacts</span>
-            <input
-              type="search"
-              name="q"
-              defaultValue={search.q ?? ""}
-              placeholder="A name, a number typed any way, or anything they told the agent"
-              className={cn(CONTROL, "pl-9")}
-            />
-          </label>
+          <SearchField
+            label="Search contacts"
+            name="q"
+            defaultValue={search.q ?? ""}
+            placeholder="A name, a number typed any way, or anything they told the agent"
+          />
           {/* Carried through the form so searching does not silently drop the filter. */}
           {everyone && <input type="hidden" name="who" value="everyone" />}
           <button type="submit" className="sr-only">

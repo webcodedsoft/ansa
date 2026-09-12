@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 
-import { Button, CONTROL, Notice, Row, Stack, SubmitButton } from "@/components/ui";
+import { Button, Notice, Row, Stack, SubmitButton, TextAreaField } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { idleForm } from "@/lib/form-state";
 
@@ -87,11 +87,11 @@ export const TranscriptLine = ({
           <Stack gap="sm">
             <input type="hidden" name="callId" value={callId} />
             <input type="hidden" name="transcriptId" value={transcript.id} />
-            <textarea
+            <TextAreaField
+              label="What was actually said"
+              hideLabel
               name="correctedText"
               defaultValue={corrected ?? transcript.text}
-              aria-label="What was actually said"
-              className={cn(CONTROL, "min-h-14 resize-y leading-relaxed")}
             />
             <p className="text-xs text-[var(--ink-3)]">
               Submitting these words unchanged records that the transcriber got it right.

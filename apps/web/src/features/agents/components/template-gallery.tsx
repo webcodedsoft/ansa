@@ -3,7 +3,7 @@
 import { Check, GitBranch, PhoneOutgoing, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { Button, CONTROL, Modal, Tag } from "@/components/ui";
+import { Button, Modal, SearchField, Tag } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
 import { AGENT_TEMPLATES, allFields, servicesOf, TEMPLATE_SECTORS, type AgentTemplate } from "../templates";
@@ -54,17 +54,13 @@ export const TemplateGallery = ({
       }
     >
       <div className="flex flex-col gap-3">
-        <label className="relative block">
-          <Search aria-hidden className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-[var(--ink-3)]" />
-          <input
-            autoFocus
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search — hospital, estate, bank, school, courier…"
-            aria-label="Search templates"
-            className={cn(CONTROL, "pl-9")}
-          />
-        </label>
+        <SearchField
+          label="Search templates"
+          autoFocus
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search — hospital, estate, bank, school, courier…"
+        />
 
         <div className="flex flex-wrap gap-1.5" role="group" aria-label="Kind of business">
           <Chip on={sector === null} onClick={() => setSector(null)}>

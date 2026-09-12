@@ -45,7 +45,7 @@ export const TestCallForm = ({ configVersion }: { readonly configVersion?: numbe
           placeholder="+234 800 000 0000"
           defaultValue={state.data?.to ?? ""}
           aria-invalid={numberError !== undefined}
-          className={cn(CONTROL, "w-[190px]", numberError !== undefined && "border-[var(--bad)]")}
+          className={cn(CONTROL, "w-[190px]")}
         />
         {pending ? (
           <Loader2 aria-hidden className="size-4 animate-spin text-[var(--ink-2)]" />

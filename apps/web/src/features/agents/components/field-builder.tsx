@@ -3,7 +3,7 @@
 import { GripVertical, Plus } from "lucide-react";
 import { useState, useTransition } from "react";
 
-import { Button, ChoiceChips, ConfirmDialog, CONTROL, Notice, Panel, PanelBody, Segmented, SelectField, SettingRow, Tag, Toggle } from "@/components/ui";
+import { Button, ChoiceChips, ConfirmDialog, Notice, Panel, PanelBody, Segmented, SelectField, SettingRow, Tag, TextField, Toggle } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
 import { saveCapturedFields } from "../agents.actions";
@@ -258,17 +258,13 @@ export const FieldBuilder = ({
 
               <div className="flex flex-col gap-4">
                 <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
-                  <label className="block">
-                    <span className="mb-1.5 block text-[13px] font-medium">Field name</span>
-                    <input
-                      value={current.key}
-                      onChange={(event) => edit({ key: event.target.value })}
-                      className={CONTROL}
-                    />
-                    <span className="mt-1.5 block text-[12.5px] text-[var(--ink-3)]">
-                      How tools receive it.
-                    </span>
-                  </label>
+                  <TextField
+                    label="Field name"
+                    mono
+                    value={current.key}
+                    onChange={(event) => edit({ key: event.target.value })}
+                    hint="How tools receive it."
+                  />
                   <SelectField
                     label="Type"
                     value={current.type}
@@ -284,19 +280,13 @@ export const FieldBuilder = ({
                   </SelectField>
                 </div>
 
-                <label className="block">
-                  <span className="mb-1.5 block text-[13px] font-medium">How the agent asks</span>
-                  <input
-                    value={current.prompt}
-                    onChange={(event) => edit({ prompt: event.target.value })}
-                    placeholder={PROMPT_EXAMPLE[current.type]}
-                    className={CONTROL}
-                  />
-                  <span className="mt-1.5 block text-[12.5px] text-[var(--ink-3)]">
-                    Written as speech, not as a form label. It goes through the normalizer
-                    before it is spoken.
-                  </span>
-                </label>
+                <TextField
+                  label="How the agent asks"
+                  value={current.prompt}
+                  onChange={(event) => edit({ prompt: event.target.value })}
+                  placeholder={PROMPT_EXAMPLE[current.type]}
+                  hint="Written as speech, not as a form label. It goes through the normalizer before it is spoken."
+                />
 
                 <div>
                   <span className="mb-1.5 block text-[13px] font-medium">How it is captured</span>
@@ -330,18 +320,14 @@ export const FieldBuilder = ({
                 </div>
 
                 <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
-                  <label className="block">
-                    <span className="mb-1.5 block text-[13px] font-medium">Must match</span>
-                    <input
-                      value={current.pattern}
-                      onChange={(event) => edit({ pattern: event.target.value })}
-                      placeholder="^[A-Z]{2}[0-9]{7}$"
-                      className={cn(CONTROL, "font-mono text-[13px]")}
-                    />
-                    <span className="mt-1.5 block text-[12.5px] text-[var(--ink-3)]">
-                      Rejected values are re-asked, not passed on.
-                    </span>
-                  </label>
+                  <TextField
+                    label="Must match"
+                    mono
+                    value={current.pattern}
+                    onChange={(event) => edit({ pattern: event.target.value })}
+                    placeholder="^[A-Z]{2}[0-9]{7}$"
+                    hint="Rejected values are re-asked, not passed on."
+                  />
                   <ChoiceChips
                     label="Attempts before escalating"
                     name="attempts"

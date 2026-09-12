@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { Pause, Play, Search } from "lucide-react";
+import { Pause, Play } from "lucide-react";
 
-import { Button, Card, CONTROL, Notice, SelectField, Stack, Tag, TextField, type Tone } from "@/components/ui";
+import { Button, Card, Notice, SearchField, SelectField, Stack, Tag, TextField, type Tone } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
 import type { VoiceCatalogueLoaded } from "../agents.actions";
@@ -337,20 +337,14 @@ const Picker = ({
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2">
-        <span className="relative min-w-52 flex-1">
-          <Search
-            aria-hidden
-            className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-[var(--ink-3)]"
-          />
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search by name, accent or description"
-            aria-label="Search voices"
-            className={cn(CONTROL, "pl-8")}
-          />
-        </span>
+        <SearchField
+          label="Search voices"
+          size="sm"
+          className="min-w-52 flex-1"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search by name, accent or description"
+        />
         <SelectField
           label="Filter by accent"
           hideLabel

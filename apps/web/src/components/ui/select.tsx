@@ -221,11 +221,12 @@ export const SelectField = ({
   return (
     <Field
       as="div"
-      label={<span id={labelId} className={cn(hideLabel && "sr-only")}>{label}</span>}
+      label={<span id={labelId}>{label}</span>}
       hint={hint}
       error={error}
       required={required}
-      className={cn(className, hideLabel && "[&>span:first-child]:mb-0")}
+      hideLabel={hideLabel}
+      className={className}
     >
       <div ref={anchor}>
       <ReactSelect<Choice, false, Group>
@@ -263,16 +264,16 @@ export const SelectField = ({
         classNames={{
           control: ({ isFocused, isDisabled }) =>
             cn(
-              "w-full cursor-pointer rounded-lg border bg-[var(--surface-2)] transition-colors",
+              "w-full cursor-pointer rounded-lg border bg-[var(--surface-2)] transition-[border-color,box-shadow] duration-100",
               /* `text-left` because a native select always aligned its value left, and some
                  of the surfaces these sit on — the modals — centre their text. Without it a
                  select in a dialog reads centred and every other control beside it does not. */
               "text-left text-[var(--ink)]",
               size === "sm" ? "px-2 py-1 text-[12px]" : "px-[11px] py-2 text-[13.5px]",
               error !== undefined
-                ? "border-[var(--bad)]"
+                ? cn("border-[var(--bad)]", isFocused && "shadow-[0_0_0_3px_var(--bad-soft)]")
                 : isFocused
-                  ? "border-[var(--accent)]"
+                  ? "border-[var(--accent)] shadow-[0_0_0_3px_var(--accent-soft)]"
                   : "border-[var(--hairline)] hover:border-[var(--ink-3)]",
               isDisabled && "cursor-default opacity-55",
             ),

@@ -2,7 +2,7 @@
 
 import { startTransition, useActionState, useState } from "react";
 
-import { Button, CONTROL, Field, Notice, Stack } from "@/components/ui";
+import { Button, Notice, Stack, TextField } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { idleForm } from "@/lib/form-state";
 
@@ -125,24 +125,22 @@ const When = ({
 
       {showPickers ? (
         <div className="mt-2 flex flex-wrap gap-2">
-          <Field label="Date" className="min-w-[8.5rem] flex-[2]">
-            <input
-              type="date"
-              value={value.date}
-              disabled={disabled}
-              onChange={(event) => onChange({ ...value, date: event.target.value })}
-              className={CONTROL}
-            />
-          </Field>
-          <Field label="Time" className="min-w-[6.5rem] flex-1">
-            <input
-              type="time"
-              value={value.time}
-              disabled={disabled}
-              onChange={(event) => onChange({ ...value, time: event.target.value })}
-              className={CONTROL}
-            />
-          </Field>
+          <TextField
+            label="Date"
+            type="date"
+            className="min-w-[8.5rem] flex-[2]"
+            value={value.date}
+            disabled={disabled}
+            onChange={(event) => onChange({ ...value, date: event.target.value })}
+          />
+          <TextField
+            label="Time"
+            type="time"
+            className="min-w-[6.5rem] flex-1"
+            value={value.time}
+            disabled={disabled}
+            onChange={(event) => onChange({ ...value, time: event.target.value })}
+          />
         </div>
       ) : (
         chosen !== null && (

@@ -1,10 +1,9 @@
 "use client";
 
-import { Search, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useState, useTransition } from "react";
 
-import { CONTROL, IconButton } from "@/components/ui";
-import { cn } from "@/lib/cn";
+import { IconButton, SearchField } from "@/components/ui";
 
 import { findContacts, type ContactMatch } from "../appointments.actions";
 
@@ -62,19 +61,15 @@ export const ContactPicker = ({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="relative flex items-center">
-        <Search aria-hidden className="pointer-events-none absolute left-3 size-4 text-[var(--ink-3)]" />
-        <input
-          type="search"
-          value={query}
-          placeholder="Search a name or number (optional)"
-          className={cn(CONTROL, "pl-9")}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            run(event.target.value);
-          }}
-        />
-      </div>
+      <SearchField
+        label="Search contacts"
+        value={query}
+        placeholder="Search a name or number (optional)"
+        onChange={(event) => {
+          setQuery(event.target.value);
+          run(event.target.value);
+        }}
+      />
 
       {pending && <p className="text-[12px] text-[var(--ink-3)]">Searching…</p>}
 

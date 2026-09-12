@@ -2,9 +2,7 @@
 
 import { useActionState, useMemo, useRef, useState } from "react";
 
-import { Button, Notice, Stack, SubmitButton } from "@/components/ui";
-import { CONTROL } from "@/components/ui";
-import { cn } from "@/lib/cn";
+import { Button, Notice, Stack, SubmitButton, TextAreaField } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
 import { importContactsAction, type ImportContactsState } from "../contacts.actions";
@@ -77,20 +75,18 @@ export const ImportContactsForm = ({ onClose }: { readonly onClose: () => void }
   return (
     <form action={action}>
       <Stack gap="sm">
-        <label className="block">
-          <span className="mb-1.5 block text-[12.5px] font-medium">Paste your list</span>
-          <textarea
-            value={text}
-            onChange={(event) => {
-              setText(event.target.value);
-              setSourceLabel("Pasted");
-              setFileError(null);
-            }}
-            rows={7}
-            placeholder={"phone,name,notes\n0803 123 4567,Adaeze,VIP\n0701 111 2222,Bola"}
-            className={cn(CONTROL, "resize-y font-mono text-[12.5px] leading-relaxed")}
-          />
-        </label>
+        <TextAreaField
+          label="Paste your list"
+          mono
+          value={text}
+          onChange={(event) => {
+            setText(event.target.value);
+            setSourceLabel("Pasted");
+            setFileError(null);
+          }}
+          rows={7}
+          placeholder={"phone,name,notes\n0803 123 4567,Adaeze,VIP\n0701 111 2222,Bola"}
+        />
 
         <div className="flex items-center gap-3 text-[12.5px] text-[var(--ink-3)]">
           <span>or</span>

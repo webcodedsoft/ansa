@@ -4,7 +4,7 @@ import { SERIES_EVERY, SERIES_RUN_FOR, type SeriesEvery, type SeriesRunFor } fro
 import Link from "next/link";
 import { startTransition, useActionState, useState } from "react";
 
-import { Button, CONTROL, Field, Notice, Stack } from "@/components/ui";
+import { Button, Notice, Stack, TextField } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { idleForm } from "@/lib/form-state";
 
@@ -273,24 +273,22 @@ export const CampaignSeries = ({
         </div>
         {showPickers ? (
           <div className="mt-2 flex flex-wrap gap-2">
-            <Field label="Date" className="min-w-[8.5rem] flex-[2]">
-              <input
-                type="date"
-                value={first.date}
-                disabled={locked}
-                onChange={(event) => setFirst({ ...first, date: event.target.value })}
-                className={CONTROL}
-              />
-            </Field>
-            <Field label="Time" className="min-w-[6.5rem] flex-1">
-              <input
-                type="time"
-                value={first.time}
-                disabled={locked}
-                onChange={(event) => setFirst({ ...first, time: event.target.value })}
-                className={CONTROL}
-              />
-            </Field>
+            <TextField
+              label="Date"
+              type="date"
+              className="min-w-[8.5rem] flex-[2]"
+              value={first.date}
+              disabled={locked}
+              onChange={(event) => setFirst({ ...first, date: event.target.value })}
+            />
+            <TextField
+              label="Time"
+              type="time"
+              className="min-w-[6.5rem] flex-1"
+              value={first.time}
+              disabled={locked}
+              onChange={(event) => setFirst({ ...first, time: event.target.value })}
+            />
           </div>
         ) : (
           chosen !== null && (

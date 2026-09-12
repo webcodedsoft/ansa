@@ -5,7 +5,7 @@ import { useState, useTransition } from "react";
 
 import { useProgressWhile } from "@/stores/progress.store";
 
-import { Button, CONTROL, Notice, Panel, PanelBody } from "@/components/ui";
+import { Button, Notice, Panel, PanelBody, TextField } from "@/components/ui";
 
 import { createAgentFromTemplate } from "../agents.actions";
 import { findTemplate } from "../templates";
@@ -87,20 +87,14 @@ export const CreateAgent = ({ mode }: { readonly mode: AuthoringMode }) => {
       <div className="flex flex-col gap-3.5">
         <Panel>
           <PanelBody>
-            <label className="block">
-              <span className="mb-1.5 block text-[13px] font-medium">Agent name</span>
-              <input
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                maxLength={120}
-                placeholder="Customer service"
-                className={CONTROL}
-              />
-              <span className="mt-1.5 block text-[12.5px] text-[var(--ink-3)]">
-                For you, not the caller — it is how this agent is listed and how its calls
-                are attributed. What the agent calls itself when it answers is the greeting.
-              </span>
-            </label>
+            <TextField
+              label="Agent name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              maxLength={120}
+              placeholder="Customer service"
+              hint="For you, not the caller — it is how this agent is listed and how its calls are attributed. What the agent calls itself when it answers is the greeting."
+            />
           </PanelBody>
         </Panel>
 

@@ -5894,6 +5894,30 @@ rather than landed as inventory — the wave that needs them adds them wired.
       the store, `WidePage` and `useWidePage` went and the number stayed in the chrome.
 
       Not proven by a call: a caller on a closed date being told the line is shut.
+- [x] **Every input draws its states in one place** (2026-09-12)
+      The controls had a rest and a hover and nothing else: no focus beyond the page's
+      outline (which sits outside a rounded border and reads as a second box), invalid only
+      where a caller remembered the class, read-only indistinguishable from editable, the
+      browser's calendar button in whatever colour it came in. `CONTROL` now carries all of
+      them — a soft accent ring on focus, red keyed off `aria-invalid` so a raw input gets it
+      too, read-only without the fill or the hover, the picker glyph dimmed to the hint
+      colour — and the select draws the same ring.
+
+      `TextField` takes what sits beside the text: `leading` icon, `trailing`, `prefix`,
+      `suffix`, `size="sm"`, `mono`. The frame carries the states and the input inside it
+      none, so an adorned field focuses and errs exactly like a plain one. `SearchField` is
+      that with the magnifier and a caption that is read, not seen; `SwitchField` is a
+      checkbox drawn as a switch that still submits through `FormData`, which is why it is
+      not the `Toggle` button. Hints and errors are named in `aria-describedby`, and the
+      error carries a glyph and `role="alert"`.
+
+      Fourteen hand-rolled inputs moved onto them: every search box (contacts, appointments,
+      voices, three template galleries, the contact picker, the add-contacts filter), the
+      agent name, three field-builder inputs, the campaign date and time pairs, the paste
+      box, the transcript correction, the closed-date rows and both organisation switches.
+      One catch on the way: `has-[:read-only]` on the frame matched the icon's span —
+      anything that is not editable is `:read-only` — so every framed field lost its focus
+      ring until it was narrowed to `input:read-only`.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

@@ -1,7 +1,4 @@
-import { Search } from "lucide-react";
-
-import { CONTROL } from "@/components/ui";
-import { cn } from "@/lib/cn";
+import { SearchField } from "@/components/ui";
 
 /**
  * Find an appointment by name, without knowing which week it is in.
@@ -21,19 +18,8 @@ export const AppointmentSearch = ({
   readonly calendarId: string;
   readonly query: string;
 }) => (
-  <form action="/appointments" method="get" className="relative" role="search">
+  <form action="/appointments" method="get" className="w-[220px]" role="search">
     <input type="hidden" name="calendar" value={calendarId} />
-    <Search
-      aria-hidden
-      className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-[var(--ink-3)]"
-    />
-    <input
-      type="search"
-      name="q"
-      defaultValue={query}
-      placeholder="Search appointments"
-      aria-label="Search appointments"
-      className={cn(CONTROL, "h-8 w-[200px] pl-8 text-[12.5px]")}
-    />
+    <SearchField label="Search appointments" size="sm" name="q" defaultValue={query} placeholder="Search appointments" />
   </form>
 );

@@ -4,7 +4,7 @@ import { Mic } from "lucide-react";
 import Link from "next/link";
 import { useActionState, useState } from "react";
 
-import { Card, Notice, SubmitButton, Tag } from "@/components/ui";
+import { Card, Notice, SubmitButton, SwitchField, Tag } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
 import { saveRecording, type RecordingState } from "../org.actions";
@@ -48,26 +48,14 @@ export const RecordingForm = ({
         {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
         {state.status === "succeeded" && <Notice tone="ok">{state.message}</Notice>}
 
-        <label className="flex cursor-pointer items-center gap-3.5 rounded-lg border border-[var(--hairline)] bg-[var(--surface-2)] px-3.5 py-3">
-          <input
-            id="record-calls"
-            type="checkbox"
-            name="recordCalls"
-            checked={on}
-            onChange={(event) => setOn(event.target.checked)}
-            className="peer sr-only"
-          />
-          <span
-            aria-hidden
-            className="relative h-[22px] w-[38px] flex-none rounded-full bg-[var(--hairline)] transition-colors peer-checked:bg-[var(--accent)] after:absolute after:top-[2px] after:left-[2px] after:size-[18px] after:rounded-full after:bg-[var(--surface-solid)] after:shadow-[var(--shadow-s)] after:transition-transform peer-checked:after:translate-x-4"
-          />
-          <span className="min-w-0">
-            <span className="block text-[14px] font-medium">Record calls</span>
-            <span className="block text-[12.5px] text-[var(--ink-3)]">
-              Both sides, mixed to stereo — the caller on the left, the agent on the right.
-            </span>
-          </span>
-        </label>
+        <SwitchField
+          id="record-calls"
+          name="recordCalls"
+          label="Record calls"
+          description="Both sides, mixed to stereo — the caller on the left, the agent on the right."
+          checked={on}
+          onChange={(event) => setOn(event.target.checked)}
+        />
 
         <div>
           <div className="mb-1.5 text-[12.5px] font-medium">What callers will hear</div>

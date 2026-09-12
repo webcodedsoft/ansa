@@ -3,7 +3,7 @@
 import { Check, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { Button, CONTROL, Modal } from "@/components/ui";
+import { Button, Modal, SearchField } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
 import { CAMPAIGN_SECTORS, CAMPAIGN_TEMPLATES, type CampaignTemplate } from "../campaign-templates";
@@ -74,20 +74,13 @@ export const CampaignTemplateGallery = ({
       description="Every template is a campaign somebody actually runs — the reason the agent opens with, the verdicts it records, the conversation it has when the person says something back, and a retry policy that suits the subject. Pick one, give it a name, add the people, and it can start."
     >
       <div className="flex flex-col gap-3">
-        <label className="relative block">
-          <Search
-            aria-hidden
-            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-[var(--ink-3)]"
-          />
-          <input
-            autoFocus
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search — rent, appointment, delivery, fees…"
-            aria-label="Search templates"
-            className={cn(CONTROL, "pl-9")}
-          />
-        </label>
+        <SearchField
+          label="Search templates"
+          autoFocus
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search — rent, appointment, delivery, fees…"
+        />
 
         <div className="flex flex-wrap gap-1.5" role="group" aria-label="Kind of organisation">
           <Chip on={sector === null} onClick={() => setSector(null)}>

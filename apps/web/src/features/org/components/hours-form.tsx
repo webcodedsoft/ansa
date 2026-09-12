@@ -5,7 +5,6 @@ import { useActionState, useState } from "react";
 
 import {
   Button,
-  CONTROL,
   Card,
   CheckboxField,
   CheckboxGroup,
@@ -14,9 +13,10 @@ import {
   SelectField,
   Stack,
   SubmitButton,
+  SwitchField,
   Tag,
+  TextField,
 } from "@/components/ui";
-import { cn } from "@/lib/cn";
 import { idleForm } from "@/lib/form-state";
 
 import { saveHours, type HoursState } from "../org.actions";
@@ -112,8 +112,9 @@ export const HoursForm = ({
           {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
           {state.status === "succeeded" && <Notice tone="ok">Saved. Calls use these now.</Notice>}
 
-          <CheckboxField
+          <SwitchField
             label="Restrict to set hours"
+            description="Off is always open: the agent never says the line is closed."
             name="hoursEnabled"
             defaultChecked={hours !== null}
           />
@@ -170,17 +171,19 @@ export const HoursForm = ({
             <div className="flex flex-col gap-2">
               {rows.map((row) => (
                 <div key={row.key} className="flex items-center gap-2">
-                  <input
+                  <TextField
+                    label="Closed date"
+                    hideLabel
                     type="date"
                     name="closedDates"
+                    mono
+                    className="w-[14rem]"
                     defaultValue={row.date}
                     onChange={(event) =>
                       setRows((current) =>
                         current.map((r) => (r.key === row.key ? { ...r, date: event.target.value } : r)),
                       )
                     }
-                    aria-label="Closed date"
-                    className={cn(CONTROL, "max-w-[14rem] font-mono")}
                   />
                   <Button
                     type="button"
