@@ -16,9 +16,11 @@ import {
 import {
   inviteMember,
   removeMember,
+  renameOrganisation,
   revokeInvitation,
   setMemberRole,
   setOrganizationHours,
+  setRecording,
 } from "./org.service";
 
 // ---------------------------------------------------------------------------
@@ -204,6 +206,54 @@ export const saveHours = async (_previous: HoursState, form: FormData): Promise<
        one organisation's and are read in more than one place — every agent runs on them. */
     revalidatePath("/", "layout");
     return succeededForm({ savedAt: new Date().toISOString() });
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+};
+
+/**
+ * The organisation's name, saved.
+ *
+ * Revalidates the whole tree: the name is in the sidebar, the breadcrumb and every page
+ * header, so a narrower revalidation would leave the old name in the chrome around the new.
+ */
+export type NameState = FormState<{ readonly name: string }>;
+
+export const saveName = async (_previous: NameState, form: FormData): Promise<NameState> => {
+  const name = String(form.get("name") ?? "").trim();
+  if (name === "") return failedForm("The organisation needs a name.");
+  try {
+    const saved = await renameOrganisation(name);
+    revalidatePath("/", "layout");
+    return succeededForm({ name: saved.name }, `Renamed to ${saved.name}.`);
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+};
+
+/**
+ * Recording, switched.
+ *
+ * `on` arrives as the string a checkbox sends, so absence is off — which is also what a
+ * person who unticked the box meant. Revalidates the layout for the same reason `saveName`
+ * does: the state is shown on the organisation page and on every call page's player.
+ */
+export type RecordingState = FormState<{ readonly recordCalls: boolean }>;
+
+export const saveRecording = async (
+  _previous: RecordingState,
+  form: FormData,
+): Promise<RecordingState> => {
+  const on = form.get("recordCalls") === "on";
+  try {
+    const saved = await setRecording(on);
+    revalidatePath("/", "layout");
+    return succeededForm(
+      { recordCalls: saved.recordCalls },
+      saved.recordCalls
+        ? "Recording is on. From the next call, every caller is told in the first sentence."
+        : "Recording is off. Nothing is kept as audio from the next call.",
+    );
   } catch (error) {
     return failedForm(failureMessage(error));
   }

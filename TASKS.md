@@ -5843,6 +5843,29 @@ rather than landed as inventory — the wave that needs them adds them wired.
       do in the words `capability.ts` grants, and a footer — a native select had opened over
       the modal and scrolled its title away; and the description no longer claims admins can
       change roles, which only owners can.
+- [x] **The organisation is one page with a rail, and its overview is a facts list** (2026-09-12)
+      Five designs were drawn for Members, Organisation and Settings; the user chose A's
+      shape — a section rail on the left, one section on the right — with E's overview: a
+      compact list where every fact carries the one control that changes it. The section is
+      the URL (`/organisation?s=hours`), like every other filter in the console.
+
+      What moved: the Consent & do-not-call page is gone as a route and lives as the
+      `consent` section, still operator-set and still read-only, but beside the hours and the
+      recording switch where a fact about how the company may ring people belongs. What is
+      new: `general` (the name, with the time zone stated rather than chosen — Ansa runs in
+      WAT) and `recording`, the first console control over `record_calls` (0077). The
+      recording form shows the sentence a caller will hear rather than describing it, because
+      the switch and the disclosure are one thing in the call path.
+
+      Underneath: `recordCalls` on the organisation read, `PUT /organization/recording`
+      (`config:write`), `setRecordCalls` via `scope.mutate`, and `org.display.ts` for
+      "open now" in WAT with an exclusive closing hour — the same reading the call path makes,
+      so the badge and the agent agree. Numbers, Webhooks and Credentials stay where they
+      were in the sidebar.
+
+      Seen on screen: overview, general, consent and recording sections. Not yet proven by a
+      call: a recorded call opening with "This call is recorded" after the switch is turned
+      on here.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

@@ -43,8 +43,8 @@ export const DESTINATIONS: readonly Destination[] = [
   { href: "/webhooks", label: "Webhooks", group: "Connect", capability: "config:read" },
   { href: "/credentials", label: "Credentials", group: "Connect", capability: "config:write" },
 
+  { href: "/organisation", label: "Organisation", group: "Organisation", capability: "config:read" },
   { href: "/members", label: "Members", group: "Organisation", capability: "members:read" },
-  { href: "/consent", label: "Consent & do-not-call", group: "Organisation", capability: "config:read" },
   { href: "/audit", label: "Audit log", group: "Organisation", capability: "calls:read" },
 ];
 

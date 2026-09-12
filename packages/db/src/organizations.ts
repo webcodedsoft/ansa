@@ -41,6 +41,11 @@ export interface Organization {
    * publish, which is where it always lived in the database and never in a version.
    */
   readonly businessHours: BusinessHours | null;
+  /**
+   * Whether calls are kept as audio (migration 0077). Off by default. When on, the agent
+   * discloses it in its opening line — the disclosure is not a separate switch.
+   */
+  readonly recordCalls: boolean;
   /** Operator-set: the NDPR/NCC posture the outbound consent gate enforces. */
   readonly consent: {
     readonly policy: string;
@@ -59,6 +64,7 @@ interface OrganizationRow {
   business_open_hour: number | null;
   business_close_hour: number | null;
   business_days: number[] | null;
+  record_calls: boolean;
   consent_policy: string;
   consent_basis: string | null;
   calling_earliest_hour: number | null;
@@ -84,6 +90,7 @@ const toOrganization = (row: OrganizationRow): Organization => ({
   createdAt: iso(row.created_at),
   audioRetentionDays: row.audio_retention_days,
   transcriptRetentionDays: row.transcript_retention_days,
+  recordCalls: row.record_calls === true,
   businessHours: toBusinessHours(row),
   consent: {
     policy: row.consent_policy,
@@ -108,7 +115,7 @@ export const readOrganization = async (
 ): Promise<Organization | null> => {
   const rows = await scope.query<OrganizationRow>(
     `select id, name, created_at, audio_retention_days, transcript_retention_days,
-            business_open_hour, business_close_hour, business_days,
+            business_open_hour, business_close_hour, business_days, record_calls,
             consent_policy, consent_basis, calling_earliest_hour, calling_latest_hour
        from organizations`,
   );
@@ -137,6 +144,23 @@ export const renameOrganization = async (
   );
   if (updated.length === 0) return null;
   return readOrganization(scope);
+};
+
+/**
+ * Turn call recording on or off for this organisation.
+ *
+ * The switch is the organisation's, not an agent's: one company records or does not, and the
+ * caller is told either way by whichever agent answers. Applied immediately — like hours,
+ * there is no version for it to sit in — and the call path reads it through
+ * `agent_config_for_number` on the next call, which is also where the disclosure is added to
+ * the greeting. `mutate`, for the reason every other update here says.
+ */
+export const setRecordCalls = async (scope: OrganizationScope, on: boolean): Promise<boolean> => {
+  const updated = await scope.mutate<{ id: string }>(
+    `update organizations set record_calls = $1 where deleted_at is null returning id`,
+    [on],
+  );
+  return updated.length > 0;
 };
 
 /**

@@ -3,12 +3,13 @@ import {
   readOrganization,
   renameOrganization,
   setOrganizationHours,
+  setRecordCalls,
 } from "@ansa/db";
 import { Controller, Delete, Get, Inject, NotFoundException, Patch, Put } from "@nestjs/common";
 
 import { Endpoint } from "../http/endpoint";
 import { apiRoute, FromBody } from "../http/request";
-import { integer, list, nullable, object, text, type Infer } from "../http/schema";
+import { flag, integer, list, nullable, object, text, type Infer } from "../http/schema";
 import { timestamp, uuid } from "../schemas";
 import { OrganizationContext } from "../tenancy/organization-context";
 
@@ -79,6 +80,12 @@ const organization = object({
    * rendered — so with two agents, publishing one moved the other's opening times.
    */
   businessHours: nullable(businessHours),
+  /**
+   * Whether calls are kept as audio. Off by default; the organisation turns it on here. When
+   * on, every caller is told in the agent's first sentence — the disclosure is not a
+   * separate setting and cannot be switched off on its own.
+   */
+  recordCalls: flag(),
   /** Read-only: the NDPR/NCC posture the outbound consent gate enforces on every call. */
   consent: object({
     policy: text({ maxLength: 64 }),
@@ -96,6 +103,8 @@ const organization = object({
  * one that does not accept them.
  */
 const rename = object({ name: text({ maxLength: NAME_LIMIT }) });
+
+const recordingBody = object({ recordCalls: flag() });
 
 @Controller(apiRoute("organization"))
 export class OrganizationController {
@@ -155,6 +164,26 @@ export class OrganizationController {
     // Already closed, or gone. Both are "there is nothing here to close", which is a 404
     // rather than an error — the caller's intent is satisfied either way.
     if (!closed) throw new NotFoundException();
+  }
+
+  @Put("recording")
+  @Endpoint({
+    summary: "Whether this organisation records its calls",
+    description:
+      "Off by default. Turning it on keeps both sides of every call as audio for `audioRetentionDays` and adds \"This call is recorded\" to every agent's opening line from the next call — the disclosure travels with the switch and cannot be turned off separately. Applied immediately; there is no version to publish.",
+    capability: "config:write",
+    body: recordingBody,
+    response: organization,
+  })
+  async setRecording(
+    @FromBody() body: Infer<typeof recordingBody>,
+  ): Promise<Infer<typeof organization>> {
+    const saved = await this.db.tx(async (scope) => {
+      const changed = await setRecordCalls(scope, body.recordCalls);
+      return changed ? readOrganization(scope) : null;
+    });
+    if (saved === null) throw new NotFoundException();
+    return saved;
   }
 
   @Put("hours")

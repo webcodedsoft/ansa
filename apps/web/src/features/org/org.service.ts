@@ -57,6 +57,17 @@ export const revokeInvitation = async (input: RevokeInvitationInput) =>
  */
 export const organisation = async () => (await api()).organization.read();
 
+/** Cosmetic, and only here: an agent's name is what it says on a call, and this is not that. */
+export const renameOrganisation = async (name: string) =>
+  (await api()).organization.rename({ body: { name } });
+
+/**
+ * Turn recording on or off. Applied immediately; the disclosure travels with it, so from the
+ * next call every agent's opening line says "This call is recorded" — or stops saying it.
+ */
+export const setRecording = async (recordCalls: boolean) =>
+  (await api()).organization.setRecording({ body: { recordCalls } });
+
 export type Organisation = Awaited<ReturnType<typeof organisation>>;
 
 /** When this organisation counts as open. Null is always open — a setting, not an absence. */

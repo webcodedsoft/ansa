@@ -3415,6 +3415,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly closesAtHour: number;
         readonly openDays: readonly (number)[];
       } | null;
+        readonly recordCalls: boolean;
         readonly consent: {
         readonly policy: string;
         readonly basis: string | null;
@@ -3443,6 +3444,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly closesAtHour: number;
         readonly openDays: readonly (number)[];
       } | null;
+        readonly recordCalls: boolean;
         readonly consent: {
         readonly policy: string;
         readonly basis: string | null;
@@ -3482,6 +3484,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly closesAtHour: number;
         readonly openDays: readonly (number)[];
       } | null;
+        readonly recordCalls: boolean;
         readonly consent: {
         readonly policy: string;
         readonly basis: string | null;
@@ -3489,6 +3492,35 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly callingLatestHour: number | null;
       };
       }>(options, "PUT", `/api/v1/organization/hours`, input),
+
+    /**
+     * Whether this organisation records its calls
+     * Off by default. Turning it on keeps both sides of every call as audio for `audioRetentionDays` and adds "This call is recorded" to every agent's opening line from the next call — the disclosure travels with the switch and cannot be turned off separately. Applied immediately; there is no version to publish.
+     */
+    setRecording: (input: {
+        readonly body: {
+          readonly recordCalls: boolean;
+        };
+      }) =>
+      send<{
+        readonly organizationId: string;
+        readonly name: string;
+        readonly createdAt: string;
+        readonly audioRetentionDays: number;
+        readonly transcriptRetentionDays: number;
+        readonly businessHours: {
+        readonly opensAtHour: number;
+        readonly closesAtHour: number;
+        readonly openDays: readonly (number)[];
+      } | null;
+        readonly recordCalls: boolean;
+        readonly consent: {
+        readonly policy: string;
+        readonly basis: string | null;
+        readonly callingEarliestHour: number | null;
+        readonly callingLatestHour: number | null;
+      };
+      }>(options, "PUT", `/api/v1/organization/recording`, input),
   },
 
   readiness: {

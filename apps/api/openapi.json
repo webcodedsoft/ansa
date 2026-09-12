@@ -23567,6 +23567,9 @@
                       ],
                       "additionalProperties": false
                     },
+                    "recordCalls": {
+                      "type": "boolean"
+                    },
                     "consent": {
                       "type": "object",
                       "properties": {
@@ -23614,6 +23617,7 @@
                     "audioRetentionDays",
                     "transcriptRetentionDays",
                     "businessHours",
+                    "recordCalls",
                     "consent"
                   ],
                   "additionalProperties": false
@@ -23753,6 +23757,9 @@
                       ],
                       "additionalProperties": false
                     },
+                    "recordCalls": {
+                      "type": "boolean"
+                    },
                     "consent": {
                       "type": "object",
                       "properties": {
@@ -23800,6 +23807,7 @@
                     "audioRetentionDays",
                     "transcriptRetentionDays",
                     "businessHours",
+                    "recordCalls",
                     "consent"
                   ],
                   "additionalProperties": false
@@ -24034,6 +24042,9 @@
                       ],
                       "additionalProperties": false
                     },
+                    "recordCalls": {
+                      "type": "boolean"
+                    },
                     "consent": {
                       "type": "object",
                       "properties": {
@@ -24081,6 +24092,208 @@
                     "audioRetentionDays",
                     "transcriptRetentionDays",
                     "businessHours",
+                    "recordCalls",
+                    "consent"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/organization/recording": {
+      "put": {
+        "operationId": "organization.setRecording",
+        "tags": [
+          "organization"
+        ],
+        "summary": "Whether this organisation records its calls",
+        "description": "Off by default. Turning it on keeps both sides of every call as audio for `audioRetentionDays` and adds \"This call is recorded\" to every agent's opening line from the next call — the disclosure travels with the switch and cannot be turned off separately. Applied immediately; there is no version to publish.",
+        "x-ansa-capability": "config:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "recordCalls": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "recordCalls"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "organizationId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "audioRetentionDays": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "transcriptRetentionDays": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "businessHours": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "opensAtHour": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 23
+                        },
+                        "closesAtHour": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 24
+                        },
+                        "openDays": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 7
+                          },
+                          "maxItems": 7
+                        }
+                      },
+                      "required": [
+                        "opensAtHour",
+                        "closesAtHour",
+                        "openDays"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "recordCalls": {
+                      "type": "boolean"
+                    },
+                    "consent": {
+                      "type": "object",
+                      "properties": {
+                        "policy": {
+                          "type": "string",
+                          "maxLength": 64
+                        },
+                        "basis": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 500
+                        },
+                        "callingEarliestHour": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 23
+                        },
+                        "callingLatestHour": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 24
+                        }
+                      },
+                      "required": [
+                        "policy",
+                        "basis",
+                        "callingEarliestHour",
+                        "callingLatestHour"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "organizationId",
+                    "name",
+                    "createdAt",
+                    "audioRetentionDays",
+                    "transcriptRetentionDays",
+                    "businessHours",
+                    "recordCalls",
                     "consent"
                   ],
                   "additionalProperties": false
