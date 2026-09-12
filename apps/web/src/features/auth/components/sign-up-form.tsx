@@ -2,9 +2,10 @@
 
 import { useActionState } from "react";
 
-import { Notice, Stack, SubmitButton, TextField } from "@/components/ui";
+import { Stack, SubmitButton, TextField } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import { signUp, type SignUpState } from "../auth.actions";
 
 const START: SignUpState = idleForm();
@@ -12,12 +13,10 @@ const START: SignUpState = idleForm();
 export const SignUpForm = () => {
   const [state, action, pending] = useActionState(signUp, START);
 
+  useFailureToast(state);
   return (
     <form action={action}>
       <Stack>
-        {(state.status === "failed" || state.status === "invalid") && (
-          <Notice tone="error">{state.message}</Notice>
-        )}
 
         <TextField
           label="Organisation"

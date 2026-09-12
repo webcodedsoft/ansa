@@ -19,7 +19,7 @@ import {
 } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 import { dayLabel, when, phone } from "@/lib/format";
-import { useFormToast } from "@/stores/toast.store";
+import { useFailureToast, useFormToast, useToastStore } from "@/stores/toast.store";
 
 import type { CallSummary } from "@/features/calls/calls.service";
 
@@ -206,6 +206,7 @@ export const AgentWorkspace = ({
      there is no screen left to show a success on. */
   const [retireState, retire, retiring] = useActionState(retireAgent, START_RETIRE);
 
+  useFailureToast(retireState);
   /* Whichever attempt answered last owns the field errors. Both schemas validate the same
      fields, so a name rejected by a save is the same name a publish would reject. */
   const errors = state.status === "idle" ? saveState.fieldErrors : state.fieldErrors;
@@ -326,6 +327,17 @@ export const AgentWorkspace = ({
       .map((field) => FIELD_TAB[field])
       .filter((tab): tab is string => tab !== undefined),
   );
+  /* A refusal names its fields, and the fields live on tabs — so the toast says which tabs,
+     which is what the inline notice used to add and the plain failure toast would drop. */
+  const showToast = useToastStore((store) => store.show);
+  const toasted = useRef<typeof state | null>(null);
+  useEffect(() => {
+    if (toasted.current === state) return;
+    if ((state.status === "failed" || state.status === "invalid") && state.message !== null) {
+      toasted.current = state;
+      showToast("error", `${state.message}${problemTabs.size > 0 ? ` On ${sentenceList([...problemTabs].map(tabLabel))}.` : ""}`);
+    }
+  }, [state, showToast, problemTabs]);
 
   /* Held here rather than left to the textarea, so closing the dialog and opening it again
      does not lose a sentence somebody already typed. */
@@ -621,18 +633,7 @@ export const AgentWorkspace = ({
             fail at runtime with a compiling build, which is exactly why the action refuses
             rather than falling back to the organisation's only agent. */}
         <input type="hidden" name="agentId" value={agent.agentId} />
-        {retireState.status === "failed" && (
-          <Notice tone="error" className="mb-3.5">
-            {retireState.message}
-          </Notice>
-        )}
 
-        {(state.status === "failed" || state.status === "invalid") && (
-          <Notice tone="error" className="mb-3.5">
-            {state.message}
-            {problemTabs.size > 0 && ` On ${sentenceList([...problemTabs].map(tabLabel))}.`}
-          </Notice>
-        )}
 
         {/* Two agents, two workspaces, one form. A form agent is built in tabs. A flow agent
             is built on its canvas — the canvas is the page, and everything else about the

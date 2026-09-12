@@ -26,7 +26,7 @@ import {
 import { cn } from "@/lib/cn";
 import { idleForm } from "@/lib/form-state";
 import { when } from "@/lib/format";
-import { useFormToast } from "@/stores/toast.store";
+import { useFormToast, useFailureToast } from "@/stores/toast.store";
 
 import {
   extractFileAction,
@@ -163,6 +163,7 @@ const Selection = ({
   readonly onEdit: (sourceId: string) => void;
 }) => {
   const [state, action, pending] = useActionState(saveAgentKnowledgeAction, START);
+  useFailureToast(state);
   const [chosen, setChosen] = useState<ReadonlySet<string>>(
     () => new Set(agent.knowledgeSources ?? []),
   );
@@ -190,9 +191,6 @@ const Selection = ({
   return (
     <div>
       <Stack>
-        {(state.status === "failed" || state.status === "invalid") && (
-          <Notice tone="error">{state.message}</Notice>
-        )}
 
         <Panel>
           <Table>
@@ -305,6 +303,7 @@ const AddSource = ({ onDone }: { readonly onDone: () => void }) => {
   const [state, action, pending] = useActionState(saveKnowledgeSourceAction, START);
   const [read, extract, reading] = useActionState(extractFileAction, EXTRACT_START);
 
+  useFailureToast(read);
   useFormToast(state, () => {
     onDone();
     return "Stored.";
@@ -347,10 +346,6 @@ const AddSource = ({ onDone }: { readonly onDone: () => void }) => {
   return (
     <div>
       <Stack>
-        {(state.status === "failed" || state.status === "invalid") && (
-          <Notice tone="error">{state.message}</Notice>
-        )}
-        {read.status === "failed" && <Notice tone="error">{read.message}</Notice>}
 
         <div className="overflow-hidden rounded-xl border border-[var(--surface-line)]">
           <div className="flex items-center gap-3 border-b border-[var(--surface-line)] bg-[var(--surface-2)] px-4 py-2.5">
@@ -735,9 +730,6 @@ const EditSource = ({
   return (
     <div>
       <Stack>
-        {(state.status === "failed" || state.status === "invalid") && (
-          <Notice tone="error">{state.message}</Notice>
-        )}
 
         {empty && (
           <Notice tone="warn">

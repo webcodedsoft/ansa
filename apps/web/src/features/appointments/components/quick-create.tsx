@@ -3,9 +3,9 @@
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 
-import { Button, Notice, SELECT_MENU_CLASS } from "@/components/ui";
+import { Button, SELECT_MENU_CLASS } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
-import { useFormToast } from "@/stores/toast.store";
+import { useFormToast, useFailureToast } from "@/stores/toast.store";
 
 import { createBookingAction, type BookingState } from "../appointments.actions";
 import { minuteToInput } from "../appointments.drag";
@@ -71,6 +71,7 @@ export const QuickCreate = ({
   readonly onMoreOptions: (span: DraftSpan) => void;
 }) => {
   const [state, action, pending] = useActionState(createBookingAction, START);
+  useFailureToast(state);
   const [title, setTitle] = useState("");
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("09:30");
@@ -166,7 +167,6 @@ export const QuickCreate = ({
         <input type="hidden" name="endsAt" value={instants?.endsAt ?? ""} />
         <input type="hidden" name="title" value={title} />
 
-        {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
 
         <input
           /* Focused on open: the card exists to name the thing, and Save is one key away. */

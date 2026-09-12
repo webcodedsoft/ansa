@@ -2,9 +2,10 @@
 
 import { startTransition, useActionState, useState } from "react";
 
-import { Button, Modal, Notice, Stack, TextField } from "@/components/ui";
+import { Button, Modal, Stack, TextField } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import { duplicateCampaignAction, type DuplicateState } from "../campaigns.actions";
 
 const START: DuplicateState = idleForm();
@@ -34,6 +35,7 @@ export const DuplicateCampaignButton = ({
 }) => {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState(duplicateCampaignAction, START);
+  useFailureToast(state);
   const [copyName, setCopyName] = useState(`${name} (copy)`);
 
   const create = (): void => {
@@ -71,7 +73,6 @@ export const DuplicateCampaignButton = ({
         }
       >
         <Stack>
-          {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
           <TextField
             label="Name"
             value={copyName}

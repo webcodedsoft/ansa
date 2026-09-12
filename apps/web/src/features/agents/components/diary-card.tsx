@@ -6,6 +6,7 @@ import { startTransition, useActionState, useState } from "react";
 import { Button, Card, Notice, SelectField, Stack } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import { setDiary, type DiaryState } from "../agents.actions";
 
 const START: DiaryState = idleForm();
@@ -37,6 +38,7 @@ export const DiaryCard = ({
   readonly calendars: readonly PickableCalendar[];
 }) => {
   const [state, action, pending] = useActionState(setDiary, START);
+  useFailureToast(state);
   const [chosen, setChosen] = useState(appointmentCalendarId ?? "");
 
   const nameOf = (id: string): string => calendars.find((c) => c.id === id)?.name ?? "that calendar";
@@ -49,7 +51,6 @@ export const DiaryCard = ({
       {/* No `<form>`: this card sits inside the workspace's one publish form, and a nested
           form is invalid HTML — see the note in RoutingCard for what that cost. */}
       <Stack>
-        {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
         {state.status === "succeeded" && state.data !== null && (
           <Notice tone="ok">
             {state.data.appointmentCalendarId === null

@@ -13,7 +13,7 @@ import {
   SubmitButton,
 } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
-import { useFormToast } from "@/stores/toast.store";
+import { useFormToast, useFailureToast } from "@/stores/toast.store";
 
 import {
   enqueueContactsAction,
@@ -61,6 +61,7 @@ export const AddContactsButton = ({
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [picked, setPicked] = useState<ReadonlyMap<string, PickerContact>>(new Map());
   const [state, action, pending] = useActionState(enqueueContactsAction, START);
+  useFailureToast(state);
   useFormToast(state, (data) => `Enqueued ${data.enqueued} of ${data.requested} contacts.`);
 
   const [results, setResults] = useState<readonly PickerContact[]>(contacts);
@@ -203,9 +204,6 @@ export const AddContactsButton = ({
                 <Notice tone={state.data !== null && state.data.enqueued > 0 ? "ok" : "warn"}>
                   {state.message}
                 </Notice>
-              )}
-              {(state.status === "failed" || state.status === "invalid") && (
-                <Notice tone="error">{state.message}</Notice>
               )}
             </Stack>
           </form>

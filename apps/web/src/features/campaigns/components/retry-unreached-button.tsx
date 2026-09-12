@@ -2,9 +2,10 @@
 
 import { startTransition, useActionState } from "react";
 
-import { Button, Notice } from "@/components/ui";
+import { Button } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import { retryUnreachedAction, type RetryState } from "../campaigns.actions";
 
 const START: RetryState = idleForm();
@@ -31,6 +32,7 @@ export const RetryUnreachedButton = ({
 }) => {
   const [state, action, pending] = useActionState(retryUnreachedAction, START);
 
+  useFailureToast(state);
   if (unreached === 0 && state.status !== "succeeded") return null;
 
   return (
@@ -55,7 +57,6 @@ export const RetryUnreachedButton = ({
             : `${state.data.reset} back in the queue, due now.`}
         </span>
       )}
-      {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
     </div>
   );
 };

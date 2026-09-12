@@ -6046,6 +6046,22 @@ rather than landed as inventory — the wave that needs them adds them wired.
       search button. Add asks once, naming the number, then buys, points and attaches in one
       step. Opened from the header button and from the Add card. The old catalogue card is
       gone. Seen live against Twilio: ten US numbers, six visible, the rest a scroll away.
+- [x] **Failures are toasts** (2026-09-12)
+      Every failed action in the console raised an inline red notice next to its form —
+      forty-five of them, each written by hand. They now go through the toast stack:
+      `useFormToast` announces a failure as well as a success, `useFailureToast` is the same
+      hook for forms whose success shows on the page, an error toast stays twelve seconds
+      and is dismissible, and the same sentence never stacks twice. Field errors stay under
+      their fields — a complaint that names a field belongs there — and three inline notices
+      that were more than a message survived on purpose: the consent gate's refusal on the
+      test-call panel (a warning, not a fault), the role field's own error on a member row,
+      and the agent workspace's "on the Persona and Tools tabs" hint, which the workspace
+      now appends to its toast. The hint under the recording player was the else-branch of
+      one of those ternaries and is back where it was.
+      The stack is a manual popover rather than a fixed div, because every dialog is a real
+      `<dialog>` in the top layer and a toast raised from inside one was drawn behind its
+      backdrop; a popover shown while a dialog is open joins the top layer above it. Seen:
+      a refused phone number in the Add-a-contact dialog, toast bottom-right over the dialog.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

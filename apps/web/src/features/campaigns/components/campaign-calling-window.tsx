@@ -5,6 +5,7 @@ import { startTransition, useActionState, useState } from "react";
 import { Button, Notice, Stack } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import { setCallingWindowAction, type CallingWindowState } from "../campaigns.actions";
 import { windowSummary } from "../campaigns.display";
 import type { CampaignWindow } from "../campaigns.service";
@@ -46,6 +47,7 @@ export const CampaignCallingWindow = ({
   readonly canWrite: boolean;
 }) => {
   const [state, action, pending] = useActionState(setCallingWindowAction, START);
+  useFailureToast(state);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<WindowDraft>(() => windowToDraft(saved));
 
@@ -75,7 +77,6 @@ export const CampaignCallingWindow = ({
       <Stack gap="sm">
         <CallingWindowStrip window={shown} />
 
-        {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
         {state.status === "invalid" && <Notice tone="error">{state.message}</Notice>}
         {state.status === "succeeded" && !editing && (
           <Notice tone="ok">Saved — {windowSummary(state.data?.callingWindow ?? null)}.</Notice>

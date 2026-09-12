@@ -6,6 +6,7 @@ import { Button, Notice, Stack, TextField } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import { setScheduleAction, type ScheduleState } from "../campaigns.actions";
 import type { CampaignWindow } from "../campaigns.service";
 import {
@@ -188,6 +189,7 @@ export const CampaignSchedule = ({
   readonly window?: CampaignWindow | null;
 }) => {
   const [state, action, pending] = useActionState(setScheduleAction, START);
+  useFailureToast(state);
   const [from, setFrom] = useState(parts(startsAt));
   const [to, setTo] = useState(parts(endsAt));
   // Read once: presets resolved against a clock that moves would flicker between chips.
@@ -212,7 +214,6 @@ export const CampaignSchedule = ({
 
   return (
     <Stack gap="sm">
-      {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
       {state.status === "succeeded" && state.data !== null && (
         <Notice tone="ok">
           {state.data.startsAt === null && state.data.endsAt === null

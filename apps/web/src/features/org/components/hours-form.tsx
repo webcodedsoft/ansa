@@ -19,6 +19,7 @@ import {
 } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import { saveHours, type HoursState } from "../org.actions";
 import { shortDate } from "../org.display";
 import type { Organisation } from "../org.service";
@@ -75,6 +76,7 @@ export const HoursForm = ({
   readonly nowLabel: string;
 }) => {
   const [state, action, pending] = useActionState(saveHours, START);
+  useFailureToast(state);
   const errors = state.fieldErrors;
   const hours = organisation.businessHours;
   const openDays = hours?.openDays ?? DEFAULT_OPEN_DAYS;
@@ -109,7 +111,6 @@ export const HoursForm = ({
     >
       <form action={action}>
         <Stack>
-          {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
           {state.status === "succeeded" && <Notice tone="ok">Saved. Calls use these now.</Notice>}
 
           <SwitchField

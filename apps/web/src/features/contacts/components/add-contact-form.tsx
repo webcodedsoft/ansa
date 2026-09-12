@@ -5,6 +5,7 @@ import { useActionState } from "react";
 import { Button, Notice, Stack, SubmitButton, TextAreaField, TextField } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import { addContactAction, type AddContactState } from "../contacts.actions";
 
 const START: AddContactState = idleForm();
@@ -22,6 +23,7 @@ const START: AddContactState = idleForm();
  */
 export const AddContactForm = ({ onClose }: { readonly onClose: () => void }) => {
   const [state, action, pending] = useActionState(addContactAction, START);
+  useFailureToast(state);
   const errors = state.fieldErrors;
   const added = state.status === "succeeded" ? state.data : null;
 
@@ -63,9 +65,6 @@ export const AddContactForm = ({ onClose }: { readonly onClose: () => void }) =>
           placeholder="Anything worth remembering before they ring"
           error={errors["notes"]}
         />
-        {(state.status === "failed" || state.status === "invalid") && state.message !== null && (
-          <Notice tone="error">{state.message}</Notice>
-        )}
         <div className="flex justify-end">
           <SubmitButton pending={pending} idle="Add contact" />
         </div>

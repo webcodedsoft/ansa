@@ -7,7 +7,6 @@ import {
   Button,
   buttonClass,
   Card,
-  Notice,
   SelectField,
   Stack,
   SubmitButton,
@@ -15,6 +14,7 @@ import {
 } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import { createCampaignAction, type CreateCampaignState } from "../campaigns.actions";
 import { campaignTemplateById } from "../campaign-templates";
 import { windowSummary } from "../campaigns.display";
@@ -59,6 +59,7 @@ export interface AgentChoice {
  */
 export const NewCampaignForm = ({ agents }: { readonly agents: readonly AgentChoice[] }) => {
   const [state, action, pending] = useActionState(createCampaignAction, START);
+  useFailureToast(state);
   const errors = state.fieldErrors;
 
   const [name, setName] = useState("");
@@ -194,9 +195,6 @@ export const NewCampaignForm = ({ agents }: { readonly agents: readonly AgentCho
           </Stack>
         </Card>
 
-        {(state.status === "failed" || state.status === "invalid") && (
-          <Notice tone="error">{state.message}</Notice>
-        )}
       </Stack>
 
       {/* Sticky on a tall screen: the summary is what the buttons commit to, so it should not

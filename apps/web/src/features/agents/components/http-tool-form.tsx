@@ -10,7 +10,7 @@ import { HOST, type ToolTemplate } from "../tool-templates";
 
 import { BrowseToolTemplatesButton, ToolTemplateGallery } from "./tool-template-gallery";
 import { idleForm } from "@/lib/form-state";
-import { useFormToast } from "@/stores/toast.store";
+import { useFormToast, useFailureToast } from "@/stores/toast.store";
 
 import {
   sampleEndpointAction,
@@ -105,6 +105,7 @@ export const HttpToolForm = ({
   const [showProblems, setShowProblems] = useState(false);
   const [fields, setFields] = useState<readonly Found[]>([]);
   const [state, action, pending] = useActionState(saveHttpToolAction, idleForm() as ToolsState);
+  useFailureToast(state);
   const formRef = useRef<HTMLFormElement>(null);
 
   useFormToast(state, (data) => {
@@ -688,9 +689,6 @@ export const HttpToolForm = ({
 
   return (
     <Stack>
-      {(state.status === "failed" || state.status === "invalid") && (
-        <Notice tone="error">{state.message}</Notice>
-      )}
       {showProblems && count > 0 && (
         <Notice tone="error">
           {count} thing{count === 1 ? "" : "s"} to fix before this can be saved.
@@ -813,9 +811,6 @@ const SampleStep = ({
           </Stack>
         </form>
 
-        {(state.status === "failed" || state.status === "invalid") && (
-          <Notice tone="error">{state.message}</Notice>
-        )}
 
         {seen !== null && (
           <>
@@ -944,9 +939,6 @@ const ToolTest = ({
             </Button>
           </div>
 
-          {(state.status === "failed" || state.status === "invalid") && (
-            <Notice tone="error">{state.message}</Notice>
-          )}
 
           {ran !== null && (
             <Stack>

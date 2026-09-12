@@ -3,10 +3,10 @@
 import { Loader2, Pause, Play } from "lucide-react";
 import { startTransition, useActionState, useEffect, useMemo, useRef, useState } from "react";
 
-import { Notice } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import { fetchRecording, type RecordingState } from "../calls.actions";
 import { useRecording } from "./recording-context";
 
@@ -50,6 +50,7 @@ export const CallRecording = ({
   readonly speech: readonly SpeechSpan[];
 }) => {
   const [state, action, pending] = useActionState(fetchRecording, START);
+  useFailureToast(state);
   const link = state.status === "succeeded" ? state.data : null;
   const seam = useRecording();
 
@@ -245,16 +246,15 @@ export const CallRecording = ({
 
       {/* Nothing is said under the player until there is something to say: a failure, the
           fetch in progress, or which voices the audio holds. The access-log disclosure lives
-          in the audit log itself, where the person it protects can read it. */}
-      {state.status === "failed" ? (
-        <Notice tone="warn">{state.message}</Notice>
-      ) : link !== null ? (
+          in the audit log itself, where the person it protects can read it. A failure is a
+          toast, like every other failure in the console. */}
+      {link !== null && (
         <p className="m-0 text-[11.5px] text-[var(--ink-3)]">
           {link.bothLegs
             ? "Both voices: the caller on the left channel, the agent on the right."
             : "The caller only — this call was recorded before the agent's own audio was captured."}
         </p>
-      ) : null}
+      )}
     </div>
   );
 };

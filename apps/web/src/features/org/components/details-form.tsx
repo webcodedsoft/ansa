@@ -6,6 +6,7 @@ import { useActionState } from "react";
 import { Button, Card, Notice, SubmitButton, TextField } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import { saveDetails, type DetailsState } from "../org.actions";
 import type { Organisation } from "../org.service";
 
@@ -21,6 +22,7 @@ const START: DetailsState = idleForm();
  */
 export const DetailsForm = ({ organisation }: { readonly organisation: Organisation }) => {
   const [state, action, pending] = useActionState(saveDetails, START);
+  useFailureToast(state);
   const errors = state.fieldErrors;
 
   return (
@@ -34,7 +36,6 @@ export const DetailsForm = ({ organisation }: { readonly organisation: Organisat
       description="What this organisation is called and where it can be written to. Each agent introduces itself in its own words, set on the agent."
     >
       <form action={action} className="flex flex-col gap-4">
-        {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
         {state.status === "succeeded" && <Notice tone="ok">{state.message}</Notice>}
         <div className="grid gap-3.5 sm:grid-cols-2">
           <TextField

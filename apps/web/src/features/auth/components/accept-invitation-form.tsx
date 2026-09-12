@@ -6,6 +6,7 @@ import { useActionState } from "react";
 import { Notice, Stack, SubmitButton, TextField, buttonClass } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import { acceptInvite, type AcceptInvitationState } from "../auth.actions";
 
 const START: AcceptInvitationState = idleForm();
@@ -13,6 +14,7 @@ const START: AcceptInvitationState = idleForm();
 export const AcceptInvitationForm = ({ token }: { readonly token: string }) => {
   const [state, action, pending] = useActionState(acceptInvite, START);
 
+  useFailureToast(state);
   if (state.status === "succeeded") {
     return (
       <Stack>
@@ -35,9 +37,6 @@ export const AcceptInvitationForm = ({ token }: { readonly token: string }) => {
   return (
     <form action={action}>
       <Stack>
-        {(state.status === "failed" || state.status === "invalid") && (
-          <Notice tone="error">{state.message}</Notice>
-        )}
 
         {/* The token comes from the link and is never shown or editable. Rendering it in a
             visible field would invite somebody to paste the wrong one, and there is nothing

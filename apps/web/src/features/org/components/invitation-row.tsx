@@ -2,10 +2,11 @@
 
 import { startTransition, useActionState, useState } from "react";
 
-import { Button, ConfirmDialog, Notice, Tag, Td, Tr } from "@/components/ui";
+import { Button, ConfirmDialog, Tag, Td, Tr } from "@/components/ui";
 import { dayLabel } from "@/lib/format";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import { revokeInvitationAction, type RevokeInvitationState } from "../org.actions";
 import { STATUS_TONE, expiry, initials, statusOf } from "../invitations.display";
 import type { InvitationSummary } from "../org.service";
@@ -20,6 +21,7 @@ export const InvitationRow = ({
   readonly canWrite: boolean;
 }) => {
   const [state, action, pending] = useActionState(revokeInvitationAction, START);
+  useFailureToast(state);
   const [asking, setAsking] = useState(false);
   const status = statusOf(invitation);
   const revocable = canWrite && status === "pending";
@@ -70,11 +72,6 @@ export const InvitationRow = ({
               The link they were sent stops working. To have them join later, send a new
               invitation.
             </ConfirmDialog>
-            {state.status === "failed" && (
-              <Notice tone="error" className="mt-2">
-                {state.message}
-              </Notice>
-            )}
           </>
         )}
       </Td>

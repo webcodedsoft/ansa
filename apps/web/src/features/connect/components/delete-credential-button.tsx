@@ -2,9 +2,9 @@
 
 import { startTransition, useActionState, useState } from "react";
 
-import { Button, ConfirmDialog, Notice } from "@/components/ui";
+import { Button, ConfirmDialog } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
-import { useFormToast } from "@/stores/toast.store";
+import { useFormToast, useFailureToast } from "@/stores/toast.store";
 
 import { deleteCredential, type DeleteCredentialState } from "../connect.actions";
 
@@ -23,6 +23,7 @@ export const DeleteCredentialButton = ({
   readonly inUse: boolean;
 }) => {
   const [state, action, pending] = useActionState(deleteCredential, START);
+  useFailureToast(state);
   const [asking, setAsking] = useState(false);
 
   useFormToast(state, () => `Deleted ${credentialRef}.`);
@@ -52,11 +53,6 @@ export const DeleteCredentialButton = ({
           ? "A tool or an event subscription uses this credential now. Deleting it means the next call that reaches that tool fails until a replacement is set."
           : "This cannot be undone. A tool added later that needs it will have to be given a new one."}
       </ConfirmDialog>
-      {state.status === "failed" && (
-        <Notice tone="error" className="mt-1.5 max-w-64 text-xs">
-          {state.message}
-        </Notice>
-      )}
     </form>
   );
 };

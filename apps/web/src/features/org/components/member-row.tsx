@@ -3,11 +3,12 @@
 import { ShieldOff } from "lucide-react";
 import { startTransition, useActionState, useEffect, useState } from "react";
 
-import { Button, ConfirmDialog, Notice, Row, SelectField, SubmitButton, Tag, Td, Tr } from "@/components/ui";
+import { Button, ConfirmDialog, FieldError, Notice, Row, SelectField, SubmitButton, Tag, Td, Tr } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { dayLabel } from "@/lib/format";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import {
   changeRole,
   removeMemberAction,
@@ -58,7 +59,9 @@ export const MemberRow = ({
   readonly canWrite: boolean;
 }) => {
   const [roleState, roleAction, rolePending] = useActionState(changeRole, ROLE_START);
+  useFailureToast(roleState);
   const [removeState, removeAction, removePending] = useActionState(removeMemberAction, REMOVE_START);
+  useFailureToast(removeState);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [revokeState, revokeAction, revokePending] = useActionState(revokeAccessAction, ACCESS_START);
   const [restoreState, restoreAction, restorePending] = useActionState(restoreAccessAction, ACCESS_START);
@@ -133,11 +136,7 @@ export const MemberRow = ({
               </SelectField>
               <SubmitButton pending={rolePending} idle="Save" size="sm" />
             </Row>
-            {(roleState.status === "failed" || roleState.status === "invalid") && (
-              <Notice tone="error" className="mt-2">
-                {roleState.fieldErrors["role"] ?? roleState.message}
-              </Notice>
-            )}
+            {roleState.fieldErrors["role"] !== undefined && <FieldError>{roleState.fieldErrors["role"]}</FieldError>}
           </form>
         ) : (
           <div>
@@ -218,11 +217,6 @@ export const MemberRow = ({
               They lose access to this organisation the moment this is confirmed. Calls they
               reviewed and values they corrected keep their name. They can be invited again.
             </ConfirmDialog>
-            {removeState.status === "failed" && (
-              <Notice tone="error" className="mt-2">
-                {removeState.message}
-              </Notice>
-            )}
           </>
         )}
       </Td>

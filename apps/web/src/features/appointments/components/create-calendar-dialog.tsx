@@ -4,9 +4,9 @@ import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { useActionState, useEffect, useId, useState } from "react";
 
-import { Button, ChoiceChips, minutesLabel, Modal, Notice, SelectField, SubmitButton, TextField } from "@/components/ui";
+import { Button, ChoiceChips, minutesLabel, Modal, SelectField, SubmitButton, TextField } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
-import { useFormToast } from "@/stores/toast.store";
+import { useFormToast, useFailureToast } from "@/stores/toast.store";
 
 import { createCalendarAction, type CalendarState } from "../appointments.actions";
 import { TimezoneSelect } from "./timezone-select";
@@ -42,6 +42,7 @@ export const CreateCalendarDialog = ({
   const formId = useId();
   const [state, action, pending] = useActionState(createCalendarAction, START);
 
+  useFailureToast(state);
   useFormToast(state, () => "Calendar created.");
 
   useEffect(() => {
@@ -79,7 +80,6 @@ export const CreateCalendarDialog = ({
         }
       >
         <form id={formId} action={action} className="flex flex-col gap-3.5">
-          {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
 
           <TextField
             label="Name"

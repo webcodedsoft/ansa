@@ -17,7 +17,7 @@ import { CAMPAIGN_LIMITS } from "@ansa/shared";
 
 import { cn } from "@/lib/cn";
 import { idleForm } from "@/lib/form-state";
-import { useFormToast } from "@/stores/toast.store";
+import { useFormToast, useFailureToast } from "@/stores/toast.store";
 
 import { saveBriefAction, type BriefState } from "../campaigns.actions";
 import { OutcomeChips } from "./outcome-chips";
@@ -96,6 +96,7 @@ export const CampaignBrief = ({
   readonly verdictSets?: readonly (readonly string[])[];
 }) => {
   const [state, action, pending] = useActionState(saveBriefAction, START);
+  useFailureToast(state);
   const [mode, setMode] = useState(values.voicemail?.mode ?? "hang_up");
   useFormToast(state, () => "Saved.");
 
@@ -120,7 +121,6 @@ export const CampaignBrief = ({
           </Notice>
         )}
 
-        {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
 
         <Card>
           <div className="divide-y divide-[var(--hairline)]">

@@ -2,9 +2,9 @@
 
 import { useActionState, useState } from "react";
 
-import { Button, Card, CheckboxField, CheckboxGroup, ChoiceChips, ConfirmDialog, FieldError, millisLabel, Notice, Row, Stack, SubmitButton, TextAreaField, TextField } from "@/components/ui";
+import { Button, Card, CheckboxField, CheckboxGroup, ChoiceChips, ConfirmDialog, FieldError, millisLabel, Row, Stack, SubmitButton, TextAreaField, TextField } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
-import { useFormToast } from "@/stores/toast.store";
+import { useFormToast, useFailureToast } from "@/stores/toast.store";
 
 import { saveSubscriptions, type SaveSubscriptionsState } from "../connect.actions";
 import { EVENT_KINDS, type EventKind } from "../connect.schema";
@@ -62,6 +62,7 @@ const draftsFrom = (entries: readonly SubscriptionEntry[]): SubscriptionDraft[] 
  */
 export const WebhooksForm = ({ document }: { readonly document: SubscriptionDocument }) => {
   const [state, action, pending] = useActionState(saveSubscriptions, START);
+  useFailureToast(state);
   const errors = state.fieldErrors;
 
   const [allowedHosts, setAllowedHosts] = useState(document.egress.allowedHosts.join("\n"));
@@ -98,9 +99,6 @@ export const WebhooksForm = ({ document }: { readonly document: SubscriptionDocu
       <input type="hidden" name="subscriptionsJson" value={JSON.stringify(subscriptions)} readOnly />
 
       <Stack>
-        {(state.status === "failed" || state.status === "invalid") && (
-          <Notice tone="error">{state.message}</Notice>
-        )}
 
         <Card
           title="Egress"

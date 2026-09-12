@@ -8,6 +8,7 @@ import { Button, Notice, Stack, TextField } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import { runAgainAction, setSeriesStateAction, type SeriesState } from "../campaigns.actions";
 import type { CampaignWindow } from "../campaigns.service";
 import { CUSTOM, offeredPresets, parts, presetFor, readable, STARTS, type Parts } from "../schedule-presets";
@@ -132,7 +133,9 @@ export const CampaignSeries = ({
   readonly hasPurpose: boolean;
 }) => {
   const [state, action, pending] = useActionState(runAgainAction, START);
+  useFailureToast(state);
   const [stateChange, changeState, changing] = useActionState(setSeriesStateAction, START);
+  useFailureToast(stateChange);
   const [every, setEvery] = useState<SeriesEvery>("month");
   const [runFor, setRunFor] = useState<SeriesRunFor>("week");
   const [first, setFirst] = useState<Parts>(parts(null));
@@ -167,7 +170,6 @@ export const CampaignSeries = ({
           {series.state === "ended" && <span className="text-[var(--ink-3)]">Ended.</span>}
         </p>
 
-        {stateChange.status === "failed" && <Notice tone="error">{stateChange.message}</Notice>}
 
         {!isRun && series.state !== "ended" && canWrite && (
           <div className="flex flex-wrap gap-2">
@@ -242,7 +244,6 @@ export const CampaignSeries = ({
         and started on its own at every beat. Change this campaign and the next run picks it up.
       </p>
 
-      {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
       {state.status === "invalid" && <Notice tone="error">{state.message}</Notice>}
       {!hasPurpose && <Notice tone="warn">Say why it calls on the brief first; a run without a reason could not open.</Notice>}
 

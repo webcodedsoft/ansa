@@ -7,6 +7,7 @@ import { useActionState, useState } from "react";
 import { Card, Notice, SubmitButton, SwitchField, Tag } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import { saveRecording, type RecordingState } from "../org.actions";
 
 const START: RecordingState = idleForm();
@@ -30,6 +31,7 @@ export const RecordingForm = ({
   readonly audioRetentionDays: number;
 }) => {
   const [state, action, pending] = useActionState(saveRecording, START);
+  useFailureToast(state);
   const [on, setOn] = useState(recordCalls);
   const current = state.data?.recordCalls ?? recordCalls;
 
@@ -45,7 +47,6 @@ export const RecordingForm = ({
       actions={<Tag tone={current ? "ok" : "warn"}>{current ? "on" : "off"}</Tag>}
     >
       <form action={action} className="flex flex-col gap-4">
-        {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
         {state.status === "succeeded" && <Notice tone="ok">{state.message}</Notice>}
 
         <SwitchField

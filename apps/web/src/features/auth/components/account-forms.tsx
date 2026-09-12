@@ -6,6 +6,7 @@ import { startTransition, useActionState, useRef, useState } from "react";
 import { Button, Card, ConfirmDialog, Notice, SubmitButton, TextField } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import {
   changePassword,
   deleteAccount,
@@ -32,6 +33,7 @@ export const ProfileForm = ({
   readonly email: string;
 }) => {
   const [state, action, pending] = useActionState(saveProfile, PROFILE_START);
+  useFailureToast(state);
   return (
     <Card
       title={
@@ -43,7 +45,6 @@ export const ProfileForm = ({
       description="How you appear to the people you work with — on the members list, on the calls you review and the values you correct."
     >
       <form action={action} className="flex flex-col gap-4">
-        {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
         {state.status === "succeeded" && <Notice tone="ok">{state.message}</Notice>}
         <div className="grid gap-3.5 sm:grid-cols-2">
           <TextField
@@ -92,7 +93,6 @@ export const PasswordForm = () => {
       {/* Keyed on the success stamp so the fields empty once the change lands, without
           holding the passwords in state to clear them. */}
       <form key={state.data?.changedAt ?? "unchanged"} action={action} className="flex flex-col gap-4">
-        {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
         {succeeded && <Notice tone="ok">{state.message}</Notice>}
         <TextField
           label="Current password"
@@ -162,7 +162,6 @@ export const DeleteAccountForm = ({ organisationName }: { readonly organisationN
         }}
         className="flex flex-col gap-4"
       >
-        {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
 
         <ul className="m-0 flex list-none flex-col gap-1.5 p-0 text-[13px] text-[var(--ink-2)]">
           <li>· You leave {organisationName} and every other organisation you belong to.</li>

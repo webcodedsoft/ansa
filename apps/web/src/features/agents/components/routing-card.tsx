@@ -6,6 +6,7 @@ import { startTransition, useActionState, useState } from "react";
 import { Button, Card, Modal, Notice, Row, SelectField, Stack } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import { setRouting, type RoutingState } from "../agents.actions";
 
 const START: RoutingState = idleForm();
@@ -44,6 +45,7 @@ export const RoutingCard = ({
   readonly held: readonly HeldNumber[];
 }) => {
   const [state, action, pending] = useActionState(setRouting, START);
+  useFailureToast(state);
   const [chosen, setChosen] = useState(dialledNumber ?? "");
   const [confirming, setConfirming] = useState(false);
 
@@ -76,7 +78,6 @@ export const RoutingCard = ({
           and rebuilt it on the client. The action is called from the button with the two
           fields it needs. */}
       <Stack>
-        {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
         {state.status === "succeeded" && state.data !== null && (
           <Notice tone="ok">
             {state.data.dialledNumber === null

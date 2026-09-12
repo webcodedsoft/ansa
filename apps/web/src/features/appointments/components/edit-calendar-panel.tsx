@@ -4,7 +4,7 @@ import { useActionState } from "react";
 
 import { Card, ChoiceChips, minutesLabel, Notice, Row, SubmitButton, Tag, TextField } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
-import { useFormToast } from "@/stores/toast.store";
+import { useFormToast, useFailureToast } from "@/stores/toast.store";
 
 import { editCalendarAction, type CalendarState } from "../appointments.actions";
 import type { CalendarSummary } from "../appointments.service";
@@ -32,6 +32,7 @@ export const EditCalendarPanel = ({
   readonly canWrite: boolean;
 }) => {
   const [state, action, pending] = useActionState(editCalendarAction, START);
+  useFailureToast(state);
   useFormToast(state, () => "Settings saved.");
 
   const fieldError = (name: string): string | undefined => state.fieldErrors[name];
@@ -57,7 +58,6 @@ export const EditCalendarPanel = ({
       <form key={calendar.id} action={action} className="flex flex-col gap-3.5">
         <input type="hidden" name="calendarId" value={calendar.id} />
 
-        {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
 
         <Row className="items-center gap-2">
           <Tag tone={calendar.source === "connector" ? "accent" : "neutral"}>{calendar.source}</Tag>

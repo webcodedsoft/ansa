@@ -5,6 +5,7 @@ import { useActionState, useState } from "react";
 import { Button, Card, Notice, Row, TextField } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import { placeTestCallAction, type TestCallState } from "../agents.actions";
 
 const START: TestCallState = idleForm();
@@ -21,6 +22,7 @@ const START: TestCallState = idleForm();
  */
 export const TestCallCard = () => {
   const [state, dispatch, pending] = useActionState(placeTestCallAction, START);
+  useFailureToast(state);
   const [to, setTo] = useState("");
 
   const ring = () => {
@@ -48,11 +50,6 @@ export const TestCallCard = () => {
       </Row>
       {state.status === "succeeded" && (
         <Notice tone="ok" className="mt-3">
-          {state.message}
-        </Notice>
-      )}
-      {(state.status === "failed" || state.status === "invalid") && state.message !== null && (
-        <Notice tone="error" className="mt-3">
           {state.message}
         </Notice>
       )}

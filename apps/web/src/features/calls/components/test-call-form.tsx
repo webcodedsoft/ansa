@@ -7,6 +7,7 @@ import { Blip, CONTROL, FieldError, GlassPanel, Notice, Tag } from "@/components
 import { cn } from "@/lib/cn";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import { placeCall, type TestCallState } from "../calls.actions";
 
 const START: TestCallState = { ...idleForm(), refused: false };
@@ -25,6 +26,9 @@ const START: TestCallState = { ...idleForm(), refused: false };
  */
 export const TestCallForm = ({ configVersion }: { readonly configVersion?: number }) => {
   const [state, action, pending] = useActionState(placeCall, START);
+  /* A refusal by the consent gate is not a fault and stays on the panel, explained; only a
+     real failure goes to the toast stack. Idle state is handed to the hook so it says nothing. */
+  useFailureToast(state.refused ? START : state);
   const numberError = state.fieldErrors["to"];
 
   return (
@@ -75,10 +79,9 @@ export const TestCallForm = ({ configVersion }: { readonly configVersion?: numbe
         </Notice>
       )}
 
-      {state.status === "failed" && (
-        <Notice tone={state.refused ? "warn" : "error"} className="mt-3">
-          {state.message}
-          {state.refused && " This is the consent gate, not a fault. Nothing skips it."}
+      {state.status === "failed" && state.refused && (
+        <Notice tone="warn" className="mt-3">
+          {state.message} This is the consent gate, not a fault. Nothing skips it.
         </Notice>
       )}
     </GlassPanel>

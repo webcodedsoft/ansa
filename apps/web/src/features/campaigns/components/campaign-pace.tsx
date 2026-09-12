@@ -5,6 +5,7 @@ import { useActionState, useState } from "react";
 import { Button, ChoiceChips, Notice, Stack } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import { setPaceAction, type PaceState } from "../campaigns.actions";
 
 const START: PaceState = idleForm();
@@ -48,6 +49,7 @@ export const CampaignPace = ({
   readonly canWrite: boolean;
 }) => {
   const [state, action, pending] = useActionState(setPaceAction, START);
+  useFailureToast(state);
   const [atOnce, setAtOnce] = useState<number | null>(maxConcurrentCalls);
   const [anHour, setAnHour] = useState<number | null>(maxCallsPerHour);
   const disabled = !canWrite || pending;
@@ -63,9 +65,6 @@ export const CampaignPace = ({
       <Stack gap="sm">
         <p className="text-[13px] text-[var(--ink)]">{paceSummary(atOnce, anHour)}</p>
 
-        {(state.status === "failed" || state.status === "invalid") && (
-          <Notice tone="error">{state.message}</Notice>
-        )}
         {state.status === "succeeded" && !dirty && (
           <Notice tone="ok">Saved. It takes effect on the next sweep.</Notice>
         )}

@@ -6,6 +6,7 @@ import { startTransition, useActionState, useState } from "react";
 import { Button, ConfirmDialog, Modal, Notice, SubmitButton } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import { rotateWebhook, type RotateWebhookState } from "../connect.actions";
 import type { ClaimWebhook } from "../connect.service";
 
@@ -46,6 +47,7 @@ export const BringYourOwnModal = ({
   readonly webhook: ClaimWebhook;
 }) => {
   const [state, action, pending] = useActionState(rotateWebhook, START);
+  useFailureToast(state);
   const [asking, setAsking] = useState(false);
   const [copied, setCopied] = useState<CopyOutcome>("idle");
   /* Whether a URL existed when this opened, captured once: `url` below is the result of the
@@ -119,7 +121,6 @@ export const BringYourOwnModal = ({
       </ConfirmDialog>
 
       <div className="flex flex-col gap-4">
-        {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
         {state.status === "succeeded" && (
           <Notice tone="ok">
             {hadUrl

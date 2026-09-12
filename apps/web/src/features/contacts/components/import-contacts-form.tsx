@@ -5,6 +5,7 @@ import { useActionState, useMemo, useRef, useState } from "react";
 import { Button, Notice, Stack, SubmitButton, TextAreaField } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import { importContactsAction, type ImportContactsState } from "../contacts.actions";
 import { MAX_IMPORT_ROWS, parseContactsCsv } from "../contacts.csv";
 
@@ -28,6 +29,7 @@ const looksBinary = (text: string): boolean => text.includes("\u0000");
  */
 export const ImportContactsForm = ({ onClose }: { readonly onClose: () => void }) => {
   const [state, action, pending] = useActionState(importContactsAction, START);
+  useFailureToast(state);
   const [text, setText] = useState("");
   const [sourceLabel, setSourceLabel] = useState("Pasted");
   const [fileError, setFileError] = useState<string | null>(null);
@@ -145,9 +147,6 @@ export const ImportContactsForm = ({ onClose }: { readonly onClose: () => void }
           </Notice>
         )}
 
-        {(state.status === "failed" || state.status === "invalid") && state.message !== null && (
-          <Notice tone="error">{state.message}</Notice>
-        )}
 
         {/* The rows the preview showed, sent verbatim so what was seen is what is imported. */}
         <input type="hidden" name="rows" value={JSON.stringify(parsed.rows)} />

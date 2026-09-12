@@ -2,10 +2,11 @@
 
 import { useActionState, useState } from "react";
 
-import { Button, Notice, Row, Stack, SubmitButton, TextAreaField } from "@/components/ui";
+import { Button, Row, Stack, SubmitButton, TextAreaField } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import { correctTranscript, type CorrectionState } from "../calls.actions";
 import type { CallTranscript } from "../calls.service";
 import { isUncertain } from "./needs-a-look";
@@ -27,6 +28,7 @@ export const TranscriptLine = ({
   readonly transcript: CallTranscript;
 }) => {
   const [state, action, pending] = useActionState(correctTranscript, START);
+  useFailureToast(state);
   const [editing, setEditing] = useState(false);
 
   const verdict = state.data;
@@ -103,9 +105,6 @@ export const TranscriptLine = ({
                 Cancel
               </Button>
             </Row>
-            {(state.status === "failed" || state.status === "invalid") && (
-              <Notice tone="error">{state.fieldErrors["correctedText"] ?? state.message}</Notice>
-            )}
           </Stack>
         </form>
       )}

@@ -2,11 +2,12 @@
 
 import { startTransition, useActionState } from "react";
 
-import { Notice, SelectField, Tag, type Tone } from "@/components/ui";
+import { SelectField, Tag, type Tone } from "@/components/ui";
 import { setRouting, type RoutingState } from "@/features/agents/agents.actions";
 import { dayLabel, timeOfDay } from "@/lib/format";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import type { NumberSummary } from "../connect.service";
 import { countryOf, spaced } from "../numbers.display";
 import { ReleaseNumber } from "./release-number";
@@ -48,6 +49,7 @@ export interface RoutableAgent {
  */
 export const NumberCard = ({ number, agents }: { readonly number: NumberSummary; readonly agents: readonly RoutableAgent[] }) => {
   const [state, action, pending] = useActionState(setRouting, ROUTING_START);
+  useFailureToast(state);
   const current = number.answeredBy?.agentId ?? "";
 
   const route = (agentId: string) => {
@@ -101,7 +103,6 @@ export const NumberCard = ({ number, agents }: { readonly number: NumberSummary;
           </SelectField>
         </span>
       </div>
-      {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
       {number.answeredBy === null && state.status !== "failed" && (
         <p className="-mt-2 m-0 text-[11.5px] text-[var(--warn)]">Rings nobody until an agent is chosen.</p>
       )}

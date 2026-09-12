@@ -2,9 +2,9 @@
 
 import { useActionState, useEffect, useState } from "react";
 
-import { Notice, Row, SelectField, Stack, SubmitButton, TextField } from "@/components/ui";
+import { Row, SelectField, Stack, SubmitButton, TextField } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
-import { useFormToast } from "@/stores/toast.store";
+import { useFormToast, useFailureToast } from "@/stores/toast.store";
 
 import { saveCredential, type SaveCredentialState } from "../connect.actions";
 import { CREDENTIAL_KINDS, type CredentialKind } from "../connect.schema";
@@ -40,6 +40,7 @@ export const CredentialForm = ({
   readonly onSaved?: () => void;
 }) => {
   const [state, action, pending] = useActionState(saveCredential, START);
+  useFailureToast(state);
   const [kind, setKind] = useState<CredentialKind>("bearer");
 
   useFormToast(state, (data) => (mode === "add" ? `Stored ${data.ref}.` : `Rotated ${data.ref}.`));
@@ -130,9 +131,6 @@ export const CredentialForm = ({
           <TextField label="Secret" name="secret" type="password" required error={errors["secret"]} />
         )}
 
-        {(state.status === "failed" || state.status === "invalid") && (
-          <Notice tone="error">{state.message}</Notice>
-        )}
 
         <div>
           <SubmitButton pending={pending} idle={mode === "add" ? "Store credential" : "Rotate"} />

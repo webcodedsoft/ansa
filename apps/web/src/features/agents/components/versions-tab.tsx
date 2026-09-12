@@ -6,6 +6,7 @@ import { Button, Notice, Panel, Stack, Table, Tag, Td, Th, Tr } from "@/componen
 import { idleForm } from "@/lib/form-state";
 import { when } from "@/lib/format";
 
+import { useFailureToast } from "@/stores/toast.store";
 import { getDiff, rollback, type DiffResult, type RollbackState } from "../agents.actions";
 
 const START: RollbackState = idleForm();
@@ -55,6 +56,7 @@ export const VersionsTab = ({
   readonly liveBranches: number;
 }) => {
   const [state, dispatch, pending] = useActionState(rollback, START);
+  useFailureToast(state);
   const [busyVersion, setBusyVersion] = useState<number | null>(null);
   /** A cross-shape restore somebody has pressed once and not yet confirmed. */
   const [crossing, setCrossing] = useState<number | null>(null);
@@ -88,9 +90,6 @@ export const VersionsTab = ({
         conversation from three weeks ago can still be explained.
       </p>
 
-      {(state.status === "failed" || state.status === "invalid") && state.message !== null && (
-        <Notice tone="error">{state.message}</Notice>
-      )}
       {/* Not "restored as version N". Nothing was published: the old configuration is now
           sitting in the draft, and it answers a call only when somebody publishes it. Saying
           otherwise would be the same lie the Save buttons used to tell. */}

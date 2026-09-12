@@ -2,9 +2,9 @@
 
 import { useActionState, useState, type ReactNode } from "react";
 
-import { Button, Modal, Notice, Row, Tag, TextField } from "@/components/ui";
+import { Button, Modal, Row, Tag, TextField } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
-import { useFormToast } from "@/stores/toast.store";
+import { useFormToast, useFailureToast } from "@/stores/toast.store";
 
 import { setStatusAction, type SetStatusState } from "../campaigns.actions";
 import { campaignTone } from "../campaigns.display";
@@ -43,6 +43,7 @@ export const CampaignStatusControl = ({
   readonly trailing?: ReactNode;
 }) => {
   const [state, dispatch, pending] = useActionState(setStatusAction, START);
+  useFailureToast(state);
   useFormToast(state, (data) => `Campaign is now ${data.status}.`);
 
   /* Pausing asks one question first. Every other move fires on the click; a pause opens a
@@ -95,11 +96,6 @@ export const CampaignStatusControl = ({
         </Row>
       </Row>
 
-      {state.status === "failed" && (
-        <Notice tone="error" className="mt-2.5">
-          {state.message}
-        </Notice>
-      )}
 
       <Modal
         open={asking}

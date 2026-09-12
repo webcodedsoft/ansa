@@ -5,6 +5,7 @@ import { useActionState, useEffect, useRef, useState, startTransition } from "re
 import { Button, ConfirmDialog, Modal, Notice, SelectField, TextField } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import { buyNumberAction, searchNumbersAction, type BuyNumberState, type SearchNumbersState } from "../connect.actions";
 import type { AvailableNumber, NumberCountries } from "../connect.service";
 import { spaced } from "../numbers.display";
@@ -49,7 +50,9 @@ export const GetNumberModal = ({
   readonly organisationName: string;
 }) => {
   const [search, searchAction, searching] = useActionState(searchNumbersAction, SEARCH_START);
+  useFailureToast(search);
   const [buy, buyAction, buying] = useActionState(buyNumberAction, BUY_START);
+  useFailureToast(buy);
   const [country, setCountry] = useState(countries.items.some((one) => one.code === "US") ? "US" : (countries.items[0]?.code ?? "US"));
   const [contains, setContains] = useState("");
   const [chosen, setChosen] = useState<AvailableNumber | null>(null);
@@ -91,7 +94,6 @@ export const GetNumberModal = ({
       }
     >
       <div className="flex flex-col gap-4">
-        {buy.status === "failed" && <Notice tone="error">{buy.message}</Notice>}
         {bought !== undefined && <Notice tone="ok">{buy.message}</Notice>}
 
         <div className="grid gap-3.5 sm:grid-cols-2">
@@ -113,9 +115,6 @@ export const GetNumberModal = ({
           />
         </div>
 
-        {search.status === "failed" && !search.message?.includes("Invalid Pattern") && (
-          <Notice tone="error">{search.message}</Notice>
-        )}
 
         <div className="max-h-[19rem] overflow-y-auto rounded-lg border border-[var(--hairline)]" aria-busy={searching}>
           {tooShort(contains) && (

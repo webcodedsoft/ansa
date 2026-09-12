@@ -7,7 +7,7 @@ import type { ToolsDocument } from "@/features/agents/agents.service";
 import { FlowCanvas } from "@/features/agents/components/flow-canvas";
 import { registryTools } from "@/features/agents/components/tools-tab";
 import { idleForm } from "@/lib/form-state";
-import { useFormToast } from "@/stores/toast.store";
+import { useFormToast, useFailureToast } from "@/stores/toast.store";
 
 import { saveCampaignFlowAction, type BriefState } from "../campaigns.actions";
 
@@ -59,6 +59,7 @@ export const CampaignConversation = ({
   readonly transferNumber: string | null;
 }) => {
   const [state, action, pending] = useActionState(saveCampaignFlowAction, START);
+  useFailureToast(state);
   const [blocking, setBlocking] = useState(0);
   const [dirty, setDirty] = useState(false);
   useFormToast(state, () => "Conversation saved.");
@@ -78,7 +79,6 @@ export const CampaignConversation = ({
         </Notice>
       )}
 
-      {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
 
       {blocking > 0 && (
         <Notice tone="warn">

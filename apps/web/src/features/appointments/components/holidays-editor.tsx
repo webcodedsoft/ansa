@@ -5,7 +5,7 @@ import { Trash2 } from "lucide-react";
 
 import { Button, EmptyState, Notice, SubmitButton, TextField } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
-import { useFormToast } from "@/stores/toast.store";
+import { useFormToast, useFailureToast } from "@/stores/toast.store";
 
 import {
   addHolidayAction,
@@ -41,7 +41,9 @@ export const HolidaysEditor = ({
   readonly canWrite: boolean;
 }) => {
   const [addState, add, adding] = useActionState(addHolidayAction, ADD);
+  useFailureToast(addState);
   const [dropState, drop] = useActionState(removeHolidayAction, DROP);
+  useFailureToast(dropState);
   const form = useRef<HTMLFormElement | null>(null);
 
   useFormToast(addState, () => "Marked shut.");
@@ -76,8 +78,6 @@ export const HolidaysEditor = ({
         </form>
       )}
 
-      {addState.status === "failed" && <Notice tone="error">{addState.message}</Notice>}
-      {dropState.status === "failed" && <Notice tone="error">{dropState.message}</Notice>}
 
       {holidays.length === 0 ? (
         <EmptyState title="No closures set">

@@ -18,8 +18,11 @@ import type { FormState } from "@/lib/form-state";
  * A store rather than context because the publisher and the renderer are in different
  * subtrees: the form is deep inside a page, the toast stack sits in the workspace layout,
  * and threading a provider between them to move one string is more machinery than this.
- * Failures deliberately do not come through here — an error belongs next to the field or
- * the form that caused it, where it stays put and can be re-read.
+ *
+ * Failures come through here too, since the console settled on one place for them: a
+ * failed action raises an error toast that stays longer than a confirmation and until it
+ * is dismissed if the person is reading it. Field errors are the exception — "is not an
+ * email address" belongs under the field it names and stays inline.
  */
 
 export interface Toast {
@@ -35,17 +38,23 @@ interface ToastStore {
 }
 
 const VISIBLE_MS = 6000;
+/** An error is read, not glanced at; it stays long enough to be read twice. */
+const ERROR_VISIBLE_MS = 12000;
 
 export const useToastStore = create<ToastStore>((set) => ({
   toasts: [],
   show: (tone, message) => {
     const id = crypto.randomUUID();
-    set((state) => ({ toasts: [...state.toasts, { id, tone, message }] }));
-    // Self-dismissing, because nothing that comes through here is worth a click to
-    // acknowledge. Anything that is belongs on the page, not in a corner that disappears.
+    set((state) => ({
+      /* One of each message at a time: a retry that fails the same way should not stack the
+         same sentence three deep. */
+      toasts: [...state.toasts.filter((toast) => toast.message !== message || toast.tone !== tone), { id, tone, message }],
+    }));
+    // Self-dismissing. A confirmation is worth no click; an error gets longer, and a click
+    // if somebody wants it gone sooner.
     setTimeout(
       () => set((state) => ({ toasts: state.toasts.filter((toast) => toast.id !== id) })),
-      VISIBLE_MS,
+      tone === "error" ? ERROR_VISIBLE_MS : VISIBLE_MS,
     );
   },
   dismiss: (id) =>
@@ -74,9 +83,29 @@ export const useFormToast = <TData>(
   describe.current = message;
 
   useEffect(() => {
-    if (state.status !== "succeeded" || announced.current === state || state.data === null) return;
-    announced.current = state;
-    const said = describe.current(state.data);
-    if (said !== null) show("ok", said);
+    if (announced.current === state) return;
+    if (state.status === "succeeded" && state.data !== null) {
+      announced.current = state;
+      const said = describe.current(state.data);
+      if (said !== null) show("ok", said);
+      return;
+    }
+    if (failedOutright(state)) {
+      announced.current = state;
+      show("error", state.message);
+    }
   }, [state, show]);
+};
+
+/**
+ * A failure worth a toast: the action failed, or it was refused with a message and no field
+ * to pin the complaint on. A refusal that names fields is shown under those fields.
+ */
+const failedOutright = <TData>(state: FormState<TData>): state is FormState<TData> & { readonly message: string } =>
+  state.message !== null &&
+  (state.status === "failed" || (state.status === "invalid" && Object.keys(state.fieldErrors).length === 0));
+
+/** Raise an error toast when an action fails. For forms whose success is shown on the page itself. */
+export const useFailureToast = <TData>(state: FormState<TData>): void => {
+  useFormToast(state, () => null);
 };

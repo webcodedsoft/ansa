@@ -3,9 +3,10 @@
 import { Check, Copy, UserPlus } from "lucide-react";
 import { useActionState, useState } from "react";
 
-import { Button, Modal, Notice, Stack, SubmitButton, TextField } from "@/components/ui";
+import { Button, Modal, Stack, SubmitButton, TextField } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import { invite, type InviteState } from "../org.actions";
 
 const START: InviteState = idleForm();
@@ -22,6 +23,7 @@ const START: InviteState = idleForm();
  */
 const InviteForm = ({ onDone }: { readonly onDone: () => void }) => {
   const [state, action, pending] = useActionState(invite, START);
+  useFailureToast(state);
   const [copied, setCopied] = useState(false);
   const errors = state.fieldErrors;
   const invited = state.status === "succeeded" ? state.data : null;
@@ -112,9 +114,6 @@ const InviteForm = ({ onDone }: { readonly onDone: () => void }) => {
           </div>
         </fieldset>
 
-        {(state.status === "failed" || state.status === "invalid") && (
-          <Notice tone="error">{state.message}</Notice>
-        )}
 
         {/* The modal's own footer band, drawn here because the pending state and the form
             live in this component. Same rule as everywhere: actions right, the deliberate

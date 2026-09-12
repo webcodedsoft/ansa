@@ -2,9 +2,10 @@
 
 import { useActionState } from "react";
 
-import { Card, Notice, SelectField, Stack, SubmitButton, Tag, TextAreaField, type Tone } from "@/components/ui";
+import { Card, SelectField, Stack, SubmitButton, Tag, TextAreaField, type Tone } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
+import { useFailureToast } from "@/stores/toast.store";
 import { testToolAction, type ToolTestResult, type ToolTestState } from "../agents.actions";
 
 const START: ToolTestState = idleForm();
@@ -33,6 +34,7 @@ const OUTCOME_TONE: Record<ToolTestResult["outcome"], Tone> = {
 export const ToolTester = ({ names }: { readonly names: readonly string[] }) => {
   const [state, action, pending] = useActionState(testToolAction, START);
 
+  useFailureToast(state);
   return (
     <Card
       title="Test an MCP tool"
@@ -63,9 +65,6 @@ export const ToolTester = ({ names }: { readonly names: readonly string[] }) => 
             <SubmitButton pending={pending} idle="Run" />
           </div>
 
-          {(state.status === "failed" || state.status === "invalid") && state.message !== null && (
-            <Notice tone="error">{state.message}</Notice>
-          )}
 
           {state.status === "succeeded" && state.data !== null && (
             <div className="rounded-lg border border-[var(--hairline)] p-3.5">
