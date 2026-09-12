@@ -1,4 +1,3 @@
-import { liveAgentId } from "@ansa/db";
 import {
   EVENT_TYPES,
   parseEventConfig,
@@ -20,7 +19,7 @@ import { choice, flag, integer, list, object, optional, text, type Infer } from 
 import { OrganizationContext } from "../tenancy/organization-context";
 
 import { checkEventConfig, orConflict, orRefuse, toolsOrNothing } from "./refusals";
-import { publishConfiguration, readConfiguration, sealedCredentials } from "./store";
+import { publishDocuments, readDocuments, sealedCredentials } from "./store";
 import { classifyCredentials, credentialUses, refuseUnusableReferences, vaultKey } from "./vault";
 
 /**
@@ -96,7 +95,6 @@ const replacement = object({
 
 const published = object({ configVersion: integer({ minimum: 1 }) });
 
-const DEFAULT_NOTE = "dashboard: event configuration replaced";
 
 /** The request body, as the document that goes in the column. */
 export const toEventDocument = (body: Infer<typeof replacement>): Record<string, unknown> => ({
@@ -158,12 +156,12 @@ export class EventSubscriptionsController {
   })
   async read(): Promise<Infer<typeof eventConfiguration>> {
     return this.db.tx(async (scope) => {
-      const current = await readConfiguration(scope);
+      const current = await readDocuments(scope);
       if (current === null) throw new NotFoundException();
 
       const parsed = orConflict(() => parseEventConfig(current.eventConfig));
       return {
-        configVersion: current.configVersion,
+        configVersion: current.version,
         ...toEventResponseBody(parsed),
       };
     });
@@ -183,11 +181,11 @@ export class EventSubscriptionsController {
     const events = orRefuse(() => checkEventConfig(document));
 
     return this.db.tx(async (scope) => {
-      const current = await readConfiguration(scope);
+      const current = await readDocuments(scope);
       if (current === null) throw new NotFoundException();
-      if (current.configVersion !== body.expectedVersion) {
+      if (current.version !== body.expectedVersion) {
         throw new ConflictException(
-          `this organisation's configuration is at version ${current.configVersion} and the edit was made against ${body.expectedVersion}; re-read it and try again`,
+          `this organisation's webhooks are at version ${current.version} and the edit was made against ${body.expectedVersion}; re-read it and try again`,
         );
       }
 
@@ -197,19 +195,16 @@ export class EventSubscriptionsController {
       const uses = credentialUses(toolsOrNothing(current.toolConfig), events);
       orRefuse(() => refuseUnusableReferences(uses, new Set(sealed.keys()), kinds));
 
-      /* Event configuration is the organisation's, not one agent's, so this surface keeps
-         resolving rather than naming an agent. `liveAgentId` raises on two rather than
-         picking one — see migration 0047 — which is the honest answer while the registry is
-         shared and the version it bumps sits on an agent row. */
-      const agentId = await liveAgentId(scope);
-      if (agentId === null) throw new NotFoundException();
-
-      const version = await publishConfiguration(scope, agentId, current, {
+      /* Event configuration is the organisation's and is saved as the organisation's: no
+         agent is named or resolved — see migration 0089 and the tools endpoint. */
+      const version = await publishDocuments(scope, current.version, {
         // Carried over untouched, for the same reason the tools endpoint carries this one.
         toolConfig: current.toolConfig,
         eventConfig: document,
-        note: body.note ?? DEFAULT_NOTE,
       });
+      if (version === null) {
+        throw new ConflictException("somebody else saved this organisation's webhooks first; re-read and try again");
+      }
       await audit(scope, this.db.caller, {
         action: "webhooks_saved",
         subjectKind: "organisation",

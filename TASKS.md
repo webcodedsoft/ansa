@@ -6187,6 +6187,27 @@ rather than landed as inventory — the wave that needs them adds them wired.
       The check then caught the bigger version of the same fault: every one of the 93
       templates carried a timeout over the ceiling — 4s for a lookup, 6s for a write — so
       every template failed on save with the same message. Both are the ceiling now.
+- [x] **Tools and webhooks can be saved again** (2026-09-12)
+      "Something went wrong" on Add tool. The API log said why: "organization has 4 live
+      agents, so there is no single agent this route can mean". The tool registry and the
+      webhook subscriptions are the organisation's — `organizations.tool_config` and
+      `event_config` — but the only way to write them was to publish an *agent*
+      configuration version, and `app.live_agent_for_organization` refuses to guess between
+      two live agents (0047). Since this organisation got its second agent, nothing here
+      could be saved. Migration 0089 gives the two documents a version of their own,
+      `organizations.documents_version`; `readOrganizationDocuments` and
+      `publishOrganizationDocuments` read and bump it with a plain RLS-guarded update, and
+      the tools, events and credentials endpoints use those instead of resolving an agent.
+      Agent publishes go on snapshotting both documents into their own versions untouched,
+      so a call from three weeks ago is still explained by the version it ran on. The
+      `note` field on both PUTs is still accepted and now ignored — there is no version row
+      for it to land on. Seen live: the Leadway lookup saved from the registry, version 1 → 2,
+      with four live agents; then removed, to leave the registry as found. 71 API tools
+      tests and 50 db configuration tests pass.
+- [x] **The Parameters step has a way back from JSON** (2026-09-12)
+      "Edit as JSON Schema" was a one-way door: nothing returned to the rows. "Back to rows"
+      does, whenever the JSON still fits them; when it holds something the rows would lose
+      the button is disabled with the reason, and the notice says which case it is.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

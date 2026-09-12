@@ -1,73 +1,32 @@
 import {
-  publishConfiguration as dbPublishConfiguration,
-  readStoredConfiguration,
-  type StoredConfiguration as DbStoredConfiguration,
+  publishOrganizationDocuments,
+  readOrganizationDocuments,
+  type OrganizationDocuments,
   type OrganizationScope,
 } from "@ansa/db";
 
 /**
  * The statements this endpoint area runs, each taking a scope it cannot widen.
  *
- * They are here rather than in `@ansa/db` because they have exactly one consumer and it is
- * three files away. If a second one appears — the agent-configuration endpoints will want
- * `publishConfiguration` the moment they exist — they move, unchanged, and the signatures
- * are already the shape that package uses.
+ * **There is no `where organization_id = …` and there must not be.** `organizations` has an
+ * RLS policy of `id = app.current_organization()`, so `select … from organizations` inside a
+ * scope returns exactly one row: this organisation's. Adding a predicate would not make it
+ * safer, it would make it look as though the safety came from the predicate.
  *
- * Two things are worth reading before changing anything below.
- *
- * **There is no `where organization_id = …` and there must not be.** `organizations` has an RLS policy
- * of `id = app.current_organization()`, so `select … from organizations` inside a scope returns exactly
- * one row: this organisation's. Adding a predicate would not make it safer, it would make
- * it look as though the safety came from the predicate.
- *
- * **A publish is a whole configuration, never a patch.** `app.publish_agent_config` rewrites
- * every field it takes and snapshots the result into `agent_prompt_versions`, which is what
- * lets a call from three weeks ago be explained (R7.5). So changing the tool configuration
- * means reading the other fields and handing them straight back, inside the same
- * transaction. Omitting one would not "leave it alone" — it would clear it, and the version
- * history would then be a lie about what the agent was doing that day.
+ * **The documents here are the organisation's, not an agent's.** The tool registry and the
+ * webhook subscriptions used to be saved by publishing an agent configuration version,
+ * because that was the only versioned write there was. The resolver that picked the agent
+ * refused — correctly — the moment an organisation had two, and from then on nothing could
+ * be saved here at all. Migration 0089 gave the documents a version of their own; these
+ * read and bump it, and agent publishes go on snapshotting the documents into their own
+ * versions untouched.
  */
+export type StoredDocuments = OrganizationDocuments;
 
-/**
- * Reading and publishing the configuration document now live in `@ansa/db`.
- *
- * They were here, and there was a near-identical pair in `packages/db/src/organization-config.ts`
- * for agent configuration. Both went through the one SQL function, so there was never a
- * second path into the table — but each carried the other's columns forward by hand, and
- * adding a column would have meant editing both. Forgetting one would have nulled a
- * organization's configuration on their next publish, with the version history recording the loss
- * as intentional.
- *
- * `publishConfiguration` there takes a patch and does the carrying itself, so a caller says
- * what it is changing and nothing else. These aliases keep the names this area already uses.
- */
-export type StoredConfiguration = DbStoredConfiguration;
+export const readDocuments = readOrganizationDocuments;
 
-export const readConfiguration = readStoredConfiguration;
-
-/** What this publish is changing. Everything else is carried over from `current`. */
-export interface ConfigurationChange {
-  /** The `tools` document to store. Null removes every organization tool. */
-  readonly toolConfig: unknown;
-  /** The `events` document to store. Null stops every delivery. */
-  readonly eventConfig: unknown;
-  /** Recorded on the version. A version with no reason explains nothing later. */
-  readonly note: string;
-}
-
-export const publishConfiguration = async (
-  scope: OrganizationScope,
-  agentId: string,
-  current: StoredConfiguration,
-  change: ConfigurationChange,
-): Promise<number> =>
-  dbPublishConfiguration(
-    scope,
-    agentId,
-    current,
-    { toolConfig: change.toolConfig, eventConfig: change.eventConfig },
-    change.note,
-  );
+/** Null means somebody saved first; the caller answers 409 with the version it read. */
+export const publishDocuments = publishOrganizationDocuments;
 
 // ---------------------------------------------------------------------------
 // Credentials

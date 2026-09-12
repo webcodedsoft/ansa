@@ -31,6 +31,7 @@ import {
   fieldsIn,
   hostOf,
   isPlaintext,
+  paramsFromSchema,
   urlParamsIn,
   problemsWith,
   schemaFromParams,
@@ -165,6 +166,9 @@ export const HttpToolForm = ({
 
   const host = hostOf(draft.url);
   const urlParams = urlParamsIn(draft.url);
+  /* Whether the JSON on the Parameters step can be shown as rows again. Null while it
+     holds something the rows would lose, or while it is not valid JSON. */
+  const rowsFromJson = draft.useRawParameters ? paramsFromSchema(draft.parametersJson) : null;
   const declared = new Set(draft.params.map((param) => param.name));
 
   /* A GET cannot carry a body, so the choice is removed rather than left to be refused on
@@ -479,10 +483,10 @@ export const HttpToolForm = ({
           <Stack>
             {draft.useRawParameters ? (
               <>
-                <Notice tone="warn">
-                  This tool&rsquo;s schema is more than the builder can show &mdash; nested
-                  fields, a fixed set of values, or something else written by hand. It is kept
-                  exactly as it is, so saving cannot quietly simplify it.
+                <Notice tone={rowsFromJson === null ? "warn" : "info"}>
+                  {rowsFromJson === null
+                    ? "This schema is more than the rows can show — nested fields, a fixed set of values, or something else written by hand. It is kept exactly as it is, so saving cannot quietly simplify it."
+                    : "Written as JSON Schema. It still fits the rows, so you can go back to them at any point."}
                 </Notice>
                 <TextAreaField
                   label="Parameters (JSON Schema)"
@@ -492,6 +496,23 @@ export const HttpToolForm = ({
                   rows={10}
                   className="font-mono text-[12.5px]"
                 />
+                <div>
+                  {/* The way back. "Edit as JSON Schema" was a one-way door: nothing on this
+                      screen returned to the rows, so one curious click left a person editing
+                      JSON for good. Disabled, with the reason, only when the JSON holds
+                      something the rows would lose. */}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={rowsFromJson === null}
+                    title={rowsFromJson === null ? "The schema holds something the rows cannot show." : undefined}
+                    onClick={() => {
+                      if (rowsFromJson !== null) edit({ useRawParameters: false, params: rowsFromJson });
+                    }}
+                  >
+                    Back to rows
+                  </Button>
+                </div>
               </>
             ) : (
               <>

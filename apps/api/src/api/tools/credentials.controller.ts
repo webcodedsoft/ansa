@@ -23,7 +23,7 @@ import {
   deleteCredential,
   listCredentials,
   putCredential,
-  readConfiguration,
+  readDocuments,
   sealedCredentials,
 } from "./store";
 import {
@@ -136,7 +136,7 @@ export class CredentialsController {
   async list(): Promise<Infer<typeof credentialList>> {
     return this.db.tx(async (scope) => {
       const stored = await listCredentials(scope);
-      const configuration = await readConfiguration(scope);
+      const configuration = await readDocuments(scope);
       const referenced = referencedCredentials([
         configuration?.toolConfig,
         configuration?.eventConfig,
@@ -216,7 +216,7 @@ export class CredentialsController {
   })
   async remove(@FromPath() path: Infer<typeof credentialPath>): Promise<void> {
     await this.db.tx(async (scope) => {
-      const configuration = await readConfiguration(scope);
+      const configuration = await readDocuments(scope);
       const referenced = referencedCredentials([
         configuration?.toolConfig,
         configuration?.eventConfig,

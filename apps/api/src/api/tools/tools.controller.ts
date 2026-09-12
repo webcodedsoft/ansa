@@ -1,4 +1,3 @@
-import { liveAgentId } from "@ansa/db";
 import { HARD_TIMEOUT_MS, parseConnectorConfig, type ConnectorConfig } from "@ansa/tools";
 import {
   ConflictException,
@@ -31,7 +30,7 @@ import { OrganizationContext } from "../tenancy/organization-context";
 import { checkToolConfig, eventsOrNothing, orConflict, orRefuse } from "./refusals";
 import { fetchSample } from "./sample";
 import { runToolInSandbox } from "./sandbox";
-import { publishConfiguration, readConfiguration, sealedCredentials } from "./store";
+import { publishDocuments, readDocuments, sealedCredentials } from "./store";
 import { classifyCredentials, credentialUses, refuseUnusableReferences, vaultKey } from "./vault";
 
 /**
@@ -331,7 +330,6 @@ const toArguments = (raw: string): Record<string, unknown> => {
 type HttpToolInput = Infer<typeof httpTool>;
 type McpToolInput = Infer<typeof mcpTool>;
 
-const DEFAULT_NOTE = "dashboard: tool configuration replaced";
 
 /** `[{argument, fact}]` on the wire, `{argument: fact}` in the column. */
 const identifierRecord = (
@@ -561,7 +559,7 @@ export class ToolsController {
   })
   async read(): Promise<Infer<typeof toolConfiguration>> {
     return this.db.tx(async (scope) => {
-      const current = await readConfiguration(scope);
+      const current = await readDocuments(scope);
       if (current === null) throw new NotFoundException();
 
       /**
@@ -573,7 +571,7 @@ export class ToolsController {
        * call path logs as an error and this reports as a 409.
        */
       const parsed = orConflict(() => parseConnectorConfig(current.toolConfig));
-      return { configVersion: current.configVersion, ...toToolResponseBody(parsed, current.toolConfig) };
+      return { configVersion: current.version, ...toToolResponseBody(parsed, current.toolConfig) };
     });
   }
 
@@ -593,11 +591,11 @@ export class ToolsController {
     const tools = orRefuse(() => checkToolConfig(document, this.db.caller.organizationId));
 
     return this.db.tx(async (scope) => {
-      const current = await readConfiguration(scope);
+      const current = await readDocuments(scope);
       if (current === null) throw new NotFoundException();
-      if (current.configVersion !== body.expectedVersion) {
+      if (current.version !== body.expectedVersion) {
         throw new ConflictException(
-          `this organisation's configuration is at version ${current.configVersion} and the edit was made against ${body.expectedVersion}; re-read it and try again`,
+          `this organisation's tools are at version ${current.version} and the edit was made against ${body.expectedVersion}; re-read it and try again`,
         );
       }
 
@@ -607,19 +605,18 @@ export class ToolsController {
       const uses = credentialUses(tools, eventsOrNothing(current.eventConfig));
       orRefuse(() => refuseUnusableReferences(uses, new Set(sealed.keys()), kinds));
 
-      /* The tool registry is the organisation's, so this surface resolves rather than
-         naming an agent, exactly as the events one does. `liveAgentId` raises on two rather
-         than picking one — see migration 0047. */
-      const agentId = await liveAgentId(scope);
-      if (agentId === null) throw new NotFoundException();
-
-      const version = await publishConfiguration(scope, agentId, current, {
+      /* The registry is the organisation's and is saved as the organisation's: no agent is
+         named or resolved. It used to be published as an agent version, and the resolver
+         refused the moment there were two agents — see migration 0089. */
+      const version = await publishDocuments(scope, current.version, {
         toolConfig: stamped(document, current.toolConfig),
-        // Carried over untouched. A publish rewrites every column it takes, so leaving this
-        // out would stop every delivery this organisation is expecting.
+        // Carried over untouched: a save writes both documents, so leaving this out would
+        // stop every delivery this organisation is expecting.
         eventConfig: current.eventConfig,
-        note: body.note ?? DEFAULT_NOTE,
       });
+      if (version === null) {
+        throw new ConflictException("somebody else saved this organisation's tools first; re-read and try again");
+      }
       return { configVersion: version };
     });
   }
@@ -726,7 +723,7 @@ export class ToolsController {
   })
   async sample(@FromBody() body: Infer<typeof sampleRequest>): Promise<Infer<typeof sampleResponse>> {
     const stored = await this.db.tx(async (scope) => {
-      const current = await readConfiguration(scope);
+      const current = await readDocuments(scope);
       return {
         allowPlaintextHttp:
           parseConnectorConfig(current?.toolConfig).egress.allowPlaintextHttp === true,
@@ -780,7 +777,7 @@ export class ToolsController {
     const args = toArguments(body.argumentsJson);
 
     const stored = await this.db.tx(async (scope) => {
-      const current = await readConfiguration(scope);
+      const current = await readDocuments(scope);
       if (current === null) throw new NotFoundException();
       return { toolConfig: current.toolConfig, sealed: await sealedCredentials(scope) };
     });

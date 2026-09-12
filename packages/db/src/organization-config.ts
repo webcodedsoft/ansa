@@ -54,7 +54,7 @@ import type { OrganizationScope } from "./organization-scope";
  * So the carry-forward is the function's job now, not the caller's. A caller says what it is
  * changing and nothing else.
  */
-export interface StoredConfiguration {
+interface StoredConfiguration {
   readonly name: string;
   readonly voiceId: string | null;
   /** Null is the voice's own pace, which is not the same as 1.0. */
@@ -144,7 +144,7 @@ const OLDEST_LIVE_AGENT = `
  *
  * Null when the organisation has been deleted out from under a live session.
  */
-export const readStoredConfiguration = async (
+const readStoredConfiguration = async (
   scope: OrganizationScope,
 ): Promise<StoredConfiguration | null> => {
   const rows = await scope.query<StoredConfigurationRow>(
@@ -178,11 +178,67 @@ export const readStoredConfiguration = async (
 };
 
 /** What a publish is changing. Anything absent is carried over from `current`. */
-export type ConfigurationPatch = Partial<Omit<StoredConfiguration, "configVersion">>;
+type ConfigurationPatch = Partial<Omit<StoredConfiguration, "configVersion">>;
 
 /** jsonb wants text on the wire; null has to stay null rather than become `"null"`. */
 const asJsonb = (value: unknown): string | null =>
   value === null || value === undefined ? null : JSON.stringify(value);
+
+/**
+ * The organisation's own documents: the tool registry and the webhook subscriptions, and
+ * the version the console compares against when saving either (migration 0089).
+ *
+ * Read off `organizations` alone. No agent is resolved, because none is involved: these are
+ * shared by every agent, and resolving one was what stopped every save the moment an
+ * organisation had a second agent.
+ */
+export interface OrganizationDocuments {
+  readonly toolConfig: unknown;
+  readonly eventConfig: unknown;
+  readonly version: number;
+}
+
+export const readOrganizationDocuments = async (
+  scope: OrganizationScope,
+): Promise<OrganizationDocuments | null> => {
+  // No `where`: RLS on `organizations` makes this exactly this organisation's row.
+  const rows = await scope.query<{ tool_config: unknown; event_config: unknown; documents_version: number }>(
+    "select tool_config, event_config, documents_version from organizations",
+  );
+  const row = rows[0];
+  if (row === undefined) return null;
+  return {
+    toolConfig: row.tool_config ?? null,
+    eventConfig: row.event_config ?? null,
+    version: Number(row.documents_version),
+  };
+};
+
+/**
+ * Replace both documents and bump their version, in one statement guarded by the version
+ * the caller read. Null when somebody else saved in between: nothing was written, and the
+ * caller answers 409 with the current version.
+ *
+ * Both documents every time rather than a patch, for the reason a publish is a whole
+ * configuration: a caller changing one has read the other and hands it straight back.
+ */
+export const publishOrganizationDocuments = async (
+  scope: OrganizationScope,
+  expectedVersion: number,
+  documents: { readonly toolConfig: unknown; readonly eventConfig: unknown },
+): Promise<number | null> => {
+  const rows = await scope.mutate<{ documents_version: number }>(
+    `update organizations
+        set tool_config = $1::jsonb,
+            event_config = $2::jsonb,
+            documents_version = documents_version + 1
+      where documents_version = $3
+      returning documents_version`,
+    [asJsonb(documents.toolConfig), asJsonb(documents.eventConfig), expectedVersion],
+  );
+  const row = rows[0];
+  return row === undefined ? null : Number(row.documents_version);
+};
 
 /**
  * Bump the version and snapshot the whole configuration, in one statement.
@@ -196,7 +252,7 @@ const asJsonb = (value: unknown): string | null =>
  * organisation. The value comes off the scope, which came off the principal, which came out
  * of a session row RLS agreed to show.
  */
-export const publishConfiguration = async (
+const publishConfiguration = async (
   scope: OrganizationScope,
   agentId: string,
   current: StoredConfiguration,
