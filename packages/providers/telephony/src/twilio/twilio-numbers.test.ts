@@ -147,6 +147,23 @@ describe("the carrier number store", () => {
     expect(seen.find((s) => s.url.includes("/Local.json"))?.url).toContain("Contains=207");
   });
 
+  it("asks for an area code rather than a substring when given one", async () => {
+    const seen: { method: string; url: string; body: string | null }[] = [];
+    const store = directory(
+      answering(
+        {
+          "/AvailablePhoneNumbers/US/Local.json": { status: 200, body: { available_phone_numbers: [] } },
+          "/v1/PhoneNumbers/Countries/US": { status: 200, body: { price_unit: "USD", phone_number_prices: [] } },
+        },
+        seen,
+      ),
+    );
+    await store.searchAvailable("US", { areaCode: "814", contains: "814" });
+    const url = seen.find((s) => s.url.includes("/Local.json"))?.url ?? "";
+    expect(url).toContain("AreaCode=814");
+    expect(url).not.toContain("Contains=");
+  });
+
   it("still lists numbers when the pricing API is down", async () => {
     const store = directory(
       answering({

@@ -98,6 +98,7 @@ export const GetNumberModal = ({
             mono
             inputMode="numeric"
             placeholder="e.g. 814"
+            hint="Digits anywhere in the number; * is a wildcard. Three digits in the US or Canada is the area code."
             value={contains}
             onChange={(event) => setContains(event.target.value.replace(/[^0-9*]/g, "").slice(0, 12))}
           />

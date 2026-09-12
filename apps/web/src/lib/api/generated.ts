@@ -3498,7 +3498,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
 
     /**
      * Numbers for sale in a country
-     * Up to ten voice-capable local numbers the carrier would sell right now, with the carrier's monthly price for that country where it states one. `contains` narrows to numbers holding those digits. Nothing is reserved by searching.
+     * Up to ten voice-capable local numbers the carrier would sell right now, with the carrier's monthly price for that country where it states one. `contains` narrows to numbers holding those digits (`*` is a wildcard); exactly three digits in the US or Canada is read as the area code. Nothing is reserved by searching.
      */
     available: (input: {
         readonly query: {

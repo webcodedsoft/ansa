@@ -190,6 +190,9 @@ const purchase = object({
 
 const numberPath = object({ number: text({ maxLength: NUMBER_LIMIT, pattern: /^\+[1-9][0-9]{6,14}$/ }) });
 
+/** Where a three-digit prefix is an area code the carrier can filter on directly. */
+const AREA_CODE_COUNTRIES = new Set(["US", "CA"]);
+
 /** The carrier's refusal, in its words, as the status it is: the carrier is upstream of this API. */
 const asCarrierFailure = (error: unknown): never => {
   throw new BadGatewayException(error instanceof Error ? error.message : "the carrier did not answer");
@@ -376,15 +379,21 @@ export class NumbersController {
   @Endpoint({
     summary: "Numbers for sale in a country",
     description:
-      "Up to ten voice-capable local numbers the carrier would sell right now, with the carrier's monthly price for that country where it states one. `contains` narrows to numbers holding those digits. Nothing is reserved by searching.",
+      "Up to ten voice-capable local numbers the carrier would sell right now, with the carrier's monthly price for that country where it states one. `contains` narrows to numbers holding those digits (`*` is a wildcard); exactly three digits in the US or Canada is read as the area code. Nothing is reserved by searching.",
     capability: "config:write",
     query: availableQuery,
     response: availableList,
   })
   async available(@FromQuery() query: Infer<typeof availableQuery>): Promise<Infer<typeof availableList>> {
     const { store } = this.store();
+    /* Three digits in a country with area codes is an area code, not a substring: "814" means
+       the 814 numbers, and the carrier's Contains would also hand back +1 667 281 4815. */
+    const areaCode =
+      AREA_CODE_COUNTRIES.has(query.country) && /^[0-9]{3}$/.test(query.contains ?? "")
+        ? query.contains
+        : undefined;
     const found = await store
-      .searchAvailable(query.country, { contains: query.contains, limit: 10 })
+      .searchAvailable(query.country, { contains: query.contains, areaCode, limit: 10 })
       .catch(asCarrierFailure);
     return {
       items: found.map((one) => ({

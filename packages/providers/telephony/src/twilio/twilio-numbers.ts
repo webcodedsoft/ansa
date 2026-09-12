@@ -166,7 +166,9 @@ export const createTwilioNumberDirectory = (options: TwilioNumberDirectoryOption
     searchAvailable: async (country, search): Promise<readonly AvailableNumber[]> => {
       const limit = Math.min(Math.max(search.limit ?? 10, 1), 30);
       const query = new URLSearchParams({ VoiceEnabled: "true", PageSize: String(limit) });
-      if (search.contains !== undefined && search.contains.trim() !== "") {
+      if (search.areaCode !== undefined && search.areaCode.trim() !== "") {
+        query.set("AreaCode", search.areaCode.trim());
+      } else if (search.contains !== undefined && search.contains.trim() !== "") {
         query.set("Contains", search.contains.trim());
       }
       const [body, priced] = await Promise.all([

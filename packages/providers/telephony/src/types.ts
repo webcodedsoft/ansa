@@ -331,7 +331,13 @@ export interface CarrierNumberStore extends CarrierNumberDirectory {
   countries(): Promise<readonly CarrierCountry[]>;
   searchAvailable(
     country: string,
-    options: { readonly contains?: string; readonly limit?: number },
+    options: {
+      /** Digits anywhere in the number; the carrier's own pattern filter, `*` a wildcard. */
+      readonly contains?: string;
+      /** The three-digit area code, where the country has them. Wins over `contains` when both are set. */
+      readonly areaCode?: string;
+      readonly limit?: number;
+    },
   ): Promise<readonly AvailableNumber[]>;
   buy(number: string, options: { readonly voiceUrl: string; readonly label: string }): Promise<PurchasedNumber>;
   release(carrierSid: string): Promise<void>;
