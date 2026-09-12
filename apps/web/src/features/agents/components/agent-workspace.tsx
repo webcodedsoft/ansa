@@ -273,7 +273,6 @@ export const AgentWorkspace = ({
    * again, so they are picked up by the save after.
    */
   const publishForm = useRef<HTMLFormElement>(null);
-  const autosaveFlag = useRef<HTMLInputElement>(null);
   const [dirty, setDirty] = useState(false);
   const markDirty = () => setDirty(true);
   const busy = saving || pending || discarding;
@@ -281,15 +280,22 @@ export const AgentWorkspace = ({
     if (!dirty || busy) return;
     const timer = setTimeout(() => {
       const form = publishForm.current;
-      const flag = autosaveFlag.current;
-      if (form === null || flag === null) return;
+      if (form === null) return;
       setDirty(false);
-      flag.value = "1";
-      form.requestSubmit();
-      flag.value = "";
+      /* The action is called with a snapshot of the form, not by submitting the form. React
+         resets a form's uncontrolled fields after any submission of a form that has an
+         action — so an auto-save through `requestSubmit()` put every greeting, persona and
+         instruction box back to the text it was rendered with, mid-sentence, while the
+         status said "saved". The draft on the server had the new words; the screen had the
+         old ones; and the next auto-save would have sent the old ones back. Calling the
+         action directly is the same save without the reset. `FormData(form)` includes the
+         fields bound to the form by id, so the canvas's graph rides along as before. */
+      const data = new FormData(form);
+      data.set("autosave", "1");
+      startTransition(() => save(data));
     }, 1500);
     return () => clearTimeout(timer);
-  }, [dirty, busy]);
+  }, [dirty, busy, save]);
   /* When the last quiet save landed. The server's own account of the draft (`draft`) is only
      as fresh as the last reload, which a quiet save does not ask for. */
   const [confirming, setConfirming] = useState<"retire" | "discard" | null>(null);
@@ -626,9 +632,9 @@ export const AgentWorkspace = ({
 
       {/* No key on the form. Each panel carries its own — see `shownAs`. */}
       <form id={PUBLISH_FORM} ref={publishForm} action={save} className="mt-3.5" onInput={markDirty} onChange={markDirty}>
-        {/* Set to "1" for the instant of a background submit and cleared again — see the
-            auto-save effect. The Save button submits with it empty. */}
-        <input ref={autosaveFlag} type="hidden" name="autosave" value="" />
+        {/* Empty on a submit from the Save button; the auto-save sets it to "1" on the copy
+            of the form data it sends — see the auto-save effect. */}
+        <input type="hidden" name="autosave" value="" />
         {/* Which agent every button on this form writes to.
             A server action is called by the form, not by the page, so it cannot read the id
             out of the route the way a loader can. Nothing in the type system connects this

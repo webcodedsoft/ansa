@@ -6241,6 +6241,20 @@ rather than landed as inventory — the wave that needs them adds them wired.
       edge, measured off a hidden mirror of the textarea because a textarea does not say
       where its caret is. Keyed on the brace's position, not a fresh object, so the
       measurement does not re-run forever. Seen live on the second line of a sentence.
+- [x] **Auto-save no longer puts the old words back** (2026-09-12)
+      "Auto save is overriding what user is inputting on the agent flow." Reproduced on the
+      Greeting panel: type, wait a moment, and the box snapped back to the text it was
+      rendered with while the status said "saved" — and the draft on the server held the
+      new words, so the next auto-save would have sent the old ones back over them. The
+      cause is React's own rule: after any submission of a form that has an action, React
+      resets the form's uncontrolled fields to their defaults. The auto-save submitted the
+      publish form with `requestSubmit()`, and every greeting, persona, instruction and
+      routing box is an uncontrolled field with a `defaultValue`. The canvas's own fields
+      are controlled, which is why the drawing itself was fine. The auto-save now calls the
+      save action directly with a `FormData` snapshot of the form (the graph rides along:
+      `FormData(form)` includes fields bound by id) inside a transition — the same save,
+      no submission, no reset. Seen live: the same probe reverted before the change and
+      stayed after it, with zero submit and zero reset events on the form.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.
