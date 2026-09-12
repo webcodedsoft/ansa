@@ -3,11 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { failureMessage } from "@/lib/api/server";
+import { clearSession, failureMessage } from "@/lib/api/server";
 import { failedForm, invalidForm, succeededForm, type FormState } from "@/lib/form-state";
 
 import {
   acceptInvitationSchema,
+  accountClosureSchema,
   credentialsSchema,
   passwordChangeSchema,
   profileSchema,
@@ -16,6 +17,7 @@ import {
 import {
   acceptInvitation,
   changePassword as changePasswordOnApi,
+  closeAccount,
   createOrganisation,
   organisationsFor,
   signInTo,
@@ -211,4 +213,24 @@ export const changePassword = async (_previous: PasswordState, form: FormData): 
   } catch (error) {
     return failedForm(failureMessage(error, { within: "body" }));
   }
+};
+
+export type ClosureState = FormState<null>;
+
+/**
+ * Close the account and leave. The API has already revoked every session by the time this
+ * returns, so the cookie is cleared here rather than through `signOutEverywhere`, whose
+ * revoke call would only be refused. A refusal — wrong password, or still the only owner
+ * somewhere — comes back as the form's message and nothing has changed.
+ */
+export const deleteAccount = async (_previous: ClosureState, form: FormData): Promise<ClosureState> => {
+  const parsed = accountClosureSchema.safeParse({ password: form.get("password") ?? "" });
+  if (!parsed.success) return invalidForm(parsed.error);
+  try {
+    await closeAccount(parsed.data.password);
+  } catch (error) {
+    return failedForm(failureMessage(error, { within: "body" }));
+  }
+  await clearSession();
+  redirect("/sign-in");
 };

@@ -1,15 +1,23 @@
 "use client";
 
-import { KeyRound, UserRound } from "lucide-react";
-import { useActionState } from "react";
+import { KeyRound, TriangleAlert, UserRound } from "lucide-react";
+import { startTransition, useActionState, useRef, useState } from "react";
 
-import { Card, Notice, SubmitButton, TextField } from "@/components/ui";
+import { Button, Card, ConfirmDialog, Notice, SubmitButton, TextField } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
-import { changePassword, saveProfile, type PasswordState, type ProfileState } from "../auth.actions";
+import {
+  changePassword,
+  deleteAccount,
+  saveProfile,
+  type ClosureState,
+  type PasswordState,
+  type ProfileState,
+} from "../auth.actions";
 
 const PROFILE_START: ProfileState = idleForm();
 const PASSWORD_START: PasswordState = idleForm();
+const CLOSURE_START: ClosureState = idleForm();
 
 /**
  * The name you are shown as. The email sits beside it read-only because it is the sign-in
@@ -117,6 +125,87 @@ export const PasswordForm = () => {
         <div>
           <SubmitButton pending={pending} idle="Change password" />
         </div>
+      </form>
+    </Card>
+  );
+};
+
+/**
+ * Closing the account. A password, a danger button, and a dialog that says what happens —
+ * in that order, because the dialog is the last chance and should not be the first place
+ * the consequences are read.
+ *
+ * The password is read off the form when the dialog confirms, not held in state: the field
+ * is the only place it lives until the request goes.
+ */
+export const DeleteAccountForm = ({ organisationName }: { readonly organisationName: string }) => {
+  const [state, action, pending] = useActionState(deleteAccount, CLOSURE_START);
+  const [confirming, setConfirming] = useState(false);
+  const form = useRef<HTMLFormElement>(null);
+
+  return (
+    <Card
+      title={
+        <span className="inline-flex items-center gap-2 text-[var(--bad)]">
+          <TriangleAlert aria-hidden className="size-4" />
+          Delete account
+        </span>
+      }
+      description="Closes your account everywhere, not just here. There is no undo on this surface."
+      className="border-[color-mix(in_srgb,var(--bad)_35%,var(--hairline))]"
+    >
+      <form
+        ref={form}
+        onSubmit={(event) => {
+          event.preventDefault();
+          setConfirming(true);
+        }}
+        className="flex flex-col gap-4"
+      >
+        {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
+
+        <ul className="m-0 flex list-none flex-col gap-1.5 p-0 text-[13px] text-[var(--ink-2)]">
+          <li>· You leave {organisationName} and every other organisation you belong to.</li>
+          <li>· Every session you hold is signed out, including this one.</li>
+          <li>· Calls you reviewed and values you corrected keep your name.</li>
+          <li>· Your email address is released — you can sign up with it again later, as a new account.</li>
+          <li>· If you are the only owner of an organisation, make somebody else an owner first; this is refused until you do.</li>
+        </ul>
+
+        <TextField
+          label="Your password"
+          name="password"
+          type="password"
+          autoComplete="current-password"
+          required
+          className="sm:max-w-[26rem]"
+          hint="Asked for again so a session left open on another machine cannot do this."
+          error={state.fieldErrors["password"]}
+        />
+
+        <div>
+          <Button type="submit" variant="danger" pending={pending}>
+            Delete my account
+          </Button>
+        </div>
+
+        <ConfirmDialog
+          open={confirming}
+          onClose={() => setConfirming(false)}
+          onConfirm={() => {
+            setConfirming(false);
+            const current = form.current;
+            if (current === null) return;
+            const data = new FormData(current);
+            startTransition(() => action(data));
+          }}
+          title="Delete your account?"
+          confirmLabel="Delete my account"
+          pending={pending}
+        >
+          You are signed out of everything the moment this is confirmed, and your account
+          cannot be reopened. Your name stays on the work you did.
+        </ConfirmDialog>
       </form>
     </Card>
   );

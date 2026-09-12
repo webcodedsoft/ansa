@@ -1,5 +1,13 @@
-import { endOtherSessions, passwordHashOf, renameUser, revokeSession, setPasswordHash } from "@ansa/db";
 import {
+  closeAccount,
+  endOtherSessions,
+  passwordHashOf,
+  renameUser,
+  revokeSession,
+  setPasswordHash,
+} from "@ansa/db";
+import {
+  ConflictException,
   Controller,
   Delete,
   Get,
@@ -136,6 +144,9 @@ const passwordChange = object({
   currentPassword: offeredPassword(),
   newPassword: newPassword(),
 });
+
+/** Closing an account asks for the password again: a stolen session must not be able to end the account. */
+const accountClosure = object({ password: offeredPassword() });
 
 /**
  * Ten guesses at the current password in five minutes, per session. The sign-in limit is
@@ -308,18 +319,47 @@ export class AuthController {
     @Caller() caller: Principal,
     @FromBody() body: Infer<typeof passwordChange>,
   ): Promise<void> {
-    const stored = await this.db.tx((scope) => passwordHashOf(scope, caller.userId));
-    /* Verified before anything is written, and with the same constant-cost check sign-in
-       uses, so a wrong guess costs a full scrypt whether or not the account exists. */
-    const verified = await verifyPassword(stored, body.currentPassword);
-    if (!verified || stored === null) {
-      throw new ValidationFailed([{ path: "body.currentPassword", message: "is not your current password" }]);
-    }
+    await this.requirePassword(caller, body.currentPassword, "body.currentPassword");
     const replacement = await hashPassword(body.newPassword);
     await this.db.tx(async (scope) => {
       const changed = await setPasswordHash(scope, caller.userId, replacement);
       if (!changed) throw new NotFoundException();
       await endOtherSessions(scope, caller.userId, caller.sessionId);
     });
+  }
+
+  /**
+   * The caller's password, or a 422 on the named field. The same constant-cost check
+   * sign-in uses, so a wrong guess costs a full scrypt whether or not the account exists.
+   */
+  private async requirePassword(caller: Principal, password: string, path: string): Promise<void> {
+    const stored = await this.db.tx((scope) => passwordHashOf(scope, caller.userId));
+    const verified = await verifyPassword(stored, password);
+    if (!verified || stored === null) {
+      throw new ValidationFailed([{ path, message: "is not your current password" }]);
+    }
+  }
+
+  @Delete("me")
+  @Endpoint({
+    summary: "Close your own account",
+    description:
+      "Asks for your password again, so a stolen session cannot end the account. Ends every membership you hold (softly — your name stays on what you did), revokes every session including this one, and frees your email address for a future sign-up. Refused with 409 while you are the only owner of any organisation: hand ownership on, or close the organisation, first.",
+    capability: "authenticated",
+    body: accountClosure,
+    rateLimit: PASSWORD_CHANGE_LIMIT,
+    status: 204,
+  })
+  async closeAccount(
+    @Caller() caller: Principal,
+    @FromBody() body: Infer<typeof accountClosure>,
+  ): Promise<void> {
+    await this.requirePassword(caller, body.password, "body.password");
+    const soleOwnerOf = await this.db.tx((scope) => closeAccount(scope, caller.userId, caller.sessionId));
+    if (soleOwnerOf.length > 0) {
+      throw new ConflictException(
+        `You are the only owner of ${soleOwnerOf.join(", ")}. Make somebody else an owner, or close the organisation, first.`,
+      );
+    }
   }
 }

@@ -14,6 +14,7 @@ import {
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { SectionRail } from "@/components/shell/section-rail";
 import { Card, PageHeader, Tag } from "@/components/ui";
 import { currentPrincipal } from "@/features/auth/auth.service";
 import { DetailsForm } from "@/features/org/components/details-form";
@@ -23,7 +24,6 @@ import { PeopleSection } from "@/features/org/components/people-section";
 import { RecordingForm } from "@/features/org/components/recording-form";
 import { closedDaysLabel, daysLabel, hourLabel, nowInWat, openNow } from "@/features/org/org.display";
 import { listMembers, organisation } from "@/features/org/org.service";
-import { cn } from "@/lib/cn";
 import { humanise } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Organisation · Ansa" };
@@ -117,47 +117,36 @@ const OrganisationPage = async ({
       />
 
       <div className="grid items-start gap-6 lg:grid-cols-[13rem_minmax(0,1fr)]">
-        <nav aria-label="Sections" className="flex flex-col gap-0.5 lg:sticky lg:top-6">
-          <span className="px-2.5 pt-1 pb-1.5 font-mono text-[10px] font-semibold tracking-[0.12em] text-[var(--ink-3)] uppercase">
-            Organisation
-          </span>
-          {RAIL.map(({ id, label, Icon }) => (
-            <Link
-              key={id}
-              href={id === "overview" ? "/organisation" : `/organisation?s=${id}`}
-              aria-current={section === id ? "page" : undefined}
-              className={cn(
-                "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13.5px] text-[var(--ink-2)] hover:bg-[var(--surface-2)]",
-                section === id && "bg-[var(--surface-2)] font-medium text-[var(--ink)] shadow-[inset_2px_0_0_var(--accent)]",
-              )}
-            >
-              <Icon aria-hidden className="size-4 text-[var(--ink-3)]" />
-              {label}
-              {id === "recording" && (
-                <Tag tone={org.recordCalls ? "ok" : "warn"}>{org.recordCalls ? "on" : "off"}</Tag>
-              )}
-            </Link>
-          ))}
-          <span className="px-2.5 pt-4 pb-1.5 font-mono text-[10px] font-semibold tracking-[0.12em] text-[var(--ink-3)] uppercase">
-            People
-          </span>
-          <Link
-            href="/organisation?s=people"
-            aria-current={section === "people" ? "page" : undefined}
-            className={cn(
-              "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13.5px] text-[var(--ink-2)] hover:bg-[var(--surface-2)]",
-              section === "people" && "bg-[var(--surface-2)] font-medium text-[var(--ink)] shadow-[inset_2px_0_0_var(--accent)]",
-            )}
-          >
-            <Users aria-hidden className="size-4 text-[var(--ink-3)]" />
-            Members
-            <span className="ml-auto font-mono text-[11px] text-[var(--ink-3)]">{members.total}</span>
-          </Link>
-          <Link href="/audit" className="flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13.5px] text-[var(--ink-2)] hover:bg-[var(--surface-2)]">
-            <ScrollText aria-hidden className="size-4 text-[var(--ink-3)]" />
-            Audit log
-          </Link>
-        </nav>
+        <SectionRail
+          groups={[
+            {
+              label: "Organisation",
+              items: RAIL.map(({ id, label, Icon }) => ({
+                href: id === "overview" ? "/organisation" : `/organisation?s=${id}`,
+                label,
+                Icon,
+                active: section === id,
+                trailing:
+                  id === "recording" ? (
+                    <Tag tone={org.recordCalls ? "ok" : "warn"}>{org.recordCalls ? "on" : "off"}</Tag>
+                  ) : undefined,
+              })),
+            },
+            {
+              label: "People",
+              items: [
+                {
+                  href: "/organisation?s=people",
+                  label: "Members",
+                  Icon: Users,
+                  active: section === "people",
+                  trailing: <span className="font-mono text-[11px] text-[var(--ink-3)]">{members.total}</span>,
+                },
+                { href: "/audit", label: "Audit log", Icon: ScrollText },
+              ],
+            },
+          ]}
+        />
 
         <div className="flex min-w-0 flex-col gap-3.5">
           {section === "overview" && (

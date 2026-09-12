@@ -94,6 +94,13 @@ export const currentPrincipal = async () => (await api()).auth.me();
 export const updateProfile = async (displayName: string) =>
   (await api()).auth.updateProfile({ body: { displayName } });
 
+/**
+ * Close the account. The API revokes every session including this one, so the cookie is
+ * cleared by the caller straight after — there is nothing left for it to name.
+ */
+export const closeAccount = async (password: string) =>
+  (await api()).auth.closeAccount({ body: { password } });
+
 /** Every other session — every organisation, every device — is signed out by the API. */
 export const changePassword = async (currentPassword: string, newPassword: string) =>
   (await api()).auth.changePassword({ body: { currentPassword, newPassword } });

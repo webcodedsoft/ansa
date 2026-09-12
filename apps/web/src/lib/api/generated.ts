@@ -1068,6 +1068,17 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       }>(options, "PATCH", `/api/v1/auth/me`, input),
 
     /**
+     * Close your own account
+     * Asks for your password again, so a stolen session cannot end the account. Ends every membership you hold (softly — your name stays on what you did), revokes every session including this one, and frees your email address for a future sign-up. Refused with 409 while you are the only owner of any organisation: hand ownership on, or close the organisation, first.
+     */
+    closeAccount: (input: {
+        readonly body: {
+          readonly password: string;
+        };
+      }) =>
+      send<void>(options, "DELETE", `/api/v1/auth/me`, input),
+
+    /**
      * Change your own password
      * Takes the current password and the new one. Every other session you hold — in every organisation, on every device — is signed out; the session making this request stays. A wrong current password is a 422 on `currentPassword`, and is rate-limited like sign-in.
      */

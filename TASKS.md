@@ -5957,6 +5957,20 @@ rather than landed as inventory — the wave that needs them adds them wired.
       function `app.end_other_sessions(user, keep)` reaches all, and insists the kept
       session belongs to the user so holding somebody's id is not enough to sign them out.
       Nothing typed on the password form is held in state after the submit.
+- [x] **Settings: Profile, Password, Delete account, on a rail** (2026-09-12)
+      "Your account" became Settings, shaped like the organisation page — a rail of sections,
+      the section in the URL — and the two pages now share one `SectionRail` so their rails
+      cannot drift. The third section is new: closing your own account. `users.deleted_at`
+      had existed since 0032 with only a psql prompt able to set it. `app.close_account`
+      (0085) is the writer: it refuses, naming them, while the person is the only owner of
+      any organisation; otherwise it ends every membership softly, revokes every session
+      including the one asking, marks the user deleted and moves the address to a reserved
+      form — `users_email_key` is a plain unique index and every sign-up path looks an
+      address up without regard to `deleted_at`, so a closed account would otherwise hold
+      its address forever. `DELETE /auth/me` asks for the password again so a session left
+      open elsewhere cannot do it, and is rate-limited like sign-in. The form reads the
+      password off the input when the dialog confirms rather than holding it in state.
+      Not exercised end to end: nobody's account was closed to prove it.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

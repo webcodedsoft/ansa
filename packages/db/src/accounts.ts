@@ -214,6 +214,25 @@ export const endOtherSessions = async (
   return Number(rows[0]?.ended ?? 0);
 };
 
+/**
+ * Close the caller's own account (migration 0085).
+ *
+ * Returns the names of the organisations they are the only owner of, in which case nothing
+ * was written and they have to hand ownership on first. Empty means it is done: every
+ * membership ended, every session revoked — this one included — and the address freed.
+ */
+export const closeAccount = async (
+  scope: OrganizationScope,
+  userId: string,
+  keepSessionId: string,
+): Promise<readonly string[]> => {
+  const rows = await scope.query<{ sole_owner_of: string[] }>(
+    `select app.close_account($1, $2) as sole_owner_of`,
+    [userId, keepSessionId],
+  );
+  return rows[0]?.sole_owner_of ?? [];
+};
+
 // ---------------------------------------------------------------------------
 // Members
 // ---------------------------------------------------------------------------

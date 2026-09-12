@@ -67,6 +67,11 @@ export const passwordChangeSchema = z
   });
 export type PasswordChangeInput = z.infer<typeof passwordChangeSchema>;
 
+/** Closing your account asks for the password again; the box cannot be empty. */
+export const accountClosureSchema = z.object({
+  password: z.string().min(1, "Enter your password to confirm."),
+});
+
 export const signUpSchema = z
   .object({
     organisationName: z
