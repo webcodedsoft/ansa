@@ -294,6 +294,37 @@ describe("runConversation", () => {
     assertInvariants(h);
   });
 
+  // Not answered, but not lost. The person reading the call afterwards should see the
+  // caller saying "mm" where they said it, or the record says they sat in silence.
+  it("still writes a backchannel down, even though it does not answer it", () => {
+    const kept: { speaker: string; text: string }[] = [];
+    const h = setup({
+      bargeInGuardMs: 0,
+      recorder: {
+        started: () => undefined,
+        event: () => undefined,
+        transcript: (t: { speaker: string; text: string }) => kept.push(t),
+        turn: () => undefined,
+        latency: () => undefined,
+        capture: () => undefined,
+        ended: () => undefined,
+      } as unknown as CallRecorder,
+    });
+    h.tts.last().done();
+    h.stream.ackAll();
+
+    h.listen.final("Tell me about my policy.");
+    h.llm.last().emit("It renews in May. ");
+    const reply = h.tts.last();
+    for (let i = 0; i < 10; i += 1) reply.audio(400);
+
+    h.listen.final("Mm.", 9999);
+
+    expect(reply.cancelled).toBe(false);
+    expect(kept.filter((t) => t.speaker === "caller").map((t) => t.text)).toContain("Mm.");
+    assertInvariants(h);
+  });
+
   // The same word in silence is a real answer: "yeah" to a question means yes.
   it("treats the same word as a real turn when the agent is not speaking", () => {
     const h = setup();

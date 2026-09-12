@@ -3172,6 +3172,25 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     }
     const text = heard.raw;
 
+    /* What the record keeps is a wider set than what the agent answers.
+     *
+     * "Yeah", "okay", "eh" and "o" while the agent is talking are listening, not speaking,
+     * and the two branches below are right not to answer them. They were also right not to
+     * *record* them only while the transcript was a debugging aid; it is the conversation
+     * now, read by the person who wants to know what happened, and a caller who said "yes
+     * please" and was shown saying nothing is a record that lies by omission. So they are
+     * written down first and ignored second. Echo, self-speech and the hallucination filters
+     * stay out — those are not the caller's words at all. */
+    const keepUnanswered = (): void => {
+      record.transcript({
+        speaker: "caller",
+        text,
+        confidence: transcript.confidence,
+        offsetMs: transcript.offsetMs,
+        provider: deps.listenProvider ?? "unknown",
+      });
+    };
+
     // Layer 1: this segment's speech-start was already judged to be echo. Exact match,
     // because both numbers are the same offset from the same event.
     if (echoSegments.delete(transcript.offsetMs)) {
@@ -3191,6 +3210,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
      * at StartOfTurn gets settled. Both are needed; neither is redundant. */
     if ((turn !== null || interrupted !== null) && BACKCHANNEL.has(flat)) {
       log.debug("ignored backchannel", { text });
+      keepUnanswered();
       callState.apply({ kind: "caller.transcript.discarded", reason: "backchannel" });
       resumeInterrupted("backchannel");
       return;
@@ -3200,6 +3220,7 @@ export const runConversation = (stream: CallMediaStream, deps: OrchestratorDeps)
     // "eh" as a continuer used to fall through and make the agent repeat itself.
     if (NIGERIAN_PARTICLES.has(flat)) {
       log.debug("ignored bare particle", { text, speaking: turn !== null });
+      keepUnanswered();
       callState.apply({ kind: "caller.transcript.discarded", reason: "particle" });
       resumeInterrupted("particle");
       return;
