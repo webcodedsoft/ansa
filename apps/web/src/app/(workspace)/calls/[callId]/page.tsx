@@ -16,6 +16,7 @@ import { NeedsALook } from "@/features/calls/components/needs-a-look";
 import { OutcomeTag } from "@/features/calls/components/outcome-tag";
 import { outcomeOf } from "@/features/calls/outcome";
 import { CollectedValues } from "@/features/calls/components/collected-values";
+import { initialsOf } from "@/features/contacts/contacts.display";
 import { cn } from "@/lib/cn";
 import { duration, phone, when } from "@/lib/format";
 
@@ -35,6 +36,13 @@ const CallDetailPage = async ({
 
   const counterparty = call.direction === "outbound" ? call.dialled : call.caller;
   const outcome = outcomeOf(call.endReason, call.endedAt !== null);
+  /* The circle beside each caller bubble: initials when we know a name, the number's last two
+     digits when we do not — the same rule as the directory row, so the face matches. */
+  const callerInitials = initialsOf({
+    displayName: call.contact?.name ?? null,
+    phone: counterparty ?? "",
+    values: [],
+  });
 
   return (
     <>
@@ -111,7 +119,7 @@ const CallDetailPage = async ({
                   <div className="mb-3.5 border-b border-[var(--surface-line)] pb-3.5">
                     <CallRecording callId={call.id} />
                   </div>
-                  <CallTimeline callId={call.id} lines={lines} />
+                  <CallTimeline callId={call.id} lines={lines} callerInitials={callerInitials} />
                 </Card>
 
                 <div className="flex flex-col gap-3.5">

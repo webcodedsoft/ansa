@@ -1,3 +1,5 @@
+import { Sparkles } from "lucide-react";
+
 import { EmptyState, Table, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { humanise, offset } from "@/lib/format";
@@ -9,9 +11,12 @@ import { TranscriptLine } from "./transcript-line";
 export const CallTimeline = ({
   callId,
   lines,
+  callerInitials,
 }: {
   readonly callId: string;
   readonly lines: readonly TimelineLine[];
+  /** Two letters for the caller's circle — their initials when we know a name, digits when not. */
+  readonly callerInitials: string;
 }) => {
   if (lines.length === 0) {
     return (
@@ -30,7 +35,7 @@ export const CallTimeline = ({
    * side "me" sits on in any messaging app, and the console is read by the organisation.
    */
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-2.5">
       {lines.map((line) =>
         line.speaker === "tool" ? (
           <div key={line.key} className="flex justify-center">
@@ -53,24 +58,29 @@ export const CallTimeline = ({
             <span
               aria-hidden
               className={cn(
-                "grid size-7 flex-none place-items-center rounded-full border text-[10px] font-semibold",
+                "grid size-7 flex-none place-items-center rounded-full border font-mono text-[10px] font-semibold",
                 line.speaker === "agent"
                   ? "border-transparent bg-[var(--accent)] text-[var(--accent-on)]"
-                  : "border-[var(--hairline)] bg-[var(--surface-2)] text-[var(--ink-3)]",
+                  : "border-[var(--hairline)] bg-[var(--surface-2)] text-[var(--ink-2)]",
               )}
             >
-              {line.speaker === "agent" ? "AI" : "☏"}
+              {line.speaker === "agent" ? <Sparkles className="size-3.5" /> : callerInitials}
             </span>
 
+            {/* `flex-1`, and it matters: the bubble's width is a percentage, and a percentage
+                of a column that is itself sized to its content is a circle the browser breaks
+                by guessing small. Every bubble wrapped at about a hundred pixels — "Yeah. My
+                name is / Sikiru." — and the page read as a column of index cards. The column
+                takes the row; the bubble hugs its text inside it, up to most of the width. */}
             <div
               className={cn(
-                "flex min-w-0 flex-col",
+                "flex min-w-0 flex-1 flex-col",
                 line.speaker === "agent" ? "items-end" : "items-start",
               )}
             >
               <div
                 className={cn(
-                  "max-w-[min(34rem,78%)] rounded-[14px] border px-3 py-2 shadow-[var(--shadow-s)]",
+                  "max-w-[min(40rem,72%)] rounded-[14px] border px-3.5 py-2 shadow-[var(--shadow-s)]",
                   line.speaker === "agent"
                     ? "rounded-br-[4px] border-[var(--accent)]/30 bg-[var(--accent-soft)]"
                     : "rounded-bl-[4px] border-[var(--hairline)] bg-[var(--surface-2)]",
@@ -90,7 +100,7 @@ export const CallTimeline = ({
                 )}
               </div>
 
-              <div className="mt-1 flex items-center gap-2 px-1">
+              <div className="mt-0.5 flex items-center gap-2 px-1">
                 <span className="font-mono text-[11px] text-[var(--ink-3)] tabular-nums">
                   {offset(line.at)}
                 </span>

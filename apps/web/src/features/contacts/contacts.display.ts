@@ -14,6 +14,12 @@ import type { ContactSummary } from "./contacts.service";
 const NAME_TYPE = "name";
 
 /**
+ * What these helpers actually read. A pick rather than the whole summary, so a call — which
+ * knows a person's name and number but is not a directory row — can be named the same way.
+ */
+export type Named = Pick<ContactSummary, "displayName" | "phone" | "values">;
+
+/**
  * How many captured values a row shows before it stops. Three is what fits on one line at
  * the directory's width; a fourth pushes the last-call column around on a narrow window.
  */
@@ -33,7 +39,7 @@ const CONTEXT_LIMIT = 3;
  * rather than an em dash, because a placeholder in every unidentified row is noise in the
  * column that is meant to be scanned.
  */
-export const contextOf = (person: ContactSummary): string =>
+export const contextOf = (person: Pick<ContactSummary, "values">): string =>
   person.values
     .filter((value) => value.fieldType !== NAME_TYPE)
     .map((value) => value.value.trim())
@@ -41,7 +47,7 @@ export const contextOf = (person: ContactSummary): string =>
     .slice(0, CONTEXT_LIMIT)
     .join(" · ");
 
-export const nameOf = (person: ContactSummary): string => {
+export const nameOf = (person: Named): string => {
   if (person.displayName !== null && person.displayName.trim() !== "") return person.displayName;
   const captured = person.values.find((value) => value.fieldType === NAME_TYPE);
   return captured?.value.trim() !== undefined && captured.value.trim() !== ""
@@ -55,7 +61,7 @@ export const nameOf = (person: ContactSummary): string => {
  * Shared by the directory row and the record header for the same reason `nameOf` is: the
  * circle you picked out of a list must be the circle at the top of the page you land on.
  */
-export const initialsOf = (person: ContactSummary): string => {
+export const initialsOf = (person: Named): string => {
   const name = nameOf(person);
   if (name !== "Unnamed caller") {
     const parts = name.split(/\s+/).filter(Boolean);
