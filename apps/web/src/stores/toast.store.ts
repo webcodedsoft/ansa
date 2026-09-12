@@ -29,6 +29,8 @@ export interface Toast {
   readonly id: string;
   readonly tone: NoticeTone;
   readonly message: string;
+  /** How long it stays, so the toast can show the time draining. */
+  readonly ttlMs: number;
 }
 
 interface ToastStore {
@@ -45,17 +47,15 @@ export const useToastStore = create<ToastStore>((set) => ({
   toasts: [],
   show: (tone, message) => {
     const id = crypto.randomUUID();
+    const ttlMs = tone === "error" ? ERROR_VISIBLE_MS : VISIBLE_MS;
     set((state) => ({
       /* One of each message at a time: a retry that fails the same way should not stack the
          same sentence three deep. */
-      toasts: [...state.toasts.filter((toast) => toast.message !== message || toast.tone !== tone), { id, tone, message }],
+      toasts: [...state.toasts.filter((toast) => toast.message !== message || toast.tone !== tone), { id, tone, message, ttlMs }],
     }));
     // Self-dismissing. A confirmation is worth no click; an error gets longer, and a click
     // if somebody wants it gone sooner.
-    setTimeout(
-      () => set((state) => ({ toasts: state.toasts.filter((toast) => toast.id !== id) })),
-      tone === "error" ? ERROR_VISIBLE_MS : VISIBLE_MS,
-    );
+    setTimeout(() => set((state) => ({ toasts: state.toasts.filter((toast) => toast.id !== id) })), ttlMs);
   },
   dismiss: (id) =>
     set((state) => ({ toasts: state.toasts.filter((toast) => toast.id !== id) })),

@@ -243,6 +243,17 @@
 
 .ansa-enter { animation: ansa-rise 300ms cubic-bezier(0.32, 0.72, 0, 1); }
 
+/* A toast arrives from just below its resting place; its bar drains over the time it stays. */
+@keyframes ansa-toast-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+}
+@keyframes ansa-toast-drain {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+.ansa-toast { animation: ansa-toast-in 260ms cubic-bezier(0.32, 0.72, 0, 1); }
+.ansa-toast-bar { transform-origin: left; animation: ansa-toast-drain linear forwards; }
+
 /* A picked-out link on the flow canvas: the dashes travel the way the call goes. The
    offset runs one dash-period (7 + 5) per cycle so the pattern loops without a jump. */
 @keyframes ansa-flow {

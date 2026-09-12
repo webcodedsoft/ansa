@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 
-import { Toaster } from "@/components/toaster";
 import { Ground } from "@/components/shell/ground";
 import { WorkspaceChrome } from "@/components/shell/workspace-chrome";
 import { signOut } from "@/features/auth/auth.actions";
@@ -45,7 +44,6 @@ const WorkspaceLayout = async ({ children }: { readonly children: ReactNode }) =
       >
         {children}
       </WorkspaceChrome>
-      <Toaster />
     </>
   );
 };

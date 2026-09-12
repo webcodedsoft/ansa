@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import type { ReactNode } from "react";
 
 import { ProgressBar } from "@/components/progress-bar";
+import { Toaster } from "@/components/toaster";
 
 import "./globals.css";
 
@@ -28,6 +29,8 @@ const RootLayout = ({ children }: { readonly children: ReactNode }) => (
         <ProgressBar />
       </Suspense>
       {children}
+      {/* Here for the same reason the bar is: a failed sign-in or password reset is a failure too. */}
+      <Toaster />
     </body>
   </html>
 );
