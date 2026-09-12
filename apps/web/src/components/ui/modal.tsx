@@ -70,7 +70,7 @@ export const Modal = ({
       }}
       aria-labelledby="modal-title"
       className={cn(
-        "m-auto rounded-xl border border-[var(--hairline)] p-0",
+        "m-auto max-h-[calc(100vh-2rem)] overflow-y-auto rounded-xl border border-[var(--hairline)] p-0",
         size === "wide" ? "w-[min(100%-2rem,1040px)]" : "w-[min(100%-2rem,520px)]",
         "bg-[var(--glass-hi)] text-[var(--ink)] shadow-[var(--shadow-l),var(--spec)]",
         "backdrop-blur-[40px] backdrop-saturate-200",

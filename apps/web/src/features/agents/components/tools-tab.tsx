@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 
 import {
   Button,
   EmptyState,
+  Modal,
   Notice,
   Panel,
   PanelBody,
@@ -16,8 +18,11 @@ import {
   type Tone,
 } from "@/components/ui";
 
+import { useToastStore } from "@/stores/toast.store";
+
 import { saveAgentTools } from "../agents.actions";
 import type { AgentSummary, ToolsDocument } from "../agents.service";
+import { HttpToolForm } from "./http-tool-form";
 
 /**
  * Which of the organisation's tools this agent may call.
@@ -28,9 +33,13 @@ import type { AgentSummary, ToolsDocument } from "../agents.service";
  * permission to use it, and an after-hours line that only takes messages has no business
  * reaching the endpoint that cancels a policy.
  *
- * Nothing here edits the registry. Adding an endpoint, changing its tier or pointing it
- * somewhere else all happen once, in the registry, because doing them per agent would mean
- * maintaining the same SSRF allowlist in as many places as there are agents.
+ * Nothing here edits the registry. Changing a tool's tier or pointing it somewhere else
+ * happens once, in the registry, because doing it per agent would mean maintaining the same
+ * SSRF allowlist in as many places as there are agents. Adding one is the exception: it is
+ * offered here, in a dialog over this tab, because "set up the agent" is where a person
+ * discovers they need it, and a link to the registry threw away the tab they were on. The
+ * tool still lands in the organisation's registry; this tab only also switches it on for
+ * this agent, which is why they came.
  */
 
 const TIER_TONE: Record<"read" | "write" | "irreversible", Tone> = {
@@ -114,14 +123,65 @@ const listed = (names: readonly string[]): string =>
     ? (names[0] ?? "")
     : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 
+/**
+ * The tool builder, in a dialog, rendered at the document root.
+ *
+ * A portal rather than in place: every workspace tab sits inside the publish `<form>`, and
+ * the builder carries forms of its own. Nested forms are invalid HTML and the inner ones
+ * would submit the outer. The dialog is in the top layer either way; only its DOM position
+ * moves.
+ */
+const AddToolDialog = ({
+  open,
+  onClose,
+  onAdded,
+  tools,
+  credentials,
+}: {
+  readonly open: boolean;
+  readonly onClose: () => void;
+  readonly onAdded: (name: string) => void;
+  readonly tools: ToolsDocument;
+  readonly credentials: readonly string[];
+}) => {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return null;
+  return createPortal(
+    <Modal
+      open={open}
+      onClose={onClose}
+      size="wide"
+      title="Add a tool"
+      description="It joins the organisation's registry, and is switched on for this agent when it is saved."
+    >
+      {open && (
+        <HttpToolForm
+          configVersion={tools.configVersion}
+          takenNames={tools.http.map((tool) => tool.name)}
+          allowPlaintextHttp={tools.egress.allowPlaintextHttp ?? false}
+          credentials={credentials}
+          onDone={(saved) => onAdded(saved.name)}
+        />
+      )}
+    </Modal>,
+    document.body,
+  );
+};
+
 export const ToolsTab = ({
   agent,
   tools,
+  credentials,
 }: {
   readonly agent: AgentSummary;
   readonly tools: ToolsDocument;
+  /** The organisation's credential names, for the builder's picker. */
+  readonly credentials: readonly string[];
 }) => {
   const entries = registryTools(tools);
+  const [adding, setAdding] = useState(false);
+  const toast = useToastStore((store) => store.show);
 
   /* What this agent can actually hand a tool. A dispatch that cannot resolve an identifier
      answers `unconfirmed-identity` and the tool does not run — correct, and invisible:
@@ -154,6 +214,26 @@ export const ToolsTab = ({
     });
   };
 
+  /* A tool added from this tab is switched on for this agent and the selection saved in one
+     go. Adding it here and leaving it off would be a step nobody asked for. */
+  const added = (name: string): void => {
+    setAdding(false);
+    const next = new Set([...enabled, name]);
+    setEnabled(next);
+    setFailure(null);
+    startSaving(async () => {
+      const result = await saveAgentTools(agent.agentId, [...next]);
+      if (result.ok) {
+        setSaved(true);
+        toast("ok", `${name} is registered and switched on for this agent.`);
+      } else setFailure(result.message);
+    });
+  };
+
+  const dialog = (
+    <AddToolDialog open={adding} onClose={() => setAdding(false)} onAdded={added} tools={tools} credentials={credentials} />
+  );
+
   /* Names this agent selects that the registry no longer holds. Not an error — a tool can
      be removed after an agent selected it — but worth showing, because the row it used to
      have is gone and the stale selection would otherwise stay invisible until dispatch
@@ -174,15 +254,16 @@ export const ToolsTab = ({
         <EmptyState
           title="No tools registered"
           action={
-            <Link href="/tools" className="text-sm font-medium text-[var(--accent)] hover:underline">
-              Open the registry
-            </Link>
+            <Button type="button" onClick={() => setAdding(true)}>
+              Add a tool
+            </Button>
           }
         >
           This organisation has not connected an HTTP endpoint or an MCP server yet. Until it
           does, the agent says it cannot look anything up — which is the honest answer, and
           better than a guess.
         </EmptyState>
+        {dialog}
       </Panel>
     );
   }
@@ -203,6 +284,9 @@ export const ToolsTab = ({
         </div>
         <div className="flex flex-none items-center gap-2">
           {saved && !saving && <Tag tone="ok">Saved</Tag>}
+          <Button variant="secondary" type="button" onClick={() => setAdding(true)}>
+            Add a tool
+          </Button>
           <Button pending={saving} type="button" onClick={save} disabled={saving}>
             Save selection
           </Button>
@@ -291,6 +375,7 @@ export const ToolsTab = ({
           </Link>
         </PanelBody>
       </Panel>
+      {dialog}
     </Stack>
   );
 };

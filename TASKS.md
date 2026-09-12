@@ -6117,6 +6117,21 @@ rather than landed as inventory — the wave that needs them adds them wired.
       not curl at all — PowerShell's Invoke-WebRequest, wget, a sentence — fills nothing,
       leaves what was there, and the notice says what it was instead. Fourteen new tests.
       Seen live: the cmd export fills the URL; the PowerShell paste is refused by name.
+- [x] **Nothing sends you away mid-task** (2026-09-12)
+      Two links threw work away. The tool builder's credential step said "Store a credential
+      →" and went to the Credentials page, and the five filled steps behind it were gone
+      when you came back. The agent's Tools tab said "Open the registry" for the same
+      reason, and the tab you were setting up went with it. Both are dialogs now. In the
+      builder, "Store a credential" opens the credential form over the step; on save the
+      name goes into the picker and is selected, without a reload (`CredentialForm` reports
+      the stored name; the builder keeps a local list of names it has learned). On the
+      Tools tab, "Add a tool" opens the whole builder in a wide dialog, portalled to the
+      document root because every workspace tab sits inside the publish form and the
+      builder carries forms of its own; when the tool publishes it is switched on for this
+      agent and the selection saved in the same breath — that is why somebody came here.
+      The Modal scrolls now, for content taller than the screen. Seen live: the builder
+      over the Tools tab, and the credential dialog over the builder. Not exercised: a real
+      credential save from the dialog, which needs a secret typed.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

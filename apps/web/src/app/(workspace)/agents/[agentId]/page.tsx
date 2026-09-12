@@ -12,7 +12,7 @@ import {
 } from "@/features/agents/agents.service";
 import { AgentWorkspace } from "@/features/agents/components/agent-workspace";
 import { listCalendars } from "@/features/appointments/appointments.service";
-import { listNumbers } from "@/features/connect/connect.service";
+import { listCredentials, listNumbers } from "@/features/connect/connect.service";
 import type {
   AgentStats,
   AttentionItem,
@@ -118,6 +118,7 @@ const AgentWorkspacePage = async ({
     numbers,
     graph,
     calendars,
+    credentials,
   ] = await Promise.all([
     /* The id from the URL, at last. This page used to read whichever agent the database
        picked and render it under whatever id the reader had navigated to — the same document
@@ -142,6 +143,8 @@ const AgentWorkspacePage = async ({
        render the same "no calendars yet" notice, and telling somebody to go and make one
        they already have is worse than the page not loading. */
     listCalendars(),
+    /* Names only, for the tool builder's credential picker on the Tools tab. */
+    listCredentials(),
   ]);
 
   /* Counts and signals are decoration relative to the agent itself, and none of them may
@@ -225,6 +228,7 @@ const AgentWorkspacePage = async ({
       draft={unpublished.draft}
       graph={graph}
       tools={tools}
+      credentials={credentials.items.map((entry) => entry.ref)}
       knowledge={knowledge}
       versions={versionPage.items}
       stats={stats}

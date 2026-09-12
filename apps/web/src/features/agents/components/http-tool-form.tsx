@@ -1,9 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button, Card, CheckboxField, ChoiceChips, FieldError, millisLabel, Notice, SelectField, Stack, Stepper, Tag, TextAreaField, TextField, type StepDef, type Tone } from "@/components/ui";
+
+import { CredentialModal } from "@/features/connect/components/credential-modal";
 
 import { parseCurl } from "../curl-import";
 import { HOST, type ToolTemplate } from "../tool-templates";
@@ -82,7 +83,8 @@ interface Props {
   readonly takenNames: readonly string[];
   readonly allowPlaintextHttp: boolean;
   readonly credentials: readonly string[];
-  readonly onDone?: () => void;
+  /** Called once the tool is published, with its name, so a caller can select it. */
+  readonly onDone?: (saved: { readonly name: string }) => void;
 }
 
 export const HttpToolForm = ({
@@ -95,6 +97,11 @@ export const HttpToolForm = ({
 }: Props) => {
   const [draft, setDraft] = useState<HttpToolDraft>(initial ?? emptyDraft());
   const [curl, setCurl] = useState("");
+  /* The credentials this form can offer: the ones the page loaded, plus any stored from the
+     dialog here since. Local rather than refetched, because a person mid-way through five
+     steps must not lose them to a reload for the sake of one new name in a select. */
+  const [known, setKnown] = useState<readonly string[]>(credentials);
+  const [storing, setStoring] = useState(false);
   const [browsing, setBrowsing] = useState(false);
   /** The template the draft was started from, so the endpoint step can say what is left to do. */
   const [startedFrom, setStartedFrom] = useState<ToolTemplate | null>(null);
@@ -110,9 +117,15 @@ export const HttpToolForm = ({
   const formRef = useRef<HTMLFormElement>(null);
 
   useFormToast(state, (data) => {
-    onDone?.();
+    onDone?.({ name: draft.name });
     return `Published configuration version ${data.configVersion}.`;
   });
+
+  const stored = (ref: string): void => {
+    setKnown((current) => (current.includes(ref) ? current : [...current, ref]));
+    edit({ credentialRef: ref });
+    setStoring(false);
+  };
 
   const edit = (over: Partial<HttpToolDraft>) => {
     setDraft((current) => ({ ...current, ...over }));
@@ -146,8 +159,8 @@ export const HttpToolForm = ({
   };
 
   const problems = useMemo(
-    () => problemsWith(draft, { takenNames, allowPlaintextHttp, credentials }),
-    [draft, takenNames, allowPlaintextHttp, credentials],
+    () => problemsWith(draft, { takenNames, allowPlaintextHttp, credentials: known }),
+    [draft, takenNames, allowPlaintextHttp, known],
   );
   const problem = (key: string) => (showProblems ? problems[key] : undefined);
 
@@ -361,37 +374,46 @@ export const HttpToolForm = ({
                 </p>
               )}
 
-              {credentials.length === 0 ? (
+              {known.length === 0 ? (
                 <div>
                   <span className={SECTION}>Credential</span>
                   <p className="mt-1 max-w-[70ch] text-[12.5px] text-[var(--ink-3)]">
-                    This organisation has none stored, so there is nothing to pick and the
-                    endpoint will be called unauthenticated. Credentials are held separately
-                    and never shown again once saved &mdash; not even masked.
+                    This organisation has none stored, so the endpoint will be called
+                    unauthenticated. Credentials are held separately and never shown again
+                    once saved &mdash; not even masked.
                   </p>
-                  <Link
-                    href="/credentials"
-                    className="mt-2 inline-block text-sm font-medium text-[var(--accent)] hover:underline"
-                  >
-                    Store a credential &rarr;
-                  </Link>
+                  <div className="mt-2.5">
+                    <Button variant="secondary" size="sm" onClick={() => setStoring(true)}>
+                      Store a credential
+                    </Button>
+                  </div>
                 </div>
               ) : (
-                <SelectField
-                  label="Credential"
-                  value={draft.credentialRef}
-                  onChange={(event) => edit({ credentialRef: event.target.value })}
-                  error={problem("credentialRef")}
-                  hint="Stored separately and never shown. Leave as None for an open endpoint."
-                >
-                  <option value="">None</option>
-                  {credentials.map((ref) => (
-                    <option key={ref} value={ref}>
-                      {ref}
-                    </option>
-                  ))}
-                </SelectField>
+                <div className="grid gap-3.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                  <SelectField
+                    label="Credential"
+                    value={draft.credentialRef}
+                    onChange={(event) => edit({ credentialRef: event.target.value })}
+                    error={problem("credentialRef")}
+                    hint="Stored separately and never shown. Leave as None for an open endpoint."
+                  >
+                    <option value="">None</option>
+                    {known.map((ref) => (
+                      <option key={ref} value={ref}>
+                        {ref}
+                      </option>
+                    ))}
+                  </SelectField>
+                  {/* Aligned with the select, not its hint: the hint sits under the control
+                      and the button belongs beside it. */}
+                  <div className="sm:pb-[26px]">
+                    <Button variant="secondary" onClick={() => setStoring(true)}>
+                      Store a new one
+                    </Button>
+                  </div>
+                </div>
               )}
+              <CredentialModal open={storing} onClose={() => setStoring(false)} onStored={stored} />
 
               <div>
                 <span className={SECTION}>Headers</span>

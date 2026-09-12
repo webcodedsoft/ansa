@@ -37,7 +37,8 @@ export const CredentialForm = ({
 }: {
   readonly mode: "add" | "rotate";
   readonly fixedRef?: string;
-  readonly onSaved?: () => void;
+  /** Called once with the stored name, so a caller that opened this mid-task can pick it. */
+  readonly onSaved?: (ref: string) => void;
 }) => {
   const [state, action, pending] = useActionState(saveCredential, START);
   useFailureToast(state);
@@ -48,8 +49,8 @@ export const CredentialForm = ({
   // Deliberately keyed on `state.status` alone: this should fire once when a submission
   // completes, not on every render where the caller happens to pass a new `onSaved` closure.
   useEffect(() => {
-    if (state.status === "succeeded") onSaved?.();
-  }, [state.status, onSaved]);
+    if (state.status === "succeeded" && state.data !== null) onSaved?.(state.data.ref);
+  }, [state.status, state.data, onSaved]);
 
   const errors = state.fieldErrors;
 

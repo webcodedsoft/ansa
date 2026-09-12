@@ -164,6 +164,8 @@ interface AgentWorkspaceProps {
   /** The organisation's diaries, so one can be picked for this agent to book into. */
   readonly calendars: readonly PickableCalendar[];
   readonly tools: Awaited<ReturnType<typeof readTools>>;
+  /** The organisation's credential names, for the tool builder on the Tools tab. */
+  readonly credentials: readonly string[];
   readonly knowledge: KnowledgeDocument;
   readonly versions: readonly VersionRow[];
   readonly stats: AgentStats;
@@ -192,6 +194,7 @@ export const AgentWorkspace = ({
   draft,
   graph,
   tools,
+  credentials,
   knowledge,
   versions,
   stats,
@@ -420,7 +423,7 @@ export const AgentWorkspace = ({
       label: stagedMode === "flow" ? "Questions" : "Data captured",
       panel: <DataCapturedTab key={shownAs([staged.capturedFields, stagedFlow])} agent={staged} authoringMode={stagedMode} flow={stagedFlow} />,
     },
-    { id: "tools", label: "Tools", panel: <ToolsTab key={shownAs(staged.enabledTools)} agent={staged} tools={tools} /> },
+    { id: "tools", label: "Tools", panel: <ToolsTab key={shownAs(staged.enabledTools)} agent={staged} tools={tools} credentials={credentials} /> },
     {
       id: "knowledge",
       label: "Knowledge",
