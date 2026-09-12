@@ -2,17 +2,18 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import {
-  applyTranscriptCorrection,
-  listCallPage,
-  readCallCaptures,
-  readCapturedRows,
-  readCallSummary,
-  recordAudioAccess,
-  loadCallDetail,
-  readCallRecords,
-  readStageLatencies,
   type CallFilters,
   type LatencyRange,
+  applyTranscriptCorrection,
+  listCallPage,
+  loadCallDetail,
+  readCallCaptures,
+  readCallContact,
+  readCallRecords,
+  readCallSummary,
+  readCapturedRows,
+  readStageLatencies,
+  recordAudioAccess,
 } from "@ansa/db";
 import {
   Controller,
@@ -279,8 +280,15 @@ const capturesResponse = object({
   truncated: flag(),
 });
 
+/** Who this call was with, as the directory names them. Null for a withheld number. */
+const callContact = object({
+  id: uuid(),
+  name: nullable(text({ maxLength: 200 })),
+});
+
 const callDetail = object({
   id: uuid(),
+  contact: nullable(callContact),
   /** What the caller told the agent and agreed to. Empty when the agent has no form. */
   captured: list(capturedValue),
   carrierCallId: text({ maxLength: 128 }),
@@ -929,8 +937,9 @@ export class CallsController {
     response: callDetail,
   })
   async detail(@FromPath() path: Infer<typeof callPath>): Promise<Infer<typeof callDetail>> {
-    const { detail, captured, summary } = await this.db.tx(async (scope) => ({
+    const { detail, captured, summary, contact } = await this.db.tx(async (scope) => ({
       detail: await loadCallDetail(scope, path.callId),
+      contact: await readCallContact(scope, path.callId),
       // One transaction, so the call, its values and its summary cannot come from different
       // moments — a summary citing a transcript line the same response does not carry would
       // be a citation that cannot be clicked.
@@ -943,6 +952,7 @@ export class CallsController {
     if (detail === null) throw new NotFoundException();
     return {
       ...detail,
+      contact,
       captured: captured.map((c) => ({ ...c, confirmedAt: c.confirmedAt.toISOString() })),
       summary:
         summary === null

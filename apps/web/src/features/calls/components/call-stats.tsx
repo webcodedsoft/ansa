@@ -57,7 +57,7 @@ const formatGap = (value: number | null): string => {
 };
 
 export const CallStats = ({ stats }: { readonly stats: CallStatsSummary }) => (
-  <div className="mb-3.5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
     <Stat label="Response time (p50)" value={formatGap(stats.responseP50Ms)} />
     <Stat label="Interruptions" value={stats.interruptions} />
     <Stat label="Longest silence" value={formatGap(stats.longestSilenceMs)} />

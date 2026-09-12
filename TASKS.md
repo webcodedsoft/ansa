@@ -5761,6 +5761,30 @@ rather than landed as inventory — the wave that needs them adds them wired.
       argued the other way; the argument is replaced, not left contradicting the code. Latency
       p50 is off the calls list — it stays on the call page and Metrics, where it is read — and
       `millis()` went with it rather than staying as inventory.
+- [x] **The call page, brought to the prototype** (2026-09-12)
+      Wide, like the contact record. The way back goes to the person when the call has one —
+      the detail now carries `contact: { id, name }` through `readCallContact`, named the way
+      the directory names them — and the moment is the title: a call is "the one at 00:10 on
+      the twenty-fourth", and the number is how you recognise who it was with, so it sits in
+      the meta line formatted, beside the person and the outcome.
+
+      Three tabs, because three people open a call for three reasons. Conversation is the
+      transcript with Summary, Confirmed on this call and Needs a look beside it. What it
+      collected is the values alone. Diagnostics is the timings, the transport's exit reason,
+      the transcriber and the event log — everything that was in front of the reader before
+      and is now behind one click for the person who wants it.
+
+      **The transcript went quiet.** Every caller line carried "deepgram · confidence 1.000 ·
+      Correct" — forty rows of it under a conversation somebody was trying to read. The
+      provider is on Diagnostics. Confidence shows when it is low, because that is when it is
+      information. The Correct control opens on hover or focus, and stays visible on a line
+      the agent itself would have doubted — `UNCERTAIN_BELOW`, 0.7, the same bar the
+      orchestrator reads values back at, so the console never calls a line fine that the
+      agent checked. "Needs a look" counts those lines and says why a correction matters.
+
+      Not built: the waveform player, "Export" and "Flag for review". The recording stays a
+      button that mints a logged link on click, which is the design; a waveform needs the
+      audio decoded in the browser before it is asked for.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

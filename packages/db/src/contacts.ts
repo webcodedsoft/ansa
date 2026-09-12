@@ -463,6 +463,36 @@ export const readContactHandoffs = async (
 };
 
 /**
+ * The person a call belongs to, for the call page's way back.
+ *
+ * The name is chosen the way the console chooses it everywhere — an operator's correction,
+ * then the captured name, then nothing — so the link at the top of a call says the same
+ * thing as the row in the directory it leads to. Null when the call has nobody: a withheld
+ * number, or a record from before 0075 that the backfill could not place.
+ */
+export const readCallContact = async (
+  scope: OrganizationScope,
+  callId: string,
+): Promise<{ readonly id: string; readonly name: string | null } | null> => {
+  const rows = await scope.query<Record<string, unknown>>(
+    `select ct.id,
+            coalesce(
+              nullif(trim(ct.display_name), ''),
+              (select nullif(trim(v.value), '') from contact_values v
+                where v.contact_id = ct.id and v.field_type = 'name'
+                order by v.updated_at desc limit 1)
+            ) as name
+       from calls c
+       join contacts ct on ct.id = c.contact_id
+      where c.id = $1`,
+    [callId],
+  );
+  const row = rows[0];
+  if (row === undefined) return null;
+  return { id: String(row["id"]), name: row["name"] === null ? null : String(row["name"]) };
+};
+
+/**
  * Correct the name on a record.
  *
  * Stored beside the captured name rather than over it. Somebody in the office knows the

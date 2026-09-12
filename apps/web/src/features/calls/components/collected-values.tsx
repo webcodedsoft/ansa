@@ -1,4 +1,4 @@
-import { Card, EmptyState, Table, Td, Th, Tr } from "@/components/ui";
+import { Card, Table, Td, Th, Tr } from "@/components/ui";
 
 import type { CallDetail } from "../calls.service";
 
@@ -37,18 +37,20 @@ export const CollectedValues = ({ call }: { readonly call: CallDetail }) => {
 
   return (
     <Card
-      title="Collected"
+      title="Confirmed on this call"
       description={
         captured.length === 0
-          ? "Nothing was collected on this call."
+          ? undefined
           : `${captured.length} ${captured.length === 1 ? "value" : "values"}${
               retried === 0 ? "" : ` · ${retried} took more than one attempt`
             }`
       }
-      className="mt-3.5"
     >
       {captured.length === 0 ? (
-        <EmptyState title="This agent has no capture fields configured, or the caller never got as far as giving one." />
+        <p className="m-0 text-[12.5px] leading-relaxed text-[var(--ink-3)]">
+          Nothing was read back and agreed on this call. A value lands here the moment the caller
+          confirms one — a name, a number, an area — and not before.
+        </p>
       ) : (
         <Table>
           <thead>
