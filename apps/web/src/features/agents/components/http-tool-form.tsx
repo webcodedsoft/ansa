@@ -9,6 +9,7 @@ import { CredentialModal } from "@/features/connect/components/credential-modal"
 import { parseCurl } from "../curl-import";
 import { HOST, type ToolTemplate } from "../tool-templates";
 
+import { SpeechTemplateField, type ResponseField } from "./speech-template-field";
 import { BrowseToolTemplatesButton, ToolTemplateGallery } from "./tool-template-gallery";
 import { idleForm } from "@/lib/form-state";
 import { useFormToast, useFailureToast } from "@/stores/toast.store";
@@ -71,10 +72,7 @@ const SECTION = "text-[12px] font-semibold uppercase tracking-[0.09em] text-[var
 const CELL =
   "rounded-md border border-[var(--surface-line)] bg-[var(--surface)] px-2.5 py-1.5 text-[12.5px]";
 
-interface Found {
-  readonly path: string;
-  readonly sample: string;
-}
+type Found = ResponseField;
 
 interface Props {
   readonly initial?: HttpToolDraft;
@@ -636,40 +634,15 @@ export const HttpToolForm = ({
               />
             ) : (
               <>
-                <TextAreaField
+                <SpeechTemplateField
                   label="What the agent says with the answer"
                   value={draft.speechTemplate}
-                  onChange={(event) => edit({ speechTemplate: event.target.value })}
+                  onChange={(next) => edit({ speechTemplate: next })}
+                  fields={fields}
                   error={problem("speechTemplate")}
                   placeholder="Your reference is {reference}, and the status is {status}."
-                  rows={3}
                   hint="Use {placeholders} for fields from the response."
                 />
-
-                {fields.length > 0 && (
-                  <div>
-                    <span className={SECTION}>From the response you fetched</span>
-                    <p className="mt-1 text-[12px] text-[var(--ink-3)]">
-                      Click to add. These are the paths that will resolve &mdash; anything else
-                      falls through to the no-record sentence.
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {fields.map((field) => (
-                        <button
-                          key={field.path}
-                          type="button"
-                          onClick={() =>
-                            edit({ speechTemplate: `${draft.speechTemplate}{${field.path}}` })
-                          }
-                          className="rounded-[4px] border border-[var(--surface-line)] px-2 py-1 font-mono text-[11.5px] text-[var(--ink-2)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
-                          title={field.sample}
-                        >
-                          {field.path}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
 
                 <TextField
                   label="What the agent says when there is no record"

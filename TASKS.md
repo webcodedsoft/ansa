@@ -6166,6 +6166,17 @@ rather than landed as inventory — the wave that needs them adds them wired.
       rail marking "What it says — needs a fix" on press, and, with the sentences filled, a
       real run answering ok in about half a second with the endpoint's record beside the
       spoken line. Not saved.
+- [x] **The spoken sentence is written against the response** (2026-09-12)
+      "What the agent says with the answer" is a textarea now, in both builders. In the
+      registry's builder it is `SpeechTemplateField`: typing `{` offers the fetched
+      response's fields as you write, filtered by what follows the brace, with the sample
+      value beside each; Up/Down, Enter or Tab, Escape. Clicking a field chip puts it where
+      the cursor is, or over what is selected, instead of on the end of the sentence — and
+      the caret is restored after the insert so writing carries on from there. Chips and
+      suggestions use mousedown, because a click would blur the textarea and lose the caret
+      first. Seen live against the Leadway sample: `{ve` offered vehicleColor, vehicleMake,
+      vehicleModel and vehicleStatus; Enter took vehicleMake; the ownerName chip landed
+      mid-sentence before the full stop. Not saved.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.
