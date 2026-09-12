@@ -16,6 +16,15 @@ const BUY_START: BuyNumberState = idleForm();
 const SEARCH_DEBOUNCE_MS = 450;
 
 /**
+ * Fewer digits than this are not a pattern the carrier will take — it answers "Invalid
+ * Pattern Provided" to one or two — so the dialog does not ask until there are three, and
+ * says so quietly instead of relaying a refusal as an error.
+ */
+const MIN_DIGITS = 3;
+
+const tooShort = (contains: string): boolean => contains !== "" && contains.replace(/\*/g, "").length < MIN_DIGITS;
+
+/**
  * Get a number from Ansa — as a dialog.
  *
  * Country and a digit filter, and under them what the carrier would sell right now: up to
@@ -55,7 +64,7 @@ export const GetNumberModal = ({
 
   /* Fill the list when the dialog opens, and again after typing pauses. */
   useEffect(() => {
-    if (!open) return;
+    if (!open || tooShort(contains)) return;
     if (timer.current !== null) window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => ask(country, contains), contains === "" ? 0 : SEARCH_DEBOUNCE_MS);
     return () => {
@@ -104,20 +113,27 @@ export const GetNumberModal = ({
           />
         </div>
 
-        {search.status === "failed" && <Notice tone="error">{search.message}</Notice>}
+        {search.status === "failed" && !search.message?.includes("Invalid Pattern") && (
+          <Notice tone="error">{search.message}</Notice>
+        )}
 
         <div className="max-h-[19rem] overflow-y-auto rounded-lg border border-[var(--hairline)]" aria-busy={searching}>
-          {results === null && (
+          {tooShort(contains) && (
+            <p className="m-0 px-3.5 py-6 text-center text-[13px] text-[var(--ink-3)]">
+              Type at least three digits.
+            </p>
+          )}
+          {!tooShort(contains) && results === null && (
             <p className="m-0 px-3.5 py-6 text-center text-[13px] text-[var(--ink-3)]">
               {searching ? "Asking the carrier…" : "Choose a country to see what is available."}
             </p>
           )}
-          {results !== null && results.length === 0 && (
+          {!tooShort(contains) && results !== null && results.length === 0 && (
             <p className="m-0 px-3.5 py-6 text-center text-[13px] text-[var(--ink-3)]">
               Nothing available with those digits right now. Try fewer digits.
             </p>
           )}
-          {results !== null && results.length > 0 && (
+          {!tooShort(contains) && results !== null && results.length > 0 && (
             <ul className={`m-0 list-none divide-y divide-[var(--surface-line)] p-0 ${searching ? "opacity-60" : ""}`}>
               {results.map((one) => (
                 <li key={one.number} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 px-3.5 py-2.5">
