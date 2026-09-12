@@ -6038,6 +6038,14 @@ rather than landed as inventory — the wave that needs them adds them wired.
       there is none yet or Rotate the URL (confirmed) when there is. Opened from the header
       button and from the Add card when the deployment cannot offer numbers. The old import
       card is gone; its copy and rotate logic moved into the dialog unchanged.
+- [x] **Get a number is a dialog** (2026-09-12)
+      From the design's door: country and a digit filter side by side, and under them up
+      to ten numbers the carrier would sell — number, locality, "available", Add — in a list
+      that scrolls inside the dialog rather than stretching it. The list fills itself when
+      the dialog opens and again when the country or the digits change, so there is no
+      search button. Add asks once, naming the number, then buys, points and attaches in one
+      step. Opened from the header button and from the Add card. The old catalogue card is
+      gone. Seen live against Twilio: ten US numbers, six visible, the rest a scroll away.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

@@ -3,21 +3,20 @@
 import { Plus, Webhook } from "lucide-react";
 import { useState } from "react";
 
-import { Button, Card, Notice, PageHeader, SectionHead, Tag } from "@/components/ui";
+import { Button, Card, Notice, PageHeader, Tag } from "@/components/ui";
 
 import type { ClaimWebhook, NumberCountries, NumberProvisioning, NumberSummary } from "../connect.service";
-import { BuyNumber } from "./buy-number";
+import { GetNumberModal } from "./get-number-modal";
 import { BringYourOwnModal } from "./bring-your-own-modal";
 import { NumberCard, type RoutableAgent } from "./number-card";
 
-type Panel = "get" | null;
 
 /**
  * The Numbers page, as number cards.
  *
  * Each number is a card; a dashed card at the end adds one. "Bring your own" opens a dialog
- * with the import URL and its three steps; "Get a number" opens the catalogue under the
- * grid. Both are reachable from the header and from the add card, so the page never
+ * with the import URL and its three steps; "Get a number" opens a dialog with the carrier's
+ * catalogue. Both are reachable from the header and from the add card, so the page never
  * navigates away from what it already holds. Under it all, what this deployment can do,
  * straight from the API.
  */
@@ -37,8 +36,8 @@ export const NumbersBoard = ({
   readonly catalogue: { readonly countries: NumberCountries | null; readonly refusal: string | null } | null;
   readonly organisationName: string;
 }) => {
-  const [panel, setPanel] = useState<Panel>(null);
   const [bringing, setBringing] = useState(false);
+  const [getting, setGetting] = useState(false);
   const fromPlan = numbers.filter((one) => one.managedBy === "platform").length;
   const canGet = catalogue?.countries !== null && catalogue !== null && catalogue !== undefined;
   const moreCountries = catalogue?.countries === null || catalogue == null ? null : Math.max(0, catalogue.countries.items.length - 4);
@@ -66,7 +65,7 @@ export const NumbersBoard = ({
               </Button>
             )}
             {catalogue !== null && (
-              <Button variant="primary" onClick={() => setPanel(panel === "get" ? null : "get")} aria-pressed={panel === "get"}>
+              <Button variant="primary" onClick={() => setGetting(true)}>
                 <Plus aria-hidden className="size-3.5" />
                 Get a number
               </Button>
@@ -81,7 +80,7 @@ export const NumbersBoard = ({
         ))}
         <button
           type="button"
-          onClick={() => (catalogue !== null ? setPanel(panel === "get" ? null : "get") : setBringing(true))}
+          onClick={() => (catalogue !== null ? setGetting(true) : setBringing(true))}
           className="grid min-h-[250px] cursor-pointer place-items-center content-center gap-2 rounded-[14px] border border-dashed border-[var(--hairline)] p-[18px] text-center text-[var(--ink-3)] transition-colors hover:border-[var(--ink-3)] focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
         >
           <Plus aria-hidden className="size-[22px]" />
@@ -93,18 +92,19 @@ export const NumbersBoard = ({
       {webhook !== null && (
         <BringYourOwnModal open={bringing} onClose={() => setBringing(false)} webhook={webhook} />
       )}
-      {panel === "get" && catalogue !== null && (
-        <div className="mt-[26px]">
-          <SectionHead>Get a number from Ansa</SectionHead>
-          {catalogue.countries !== null ? (
-            <BuyNumber countries={catalogue.countries} organisationName={organisationName} />
-          ) : (
-            <Notice tone="error">
-              Getting a number is unavailable right now: {catalogue.refusal}. Whoever runs the platform needs to
-              look at its carrier account; bringing your own number still works.
-            </Notice>
-          )}
-        </div>
+      {catalogue !== null && catalogue.countries !== null && (
+        <GetNumberModal
+          open={getting}
+          onClose={() => setGetting(false)}
+          countries={catalogue.countries}
+          organisationName={organisationName}
+        />
+      )}
+      {catalogue !== null && catalogue.countries === null && getting && (
+        <Notice tone="error" className="mt-[26px]">
+          Getting a number is unavailable right now: {catalogue.refusal}. Whoever runs the platform needs to
+          look at its carrier account; bringing your own number still works.
+        </Notice>
       )}
 
       <Card title="What this deployment can do" className="mt-[26px]">
