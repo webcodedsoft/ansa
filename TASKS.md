@@ -6282,6 +6282,20 @@ rather than landed as inventory — the wave that needs them adds them wired.
       again. The 22:30 call also shows the other half of the report — "Sikiru" heard as
       "Sequium", "FST901EE" heard three ways — which is transcription on an 8kHz line, not
       this; keyterms for names and plate formats are the lever there, not the flow.
+- [x] **A plate with letters is spelled with words, both ways** (2026-09-12)
+      "FST901EE" came back from the transcriber as "SST901EE" — F and S are one phoneme
+      apart and an 8kHz line strips what separates them. Two things made it worse than a
+      mishearing. The readback said the bare letters, "S, S, T, nine oh one, E, E", which
+      are the same sounds the caller had just made, so they could not hear the mistake in
+      it. And when they said no, a reference falls back to the keypad — which has no F on
+      it — so the agent asked them to type a plate twice. `sayReference` now says a letter
+      with its word, the primary-school alphabet every Nigerian caller knows: "F for Fish,
+      S for Sun, T for Table, nine oh one, E for Egg, E for Egg"; a digits-only reference
+      reads exactly as before. And a reference with letters in it falls back to spelling
+      rather than the keypad, with the word-per-letter hint leading the prompt, since the
+      parser already takes "F for Fish". Three normalizer tests, three capture tests. API
+      restarted. Still not heard on a phone: the next call to Tolu that reaches the
+      registration should read it back with words and, on a no, ask for a word per letter.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

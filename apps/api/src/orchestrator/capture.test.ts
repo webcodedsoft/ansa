@@ -584,6 +584,35 @@ describe("confidence may add checking and never remove it", () => {
   });
 });
 
+describe("a reference with letters in it", () => {
+  /**
+   * The call this was written from. "FST901EE" came back from the transcriber as
+   * "SST901EE", was read back as bare letters — the same sounds the caller had just
+   * made — and when they said no, they were sent to a keypad that has no F on it.
+   */
+  it("reads the letters back with a word each, so a wrong letter sounds wrong", () => {
+    const r = say(idle, "my registration number is S S T nine oh one E E");
+    expect(r.state).toMatchObject({ subject: "reference", value: "SST901EE" });
+    expect(r.say).toContain("S for Sun");
+    expect(r.say).toContain("nine oh one");
+  });
+
+  it("falls back to spelling with a word per letter, never to the keypad", () => {
+    const r = say(idle, "my registration number is S S T nine oh one E E");
+    const no = say(r.state, "No, that's wrong");
+    expect(no.state.kind).toBe("spelling");
+    expect(no.say).toContain("a word for each letter");
+    expect(no.say).not.toContain("keypad");
+  });
+
+  it("still sends a digits-only reference to the keypad", () => {
+    const r = say(idle, "my policy number is four one seven two nine");
+    const no = say(r.state, "No, that's wrong");
+    const again = say(no.state, "No, still wrong");
+    expect([no.state.kind, again.state.kind]).toContain("keypad");
+  });
+});
+
 describe("phone numbers", () => {
   it("captures and canonicalises one the caller gave", () => {
     const r = say(idle, "my mobile is oh eight one three eight one seven eight five five oh");

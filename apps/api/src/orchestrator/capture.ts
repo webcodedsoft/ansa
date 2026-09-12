@@ -984,6 +984,11 @@ const spellPromptFor = (attempt: number, subject: EntityKind): string => {
   // An email is spelled in two halves and only the first one is hard. Asking for the
   // whole address letter by letter, "G, M, A, I, L", is what makes callers give up.
   const what = subject === "email" ? "the part before the at" : "it";
+  /* A reference is here because its letters were misheard, so the hint is the point and
+     leads: bare letters again would be the same sounds into the same line. */
+  if (subject === "reference") {
+    return forSpeech("Sorry — could you give me that again, a word for each letter, like F for Fish?");
+  }
   return attempt <= 0
     ? forSpeech(`Sorry — could you spell ${what} for me?`)
     // B, C, D, E, G, P, T, V, Z and J all rhyme, and 8kHz strips the high-frequency
@@ -1070,7 +1075,7 @@ const beginCapture = (
   if (problem !== null) {
     // Same budget as an answer nobody could parse. Repeating the objection is only worth
     // doing while there is a chance the next go is better; after that the keypad is.
-    if (attempt >= spokenAttemptsFor(subject, confidence)) return fallbackFor(subject, []);
+    if (attempt >= spokenAttemptsFor(subject, confidence)) return fallbackFor(subject, [value]);
     return {
       state: {
         kind: "awaiting",
@@ -1121,13 +1126,26 @@ const start = (text: string, atMs: number, confidence?: number | null): CaptureR
   return beginCapture(value, kind, atMs, confidence);
 };
 
+/**
+ * Where a kind falls back to, given what has been heard so far.
+ *
+ * A reference is a keypad kind — until it has letters in it. "FST901EE" cannot be typed
+ * on a keypad, and on the call this was written from the caller was asked to, twice,
+ * after the transcriber had already heard the F as an S. Letters are what spelling is
+ * for: a word per letter is the only thing that carries F rather than S over this line.
+ */
+const fallbackOf = (kind: EntityKind, heard: readonly string[]): CaptureFallback =>
+  kind === "reference" && heard.some((value) => /[A-Za-z]/.test(value))
+    ? "spelling"
+    : ENTITY_POLICY[kind].fallback;
+
 /** Where a caller goes when speech has failed twice. */
 const fallbackFor = (
   subject: EntityKind,
   rejected: readonly string[],
   context: string | null = null,
 ): CaptureResult => {
-  switch (ENTITY_POLICY[subject].fallback) {
+  switch (fallbackOf(subject, rejected)) {
     case "spelling":
       return {
         state: { kind: "spelling", subject, attempt: 0, rejected, context },
@@ -1266,8 +1284,8 @@ const confirming = (
     if (next === null || next === state.value) {
       // Nothing left worth offering. Asking again with the same value is what the caller
       // is already tired of, so hand over to spelling or the keypad instead.
-      if (ENTITY_POLICY[state.subject].fallback === "spelling" || state.attempt >= state.allowed) {
-        return fallbackFor(state.subject, rejectedNow, context);
+      if (fallbackOf(state.subject, [state.value, ...rejectedNow]) === "spelling" || state.attempt >= state.allowed) {
+        return fallbackFor(state.subject, [state.value, ...rejectedNow], context);
       }
       return {
         state: { ...state, kind: "confirming", attempt: state.attempt + 1, heard, rejected: rejectedNow },

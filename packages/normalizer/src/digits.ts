@@ -69,10 +69,38 @@ export const sayDigits = (value: string): string => {
 };
 
 /**
- * A reference the caller must copy exactly — policy numbers, claim references.
+ * The word for each letter, for reading a reference back over an 8kHz line.
  *
- * Identical to sayDigits today. It exists as its own name because readback (R4.3.1) is
- * about references specifically, and when the two need to diverge — spelling alphabets,
- * say — the call sites will already be distinguishable.
+ * The primary-school alphabet every Nigerian caller learned, not the NATO one: "F for
+ * Fish" is understood without explanation; "Foxtrot" is not. It exists because of one call
+ * where "FST901EE" was heard as "SST901EE", read back as "S, S, T", and the caller, hearing
+ * the same three sounds they had said, agreed to it. F and S are one phoneme apart and the
+ * line strips the frequencies that separate them; a word per letter replaces that one
+ * phoneme with a whole word, on the way back as well as on the way in.
  */
-export const sayReference = (value: string): string => sayDigits(value);
+const LETTER_WORDS: Readonly<Record<string, string>> = {
+  A: "Apple", B: "Ball", C: "Cat", D: "Dog", E: "Egg", F: "Fish", G: "Goat", H: "Hat", I: "Ink",
+  J: "Jug", K: "Kite", L: "Lion", M: "Mango", N: "Nest", O: "Orange", P: "Pot", Q: "Queen",
+  R: "Rat", S: "Sun", T: "Table", U: "Umbrella", V: "Van", W: "Water", X: "X-ray", Y: "Yam", Z: "Zebra",
+};
+
+/**
+ * A reference the caller must copy exactly — policy numbers, claim references, plates.
+ *
+ * Digits are said and grouped as `sayDigits` says them. A letter is said with its word —
+ * "F for Fish" — because bare letters are the one thing this channel cannot carry; see
+ * `LETTER_WORDS`. A reference with no letters in it reads exactly as it did before.
+ */
+export const sayReference = (value: string): string => {
+  const cleaned = value.replace(/[^0-9A-Za-z]/g, "");
+  if (cleaned === "") return "";
+  if (!/[A-Za-z]/.test(cleaned)) return sayDigits(cleaned);
+  const runs = cleaned.match(/[0-9]+|[A-Za-z]+/g) ?? [];
+  return runs
+    .map((run) =>
+      /^[0-9]+$/.test(run)
+        ? sayDigits(run)
+        : [...run.toUpperCase()].map((letter) => `${letter} for ${LETTER_WORDS[letter] ?? letter}`).join(", "),
+    )
+    .join(", ");
+};
