@@ -241,19 +241,20 @@ export const CallRecording = ({
         />
       )}
 
+      {/* Nothing is said under the player until there is something to say: a failure, the
+          fetch in progress, or which voices the audio holds. The access-log disclosure lives
+          in the audit log itself, where the person it protects can read it. */}
       {state.status === "failed" ? (
         <Notice tone="warn">{state.message}</Notice>
-      ) : (
+      ) : pending ? (
+        <p className="m-0 text-[11.5px] text-[var(--ink-3)]">Fetching the recording…</p>
+      ) : link !== null ? (
         <p className="m-0 text-[11.5px] text-[var(--ink-3)]">
-          {link === null
-            ? pending
-              ? "Fetching the recording…"
-              : "Listening is recorded against your name, so the person whose voice it is can be told who has heard it. Click any message to hear it from there."
-            : link.bothLegs
-              ? "Both voices: the caller on the left channel, the agent on the right."
-              : "The caller only — this call was recorded before the agent's own audio was captured."}
+          {link.bothLegs
+            ? "Both voices: the caller on the left channel, the agent on the right."
+            : "The caller only — this call was recorded before the agent's own audio was captured."}
         </p>
-      )}
+      ) : null}
     </div>
   );
 };

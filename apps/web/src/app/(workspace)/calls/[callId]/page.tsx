@@ -143,12 +143,6 @@ const CallDetailPage = async ({
                       durationSeconds={call.durationSeconds}
                       speech={speech}
                     />
-                    {!agentWordsKept && (
-                      <p className="mt-2 mb-0 text-[11.5px] text-[var(--ink-3)]">
-                        Only the caller&apos;s words are here. This call was recorded before the
-                        agent&apos;s side was kept; every call since carries both.
-                      </p>
-                    )}
                   </div>
                   <CallTimeline
                     callId={call.id}
