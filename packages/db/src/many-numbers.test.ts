@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { claimNumberWithToken } from "./call-config";
 import { createDataSource, type Db } from "./data-source";
+import { NumberNotRoutable, updateAgent } from "./agents";
 import { withOrganization } from "./organization-scope";
 import { listHeldNumbers, setClaimToken } from "./organizations";
 import { loadDotEnv } from "./test-env";
@@ -86,5 +87,40 @@ describe.skipIf(ownerUrl === undefined)("an organisation with several numbers", 
     expect(byNumber.get(NUMBERS[1])).toBe("Second line");
     // Held, routed to nobody, and visible. Rings nowhere until somebody gives it an agent.
     expect(byNumber.get(NUMBERS[2])).toBeNull();
+  });
+
+  it("refuses to route a number another agent answers, unless told to take it", async () => {
+    const rows = await withOrganization(app, ORGANIZATION, (scope) =>
+      scope.query<{ id: string; name: string }>(
+        "select id, name from agents where organization_id = $1 and deleted_at is null order by name",
+        [ORGANIZATION],
+      ),
+    );
+    const first = rows.find((row) => row.name === "First line");
+    const second = rows.find((row) => row.name === "Second line");
+    if (first === undefined || second === undefined) throw new Error("fixture agents missing");
+
+    /* Without the flag: the unique index holds, and the refusal is the named one the API turns
+       into a 409. A routing edit must not be able to silence another agent by accident. */
+    await expect(
+      withOrganization(app, ORGANIZATION, (scope) =>
+        updateAgent(scope, second.id, { dialledNumber: NUMBERS[0] }),
+      ),
+    ).rejects.toBeInstanceOf(NumberNotRoutable);
+
+    /* With it: one transaction, the number moves, and the agent that had it is unrouted.
+       There is no instant where it reaches both and none where it reaches nobody. */
+    await withOrganization(app, ORGANIZATION, (scope) =>
+      updateAgent(scope, second.id, { dialledNumber: NUMBERS[0], takeOver: true }),
+    );
+    const held = await withOrganization(app, ORGANIZATION, (scope) => listHeldNumbers(scope));
+    const byNumber = new Map(held.map((entry) => [entry.number, entry.agentName]));
+    expect(byNumber.get(NUMBERS[0])).toBe("Second line");
+    // Its old number is nobody's now: the move is a move, not a copy.
+    expect(byNumber.get(NUMBERS[1])).toBeNull();
+    const stripped = await withOrganization(app, ORGANIZATION, (scope) =>
+      scope.query<{ dialled_number: string | null }>("select dialled_number from agents where id = $1", [first.id]),
+    );
+    expect(stripped[0]?.dialled_number).toBeNull();
   });
 });

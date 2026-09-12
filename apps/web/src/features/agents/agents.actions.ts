@@ -1103,9 +1103,12 @@ export const setRouting = async (
 
   const raw = form.get("dialledNumber");
   const dialledNumber = typeof raw === "string" && raw.trim() !== "" ? raw.trim() : null;
+  /* Only ever sent after the person has read what taking a number from another agent does.
+     The card asks; this only carries the answer. */
+  const takeOver = form.get("takeOver") === "yes";
 
   try {
-    await routeAgent(agentId, dialledNumber);
+    await routeAgent(agentId, dialledNumber, takeOver);
     /* The whole workspace tree: the agents list shows which number each answers, and the
        numbers page shows which agent answers each. One write, two screens. */
     revalidatePath("/", "layout");

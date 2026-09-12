@@ -55,8 +55,11 @@ export const createAgent = async (body: {
  * unroutes the agent, which is a real state — an agent can be written and reviewed before it
  * is given a line.
  */
-export const routeAgent = async (agentId: string, dialledNumber: string | null) =>
-  (await api()).agents.update({ path: { agentId }, body: { dialledNumber } });
+export const routeAgent = async (agentId: string, dialledNumber: string | null, takeOver = false) =>
+  (await api()).agents.update({
+    path: { agentId },
+    body: { dialledNumber, ...(takeOver ? { takeOver: true } : {}) },
+  });
 
 /**
  * Point an agent at a diary, or take it away.

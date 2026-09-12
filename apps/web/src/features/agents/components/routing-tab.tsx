@@ -9,6 +9,8 @@ import { SaveBar } from "./save-bar";
 
 interface RoutingTabProps {
   readonly agentId: string;
+  /** What the agent is called, for the warning that names who loses a number. */
+  readonly agentName: string;
   /** Every number the organisation holds, so the picker can show what is taken and by whom. */
   readonly held: readonly HeldNumber[];
   /** The organisation's diaries, and which of them this agent books into. */
@@ -22,7 +24,7 @@ interface RoutingTabProps {
 }
 
 /** When the organisation counts as open, where a call hands over, and what the operator controls. */
-export const RoutingTab = ({ agentId, held, calendars, appointmentCalendarId, config, operatorManaged, errors, publishForm, savingDraft }: RoutingTabProps) => {
+export const RoutingTab = ({ agentId, agentName, held, calendars, appointmentCalendarId, config, operatorManaged, errors, publishForm, savingDraft }: RoutingTabProps) => {
   const escalation = config.escalation;
   const { consent } = operatorManaged;
   const callingHours =
@@ -53,6 +55,7 @@ export const RoutingTab = ({ agentId, held, calendars, appointmentCalendarId, co
 
       <RoutingCard
         agentId={agentId}
+        agentName={agentName}
         dialledNumber={operatorManaged.dialledNumber}
         held={held}
       />

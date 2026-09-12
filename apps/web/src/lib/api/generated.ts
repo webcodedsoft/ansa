@@ -308,7 +308,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
 
     /**
      * Move which number reaches an agent
-     * Routing and the diary. Send `dialledNumber: null` to unroute the agent, or a number to move it; refuses with 409 if that number is not available to route. Send `appointmentCalendarId` to point the agent at a calendar, or null to take it away — a call gets the two booking tools exactly when it is set, and refuses with 422 for a calendar this organisation does not hold. Everything the agent says — its name, greeting, persona, instructions, voice and pace — is published, not patched, so it is not settable here: this endpoint would otherwise be a way to change what a caller hears with no version behind it.
+     * Routing and the diary. Send `dialledNumber: null` to unroute the agent, or a number to move it; refuses with 409 if that number is not available to route — unless `takeOver: true` is sent with it, which unroutes whichever of this organisation's agents answers it now, in the same transaction. Send `appointmentCalendarId` to point the agent at a calendar, or null to take it away — a call gets the two booking tools exactly when it is set, and refuses with 422 for a calendar this organisation does not hold. Everything the agent says — its name, greeting, persona, instructions, voice and pace — is published, not patched, so it is not settable here: this endpoint would otherwise be a way to change what a caller hears with no version behind it.
      */
     update: (input: {
         readonly path: {
@@ -316,6 +316,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         };
         readonly body: {
           readonly dialledNumber?: string | null;
+          readonly takeOver?: boolean;
           readonly appointmentCalendarId?: string | null;
         };
       }) =>

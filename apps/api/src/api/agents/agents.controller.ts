@@ -182,6 +182,12 @@ const newAgent = object({
  */
 const agentEdit = object({
   dialledNumber: optional(nullable(phoneNumber())),
+  /**
+   * With `dialledNumber`: take the number from the agent that answers it now, in the same
+   * transaction. Without it, a number another agent answers is refused with 409. The agent
+   * that loses the number loses the ability to place its campaigns' calls with it.
+   */
+  takeOver: optional(flag()),
   appointmentCalendarId: optional(nullable(uuid())),
 });
 
@@ -351,7 +357,7 @@ export class AgentsController {
   @Endpoint({
     summary: "Move which number reaches an agent",
     description:
-      "Routing and the diary. Send `dialledNumber: null` to unroute the agent, or a number to move it; refuses with 409 if that number is not available to route. Send `appointmentCalendarId` to point the agent at a calendar, or null to take it away — a call gets the two booking tools exactly when it is set, and refuses with 422 for a calendar this organisation does not hold. Everything the agent says — its name, greeting, persona, instructions, voice and pace — is published, not patched, so it is not settable here: this endpoint would otherwise be a way to change what a caller hears with no version behind it.",
+      "Routing and the diary. Send `dialledNumber: null` to unroute the agent, or a number to move it; refuses with 409 if that number is not available to route — unless `takeOver: true` is sent with it, which unroutes whichever of this organisation's agents answers it now, in the same transaction. Send `appointmentCalendarId` to point the agent at a calendar, or null to take it away — a call gets the two booking tools exactly when it is set, and refuses with 422 for a calendar this organisation does not hold. Everything the agent says — its name, greeting, persona, instructions, voice and pace — is published, not patched, so it is not settable here: this endpoint would otherwise be a way to change what a caller hears with no version behind it.",
     capability: "config:write",
     params: agentPath,
     body: agentEdit,

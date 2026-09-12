@@ -1,8 +1,9 @@
 "use client";
 
+import { ArrowRightLeft } from "lucide-react";
 import { startTransition, useActionState, useState } from "react";
 
-import { Button, Card, Notice, SelectField, Stack } from "@/components/ui";
+import { Button, Card, Modal, Notice, Row, SelectField, Stack } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
 import { setRouting, type RoutingState } from "../agents.actions";
@@ -33,15 +34,35 @@ export interface HeldNumber {
  */
 export const RoutingCard = ({
   agentId,
+  agentName,
   dialledNumber,
   held,
 }: {
   readonly agentId: string;
+  readonly agentName: string;
   readonly dialledNumber: string | null;
   readonly held: readonly HeldNumber[];
 }) => {
   const [state, action, pending] = useActionState(setRouting, START);
   const [chosen, setChosen] = useState(dialledNumber ?? "");
+  const [confirming, setConfirming] = useState(false);
+
+  const chosenEntry = held.find((entry) => entry.number === chosen) ?? null;
+  /* The agent that answers the chosen number today, when that is somebody else. This is
+     the case the warning exists for. */
+  const takingFrom =
+    chosenEntry?.answeredBy !== null && chosenEntry?.answeredBy !== undefined && chosenEntry.answeredBy.agentId !== agentId
+      ? chosenEntry.answeredBy
+      : null;
+
+  const save = (takeOver: boolean): void => {
+    const form = new FormData();
+    form.set("agentId", agentId);
+    form.set("dialledNumber", chosen);
+    if (takeOver) form.set("takeOver", "yes");
+    setConfirming(false);
+    startTransition(() => action(form));
+  };
 
   return (
     <Card
@@ -71,6 +92,10 @@ export const RoutingCard = ({
           </Notice>
         )}
 
+        {/* A number another agent answers is offered, not disabled. Moving it is a real thing
+            somebody needs to do — the old way was to open the other agent, unroute it, and
+            come back — and the cost of the move is put in front of them before it happens,
+            rather than made impossible here and silent elsewhere. */}
         <SelectField
           label="Answers on"
           name="dialledNumber"
@@ -79,35 +104,59 @@ export const RoutingCard = ({
         >
           <option value="">Not routed — no caller reaches this agent</option>
           {held.map((entry) => {
-            const takenByAnother =
-              entry.answeredBy !== null && entry.answeredBy.agentId !== agentId;
+            const elsewhere = entry.answeredBy !== null && entry.answeredBy.agentId !== agentId;
             return (
-              <option key={entry.number} value={entry.number} disabled={takenByAnother}>
+              <option key={entry.number} value={entry.number}>
                 {entry.number}
-                {takenByAnother
-                  ? ` — answered by ${entry.answeredBy?.name ?? "another agent"}`
-                  : ""}
+                {elsewhere ? ` — currently answered by ${entry.answeredBy?.name ?? "another agent"}` : ""}
               </option>
             );
           })}
         </SelectField>
 
         <div>
-          <Button pending={pending}
+          <Button
+            pending={pending}
             variant="primary"
-            disabled={pending}
-            aria-busy={pending}
-            onClick={() => {
-              const form = new FormData();
-              form.set("agentId", agentId);
-              form.set("dialledNumber", chosen);
-              startTransition(() => action(form));
-            }}
+            onClick={() => (takingFrom === null ? save(false) : setConfirming(true))}
           >
-            Save number
+            {takingFrom === null ? "Save number" : `Move it from ${takingFrom.name}`}
           </Button>
         </div>
       </Stack>
+
+      <Modal
+        open={confirming}
+        onClose={() => setConfirming(false)}
+        title={`Move ${chosen} to ${agentName}?`}
+        description={`${takingFrom?.name ?? "Another agent"} answers this number today.`}
+      >
+        <Stack gap="sm">
+          <ul className="m-0 list-disc space-y-2 pl-5 text-[13.5px] leading-relaxed">
+            <li>
+              From the next call, anyone dialling <span className="font-mono">{chosen}</span>{" "}
+              reaches <strong>{agentName}</strong>. A call already in progress is not affected.
+            </li>
+            <li>
+              <strong>{takingFrom?.name}</strong> will have no number. No caller can reach it
+              until it is given one.
+            </li>
+            <li>
+              Any campaign {takingFrom?.name} is running dials from this number, so its calls{" "}
+              <strong>stop being placed</strong> until {takingFrom?.name} has a number again.
+              Nothing is lost — the calls wait.
+            </li>
+            <li>This takes effect immediately. It is not part of a published version.</li>
+          </ul>
+          <Row>
+            <Button variant="primary" onClick={() => save(true)}>
+              <ArrowRightLeft aria-hidden className="size-3.5" />
+              Move the number
+            </Button>
+            <Button onClick={() => setConfirming(false)}>Keep it where it is</Button>
+          </Row>
+        </Stack>
+      </Modal>
     </Card>
   );
 };

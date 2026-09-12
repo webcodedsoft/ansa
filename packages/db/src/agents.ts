@@ -311,6 +311,17 @@ export interface AgentEdit {
   /** Null unroutes the agent, a number moves it, omitted leaves it alone. */
   readonly dialledNumber?: string | null;
   /**
+   * Take the number from whichever of this organisation's agents answers it now.
+   *
+   * Off, a number another agent answers is refused with `NumberNotRoutable` — the unique
+   * index says one number reaches one agent, and that is the right default: a routing edit
+   * should not be able to silence another agent by accident. On, the other agent is unrouted
+   * in the same transaction, so there is no instant where the number reaches nobody and no
+   * instant where it reaches both. The caller has to say so explicitly, and the console asks
+   * the person first, because the agent that loses the number loses its campaigns with it.
+   */
+  readonly takeOver?: boolean;
+  /**
    * Null takes the diary away, an id points the agent at one, omitted leaves it alone.
    *
    * The id is checked against this organisation's calendars before it is written, and that
@@ -343,6 +354,16 @@ export const updateAgent = async (
   };
 
   if (edit.dialledNumber !== undefined) set("dialled_number", edit.dialledNumber);
+  if (edit.dialledNumber != null && edit.takeOver === true) {
+    /* Release first, route second, one transaction. Scoped by RLS like every write here, so
+       "whoever answers it" can only ever be one of this organisation's own agents — a number
+       another organisation holds is refused by the foreign key exactly as before. */
+    await scope.mutate(
+      `update agents set dialled_number = null
+        where dialled_number = $1 and id <> $2 and deleted_at is null`,
+      [edit.dialledNumber, agentId],
+    );
+  }
   if (edit.appointmentCalendarId !== undefined) {
     /* Resolved through `appointment_calendars` rather than written straight in, so RLS and
        not the foreign key decides whether this organisation holds it — a foreign key is

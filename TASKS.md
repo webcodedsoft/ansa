@@ -5804,6 +5804,24 @@ rather than landed as inventory — the wave that needs them adds them wired.
       caller shown saying nothing where they said "yes please" is a record that lies by
       omission. And a call that stored no agent words says so, rather than "spoke, too
       briefly to transcribe" forty times as if the transcriber had failed.
+- [x] **A number can be moved between agents, after a warning that says what it costs** (2026-09-12)
+      A number another agent answered was disabled in the routing select, so moving it meant
+      opening the other agent, unrouting it, and coming back — and for the minute in between,
+      the number reached nobody. `updateAgent` takes `takeOver`: with it, the agent that
+      answers the number is unrouted and the new one routed in one transaction, so there is no
+      instant where it reaches both and none where it reaches nobody. Without it the unique
+      index refuses as before — a routing edit must not silence another agent by accident.
+
+      The console offers the number and, when it is somebody else's, the button reads "Move it
+      from Support" and opens a warning before anything is sent. The warning states the four
+      true consequences: the next call reaches this agent and a call in progress is not
+      affected; the other agent has no number and no caller can reach it; **its campaigns stop
+      dialling** — a due call with no from-number is suppressed by the sweeper, and nothing is
+      lost, the calls wait; and it takes effect now, outside any published version.
+
+      Pinned in `many-numbers.test.ts`: refused without the flag, moved with it, the old number
+      left with nobody. Not seen on screen: the browser extension could not reach the
+      workspace's controls, so the modal is verified as the same primitive Members uses.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

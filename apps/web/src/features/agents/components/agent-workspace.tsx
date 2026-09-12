@@ -416,7 +416,7 @@ export const AgentWorkspace = ({
     },
     { id: "voice", label: "Voice", problem: problemTabs.has("voice"), panel: <VoiceTab key={shownAs([config, generation])} catalogue={voiceCatalogue} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
     { id: "policies", label: "Policies", problem: problemTabs.has("policies"), panel: <PolicyTab key={shownAs([config, generation])} config={config} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
-    { id: "routing", label: "Routing & hours", problem: problemTabs.has("routing"), panel: <RoutingTab key={shownAs([config, generation])} agentId={agent.agentId} held={held} calendars={calendars} appointmentCalendarId={agent.appointmentCalendarId} config={config} operatorManaged={operatorManaged} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
+    { id: "routing", label: "Routing & hours", problem: problemTabs.has("routing"), panel: <RoutingTab key={shownAs([config, generation])} agentId={agent.agentId} agentName={agent.name} held={held} calendars={calendars} appointmentCalendarId={agent.appointmentCalendarId} config={config} operatorManaged={operatorManaged} errors={errors} publishForm={PUBLISH_FORM} savingDraft={saving} /> },
     { id: "versions", label: "Versions", panel: <VersionsTab agentId={agent.agentId} versions={versions} liveVersion={agent.configVersion} liveShape={stagedMode} liveBranches={liveBranches} /> },
   ];
 
