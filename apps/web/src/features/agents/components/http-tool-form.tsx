@@ -636,12 +636,13 @@ export const HttpToolForm = ({
               />
             ) : (
               <>
-                <TextField
+                <TextAreaField
                   label="What the agent says with the answer"
                   value={draft.speechTemplate}
                   onChange={(event) => edit({ speechTemplate: event.target.value })}
                   error={problem("speechTemplate")}
                   placeholder="Your reference is {reference}, and the status is {status}."
+                  rows={3}
                   hint="Use {placeholders} for fields from the response."
                 />
 
