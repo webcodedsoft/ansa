@@ -6234,6 +6234,13 @@ rather than landed as inventory — the wave that needs them adds them wired.
       offered as you type `{` and a click puts one at the cursor. Seen live: the Leadway
       sample fetched inside the dialog, `{ve` offering vehicleColor/Make/Model/Status with
       their values, the test screen reached, a run made. Not saved.
+- [x] **The field suggestions sit at the caret** (2026-09-12)
+      They dropped in under the whole field at full width, like a second control. Now a
+      compact popup under the brace being typed — anchored at the brace rather than the
+      caret so it does not walk right as the name is typed, clamped to the field's right
+      edge, measured off a hidden mirror of the textarea because a textarea does not say
+      where its caret is. Keyed on the brace's position, not a fresh object, so the
+      measurement does not re-run forever. Seen live on the second line of a sentence.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

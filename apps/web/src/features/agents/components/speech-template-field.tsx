@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { TextAreaField } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -46,7 +46,45 @@ const matching = (fields: readonly ResponseField[], query: string): readonly Res
     .slice(0, MAX_SUGGESTIONS);
 };
 
-const shortSample = (sample: string): string => (sample.length > 40 ? `${sample.slice(0, 40)}…` : sample);
+const shortSample = (sample: string): string => (sample.length > 28 ? `${sample.slice(0, 28)}…` : sample);
+
+/** Everything that decides where a character lands in a textarea; the mirror copies these. */
+const MIRROR_STYLES = [
+  "fontFamily", "fontSize", "fontWeight", "fontStyle", "letterSpacing", "lineHeight", "textTransform",
+  "paddingTop", "paddingRight", "paddingBottom", "paddingLeft", "borderTopWidth", "borderRightWidth",
+  "borderBottomWidth", "borderLeftWidth", "boxSizing", "tabSize", "textIndent", "wordSpacing",
+] as const;
+
+/**
+ * Where the caret is inside the textarea, in pixels from its top-left, and how tall a line
+ * is there. A textarea does not say; a hidden copy of it with the same text and styles
+ * does, with a marker where the caret would be. The copy lives for one measurement.
+ */
+const caretPlace = (el: HTMLTextAreaElement, index: number): { readonly top: number; readonly left: number; readonly line: number } => {
+  const style = getComputedStyle(el);
+  const mirror = document.createElement("div");
+  for (const name of MIRROR_STYLES) mirror.style[name] = style[name];
+  mirror.style.position = "absolute";
+  mirror.style.top = "0";
+  mirror.style.left = "-9999px";
+  mirror.style.visibility = "hidden";
+  mirror.style.whiteSpace = "pre-wrap";
+  mirror.style.overflowWrap = "break-word";
+  mirror.style.overflow = "hidden";
+  mirror.style.width = `${el.clientWidth}px`;
+  mirror.style.boxSizing = "border-box";
+  mirror.textContent = el.value.slice(0, index);
+  const marker = document.createElement("span");
+  marker.textContent = el.value.slice(index) === "" ? "." : el.value.slice(index);
+  mirror.appendChild(marker);
+  document.body.appendChild(mirror);
+  const line = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.5;
+  const place = { top: marker.offsetTop - el.scrollTop, left: marker.offsetLeft, line };
+  mirror.remove();
+  return place;
+};
+
+const POPUP_WIDTH = 288;
 
 export const SpeechTemplateField = ({
   label,
@@ -75,6 +113,9 @@ export const SpeechTemplateField = ({
      Set synchronously in the insert, applied in an effect: setting the selection before
      the value has changed puts it in the old text. */
   const landing = useRef<number | null>(null);
+  const wrap = useRef<HTMLDivElement>(null);
+  /** Where the popup sits, relative to the wrapper: under the caret, kept inside the field. */
+  const [place, setPlace] = useState<{ readonly top: number; readonly left: number } | null>(null);
 
   useEffect(() => {
     const el = box.current;
@@ -88,6 +129,24 @@ export const SpeechTemplateField = ({
   const typing = dismissed ? null : openPlaceholder(value, caret);
   const suggestions = typing === null || fields.length === 0 ? [] : matching(fields, typing.query);
   const showing = suggestions.length > 0;
+
+  /* Measured after layout, so the popup is placed against the textarea as it is on screen.
+     Anchored at the brace being typed rather than the caret, so it does not walk to the
+     right as the name is typed. Clamped to the field's right edge. */
+  const anchor = typing === null ? -1 : typing.start;
+  useLayoutEffect(() => {
+    const el = box.current;
+    const outer = wrap.current;
+    if (!showing || el === null || outer === null || anchor < 0) {
+      setPlace((current) => (current === null ? current : null));
+      return;
+    }
+    const at = caretPlace(el, anchor);
+    const left = Math.min(el.offsetLeft + at.left, Math.max(0, outer.clientWidth - POPUP_WIDTH));
+    const top = el.offsetTop + at.top + at.line + 2;
+    // Same place, same object: a fresh object here would re-render and measure again, forever.
+    setPlace((current) => (current !== null && current.top === top && current.left === left ? current : { top, left }));
+  }, [showing, anchor, value]);
 
   /** Put `{path}` between `from` and `to`, and carry on writing after it. */
   const insert = (path: string, from: number, to: number): void => {
@@ -133,7 +192,7 @@ export const SpeechTemplateField = ({
   };
 
   return (
-    <div className="flex flex-col gap-2">
+    <div ref={wrap} className="relative flex flex-col gap-2">
       <TextAreaField
         ref={box}
         label={label}
@@ -156,11 +215,12 @@ export const SpeechTemplateField = ({
         aria-expanded={showing}
       />
 
-      {showing && (
+      {showing && place !== null && (
         <ul
           role="listbox"
           aria-label="Fields from the response"
-          className="overflow-hidden rounded-lg border border-[var(--hairline)] bg-[var(--surface-solid)] shadow-[var(--shadow-m)]"
+          style={{ top: place.top, left: place.left, width: POPUP_WIDTH }}
+          className="absolute z-20 max-h-56 overflow-y-auto rounded-lg border border-[var(--hairline)] bg-[var(--surface-solid)] py-1 shadow-[var(--shadow-l)]"
         >
           {suggestions.map((field, index) => (
             <li key={field.path} role="option" aria-selected={index === active}>
@@ -174,12 +234,14 @@ export const SpeechTemplateField = ({
                 }}
                 onMouseEnter={() => setActive(index)}
                 className={cn(
-                  "flex w-full items-baseline gap-3 px-3 py-1.5 text-left text-[12.5px]",
+                  "flex w-full items-baseline gap-2 px-2.5 py-1 text-left text-[12px] leading-5",
                   index === active ? "bg-[var(--accent-soft)] text-[var(--accent)]" : "text-[var(--ink-2)]",
                 )}
               >
-                <span className="font-mono">{field.path}</span>
-                <span className="min-w-0 flex-1 truncate text-[11.5px] text-[var(--ink-3)]">{shortSample(field.sample)}</span>
+                <span className="min-w-0 flex-1 truncate font-mono">{field.path}</span>
+                {field.sample !== "" && (
+                  <span className="max-w-[45%] flex-none truncate text-[11px] text-[var(--ink-3)]">{shortSample(field.sample)}</span>
+                )}
               </button>
             </li>
           ))}
