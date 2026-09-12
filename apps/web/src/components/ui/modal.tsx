@@ -29,8 +29,9 @@ export const Modal = ({
   size = "default",
 }: {
   readonly open: boolean;
-  /** `wide` for a gallery — a grid of cards needs the width a message does not. */
-  readonly size?: "default" | "wide";
+  /** `wide` for a gallery — a grid of cards needs the width a message does not; `form` for
+      a builder with a method beside a URL, which the default squeezes. */
+  readonly size?: "default" | "form" | "wide";
   /** Called for Escape and for a click on the backdrop, as well as for a programmatic close. */
   readonly onClose: () => void;
   readonly title: string;
@@ -71,7 +72,7 @@ export const Modal = ({
       aria-labelledby="modal-title"
       className={cn(
         "m-auto max-h-[calc(100vh-2rem)] overflow-y-auto rounded-xl border border-[var(--hairline)] p-0",
-        size === "wide" ? "w-[min(100%-2rem,1040px)]" : "w-[min(100%-2rem,520px)]",
+        size === "wide" ? "w-[min(100%-2rem,1040px)]" : size === "form" ? "w-[min(100%-2rem,700px)]" : "w-[min(100%-2rem,520px)]",
         "bg-[var(--glass-hi)] text-[var(--ink)] shadow-[var(--shadow-l),var(--spec)]",
         "backdrop-blur-[40px] backdrop-saturate-200",
         "backdrop:bg-[rgb(4_10_12/42%)] backdrop:backdrop-blur-[3px]",

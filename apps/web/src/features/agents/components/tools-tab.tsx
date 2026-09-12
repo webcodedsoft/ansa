@@ -22,7 +22,7 @@ import { useToastStore } from "@/stores/toast.store";
 
 import { saveAgentTools } from "../agents.actions";
 import type { AgentSummary, ToolsDocument } from "../agents.service";
-import { HttpToolForm } from "./http-tool-form";
+import { QuickToolForm } from "./quick-tool-form";
 
 /**
  * Which of the organisation's tools this agent may call.
@@ -127,9 +127,10 @@ const listed = (names: readonly string[]): string =>
  * The tool builder, in a dialog, rendered at the document root.
  *
  * A portal rather than in place: every workspace tab sits inside the publish `<form>`, and
- * the builder carries forms of its own. Nested forms are invalid HTML and the inner ones
+ * the builder carries a form of its own. Nested forms are invalid HTML and the inner one
  * would submit the outer. The dialog is in the top layer either way; only its DOM position
- * moves.
+ * moves. The builder inside is the dialog-sized one — three screens, no sample fetch, no
+ * test — because the registry's five-section page did not fit a dialog and looked it.
  */
 const AddToolDialog = ({
   open,
@@ -151,17 +152,18 @@ const AddToolDialog = ({
     <Modal
       open={open}
       onClose={onClose}
-      size="wide"
+      size="form"
       title="Add a tool"
-      description="It joins the organisation's registry, and is switched on for this agent when it is saved."
+      description="It joins the organisation's registry and is switched on for this agent when it is saved."
     >
       {open && (
-        <HttpToolForm
+        <QuickToolForm
           configVersion={tools.configVersion}
           takenNames={tools.http.map((tool) => tool.name)}
           allowPlaintextHttp={tools.egress.allowPlaintextHttp ?? false}
           credentials={credentials}
           onDone={(saved) => onAdded(saved.name)}
+          onCancel={onClose}
         />
       )}
     </Modal>,

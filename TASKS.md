@@ -6139,6 +6139,20 @@ rather than landed as inventory — the wave that needs them adds them wired.
       dated from when an operator added hosts by hand. Removed. The one sentence in it that
       was a person's decision, plain http crossing the network unencrypted, stands alone
       now and appears only when the URL is http.
+- [x] **The add-a-tool dialog is dialog-sized** (2026-09-12)
+      Putting the registry's five-section builder in a dialog gave three screens of
+      scrolling before the first field. `QuickToolForm` is the same tool — same draft, same
+      rules, same save action — cut to three short screens shown one at a time, each of
+      which fits without scrolling: Endpoint (template or curl behind a button, name,
+      description, method and URL, credential with the store-in-place dialog, fixed
+      headers behind a fold), Arguments (rows, the URL's {placeholders} declared for you on
+      the way in, raw JSON schema only when a template needs it) and On the call (tier,
+      sentences, timeout). Each screen is checked when Continue is pressed, against its own
+      fields only. Left out on purpose: fetching a sample and running a test, which belong
+      to checking a tool and live in the registry with more room — the toast on save says
+      so. A `form` modal width sits between default and wide. Seen live through all three
+      screens on the OneHealth agent's Tools tab; not saved, so no test tool lands in the
+      real registry.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.
