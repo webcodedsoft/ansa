@@ -3440,6 +3440,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly managedBy: "holder" | "platform";
         readonly country: string | null;
         readonly monthlyPrice: string | null;
+        readonly lastCallAt: string | null;
         readonly answeredBy: {
         readonly agentId: string;
         readonly name: string;
@@ -3470,6 +3471,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly managedBy: "holder" | "platform";
         readonly country: string | null;
         readonly monthlyPrice: string | null;
+        readonly lastCallAt: string | null;
         readonly answeredBy: {
         readonly agentId: string;
         readonly name: string;

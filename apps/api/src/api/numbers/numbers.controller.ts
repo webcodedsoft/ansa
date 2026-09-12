@@ -13,7 +13,7 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 
-import { uuid } from "../schemas";
+import { timestamp, uuid } from "../schemas";
 import { Endpoint } from "../http/endpoint";
 import { audit } from "../audit/audit";
 import { apiRoute, FromBody, FromPath, FromQuery } from "../http/request";
@@ -87,6 +87,8 @@ const attachedNumber = object({
   country: nullable(text({ maxLength: 2 })),
   /** What the carrier charges each month for a platform-bought number, as the carrier states it. */
   monthlyPrice: nullable(text({ maxLength: 32 })),
+  /** When a call last arrived on it; null if none ever has. */
+  lastCallAt: nullable(timestamp()),
   /**
    * Which agent answers this number, or null when the organisation holds it and nothing does.
    *
@@ -238,6 +240,7 @@ export class NumbersController {
           managedBy: entry.managedBy,
           country: entry.country,
           monthlyPrice: entry.monthlyPrice,
+          lastCallAt: entry.lastCallAt,
           answeredBy:
             entry.agentId === null || entry.agentName === null
               ? null

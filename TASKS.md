@@ -6023,6 +6023,15 @@ rather than landed as inventory — the wave that needs them adds them wired.
       migrate` works from a clean shell. In all three the real environment wins and a
       missing file is not an error, which is what a deployment wants. Both dev servers were
       started without the wrapper and came up on the file's values.
+- [x] **The Numbers page is design C: number cards** (2026-09-12)
+      Chosen from five drawn at real size. Each number is a card — flag, the number large,
+      who answers it as a select that routes on change (through the same action the agent's
+      page uses, taking the number over if another agent had it), the carrier webhook state,
+      and either "Plan · included · Release" or the last call. A dashed Add card and the two
+      header buttons open the same two panels under the grid — bring your own, get one from
+      Ansa — so the page never leaves what it holds. Under it, what this deployment can do,
+      from the API. `lastCallAt` joined onto each held number for the card. Seen on screen
+      with the two real numbers, both webhooks reading "matches".
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

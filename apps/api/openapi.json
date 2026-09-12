@@ -23836,6 +23836,13 @@
                             ],
                             "maxLength": 32
                           },
+                          "lastCallAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time"
+                          },
                           "answeredBy": {
                             "type": [
                               "object",
@@ -23908,6 +23915,7 @@
                           "managedBy",
                           "country",
                           "monthlyPrice",
+                          "lastCallAt",
                           "answeredBy",
                           "carrierWebhook"
                         ],
@@ -24045,6 +24053,13 @@
                             ],
                             "maxLength": 32
                           },
+                          "lastCallAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time"
+                          },
                           "answeredBy": {
                             "type": [
                               "object",
@@ -24117,6 +24132,7 @@
                           "managedBy",
                           "country",
                           "monthlyPrice",
+                          "lastCallAt",
                           "answeredBy",
                           "carrierWebhook"
                         ],

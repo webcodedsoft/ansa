@@ -276,6 +276,8 @@ export interface HeldNumber {
   readonly managedBy: "holder" | "platform";
   readonly country: string | null;
   readonly monthlyPrice: string | null;
+  /** When this number last received a call, or null if it never has. */
+  readonly lastCallAt: string | null;
 }
 
 /**
@@ -298,8 +300,10 @@ export const listHeldNumbers = async (scope: OrganizationScope): Promise<readonl
     monthly_price: string | null;
     agent_id: string | null;
     agent_name: string | null;
+    last_call_at: Date | null;
   }>(
-    `select n.number, n.note, n.managed_by, n.country, n.monthly_price, a.id as agent_id, a.name as agent_name
+    `select n.number, n.note, n.managed_by, n.country, n.monthly_price, a.id as agent_id, a.name as agent_name,
+            (select max(c.created_at) from calls c where c.dialled = n.number) as last_call_at
        from organization_numbers n
        left join agents a
          on a.dialled_number = n.number and a.deleted_at is null
@@ -313,6 +317,7 @@ export const listHeldNumbers = async (scope: OrganizationScope): Promise<readonl
     managedBy: row.managed_by === "platform" ? "platform" : "holder",
     country: row.country,
     monthlyPrice: row.monthly_price,
+    lastCallAt: row.last_call_at?.toISOString() ?? null,
   }));
 };
 
