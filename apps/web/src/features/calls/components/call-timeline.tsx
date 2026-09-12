@@ -1,4 +1,4 @@
-import { Sparkles } from "lucide-react";
+import { Sparkles, UserRound } from "lucide-react";
 
 import { EmptyState, Table, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -17,8 +17,12 @@ export const CallTimeline = ({
 }: {
   readonly callId: string;
   readonly lines: readonly TimelineLine[];
-  /** Two letters for the caller's circle — their initials when we know a name, digits when not. */
-  readonly callerInitials: string;
+  /**
+   * Two letters for the caller's circle when we know their name. Null when we do not — the
+   * circle then carries a person glyph rather than the number's last digits, which read as a
+   * count of something and named nobody.
+   */
+  readonly callerInitials: string | null;
   /**
    * Whether this call stored the agent's words at all.
    *
@@ -74,7 +78,13 @@ export const CallTimeline = ({
                   : "border-[var(--hairline)] bg-[var(--surface-2)] text-[var(--ink-2)]",
               )}
             >
-              {line.speaker === "agent" ? <Sparkles className="size-3.5" /> : callerInitials}
+              {line.speaker === "agent" ? (
+                <Sparkles className="size-3.5" />
+              ) : callerInitials === null ? (
+                <UserRound className="size-3.5" />
+              ) : (
+                callerInitials
+              )}
             </span>
 
             {/* `flex-1`, and it matters: the bubble's width is a percentage, and a percentage

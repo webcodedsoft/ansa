@@ -46,11 +46,13 @@ const CallDetailPage = async ({
     startMs: turn.startedOffsetMs,
     endMs: turn.endedOffsetMs ?? (call.durationSeconds ?? 0) * 1000,
   }));
-  const callerInitials = initialsOf({
-    displayName: call.contact?.name ?? null,
-    phone: counterparty ?? "",
-    values: [],
-  });
+  /* The circle beside each caller bubble: initials when we know a name, a person glyph when
+     we do not. The directory row falls back to the number's last digits because it has the
+     number beside it; a bubble does not, and "50" beside a sentence names nobody. */
+  const callerInitials =
+    call.contact?.name === null || call.contact?.name === undefined
+      ? null
+      : initialsOf({ displayName: call.contact.name, phone: counterparty ?? "", values: [] });
 
   return (
     <>
