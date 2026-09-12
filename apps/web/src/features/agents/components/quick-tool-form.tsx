@@ -38,6 +38,8 @@ import {
   type RiskTier,
 } from "../http-tool.schema";
 import { HOST, type ToolTemplate } from "../tool-templates";
+import { SpeechTemplateField, type ResponseField } from "./speech-template-field";
+import { SampleStep, ToolTest } from "./tool-steps";
 import { ToolTemplateGallery } from "./tool-template-gallery";
 
 /**
@@ -49,10 +51,8 @@ import { ToolTemplateGallery } from "./tool-template-gallery";
  * like the page it was meant to save somebody from visiting.
  *
  * This is the same tool — the same draft, the same rules in `http-tool.schema.ts`, the same
- * save action — cut to what adding one needs: three short screens, one at a time, each of
- * which fits without scrolling. What is left out is left out on purpose. Fetching a sample
- * response and running a test both belong to checking a tool, and the registry does both
- * with more room; the toast on save says where. Headers and the raw JSON schema are behind a
+ * save action, the same sample fetch and the same test — as five short screens, one at a
+ * time, each of which fits without scrolling. Headers and the raw JSON schema are behind a
  * fold, because most tools have neither.
  *
  * Each screen is checked when Continue is pressed, against only its own fields, so a problem
@@ -62,7 +62,9 @@ import { ToolTemplateGallery } from "./tool-template-gallery";
 const STEPS = [
   { id: "endpoint", title: "Endpoint" },
   { id: "arguments", title: "Arguments" },
+  { id: "response", title: "Response" },
   { id: "call", title: "On the call" },
+  { id: "test", title: "Test" },
 ] as const;
 type StepId = (typeof STEPS)[number]["id"];
 
@@ -106,12 +108,14 @@ export const QuickToolForm = ({ configVersion, takenNames, allowPlaintextHttp, c
   const [curl, setCurl] = useState("");
   const [imported, setImported] = useState<readonly string[]>([]);
   const [showHeaders, setShowHeaders] = useState(false);
+  /** What the sample fetch found in the response, offered when writing the spoken sentence. */
+  const [fields, setFields] = useState<readonly ResponseField[]>([]);
   const formRef = useRef<HTMLFormElement>(null);
   const [state, action, pending] = useActionState(saveHttpToolAction, idleForm() as ToolsState);
   useFailureToast(state);
   useFormToast(state, () => {
     onDone({ name: draft.name });
-    return `${draft.name} is in the registry. Fetch a sample and test it there when you are ready.`;
+    return `${draft.name} is in the registry and switched on for this agent.`;
   });
 
   const edit = (over: Partial<HttpToolDraft>): void => setDraft((current) => ({ ...current, ...over }));
@@ -153,15 +157,22 @@ export const QuickToolForm = ({ configVersion, takenNames, allowPlaintextHttp, c
     if (following !== undefined) setStep(following.id);
   };
 
-  const save = (): void => {
+  /** Mark every screen and go to the first one with a problem. True when there was one. */
+  const showAllProblems = (): boolean => {
     setChecked(new Set(STEPS.map((entry) => entry.id)));
     const firstBroken = STEPS.find((entry) => problemsOn(entry.id) > 0);
-    if (firstBroken !== undefined) {
-      setStep(firstBroken.id);
-      return;
-    }
+    if (firstBroken === undefined) return false;
+    setStep(firstBroken.id);
+    return true;
+  };
+
+  const save = (): void => {
+    if (showAllProblems()) return;
     formRef.current?.requestSubmit();
   };
+
+  const STEP_TITLE: Record<StepId, string> = Object.fromEntries(STEPS.map((entry) => [entry.id, entry.title])) as Record<StepId, string>;
+  const blockers = Object.entries(problems).map(([key, message]) => ({ step: STEP_TITLE[stepOf(key)], message }));
 
   const applyCurl = (): void => {
     const parsed = parseCurl(curl);
@@ -505,6 +516,10 @@ export const QuickToolForm = ({ configVersion, takenNames, allowPlaintextHttp, c
         </Stack>
       )}
 
+      {step === "response" && <SampleStep draft={draft} onFields={setFields} found={fields} frame="plain" />}
+
+      {step === "test" && <ToolTest draft={draft} blockers={blockers} onBlocked={showAllProblems} frame="plain" />}
+
       {step === "call" && (
         <Stack gap="sm">
           <div>
@@ -542,14 +557,14 @@ export const QuickToolForm = ({ configVersion, takenNames, allowPlaintextHttp, c
             />
           ) : (
             <>
-              <TextAreaField
+              <SpeechTemplateField
                 label="What the agent says with the answer"
                 value={draft.speechTemplate}
-                onChange={(event) => edit({ speechTemplate: event.target.value })}
+                onChange={(next) => edit({ speechTemplate: next })}
+                fields={fields}
                 error={problem("speechTemplate")}
                 placeholder="Your reference is {reference}, and the status is {status}."
-                rows={3}
-                hint="{placeholders} are fields from the response. Fetch a sample in the registry to see which exist."
+                hint={fields.length > 0 ? undefined : "{placeholders} are fields from the response. Fetch a sample on the Response step to see which exist."}
               />
               <TextField
                 label="What it says when there is no record"

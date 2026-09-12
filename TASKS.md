@@ -6223,6 +6223,17 @@ rather than landed as inventory — the wave that needs them adds them wired.
       the outer dialog's `onClose` took it as its own. `Modal` now answers only its own
       close event. Seen live: a calls row opened from its duration cell; the Oakhaven card
       hovered without an underline; look_up_customer picked with the dialog still open.
+- [x] **The add-a-tool dialog has all five steps** (2026-09-12)
+      Response and Test were left out of the dialog on the grounds that the registry had
+      more room for them. Asked for, and right to ask: a tool added from the agent's Tools
+      tab should be checkable where it was made. The sample fetch and the test run moved
+      out of the registry's builder into `tool-steps.tsx` (`SampleStep`, `ToolTest`), each
+      with a `frame` — a Card on the page, plain inside the dialog that already frames its
+      step — and the dialog has five screens: Endpoint, Arguments, Response, On the call,
+      Test. On the call uses `SpeechTemplateField`, so the fetched response's fields are
+      offered as you type `{` and a click puts one at the cursor. Seen live: the Leadway
+      sample fetched inside the dialog, `{ve` offering vehicleColor/Make/Model/Status with
+      their values, the test screen reached, a run made. Not saved.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.
