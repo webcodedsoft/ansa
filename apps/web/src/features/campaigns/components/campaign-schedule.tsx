@@ -275,7 +275,7 @@ export const CampaignSchedule = ({
             disabled={locked || backwards || halfStart || halfEnd}
             onClick={save}
           >
-            "Save schedule"
+            Save schedule
           </Button>
         </div>
       )}

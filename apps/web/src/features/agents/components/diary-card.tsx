@@ -92,7 +92,7 @@ export const DiaryCard = ({
               startTransition(() => action(form));
             }}
           >
-            "Save diary"
+            Save diary
           </Button>
         </div>
       </Stack>

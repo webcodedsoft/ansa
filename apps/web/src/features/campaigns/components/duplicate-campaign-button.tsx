@@ -65,7 +65,7 @@ export const DuplicateCampaignButton = ({
               aria-busy={pending}
               onClick={create}
             >
-              "Create the copy"
+              Create the copy
             </Button>
           </>
         }

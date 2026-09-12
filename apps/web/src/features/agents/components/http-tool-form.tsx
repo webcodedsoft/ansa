@@ -807,7 +807,7 @@ const SampleStep = ({
             )}
             <div>
               <Button pending={pending} type="submit" disabled={pending || draft.url === ""}>
-                "Fetch a sample"
+                Fetch a sample
               </Button>
             </div>
           </Stack>
@@ -940,7 +940,7 @@ const ToolTest = ({
 
           <div>
             <Button pending={pending} type="submit" disabled={pending || blocked}>
-              "Run test"
+              Run test
             </Button>
           </div>
 

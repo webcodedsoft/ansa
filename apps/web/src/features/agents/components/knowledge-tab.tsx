@@ -239,7 +239,7 @@ const Selection = ({
 
         <div className="flex flex-wrap items-center gap-3">
           <Button pending={pending} type="button" onClick={save} disabled={pending}>
-            "Save selection"
+            Save selection
           </Button>
           {chosen.size === 0 && (
             <span className="max-w-[58ch] text-[12.5px] text-[var(--ink-3)]">
@@ -267,7 +267,7 @@ const RetireSource = ({ sourceId, name }: { readonly sourceId: string; readonly 
   // and it read as ordinary as the button beside it.
   return (
     <Button pending={pending} type="button" variant="danger" onClick={retire} disabled={pending}>
-      "Retire"
+      Retire
     </Button>
   );
 };
@@ -349,7 +349,7 @@ const AddSource = ({ onDone }: { readonly onDone: () => void }) => {
                 that grew as you typed, so the more you pasted the further away the button that
                 kept it got. */}
             <Button pending={pending} type="button" size="sm" variant="primary" onClick={store} disabled={pending}>
-              "Store source"
+              Store source
             </Button>
           </div>
 
@@ -529,7 +529,7 @@ const Upload = ({
       >
         <p className="text-[12.5px] font-medium">Drop a document here</p>
         <Button pending={reading} type="button" size="sm" onClick={() => input.current?.click()} disabled={reading}>
-          "Choose a file"
+          Choose a file
         </Button>
         <p className="font-mono text-[10px] tracking-[0.12em] text-[var(--ink-3)] uppercase">
           {ACCEPTED_EXTENSIONS.join(" · ")}
@@ -743,7 +743,7 @@ const EditSource = ({
             </Button>
             {/* Primary, because it is the one thing on this screen that keeps the work. */}
             <Button pending={pending} type="button" size="sm" variant="primary" onClick={save} disabled={pending || empty}>
-              "Save changes"
+              Save changes
             </Button>
           </div>
 

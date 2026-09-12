@@ -132,7 +132,7 @@ const SwitchEditor = ({
             </p>
           </div>
           <Button pending={switching} size="sm" variant="secondary" disabled={switching} onClick={go}>
-            "Rebuild as a flow"
+            Rebuild as a flow
           </Button>
         </div>
       </Panel>

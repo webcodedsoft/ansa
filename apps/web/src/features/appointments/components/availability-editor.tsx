@@ -144,7 +144,7 @@ export const AvailabilityEditor = ({
       actions={
         canWrite ? (
           <Button pending={pending} variant="primary" onClick={save} disabled={pending}>
-            "Save hours"
+            Save hours
           </Button>
         ) : undefined
       }

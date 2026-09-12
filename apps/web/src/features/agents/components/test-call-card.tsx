@@ -42,7 +42,7 @@ export const TestCallCard = () => {
         />
         <div className="pt-[22px]">
           <Button pending={pending} variant="primary" onClick={ring} disabled={pending}>
-            "Ring me now"
+            Ring me now
           </Button>
         </div>
       </Row>

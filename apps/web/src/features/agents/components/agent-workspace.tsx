@@ -548,7 +548,7 @@ export const AgentWorkspace = ({
               disabled={discarding || saving || pending}
               aria-busy={discarding}
             >
-              "Discard changes"
+              Discard changes
             </Button>
           )}
 

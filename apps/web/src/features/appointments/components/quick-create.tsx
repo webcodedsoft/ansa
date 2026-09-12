@@ -203,7 +203,7 @@ export const QuickCreate = ({
             More options
           </Button>
           <Button pending={pending} variant="primary" size="sm" type="submit" disabled={pending || instants === null}>
-            "Save"
+            Save
           </Button>
         </div>
       </form>

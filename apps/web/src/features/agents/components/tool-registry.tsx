@@ -180,7 +180,7 @@ const RemoveTool = ({
       <input type="hidden" name="name" value={name} />
       <input type="hidden" name="expectedVersion" value={configVersion} />
       <Button pending={pending} type="submit" variant="secondary" disabled={pending}>
-        "Remove"
+        Remove
       </Button>
     </form>
   );

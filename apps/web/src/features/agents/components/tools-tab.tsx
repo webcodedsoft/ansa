@@ -204,7 +204,7 @@ export const ToolsTab = ({
         <div className="flex flex-none items-center gap-2">
           {saved && !saving && <Tag tone="ok">Saved</Tag>}
           <Button pending={saving} type="button" onClick={save} disabled={saving}>
-            "Save selection"
+            Save selection
           </Button>
         </div>
       </div>

@@ -96,7 +96,7 @@ export const CampaignCallingWindow = ({
             />
             <div className="flex flex-wrap gap-2">
               <Button pending={pending} type="submit" size="sm" variant="primary" disabled={pending || empty}>
-                "Save hours"
+                Save hours
               </Button>
               <Button type="button" size="sm" disabled={pending} onClick={cancel}>
                 Cancel
