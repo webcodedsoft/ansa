@@ -6102,6 +6102,21 @@ rather than landed as inventory — the wave that needs them adds them wired.
       `\r\n` case) is now a continuation, whitespace can never become the URL, and a
       trailing `;` on the command no longer lands in the last header's value. Two tests that
       fail on the old parser. Seen live with the same paste shape.
+- [x] **A curl command in any of the shapes people paste** (2026-09-12)
+      The parser read one dialect: bash, backslash continuations, one flag per token. Real
+      pastes are Postman's cmd export (`^` continuations, double quotes), its PowerShell
+      export (`curl.exe`, backtick continuations), a browser's Copy as cURL (`$'…'` quoting,
+      a `cookie` header, twenty `sec-*` and `user-agent` headers the browser added for
+      itself), a README with `$ ` in front and a code fence around it, `| jq .` on the end,
+      `-sSL` and `-XPOST` run together, `--header=` with an equals sign, `--json`, `-G`
+      data that belongs in the query string, `-b` cookies and `--oauth2-bearer` tokens. All
+      read now; the same request fills the same form whichever way it was copied. Cookies
+      and bearer flags are credentials and are dropped like an Authorization header; browser
+      headers are left behind and counted in the notice; an unknown flag's value can no
+      longer displace the URL; a Postman `{{variable}}` in the URL is named. A paste that is
+      not curl at all — PowerShell's Invoke-WebRequest, wget, a sentence — fills nothing,
+      leaves what was there, and the notice says what it was instead. Fourteen new tests.
+      Seen live: the cmd export fills the URL; the PowerShell paste is refused by name.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

@@ -129,6 +129,131 @@ describe("importing a curl command", () => {
     expect(unsupported.join(" ")).toContain("shell substitution");
   });
 
+  /**
+   * The shapes real pastes come in. Each of these is the same request as the first test, and
+   * a person who pastes it should see the same filled form, not a reason it did not work.
+   */
+  describe("in the formats people actually paste", () => {
+    const URL = "https://api.example.test/quotation?regNo=FST901EE";
+
+    it("reads Postman's Windows cmd export, with caret continuations and double quotes", () => {
+      const { draft } = parseCurl(
+        `curl --location "${URL}" ^\n--header "Accept: application/json" ^\n--header "X-Tenant: kano"`,
+      );
+      expect(draft.url).toBe(URL);
+      expect(draft.headers).toEqual([
+        { name: "Accept", value: "application/json" },
+        { name: "X-Tenant", value: "kano" },
+      ]);
+    });
+
+    it("reads Postman's PowerShell export, with curl.exe and backtick continuations", () => {
+      const { draft } = parseCurl(`curl.exe --location '${URL}' \`\n--header 'Accept: application/json'`);
+      expect(draft.url).toBe(URL);
+      expect(draft.headers).toEqual([{ name: "Accept", value: "application/json" }]);
+    });
+
+    it("reads a browser's Copy as cURL, keeping the API's headers and leaving the browser's", () => {
+      const { draft, unsupported } = parseCurl(`curl '${URL}' \\
+  -H 'accept: application/json' \\
+  -H 'accept-language: en-GB,en;q=0.9' \\
+  -H 'cookie: session=sk-not-a-real-key' \\
+  -H 'priority: u=1, i' \\
+  -H 'sec-ch-ua: "Chromium";v="130"' \\
+  -H 'sec-fetch-mode: cors' \\
+  -H 'user-agent: Mozilla/5.0' \\
+  -H 'x-tenant: kano' \\
+  --compressed`);
+      expect(draft.url).toBe(URL);
+      expect(draft.headers).toEqual([
+        { name: "accept", value: "application/json" },
+        { name: "x-tenant", value: "kano" },
+      ]);
+      expect(JSON.stringify(draft)).not.toContain("sk-not-a-real-key");
+      expect(unsupported.join(" ")).toContain("stored credential");
+      expect(unsupported.join(" ")).toContain("5 headers a browser adds");
+    });
+
+    it("reads the $'…' quoting a browser uses for a body with a newline in it", () => {
+      const { draft } = parseCurl(
+        `curl '${URL}' -H 'content-type: application/json' --data-raw $'{"a":"it\\'s"}'`,
+      );
+      expect(draft.method).toBe("POST");
+      expect(draft.send).toBe("body");
+      expect(draft.headers).toEqual([{ name: "content-type", value: "application/json" }]);
+    });
+
+    it("spreads run-together short flags and splits a glued value", () => {
+      const { draft, unsupported } = parseCurl(`curl -sSL -XPOST -H'Accept: application/json' ${URL}`);
+      expect(draft.url).toBe(URL);
+      expect(draft.method).toBe("POST");
+      expect(draft.headers).toEqual([{ name: "Accept", value: "application/json" }]);
+      expect(unsupported).toEqual([]);
+    });
+
+    it("reads long flags written with an equals sign", () => {
+      const { draft } = parseCurl(`curl --request=PUT --header="Accept: application/json" --url=${URL}`);
+      expect(draft.url).toBe(URL);
+      expect(draft.method).toBe("PUT");
+      expect(draft.headers).toEqual([{ name: "Accept", value: "application/json" }]);
+    });
+
+    it("ignores the prompt, the code fence and the pipe it was copied with", () => {
+      const { draft, unsupported } = parseCurl("```bash\n$ curl -s " + URL + " | jq .\n```");
+      expect(draft.url).toBe(URL);
+      expect(unsupported).toEqual([]);
+    });
+
+    it("moves -G data into the query string, as curl does", () => {
+      const { draft } = parseCurl(`curl -G https://api.example.test/search -d 'q=lagos' --data-urlencode 'limit=5'`);
+      expect(draft.url).toBe("https://api.example.test/search?q=lagos&limit=5");
+      expect(draft.method).toBe("GET");
+      expect(draft.send).toBe("query");
+    });
+
+    it("takes --json as a JSON body with the headers it implies", () => {
+      const { draft } = parseCurl(`curl https://api.example.test/claims --json '{"id":1}'`);
+      expect(draft.method).toBe("POST");
+      expect(draft.send).toBe("body");
+      expect(draft.headers).toEqual([
+        { name: "Content-Type", value: "application/json" },
+        { name: "Accept", value: "application/json" },
+      ]);
+    });
+
+    it("drops a cookie string and a bearer flag as the credentials they are", () => {
+      const { draft, unsupported } = parseCurl(
+        `curl -b 'session=sk-not-a-real-key' --oauth2-bearer sk-not-a-real-key ${URL}`,
+      );
+      expect(JSON.stringify(draft)).not.toContain("sk-not-a-real-key");
+      expect(draft.url).toBe(URL);
+      expect(unsupported.join(" ")).toContain("stored credential");
+    });
+
+    it("keeps the URL when an unknown flag's value comes after it", () => {
+      const { draft, unsupported } = parseCurl(`curl ${URL} --proxy 127.0.0.1:8080`);
+      expect(draft.url).toBe(URL);
+      expect(unsupported.join(" ")).toContain("--proxy");
+    });
+
+    it("says what a Postman variable in the URL is, and leaves it there", () => {
+      const { draft, unsupported } = parseCurl("curl '{{baseUrl}}/quotation'");
+      expect(draft.url).toBe("{{baseUrl}}/quotation");
+      expect(unsupported.join(" ")).toContain("Postman variable");
+    });
+
+    it("names a PowerShell paste for what it is instead of filling nothing silently", () => {
+      const { draft, unsupported } = parseCurl(`Invoke-WebRequest -Uri "${URL}" -Headers @{"Accept"="application/json"}`);
+      expect(draft.url).toBe("");
+      expect(unsupported.join(" ")).toContain("PowerShell");
+    });
+
+    it("does not let a header carrying a HEAD or OPTIONS request through as GET silently", () => {
+      const { unsupported } = parseCurl(`curl -X OPTIONS ${URL}`);
+      expect(unsupported.join(" ")).toContain("OPTIONS");
+    });
+  });
+
   it("comes back blank rather than throwing on something that is not a command", () => {
     // Somebody pastes a sentence. The form has to survive it.
     const { draft } = parseCurl("please call the policy endpoint");

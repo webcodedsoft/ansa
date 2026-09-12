@@ -102,6 +102,7 @@ export const HttpToolForm = ({
      next paste rather than on edit: somebody who fixes a header should still be able to read
      that their Authorization was dropped. */
   const [imported, setImported] = useState<readonly string[]>([]);
+  const [importedNothing, setImportedNothing] = useState(false);
   const [showProblems, setShowProblems] = useState(false);
   const [fields, setFields] = useState<readonly Found[]>([]);
   const [state, action, pending] = useActionState(saveHttpToolAction, idleForm() as ToolsState);
@@ -127,6 +128,13 @@ export const HttpToolForm = ({
    */
   const applyCurl = () => {
     const { draft: parsed, unsupported } = parseCurl(curl);
+    /* A paste that yielded no URL — a PowerShell command, a sentence — fills nothing, and
+       the fields somebody already had are worth more than an empty overwrite. */
+    if (parsed.url === "") {
+      setImported(unsupported);
+      setImportedNothing(true);
+      return;
+    }
     edit({
       url: parsed.url,
       method: parsed.method,
@@ -134,6 +142,7 @@ export const HttpToolForm = ({
       headers: parsed.headers,
     });
     setImported(unsupported);
+    setImportedNothing(false);
   };
 
   const problems = useMemo(
@@ -249,8 +258,9 @@ export const HttpToolForm = ({
                   placeholder="curl -X POST https://api.example.com/customers -H 'Accept: application/json'"
                 />
                 {imported.length > 0 && (
-                  <Notice tone="warn">
-                    Filled in what it could. It did not take {imported.join("; ")}.
+                  <Notice tone={importedNothing ? "error" : "warn"}>
+                    {importedNothing ? "Nothing could be filled in from this. It did not take" : "Filled in what it could. It did not take"}{" "}
+                    {imported.join("; ")}.
                   </Notice>
                 )}
                 <div>
