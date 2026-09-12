@@ -26,6 +26,7 @@ import {
   METHODS,
   PARAM_TYPES,
   RISK_TIERS,
+  TIMEOUT_PRESETS_MS,
   emptyDraft,
   fieldsIn,
   hostOf,
@@ -668,13 +669,13 @@ export const HttpToolForm = ({
             <ChoiceChips
               label="Timeout"
               name="timeoutMs"
-              presets={[1000, 2000, 3000, 5000, 10000]}
+              presets={[...TIMEOUT_PRESETS_MS]}
               format={millisLabel}
               none="Default"
               value={draft.timeoutMs === "" ? null : Number(draft.timeoutMs)}
               onChange={(next) => edit({ timeoutMs: next === null ? "" : String(next) })}
               error={problem("timeoutMs")}
-              hint="A caller hears holding speech for however long this is, then the fallback line."
+              hint="A caller hears holding speech for however long this is, then the fallback line. Three seconds is the most a phone line allows."
             />
           </Stack>
         </Card>

@@ -98,6 +98,18 @@ export const emptyDraft = (): HttpToolDraft => ({
   timeoutMs: "",
 });
 
+/**
+ * The most a tool may wait, in milliseconds. The API's `HARD_TIMEOUT_MS`, repeated here so
+ * the console offers nothing the API will refuse: past this a caller has been listening to
+ * holding speech for three seconds and the call is abandoned. A chat product could wait
+ * longer; a voice product cannot. Offering 5s and 10s here and refusing them on save was
+ * the console promising something the product does not do.
+ */
+export const TIMEOUT_CEILING_MS = 3000;
+
+/** The chips the timeout field offers: every one of them is one the API accepts. */
+export const TIMEOUT_PRESETS_MS = [1000, 1500, 2000, 2500, 3000] as const;
+
 export const placeholdersIn = (text: string): readonly string[] => [
   ...new Set([...text.matchAll(PLACEHOLDER)].map((match) => match[1] ?? "")),
 ];
@@ -329,6 +341,8 @@ export const problemsWith = (
 
   if (draft.timeoutMs !== "" && !/^\d+$/.test(draft.timeoutMs)) {
     out["timeoutMs"] = "Whole milliseconds, or leave it blank.";
+  } else if (draft.timeoutMs !== "" && Number(draft.timeoutMs) > TIMEOUT_CEILING_MS) {
+    out["timeoutMs"] = `At most ${TIMEOUT_CEILING_MS / 1000} seconds. A caller on a phone line cannot be kept waiting longer.`;
   }
 
   return out;

@@ -27,6 +27,7 @@ import {
   METHODS,
   PARAM_TYPES,
   RISK_TIERS,
+  TIMEOUT_PRESETS_MS,
   emptyDraft,
   problemsWith,
   toApiTool,
@@ -573,12 +574,13 @@ export const QuickToolForm = ({ configVersion, takenNames, allowPlaintextHttp, c
           <ChoiceChips
             label="Timeout"
             name="timeoutMs"
-            presets={[1000, 2000, 3000, 5000, 10000]}
+            presets={[...TIMEOUT_PRESETS_MS]}
             format={millisLabel}
             none="Default"
             value={draft.timeoutMs === "" ? null : Number(draft.timeoutMs)}
             onChange={(next) => edit({ timeoutMs: next === null ? "" : String(next) })}
             error={problem("timeoutMs")}
+            hint="Three seconds is the most a phone line allows."
           />
         </Stack>
       )}

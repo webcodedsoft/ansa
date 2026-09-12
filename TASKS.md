@@ -6177,6 +6177,13 @@ rather than landed as inventory — the wave that needs them adds them wired.
       first. Seen live against the Leadway sample: `{ve` offered vehicleColor, vehicleMake,
       vehicleModel and vehicleStatus; Enter took vehicleMake; the ownerName chip landed
       mid-sentence before the full stop. Not saved.
+- [x] **The timeout chips offer only what the API accepts** (2026-09-12)
+      "Timeout ms must be at most 3000." The console offered 5s and 10s chips and the API
+      refused them on save — rightly: `HARD_TIMEOUT_MS` is three seconds because past that a
+      caller has been listening to holding speech and the call is abandoned (R5.4.1). The
+      chips are 1s, 1.5s, 2s, 2.5s and 3s now, the console checks the ceiling itself with a
+      sentence that says why, and the hint under the field says three seconds is the most
+      a phone line allows. Both builders.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.
