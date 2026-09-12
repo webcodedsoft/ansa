@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { GroupRow, Table, Tag, Td, Th } from "@/components/ui";
+import { GroupRow, LinkRow, Table, Tag, Td, Th } from "@/components/ui";
 import { dayLabel, duration, phone, timeOfDay } from "@/lib/format";
 
 import type { CallSummary } from "../calls.service";
@@ -78,7 +78,7 @@ export const CallTable = ({ calls }: { readonly calls: readonly CallSummary[] })
                 }
               />
               {day.calls.map((call) => (
-                <tr key={call.id} className="transition-colors hover:bg-[var(--surface-2)]">
+                <LinkRow key={call.id} href={`/calls/${call.id}`}>
                   {/* Widths are declared on the header cells alone now. One table
                       means one column model, so repeating them here would be two
                       sources for one number. */}
@@ -89,20 +89,15 @@ export const CallTable = ({ calls }: { readonly calls: readonly CallSummary[] })
                     </Tag>
                   </Td>
                   <Td className="font-mono text-[13px] font-medium">
-                    {/* The number is the link, and there is no separate "Read"
-                        column — the number is what somebody is looking for anyway.
-                        A whole-row overlay was the alternative and it needs
-                        `position: relative` on a `<tr>`, which browsers do not
-                        treat consistently. */}
-                    <Link href={`/calls/${call.id}`} className="hover:underline">
-                      {phone(counterparty(call))}
-                    </Link>
+                    {/* The whole row opens the call; the number stays a link for
+                        screen readers, middle-click and copy. */}
+                    <Link href={`/calls/${call.id}`}>{phone(counterparty(call))}</Link>
                   </Td>
                   <Td className="text-right tabular-nums">{duration(call.durationSeconds)}</Td>
                   <Td>
                     <Outcome call={call} />
                   </Td>
-                </tr>
+                </LinkRow>
               ))}
             </tbody>
           );

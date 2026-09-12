@@ -1,7 +1,7 @@
 import { UserSearch, Users } from "lucide-react";
 import Link from "next/link";
 
-import { EmptyState, GroupRow, Panel, Table, Td } from "@/components/ui";
+import { EmptyState, GroupRow, LinkRow, Panel, Table, Td } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { phone, when } from "@/lib/format";
 
@@ -138,7 +138,7 @@ export const ContactsDirectory = ({
             {band.people.map((person) => {
               const context = contextOf(person);
               return (
-                <tr key={person.id} className="transition-colors hover:bg-[var(--surface-2)]">
+                <LinkRow key={person.id} href={`/contacts/${person.id}`}>
                   <Td>
                     <Link href={`/contacts/${person.id}`} className="flex items-center gap-3">
                       {/* Round, because it stands for a person. Every other small square on
@@ -182,7 +182,7 @@ export const ContactsDirectory = ({
                   <Td className="w-[150px] text-right text-[12.5px] whitespace-nowrap text-[var(--ink-3)]">
                     {person.lastCallAt === null ? "—" : when(person.lastCallAt)}
                   </Td>
-                </tr>
+                </LinkRow>
               );
             })}
           </tbody>

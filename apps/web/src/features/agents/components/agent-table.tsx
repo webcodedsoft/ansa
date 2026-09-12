@@ -108,7 +108,7 @@ export const AgentCards = ({ agents }: { readonly agents: readonly AgentRow[] })
         <span className="flex items-start gap-3">
           <Avatar name={agent.name} />
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[14.5px] font-semibold tracking-[-0.012em] group-hover:underline">
+            <span className="block truncate text-[14.5px] font-semibold tracking-[-0.012em]">
               {agent.name}
             </span>
             <span className="line-clamp-2 text-[12.5px] leading-snug text-[var(--ink-3)]">{agent.summary}</span>

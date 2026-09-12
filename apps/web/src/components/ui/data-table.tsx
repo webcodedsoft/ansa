@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
 
 import { EmptyState, Table, Td, Th, Tr } from "./feedback";
+import { LinkRow } from "./link-row";
 
 /**
  * One column, described rather than drawn.
@@ -45,6 +46,8 @@ export interface DataTableProps<T> {
    * alone.
    */
   readonly renderRow?: (row: T) => ReactNode;
+  /** Where a row opens when clicked, or null for a row that opens nothing. */
+  readonly rowHref?: (row: T) => string | null;
 }
 
 /**
@@ -55,7 +58,7 @@ export interface DataTableProps<T> {
  * lying about the whole set — and pagination is `Pagination`, next to it,
  * because a cursor belongs to the URL and not to a component's state.
  */
-export const DataTable = <T,>({ rows, columns, rowKey, empty, renderRow }: DataTableProps<T>) => {
+export const DataTable = <T,>({ rows, columns, rowKey, empty, renderRow, rowHref }: DataTableProps<T>) => {
   if (rows.length === 0) {
     return <EmptyState title={empty.title}>{empty.description}</EmptyState>;
   }
@@ -83,16 +86,24 @@ export const DataTable = <T,>({ rows, columns, rowKey, empty, renderRow }: DataT
           renderRow !== undefined ? (
             renderRow(row)
           ) : (
-            <Tr key={rowKey(row)}>
-              {columns.map((column) => (
+            (() => {
+              const cells = columns.map((column) => (
                 <Td
                   key={column.key}
                   className={cn(column.width, column.align === "right" && "text-right", column.className)}
                 >
                   {column.cell(row)}
                 </Td>
-              ))}
-            </Tr>
+              ));
+              const href = rowHref?.(row) ?? null;
+              return href === null ? (
+                <Tr key={rowKey(row)}>{cells}</Tr>
+              ) : (
+                <LinkRow key={rowKey(row)} href={href}>
+                  {cells}
+                </LinkRow>
+              );
+            })()
           ),
         )}
       </tbody>

@@ -6208,6 +6208,21 @@ rather than landed as inventory — the wave that needs them adds them wired.
       "Edit as JSON Schema" was a one-way door: nothing returned to the rows. "Back to rows"
       does, whenever the JSON still fits them; when it holds something the rows would lose
       the button is disabled with the reason, and the notice says which case it is.
+- [x] **Rows open, cards do not underline, nested dialogs stay open** (2026-09-12)
+      Three small things from the same afternoon. The agent card underlined its name on
+      hover — a link's habit on something that is a card; the border change already says
+      it is one thing, so the underline is gone. Every list had one cell that was a link and
+      a whole row that looked clickable and was not: `LinkRow` is a `<tr>` that opens a
+      page on click (declining clicks on a control inside it, on a text selection, or with
+      Shift or Alt held; Cmd or Ctrl opens a new tab; Enter on a focused row opens it), and
+      the inner link stays for screen readers, middle-click and copy. Used by the calls
+      list, the contacts directory, an agent's recent calls and its dataset, a campaign's
+      scheduled calls once a call exists, and the audit log through `DataTable.rowHref`.
+      And picking a template inside the add-a-tool dialog closed the dialog: the gallery
+      is a dialog nested inside it, its `close` is re-dispatched up the React tree, and
+      the outer dialog's `onClose` took it as its own. `Modal` now answers only its own
+      close event. Seen live: a calls row opened from its duration cell; the Oakhaven card
+      hovered without an underline; look_up_customer picked with the dialog still open.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

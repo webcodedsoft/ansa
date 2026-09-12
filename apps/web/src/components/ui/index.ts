@@ -42,3 +42,4 @@ export { SELECT_MENU_CLASS, SelectField, type SelectFieldProps } from "./select"
 export { Pagination } from "./pagination";
 export { Segmented, Tabs, Toggle, type TabDef } from "./tabs";
 export { Stepper, type StepDef } from "./stepper";
+export { LinkRow } from "./link-row";

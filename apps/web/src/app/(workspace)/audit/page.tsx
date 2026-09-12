@@ -120,7 +120,7 @@ const AuditPage = async ({
           </span>
         }
       >
-        <DataTable
+        <DataTable rowHref={subjectHref}
           rows={log.items}
           columns={COLUMNS}
           rowKey={(row) => row.id}

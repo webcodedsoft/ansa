@@ -63,7 +63,13 @@ export const Modal = ({
   return (
     <dialog
       ref={ref}
-      onClose={onClose}
+      /* Only this dialog's own close. A dialog nested inside this one — the template
+         gallery inside the add-a-tool dialog — fires `close` when it shuts, and React
+         re-dispatches it up the tree; without the guard the outer dialog shut with it,
+         and picking a template closed the form the template was for. */
+      onClose={(event) => {
+        if (event.target === ref.current) onClose();
+      }}
       /* The backdrop is part of the dialog's own box, so a click landing on the element
          itself rather than on anything inside it is a click outside the panel. */
       onClick={(event) => {

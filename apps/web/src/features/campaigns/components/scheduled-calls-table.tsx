@@ -1,6 +1,8 @@
 import Link from "next/link";
 
-import { EmptyState, Notice, Panel, Table, Tag, Td, Th, Tr } from "@/components/ui";
+import type { ReactNode } from "react";
+
+import { EmptyState, LinkRow, Notice, Panel, Table, Tag, Td, Th, Tr } from "@/components/ui";
 import { phone as formatPhone, when } from "@/lib/format";
 
 import { callStatusLabel, callTone } from "../campaigns.display";
@@ -15,6 +17,10 @@ import type { ScheduledCall } from "../campaigns.service";
  * effect shows, so the legend states it plainly rather than leaving "suppressed" to be read
  * as an error.
  */
+/** A row opens the call it produced, once the carrier has made one. Before that it is a row. */
+const Row = ({ call, children }: { readonly call: ScheduledCall; readonly children: ReactNode }) =>
+  call.callId === null ? <Tr>{children}</Tr> : <LinkRow href={`/calls/${call.callId}`}>{children}</LinkRow>;
+
 export const ScheduledCallsTable = ({ calls }: { readonly calls: readonly ScheduledCall[] }) => {
   if (calls.length === 0) {
     return (
@@ -49,7 +55,7 @@ export const ScheduledCallsTable = ({ calls }: { readonly calls: readonly Schedu
           </thead>
           <tbody>
             {calls.map((call) => (
-              <Tr key={call.id}>
+              <Row key={call.id} call={call}>
                 <Td>
                   <span className="block text-[13.5px] font-medium">
                     {call.displayName ?? "Unnamed caller"}
@@ -86,7 +92,7 @@ export const ScheduledCallsTable = ({ calls }: { readonly calls: readonly Schedu
                 <Td className="text-right text-[12.5px] whitespace-nowrap text-[var(--ink-3)]">
                   {call.nextAttemptAt === null ? "—" : when(call.nextAttemptAt)}
                 </Td>
-              </Tr>
+              </Row>
             ))}
           </tbody>
         </Table>

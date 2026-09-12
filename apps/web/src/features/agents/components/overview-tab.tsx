@@ -1,19 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import {
-  Blip,
-  EmptyState,
-  Panel,
-  SectionHead,
-  Stack,
-  Stat,
-  Table,
-  Tag,
-  Td,
-  Th,
-  type Tone,
-} from "@/components/ui";
+import { Blip, EmptyState, LinkRow, Panel, SectionHead, Stack, Stat, Table, Tag, Td, Th, type Tone } from "@/components/ui";
 import type { CallSummary } from "@/features/calls/calls.service";
 import { OutcomeTag } from "@/features/calls/components/outcome-tag";
 import { outcomeOf } from "@/features/calls/outcome";
@@ -165,10 +153,10 @@ export const OverviewTab = ({
           </thead>
           <tbody>
             {recentCalls.map((call) => (
-              <tr key={call.id} className="transition-colors hover:bg-[var(--surface-2)]">
+              <LinkRow key={call.id} href={`/calls/${call.id}`}>
                 <Td className="whitespace-nowrap tabular-nums">{timeOfDay(call.createdAt)}</Td>
                 <Td className="font-mono text-[13px] font-medium">
-                  <Link href={`/calls/${call.id}`} className="hover:underline">
+                  <Link href={`/calls/${call.id}`}>
                     {phone(
                       call.direction === "outbound" ? call.dialled : (call.caller ?? "unknown"),
                     )}
@@ -185,7 +173,7 @@ export const OverviewTab = ({
                     <OutcomeTag outcome={outcomeOf(call.endReason, call.endedAt !== null)} />
                   )}
                 </Td>
-              </tr>
+              </LinkRow>
             ))}
           </tbody>
         </Table>

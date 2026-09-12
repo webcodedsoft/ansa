@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { EmptyState, Table, Td, Th, Tr, Tag } from "@/components/ui";
+import { EmptyState, LinkRow, Table, Td, Th, Tr, Tag } from "@/components/ui";
 import { when } from "@/lib/format";
 
 import { label, type AgentColumn, type Pivoted } from "../captures";
@@ -64,11 +64,12 @@ export const AgentDataset = ({
       </thead>
       <tbody>
         {pivoted.calls.map((call) => (
-          <Tr key={call.callId}>
+          <LinkRow key={call.callId} href={`/calls/${call.callId}`}>
             <Td className="whitespace-nowrap text-[var(--ink-3)]">
               {/* Through to the call, because the next question after "what did they say" is
-                  almost always "what else happened on that call". */}
-              <Link href={`/calls/${call.callId}`} className="hover:text-[var(--ink)] hover:underline">
+                  almost always "what else happened on that call". The row opens it; the
+                  date stays a link for screen readers and middle-click. */}
+              <Link href={`/calls/${call.callId}`} className="hover:text-[var(--ink)]">
                 {when(call.calledAt)}
               </Link>
             </Td>
@@ -90,7 +91,7 @@ export const AgentDataset = ({
                 </Td>
               );
             })}
-          </Tr>
+          </LinkRow>
         ))}
       </tbody>
     </Table>
