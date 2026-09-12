@@ -6301,7 +6301,8 @@ rather than landed as inventory — the wave that needs them adds them wired.
       misheard. Four sections added, each from a real call and none a word list (a list
       gets reached for and swallows a surname; a rule about sounds does not): the sound
       rules — th to t/d, v/f and s/z swapping, vowel merger, h dropping or appearing,
-      endings dropping, and a run of small wrong words being one sentence to rebuild; the
+      endings dropping, and a run of small wrong words being one sentence to rebuild, with
+      one illustration and no example vocabulary, so it holds for any business's words; the
       letter pairs that merge when spelling (F/S; B D E G P T V; M/N), try the swap before
       asking, ask about the one letter; a confirmed value beats a fresh transcript that
       contradicts it; and a question with a shape is read against the shape, nearest

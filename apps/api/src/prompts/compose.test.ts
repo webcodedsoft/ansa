@@ -35,7 +35,8 @@ describe("the composition", () => {
       // and "I want you to get my..." arriving as "I also said they get my...". The sound
       // rules, the letter pairs, confirmed-beats-heard, and read-against-the-shape.
       "Read the sounds, not the letters:",
-      "\"tree\" is three",
+      "so \"tree\" may be three.",
+      "Rebuild the sentence from its sounds and answer that one.",
       "the letters that merge are F and S; B, D, E, G, P, T and V; M and N.",
       "\"F for Fish, or S for Sun?\"",
       "Something they confirmed earlier beats a fresh transcript that contradicts it.",

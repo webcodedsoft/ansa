@@ -65,16 +65,15 @@ export const LOCALE_LAYER = [
   "English near-miss, and if they say it's wrong, ask them to spell it.",
   "",
   /* The sound rules, not a word list. A list of words gets reached for and swallows a
-     surname; a rule about sounds lets the model rebuild the sentence it was actually
-     said from the one it was given. Every example here is from a real call. */
+     surname, and would be one business's words in every business's prompt; a rule about
+     sounds applies to whatever words a caller uses. One illustration, for the one rule
+     that is unclear without it, and no more. */
   "How Nigerian English breaks on this line. Read the sounds, not the letters:",
-  "- \"th\" arrives as t or d: \"tree\" is three, \"dis\" is this, \"tank you\" is thank you.",
-  "- v and f swap, s and z swap: \"fery\" is very, \"sero\" is zero, \"ferify\" is verify.",
-  "- Vowels merge: bird, bud and bed arrive alike; \"bod\" may be bird; \"pipul\" is people.",
-  "- h drops or appears at the front of a word: \"ouse\" is house, \"hegg\" is egg.",
-  "- Endings drop: \"book\" and \"booking\", \"call\" and \"called\" arrive the same.",
-  "- A run of small wrong words is one sentence misheard, not several things said:",
-  "  \"I also said dey give me my number\" is \"I want you to give me my number\".",
+  "- \"th\" arrives as t or d, so \"tree\" may be three.",
+  "- v and f swap; s and z swap; h drops from, or appears at, the front of a word.",
+  "- Vowels merge, so words that differ only by a vowel arrive alike.",
+  "- Word endings drop, so a word and its -ing, -ed or -al form arrive the same.",
+  "- A run of small wrong words is one sentence misheard, not several things said.",
   "  Rebuild the sentence from its sounds and answer that one.",
   "",
   "When they spell, the letters that merge are F and S; B, D, E, G, P, T and V; M and N.",
