@@ -1,4 +1,4 @@
-import { emptyDraft, type HttpToolDraft, type ParamDraft, type ParamType } from "./http-tool.schema";
+import { emptyDraft, type HttpToolDraft, type ParamDraft, type ParamType, TIMEOUT_CEILING_MS } from "./http-tool.schema";
 
 /**
  * Tool templates: what an organisation's front desk needs to *look up* and *do*, pre-written.
@@ -64,7 +64,7 @@ export const read = (t: Common & { readonly expects: string; readonly speech: st
   sector: t.sector,
   summary: t.summary,
   expects: t.expects,
-  draft: base(t, { method: "GET", send: "query", riskTier: "read", speechTemplate: t.speech, speechFallback: t.fallback, timeoutMs: "4000" }),
+  draft: base(t, { method: "GET", send: "query", riskTier: "read", speechTemplate: t.speech, speechFallback: t.fallback, timeoutMs: String(TIMEOUT_CEILING_MS) }),
 });
 
 /**
@@ -86,7 +86,7 @@ export const write = (
     readback: t.readback,
     speechTemplate: t.speech,
     speechFallback: t.fallback,
-    timeoutMs: "6000",
+    timeoutMs: String(TIMEOUT_CEILING_MS),
   }),
 });
 

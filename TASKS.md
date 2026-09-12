@@ -6184,6 +6184,9 @@ rather than landed as inventory — the wave that needs them adds them wired.
       chips are 1s, 1.5s, 2s, 2.5s and 3s now, the console checks the ceiling itself with a
       sentence that says why, and the hint under the field says three seconds is the most
       a phone line allows. Both builders.
+      The check then caught the bigger version of the same fault: every one of the 93
+      templates carried a timeout over the ceiling — 4s for a lookup, 6s for a write — so
+      every template failed on save with the same message. Both are the ceiling now.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.
