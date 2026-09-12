@@ -45,9 +45,9 @@ export const DESTINATIONS: readonly Destination[] = [
 
   { href: "/organisation", label: "Organisation", group: "Organisation", capability: "config:read" },
   { href: "/audit", label: "Audit log", group: "Organisation", capability: "calls:read" },
-  /* Yours, not the organisation's. Reached from your name in the sidebar footer and the
-     palette; no capability, because being signed in is the only qualification. */
-  { href: "/account", label: "Your account", group: "Organisation", inSidebar: false },
+  /* Yours, not the organisation's. No capability, because being signed in is the only
+     qualification. Also reachable from your name in the footer. */
+  { href: "/account", label: "Your account", group: "Organisation" },
 ];
 
 export const allowedDestinations = (capabilities: readonly string[]): readonly Destination[] =>

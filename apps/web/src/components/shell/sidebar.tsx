@@ -4,7 +4,7 @@ import {
   Building2,
   Bot, CalendarDays, ChevronsUpDown, ClipboardList, Contact, Hash, KeyRound,
   LogOut, Megaphone, PhoneCall, Plus, ScrollText,
-  Webhook, Wrench,
+  UserRound, Webhook, Wrench,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -43,6 +43,7 @@ const ICONS: Record<string, ComponentType<{ className?: string }>> = {
   "/credentials": KeyRound,
   // An invitation is a letter not yet answered, which is not the same as a member.
   "/organisation": Building2,
+  "/account": UserRound,
   "/audit": ScrollText,
 };
 
