@@ -4,6 +4,8 @@ import { useEffect, useRef, type ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
 
+import { Button } from "./button";
+
 /**
  * A modal, on the platform's own `<dialog>`.
  *
@@ -95,3 +97,64 @@ export const Modal = ({
     </dialog>
   );
 };
+
+
+/**
+ * A question before something that cannot be taken back.
+ *
+ * One shape for every remove, delete, revoke and retire in the console. It replaces three
+ * things that were doing the job unevenly: the browser's `window.confirm`, which looks like
+ * nothing else on the page and cannot be styled; inline "Confirm remove / Cancel" pairs that
+ * reflowed the row they sat in; and, on some controls, nothing at all.
+ *
+ * The confirming button carries the verb — "Remove Sikiru", not "OK" — so the dialog can be
+ * read by its buttons alone. `pending` is threaded through so the dialog stays open and busy
+ * while the action runs, rather than closing on a click and reporting the failure somewhere
+ * the person is no longer looking.
+ */
+export const ConfirmDialog = ({
+  open,
+  onClose,
+  onConfirm,
+  title,
+  description,
+  confirmLabel,
+  cancelLabel = "Keep it",
+  pending = false,
+  children,
+}: {
+  readonly open: boolean;
+  readonly onClose: () => void;
+  readonly onConfirm: () => void;
+  readonly title: string;
+  readonly description?: ReactNode;
+  /** The verb and its object: "Remove Sikiru", "Delete the credential". */
+  readonly confirmLabel: ReactNode;
+  readonly cancelLabel?: ReactNode;
+  readonly pending?: boolean;
+  /** What will happen, in a sentence or three. */
+  readonly children?: ReactNode;
+}) => (
+  <Modal
+    open={open}
+    onClose={() => {
+      if (!pending) onClose();
+    }}
+    title={title}
+    description={description}
+    footer={
+      <>
+        <Button onClick={onClose} disabled={pending}>
+          {cancelLabel}
+        </Button>
+        <Button variant="danger" onClick={onConfirm} pending={pending}>
+          {confirmLabel}
+        </Button>
+      </>
+    }
+  >
+    {children === undefined ? null : (
+      <div className="text-[13.5px] leading-relaxed text-[var(--ink-2)]">{children}</div>
+    )}
+  </Modal>
+);

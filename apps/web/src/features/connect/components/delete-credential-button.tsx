@@ -1,8 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
+import { startTransition, useActionState, useState } from "react";
 
-import { Notice, SubmitButton } from "@/components/ui";
+import { Button, ConfirmDialog, Notice } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 import { useFormToast } from "@/stores/toast.store";
 
@@ -23,23 +23,35 @@ export const DeleteCredentialButton = ({
   readonly inUse: boolean;
 }) => {
   const [state, action, pending] = useActionState(deleteCredential, START);
+  const [asking, setAsking] = useState(false);
 
   useFormToast(state, () => `Deleted ${credentialRef}.`);
 
   return (
-    <form
-      action={action}
-      onSubmit={(event) => {
-        const message = inUse
-          ? `${credentialRef} is currently in use by a tool or an event subscription. Delete it anyway?`
-          : `Delete ${credentialRef}? This cannot be undone.`;
-        if (!window.confirm(message)) event.preventDefault();
-      }}
-    >
+    <form action={action}>
       <input type="hidden" name="ref" value={credentialRef} />
       <div className="flex justify-end">
-        <SubmitButton pending={pending} variant="danger" size="sm" idle="Delete" />
+        <Button variant="danger" size="sm" onClick={() => setAsking(true)} pending={pending}>
+          Delete
+        </Button>
       </div>
+      <ConfirmDialog
+        open={asking}
+        onClose={() => setAsking(false)}
+        onConfirm={() => {
+          setAsking(false);
+          const form = new FormData();
+          form.set("ref", credentialRef);
+          startTransition(() => action(form));
+        }}
+        title={`Delete ${credentialRef}?`}
+        confirmLabel="Delete the credential"
+        pending={pending}
+      >
+        {inUse
+          ? "A tool or an event subscription uses this credential now. Deleting it means the next call that reaches that tool fails until a replacement is set."
+          : "This cannot be undone. A tool added later that needs it will have to be given a new one."}
+      </ConfirmDialog>
       {state.status === "failed" && (
         <Notice tone="error" className="mt-1.5 max-w-64 text-xs">
           {state.message}

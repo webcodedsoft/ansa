@@ -5822,6 +5822,27 @@ rather than landed as inventory — the wave that needs them adds them wired.
       Pinned in `many-numbers.test.ts`: refused without the flag, moved with it, the old number
       left with nobody. Not seen on screen: the browser extension could not reach the
       workspace's controls, so the modal is verified as the same primitive Members uses.
+- [x] **Every remove, delete, revoke and retire asks first, in one shape** (2026-09-12)
+      Twelve destructive controls were doing it three different ways: `window.confirm` on the
+      credential delete, the agent retire and the webhook rotation — the browser's own box,
+      styled like nothing else on the page; inline "Confirm remove / Cancel" pairs on member
+      removal and do-not-call, which reflowed the row they sat in; and on six controls
+      nothing at all — revoke an invitation, retire a knowledge source, remove a tool from the
+      registry, remove a form field, remove a knowledge piece, remove a webhook receiver.
+
+      `ConfirmDialog` is now the one shape. The confirming button carries the verb and its
+      object — "Remove Sikiru", "Retire the source" — so the dialog reads by its buttons alone,
+      and each body says what actually happens: a removed member keeps their name on what
+      they reviewed and can be invited again; a retired agent's campaigns stop dialling; a
+      removed tool's credential is not deleted; a removed webhook receiver changes nothing
+      until the settings are saved. `pending` is threaded through so the dialog stays open and
+      busy while the action runs rather than closing and reporting a failure where nobody is
+      looking. Zero `window.confirm` calls remain.
+
+      Also this pass: the invite modal is email, three role cards that say what each role can
+      do in the words `capability.ts` grants, and a footer — a native select had opened over
+      the modal and scrolled its title away; and the description no longer claims admins can
+      change roles, which only owners can.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

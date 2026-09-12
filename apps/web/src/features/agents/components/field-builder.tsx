@@ -3,7 +3,7 @@
 import { GripVertical, Plus } from "lucide-react";
 import { useState, useTransition } from "react";
 
-import { Button, ChoiceChips, CONTROL, Notice, Panel, PanelBody, Segmented, SelectField, SettingRow, Tag, Toggle } from "@/components/ui";
+import { Button, ChoiceChips, ConfirmDialog, CONTROL, Notice, Panel, PanelBody, Segmented, SelectField, SettingRow, Tag, Toggle } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
 import { saveCapturedFields } from "../agents.actions";
@@ -116,6 +116,7 @@ export const FieldBuilder = ({
     setFields((all) => [...all, blankField(all.length)]);
   };
 
+  const [removing, setRemoving] = useState(false);
   const remove = (): void => {
     setSaved(false);
     setFields((all) => all.filter((_, i) => i !== selected));
@@ -237,9 +238,22 @@ export const FieldBuilder = ({
                     {current.key === "" ? "Untitled field" : current.key}
                   </h3>
                 </div>
-                <Button type="button" size="sm" variant="danger" onClick={remove} className="flex-none">
+                <Button type="button" size="sm" variant="danger" onClick={() => setRemoving(true)} className="flex-none">
                   Remove
                 </Button>
+                <ConfirmDialog
+                  open={removing}
+                  onClose={() => setRemoving(false)}
+                  onConfirm={() => {
+                    setRemoving(false);
+                    remove();
+                  }}
+                  title={`Remove ${current.key === "" ? "this field" : `"${current.key}"`}?`}
+                  confirmLabel="Remove the field"
+                >
+                  The agent stops asking for it on the next published version. Values already
+                  collected under it stay on the calls and contacts that hold them.
+                </ConfirmDialog>
               </div>
 
               <div className="flex flex-col gap-4">

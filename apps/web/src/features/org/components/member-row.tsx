@@ -1,8 +1,8 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { startTransition, useActionState, useState } from "react";
 
-import { Button, Notice, Row, SelectField, SubmitButton, Tag, Td, Tr } from "@/components/ui";
+import { Button, ConfirmDialog, Notice, Row, SelectField, SubmitButton, Tag, Td, Tr } from "@/components/ui";
 import { dayLabel } from "@/lib/format";
 import { idleForm } from "@/lib/form-state";
 
@@ -106,33 +106,36 @@ export const MemberRow = ({
       <Td className="text-[12.5px] whitespace-nowrap text-[var(--ink-3)]">{dayLabel(member.createdAt)}</Td>
       <Td>
         {canWrite && (
-          <form action={removeAction}>
-            <input type="hidden" name="userId" value={member.userId} />
+          <>
             {isLastOwner ? (
               <p className="text-[11.5px] text-[var(--ink-3)]">The last owner cannot be removed.</p>
-            ) : confirmingRemove ? (
-              <Row>
-                <SubmitButton
-                  pending={removePending}
-                  idle="Confirm remove"
-                  variant="danger"
-                  size="sm"
-                />
-                <Button size="sm" onClick={() => setConfirmingRemove(false)} disabled={removePending}>
-                  Cancel
-                </Button>
-              </Row>
             ) : (
-              <Button size="sm" variant="ghost" onClick={() => setConfirmingRemove(true)}>
+              <Button size="sm" variant="ghost" onClick={() => setConfirmingRemove(true)} pending={removePending}>
                 Remove
               </Button>
             )}
+            <ConfirmDialog
+              open={confirmingRemove}
+              onClose={() => setConfirmingRemove(false)}
+              onConfirm={() => {
+                setConfirmingRemove(false);
+                const form = new FormData();
+                form.set("userId", member.userId);
+                startTransition(() => removeAction(form));
+              }}
+              title={`Remove ${member.displayName}?`}
+              confirmLabel={`Remove ${member.displayName}`}
+              pending={removePending}
+            >
+              They lose access to this organisation the moment this is confirmed. Calls they
+              reviewed and values they corrected keep their name. They can be invited again.
+            </ConfirmDialog>
             {removeState.status === "failed" && (
               <Notice tone="error" className="mt-2">
                 {removeState.message}
               </Notice>
             )}
-          </form>
+          </>
         )}
       </Td>
     </Tr>

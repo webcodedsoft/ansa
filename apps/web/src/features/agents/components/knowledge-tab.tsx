@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useActionState, useEffect, useMemo, useRef, useState } from "react";
 
 import { FileText } from "lucide-react";
 
@@ -9,6 +9,7 @@ import {
   CONTROL,
   Card,
   CheckboxField,
+  ConfirmDialog,
   EmptyState,
   FieldError,
   Notice,
@@ -257,18 +258,33 @@ const RetireSource = ({ sourceId, name }: { readonly sourceId: string; readonly 
   const [state, action, pending] = useActionState(removeKnowledgeSourceAction, START);
   useFormToast(state, () => `Retired ${name}.`);
 
+  const [asking, setAsking] = useState(false);
   const retire = () => {
+    setAsking(false);
     const form = new FormData();
     form.set("sourceId", sourceId);
-    action(form);
+    startTransition(() => action(form));
   };
 
   // Danger rather than secondary: retiring a source stops retrieval for every agent using it,
   // and it read as ordinary as the button beside it.
   return (
-    <Button pending={pending} type="button" variant="danger" onClick={retire} disabled={pending}>
-      Retire
-    </Button>
+    <>
+      <Button pending={pending} type="button" variant="danger" onClick={() => setAsking(true)}>
+        Retire
+      </Button>
+      <ConfirmDialog
+        open={asking}
+        onClose={() => setAsking(false)}
+        onConfirm={retire}
+        title={`Retire "${name}"?`}
+        confirmLabel="Retire the source"
+        pending={pending}
+      >
+        Every agent that answers from it stops, from the next call. The document is kept;
+        nothing is retrieved from it until it is stored again.
+      </ConfirmDialog>
+    </>
   );
 };
 
@@ -662,6 +678,7 @@ const EditSource = ({
     setSelected(to);
   };
 
+  const [removing, setRemoving] = useState(false);
   const removeSelected = () => {
     setUnits(units.filter((_, at) => at !== selected));
     setSelected(Math.max(0, Math.min(selected, units.length - 2)));
@@ -821,9 +838,22 @@ const EditSource = ({
                   >
                     Move down
                   </Button>
-                  <Button type="button" size="sm" variant="danger" onClick={removeSelected}>
+                  <Button type="button" size="sm" variant="danger" onClick={() => setRemoving(true)}>
                     Remove
                   </Button>
+                  <ConfirmDialog
+                    open={removing}
+                    onClose={() => setRemoving(false)}
+                    onConfirm={() => {
+                      setRemoving(false);
+                      removeSelected();
+                    }}
+                    title="Remove this piece?"
+                    confirmLabel="Remove it"
+                  >
+                    Its question and answer go from this source. Nothing is stored until you
+                    press Store source, so nothing changes for callers until then.
+                  </ConfirmDialog>
                 </div>
                 <TextField
                   label="Question it answers"

@@ -1,9 +1,9 @@
 "use client";
 
 import { PhoneOff, ShieldCheck, ShieldOff } from "lucide-react";
-import { useActionState, useState } from "react";
+import { startTransition, useActionState, useState } from "react";
 
-import { Button, Card, Tag } from "@/components/ui";
+import { Button, Card, ConfirmDialog, Tag } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
 import { suppressContactAction } from "../contacts.actions";
@@ -94,33 +94,33 @@ export const ContactConsent = ({
             <p className="m-0 text-[12px] text-[var(--ok)]">{state.message}</p>
           )
         ) : (
-          <form action={submit} className="border-t border-[var(--surface-line)] pt-2.5">
-            <input type="hidden" name="contactId" value={contactId} />
-            <input type="hidden" name="reason" value="Added from the contact page" />
-            {confirming ? (
-              <div className="flex flex-col gap-2">
-                <p className="m-0 text-[12px] leading-relaxed text-[var(--ink-2)]">
-                  This holds everywhere and for good — no screen here lifts it again.
-                </p>
-                <div className="flex items-center gap-2">
-                  <Button pending={pending} type="submit" variant="primary" disabled={pending}>
-                    Yes, never ring this number
-                  </Button>
-                  <Button type="button" variant="secondary" onClick={() => setConfirming(false)}>
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <Button type="button" variant="secondary" onClick={() => setConfirming(true)}>
-                <PhoneOff aria-hidden className="size-3.5" />
-                Add to do-not-call
-              </Button>
-            )}
+          <div className="border-t border-[var(--surface-line)] pt-2.5">
+            <Button type="button" variant="secondary" onClick={() => setConfirming(true)} pending={pending}>
+              <PhoneOff aria-hidden className="size-3.5" />
+              Add to do-not-call
+            </Button>
+            <ConfirmDialog
+              open={confirming}
+              onClose={() => setConfirming(false)}
+              onConfirm={() => {
+                setConfirming(false);
+                const form = new FormData();
+                form.set("contactId", contactId);
+                form.set("reason", "Added from the contact page");
+                startTransition(() => submit(form));
+              }}
+              title="Never ring this number?"
+              confirmLabel="Yes, never ring it"
+              cancelLabel="Leave it"
+              pending={pending}
+            >
+              This holds everywhere and for good — it outranks every consent record, and no
+              screen here lifts it again. The dispatch path checks it on every call.
+            </ConfirmDialog>
             {state.status === "failed" && (
               <p className="mt-2 mb-0 text-[12px] text-[var(--bad)]">{state.message}</p>
             )}
-          </form>
+          </div>
         )}
       </div>
     </Card>

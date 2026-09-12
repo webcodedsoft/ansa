@@ -1,8 +1,8 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { startTransition, useActionState, useState } from "react";
 
-import { Button, EmptyState, Notice, Panel, Stack, Tag, type Tone } from "@/components/ui";
+import { Button, ConfirmDialog, EmptyState, Notice, Panel, Stack, Tag, type Tone } from "@/components/ui";
 import { when } from "@/lib/format";
 import { idleForm } from "@/lib/form-state";
 import { useFormToast } from "@/stores/toast.store";
@@ -175,13 +175,29 @@ const RemoveTool = ({
   const [state, action, pending] = useActionState(deleteHttpToolAction, START);
   useFormToast(state, () => `Removed ${name}.`);
 
+  const [asking, setAsking] = useState(false);
   return (
-    <form action={action}>
-      <input type="hidden" name="name" value={name} />
-      <input type="hidden" name="expectedVersion" value={configVersion} />
-      <Button pending={pending} type="submit" variant="secondary" disabled={pending}>
+    <>
+      <Button pending={pending} type="button" variant="secondary" onClick={() => setAsking(true)}>
         Remove
       </Button>
-    </form>
+      <ConfirmDialog
+        open={asking}
+        onClose={() => setAsking(false)}
+        onConfirm={() => {
+          setAsking(false);
+          const form = new FormData();
+          form.set("name", name);
+          form.set("expectedVersion", String(configVersion));
+          startTransition(() => action(form));
+        }}
+        title={`Remove ${name} from the registry?`}
+        confirmLabel={`Remove ${name}`}
+        pending={pending}
+      >
+        Every agent that has it selected loses it on its next published version, and a call
+        that would have used it says it cannot. Its credential is not deleted.
+      </ConfirmDialog>
+    </>
   );
 };

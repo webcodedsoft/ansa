@@ -1,12 +1,13 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState } from "react";
 
 import Link from "next/link";
 
 import {
   Blip,
   Button,
+  ConfirmDialog,
   Modal,
   Notice,
   SubmitButton,
@@ -288,6 +289,7 @@ export const AgentWorkspace = ({
   }, [dirty, busy]);
   /* When the last quiet save landed. The server's own account of the draft (`draft`) is only
      as fresh as the last reload, which a quiet save does not ask for. */
+  const [confirming, setConfirming] = useState<"retire" | "discard" | null>(null);
   const [autosavedAt, setAutosavedAt] = useState<string | null>(null);
   useEffect(() => {
     if (saveState.status === "succeeded" && saveState.data !== null) setAutosavedAt(saveState.data.updatedAt);
@@ -517,39 +519,63 @@ export const AgentWorkspace = ({
           {/* Retiring is a form of its own rather than a button on the publish form, because it
               is the one action here that is not "save what I typed" — submitting the publish
               form to archive an agent would carry every field on it along for the ride. */}
-          <form
-            action={retire}
-            onSubmit={(event) => {
-              const confirmed = window.confirm(
-                `Retire ${agent.name}? It stops answering immediately and its number is released for another agent. Calls it already handled keep its name.`,
-              );
-              if (!confirmed) event.preventDefault();
+          {/* Danger, not primary: taking an agent off the phone must not render in the same
+              accent as publishing to it. The question is a dialog rather than the browser's
+              own, like every remove in the console. */}
+          <Button variant="danger" onClick={() => setConfirming("retire")} pending={retiring}>
+            Retire
+          </Button>
+          <ConfirmDialog
+            open={confirming === "retire"}
+            onClose={() => setConfirming(null)}
+            onConfirm={() => {
+              setConfirming(null);
+              const form = new FormData();
+              form.set("agentId", agent.agentId);
+              startTransition(() => retire(form));
             }}
+            title={`Retire ${agent.name}?`}
+            confirmLabel={`Retire ${agent.name}`}
+            pending={retiring}
           >
-            <input type="hidden" name="agentId" value={agent.agentId} />
-            {/* Danger, not primary. `SubmitButton` defaults to primary, so taking an agent off
-                the phone rendered in the same accent as publishing a new configuration to it. */}
-            <SubmitButton pending={retiring} idle="Retire" variant="danger" />
-          </form>
+            It stops answering immediately and its number is released for another agent. Calls
+            it already handled keep its name. Its campaigns stop dialling.
+          </ConfirmDialog>
 
           {/* Discard first, and only when there is something to discard. A button offering to
               throw away work that does not exist is furniture, and one sitting there
               permanently beside Publish invites the click it should not get. */}
           {hasDraft && (
-            <Button pending={discarding}
-              onClick={() => {
-                /* The action is called by the button, not by the page, so it has no route to
-                   read the agent from. Same reason the publish form carries a hidden field. */
-                const form = new FormData();
-                form.set("agentId", agent.agentId);
-                setAutosavedAt(null);
-                discard(form);
-              }}
-              disabled={discarding || saving || pending}
-              aria-busy={discarding}
-            >
-              Discard changes
-            </Button>
+            <>
+              <Button
+                pending={discarding}
+                onClick={() => setConfirming("discard")}
+                disabled={saving || pending}
+              >
+                Discard changes
+              </Button>
+              <ConfirmDialog
+                open={confirming === "discard"}
+                onClose={() => setConfirming(null)}
+                onConfirm={() => {
+                  setConfirming(null);
+                  /* The action is called by the button, not by the page, so it has no route
+                     to read the agent from. Same reason the publish form carries a hidden
+                     field. */
+                  const form = new FormData();
+                  form.set("agentId", agent.agentId);
+                  setAutosavedAt(null);
+                  startTransition(() => discard(form));
+                }}
+                title="Discard the unpublished changes?"
+                confirmLabel="Discard them"
+                cancelLabel="Keep editing"
+                pending={discarding}
+              >
+                Everything saved since the last publish goes, on every tab. The published
+                version — what callers hear now — is untouched.
+              </ConfirmDialog>
+            </>
           )}
 
           {/* Save is a submit, so it carries every field on every tab. Publish is not: it

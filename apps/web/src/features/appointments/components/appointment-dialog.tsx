@@ -1,8 +1,8 @@
 "use client";
 
-import { useActionState, useEffect, useId, useMemo, useState } from "react";
+import { startTransition, useActionState, useEffect, useId, useMemo, useState } from "react";
 
-import { Button, ChoiceChips, minutesLabel, Modal, Notice, SelectField, SubmitButton, Tag, TextAreaField, TextField } from "@/components/ui";
+import { Button, ChoiceChips, ConfirmDialog, minutesLabel, Modal, Notice, SelectField, SubmitButton, Tag, TextAreaField, TextField } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 import { useFormToast } from "@/stores/toast.store";
 
@@ -105,6 +105,7 @@ export const AppointmentDialog = ({
   const [editState, edit, editing] = useActionState(editBookingAction, START);
   const [confirmState, confirm, confirming] = useActionState(confirmBookingAction, START);
   const [cancelState, cancel, cancelling] = useActionState(cancelBookingAction, START);
+  const [askingCancel, setAskingCancel] = useState(false);
 
   const booking = target?.kind === "existing" ? target.booking : null;
 
@@ -203,14 +204,28 @@ export const AppointmentDialog = ({
           </Button>
 
           {canWrite && booking !== null && (
-            <form action={cancel} className="contents">
-              <input type="hidden" name="bookingId" value={booking.id} />
-              <SubmitButton
+            <>
+              <Button variant="danger" onClick={() => setAskingCancel(true)} pending={cancelling}>
+                Cancel appointment
+              </Button>
+              <ConfirmDialog
+                open={askingCancel}
+                onClose={() => setAskingCancel(false)}
+                onConfirm={() => {
+                  setAskingCancel(false);
+                  const form = new FormData();
+                  form.set("bookingId", booking.id);
+                  startTransition(() => cancel(form));
+                }}
+                title="Cancel this appointment?"
+                confirmLabel="Cancel the appointment"
+                cancelLabel="Keep it"
                 pending={cancelling}
-                idle="Cancel appointment"
-                variant="danger"
-              />
-            </form>
+              >
+                The slot opens for somebody else. The person is not told by Ansa — if they
+                should know, that is a call or a message to make.
+              </ConfirmDialog>
+            </>
           )}
 
           {canWrite && booking !== null && booking.status === "held" && (

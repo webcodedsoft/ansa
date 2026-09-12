@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 
-import { Button, Card, CheckboxField, CheckboxGroup, ChoiceChips, FieldError, millisLabel, Notice, Row, Stack, SubmitButton, TextAreaField, TextField } from "@/components/ui";
+import { Button, Card, CheckboxField, CheckboxGroup, ChoiceChips, ConfirmDialog, FieldError, millisLabel, Notice, Row, Stack, SubmitButton, TextAreaField, TextField } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 import { useFormToast } from "@/stores/toast.store";
 
@@ -73,6 +73,7 @@ export const WebhooksForm = ({ document }: { readonly document: SubscriptionDocu
   const [subscriptions, setSubscriptions] = useState<readonly SubscriptionDraft[]>(
     draftsFrom(document.subscriptions),
   );
+  const [removing, setRemoving] = useState<number | null>(null);
 
   const updateSubscription = (index: number, patch: Partial<SubscriptionDraft>) =>
     setSubscriptions((prev) => prev.map((entry, i) => (i === index ? { ...entry, ...patch } : entry)));
@@ -132,6 +133,20 @@ export const WebhooksForm = ({ document }: { readonly document: SubscriptionDocu
               <p className="text-[13px] text-[var(--ink-3)]">No receivers configured.</p>
             )}
 
+            <ConfirmDialog
+              open={removing !== null}
+              onClose={() => setRemoving(null)}
+              onConfirm={() => {
+                const at = removing;
+                setRemoving(null);
+                if (at !== null) setSubscriptions((prev) => prev.filter((_, i) => i !== at));
+              }}
+              title={`Remove receiver ${removing === null ? "" : removing + 1}?`}
+              confirmLabel="Remove the receiver"
+            >
+              It stops being sent events once these settings are saved. Nothing changes until
+              you save.
+            </ConfirmDialog>
             {subscriptions.map((subscription, index) => (
               // Index as key: an unsaved draft row has no other stable identity, and rows
               // are only ever appended or removed here, never reordered.
@@ -139,11 +154,7 @@ export const WebhooksForm = ({ document }: { readonly document: SubscriptionDocu
                 <Stack gap="sm">
                   <Row className="justify-between">
                     <span className="text-xs font-medium text-[var(--ink-3)]">Receiver {index + 1}</span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setSubscriptions((prev) => prev.filter((_, i) => i !== index))}
-                    >
+                    <Button variant="ghost" size="sm" onClick={() => setRemoving(index)}>
                       Remove
                     </Button>
                   </Row>

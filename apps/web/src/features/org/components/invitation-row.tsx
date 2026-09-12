@@ -1,8 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
+import { startTransition, useActionState, useState } from "react";
 
-import { Notice, SubmitButton, Tag, Td, Tr } from "@/components/ui";
+import { Button, ConfirmDialog, Notice, Tag, Td, Tr } from "@/components/ui";
 import { dayLabel } from "@/lib/format";
 import { idleForm } from "@/lib/form-state";
 
@@ -20,6 +20,7 @@ export const InvitationRow = ({
   readonly canWrite: boolean;
 }) => {
   const [state, action, pending] = useActionState(revokeInvitationAction, START);
+  const [asking, setAsking] = useState(false);
   const status = statusOf(invitation);
   const revocable = canWrite && status === "pending";
 
@@ -49,15 +50,32 @@ export const InvitationRow = ({
       </Td>
       <Td>
         {revocable && (
-          <form action={action}>
-            <input type="hidden" name="id" value={invitation.id} />
-            <SubmitButton pending={pending} idle="Revoke" variant="danger" size="sm" />
+          <>
+            <Button variant="ghost" size="sm" onClick={() => setAsking(true)} pending={pending}>
+              Revoke
+            </Button>
+            <ConfirmDialog
+              open={asking}
+              onClose={() => setAsking(false)}
+              onConfirm={() => {
+                setAsking(false);
+                const form = new FormData();
+                form.set("id", invitation.id);
+                startTransition(() => action(form));
+              }}
+              title={`Revoke the invitation to ${invitation.email}?`}
+              confirmLabel="Revoke it"
+              pending={pending}
+            >
+              The link they were sent stops working. To have them join later, send a new
+              invitation.
+            </ConfirmDialog>
             {state.status === "failed" && (
               <Notice tone="error" className="mt-2">
                 {state.message}
               </Notice>
             )}
-          </form>
+          </>
         )}
       </Td>
     </Tr>

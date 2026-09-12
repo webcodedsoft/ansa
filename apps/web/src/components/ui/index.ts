@@ -35,7 +35,7 @@ export {
 } from "./form";
 export { ChoiceChips, millisLabel, minutesLabel, secondsLabel, type ChoiceChipsProps } from "./choice-chips";
 export { DataTable, type Column, type DataTableProps } from "./data-table";
-export { Modal } from "./modal";
+export { ConfirmDialog, Modal } from "./modal";
 export { SELECT_MENU_CLASS, SelectField, type SelectFieldProps } from "./select";
 export { Pagination } from "./pagination";
 export { Segmented, Tabs, Toggle, type TabDef } from "./tabs";

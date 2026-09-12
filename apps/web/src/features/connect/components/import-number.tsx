@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useState } from "react";
+import { startTransition, useActionState, useState } from "react";
 
-import { Button, Card, Notice, Stack, SubmitButton } from "@/components/ui";
+import { Button, Card, ConfirmDialog, Notice, Stack, SubmitButton } from "@/components/ui";
 import { idleForm } from "@/lib/form-state";
 
 import { rotateWebhook, type RotateWebhookState } from "../connect.actions";
@@ -37,6 +37,7 @@ const COPY_LABEL: Record<CopyOutcome, string> = {
  */
 export const ImportNumber = ({ webhook }: { readonly webhook: ClaimWebhook }) => {
   const [state, action, pending] = useActionState(rotateWebhook, START);
+  const [asking, setAsking] = useState(false);
   const [copied, setCopied] = useState<CopyOutcome>("idle");
   /* Whether a URL existed when this screen was opened, captured once and never updated.
      `url` below is the *result* of the action, so it is non-null the moment a first URL is
@@ -77,14 +78,29 @@ export const ImportNumber = ({ webhook }: { readonly webhook: ClaimWebhook }) =>
         action={action}
         onSubmit={(event) => {
           /* Only when there is something to break. Creating the first URL destroys nothing, and
-             a confirmation asking whether to rotate would be asking about the wrong act. */
+             a confirmation asking whether to rotate would be asking about the wrong act. The
+             question is a dialog, like every destructive control in the console. */
           if (url === null) return;
-          const confirmed = window.confirm(
-            "Rotate the import URL? The current one stops working immediately, and every carrier still pointing at it stops reaching this organisation until you move it.",
-          );
-          if (!confirmed) event.preventDefault();
+          event.preventDefault();
+          setAsking(true);
         }}
       >
+        <ConfirmDialog
+          open={asking}
+          onClose={() => setAsking(false)}
+          onConfirm={() => {
+            setAsking(false);
+            // Called directly, so it never passes back through the form's own submit above.
+            startTransition(() => action(new FormData()));
+          }}
+          title="Rotate the import URL?"
+          confirmLabel="Rotate it"
+          cancelLabel="Keep the current one"
+          pending={pending}
+        >
+          The current URL stops working immediately. Every carrier still pointing at it stops
+          reaching this organisation until you move it onto the new one.
+        </ConfirmDialog>
         <Stack>
           {state.status === "failed" && <Notice tone="error">{state.message}</Notice>}
           {state.status === "succeeded" && (
