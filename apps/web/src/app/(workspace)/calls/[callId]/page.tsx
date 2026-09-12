@@ -175,26 +175,17 @@ const CallDetailPage = async ({
             panel: (
               <div className="flex flex-col gap-3.5">
                 <CallStats stats={stats} />
-                <Card title="Events" description="Every step, in order, on the media clock.">
-                  {/* The transport's own words for how this ended — "carrier sent stop",
-                      "socket closed with code 1005". Everywhere else the console says
-                      "ended"; here, where a call is being taken apart, the exact exit is the
-                      point. So is the configuration version and the transcriber. */}
-                  <p className="mb-3 text-[12.5px] text-[var(--ink-3)]">
-                    {call.endReason !== null && (
-                      <>
-                        Ended because:{" "}
-                        <code className="font-mono text-[12px] text-[var(--ink-2)]">{call.endReason}</code>
-                        {" · "}
-                      </>
-                    )}
-                    {call.configVersion !== null && <>configuration version {call.configVersion} · </>}
-                    transcribed by{" "}
-                    <code className="font-mono text-[12px] text-[var(--ink-2)]">
-                      {[...new Set(call.transcripts.map((line) => line.provider))].join(", ") || "—"}
-                    </code>
-                  </p>
-                  <EventTable events={call.events} />
+                <Card
+                  title="Event log"
+                  actions={
+                    call.configVersion === null ? undefined : (
+                      <span className="text-[12px] text-[var(--ink-3)]">
+                        Configuration version {call.configVersion}
+                      </span>
+                    )
+                  }
+                >
+                  <EventTable events={call.events} startedAt={call.createdAt} />
                 </Card>
               </div>
             ),

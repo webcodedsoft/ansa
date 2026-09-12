@@ -2,10 +2,11 @@ import { Sparkles, UserRound } from "lucide-react";
 
 import { EmptyState, Table, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { humanise, offset } from "@/lib/format";
+import { offset } from "@/lib/format";
 
 import type { CallEvent } from "../calls.service";
 import { type TimelineLine } from "../call-conversation";
+import { notableEvents } from "../event-log";
 import { HearAt } from "./recording-context";
 import { TranscriptLine } from "./transcript-line";
 
@@ -139,42 +140,46 @@ export const CallTimeline = ({
   );
 };
 
-/** The parts of an event worth reading, joined. Absent parts are dropped, not left blank. */
-const eventDetail = (detail: CallEvent["detail"]): string =>
-  [
-    detail.stage,
-    detail.tool,
-    detail.subject,
-    detail.outcome,
-    /* Humanised like the event kind above it. These are slugs the dispatcher writes —
-       `outbound-write-refused`, `stale-confirmation` — and rendering them raw beside a
-       readable kind makes the reason look like an internal code rather than the answer to
-       "why did that not run". */
-    humanise(detail.reason),
-    detail.ms === null ? null : `${detail.ms}ms`,
-    detail.attempt === null ? null : `attempt ${detail.attempt}`,
-  ]
-    .filter((part): part is string => part !== null && part !== "")
-    .join(" · ") || "—";
-
-export const EventTable = ({ events }: { readonly events: readonly CallEvent[] }) => {
-  if (events.length === 0) return <EmptyState title="No events recorded" />;
+/**
+ * What the agent did on this call, as a person would list it.
+ *
+ * Curated by `notableEvents`, not filtered by font size: the several hundred events the
+ * orchestrator writes per call are still in the API for whoever is taking the call apart,
+ * and this is the dozen that say it was interrupted, it read a value back, it used a tool,
+ * it handed over.
+ */
+export const EventTable = ({
+  events,
+  startedAt,
+}: {
+  readonly events: readonly CallEvent[];
+  /** When the call began — the media clock's zero for events that carry only a wall time. */
+  readonly startedAt: string;
+}) => {
+  const rows = notableEvents(events, startedAt);
+  if (rows.length === 0) {
+    return (
+      <p className="m-0 text-[12.5px] text-[var(--ink-3)]">
+        Nothing to note. The call ran without an interruption, a tool, a readback or a handover.
+      </p>
+    );
+  }
 
   return (
     <Table>
       <thead>
         <tr>
-          <Th>At</Th>
-          <Th>Event</Th>
+          <Th className="w-[86px]">At</Th>
+          <Th className="w-[260px]">What happened</Th>
           <Th>Detail</Th>
         </tr>
       </thead>
       <tbody>
-        {events.map((event, index) => (
-          <Tr key={`${event.kind}:${event.at}:${index}`}>
-            <Td className="font-mono text-[13px] tabular-nums">{offset(event.offsetMs)}</Td>
-            <Td>{humanise(event.kind)}</Td>
-            <Td className="text-[var(--ink-3)]">{eventDetail(event.detail)}</Td>
+        {rows.map((row) => (
+          <Tr key={row.key}>
+            <Td className="font-mono text-[13px] tabular-nums">{offset(row.offsetMs)}</Td>
+            <Td>{row.label}</Td>
+            <Td className="text-[var(--ink-3)]">{row.detail === "" ? "—" : row.detail}</Td>
           </Tr>
         ))}
       </tbody>
