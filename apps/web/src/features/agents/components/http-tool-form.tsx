@@ -194,6 +194,7 @@ export const HttpToolForm = ({
    * no home would be invisible — the save would refuse and no step would say why — so
    * anything unrecognised is attributed to the first step rather than dropped.
    */
+  const STEP_TITLE: Record<string, string> = { endpoint: "Endpoint", parameters: "Parameters", behaviour: "What it says" };
   const stepOf = (key: string): string => {
     if (key.startsWith("params") || key === "parametersJson") return "parameters";
     if (["speechTemplate", "speechFallback", "readback", "transferReason", "timeoutMs"].includes(key)) {
@@ -710,7 +711,13 @@ export const HttpToolForm = ({
       id: "test",
       title: "Test",
       hint: "Through the real dispatch path",
-      panel: <ToolTest draft={draft} blocked={count > 0} />,
+      panel: (
+        <ToolTest
+          draft={draft}
+          blockers={Object.entries(problems).map(([key, message]) => ({ step: STEP_TITLE[stepOf(key)] ?? "Endpoint", message }))}
+          onBlocked={() => setShowProblems(true)}
+        />
+      ),
     },
   ];
 
@@ -775,6 +782,9 @@ const SampleStep = ({
   readonly found: readonly Found[];
 }) => {
   const [state, action, pending] = useActionState(sampleEndpointAction, idleForm() as SampleState);
+  /* A refused fetch used to show nothing at all: the button un-spun and the page stayed as
+     it was, which reads as "the button does nothing". Every failure is a toast. */
+  useFailureToast(state);
 
   /* Bound once. `FormState` is not a discriminated union, so checking `status` does not
      narrow `data`, and reading it in four places would mean four non-null assertions. */
@@ -902,12 +912,19 @@ const OUTCOME_TONE: Record<string, Tone> = {
 
 const ToolTest = ({
   draft,
-  blocked,
+  blockers,
+  onBlocked,
 }: {
   readonly draft: HttpToolDraft;
-  readonly blocked: boolean;
+  /** Everything still wrong with the draft, by the step that can fix it. Empty means it can run. */
+  readonly blockers: readonly { readonly step: string; readonly message: string }[];
+  /** Pressed Run test while blocked: the caller marks the rail and the fields so the problems can be found. */
+  readonly onBlocked: () => void;
 }) => {
+  const blocked = blockers.length > 0;
   const [state, action, pending] = useActionState(tryToolAction, idleForm() as ToolTestState);
+  // Same as the sample fetch above: a refused run has to be seen, not inferred from silence.
+  useFailureToast(state);
 
   const suggested = useMemo(
     () =>
@@ -937,11 +954,23 @@ const ToolTest = ({
         }}
       >
         <Stack>
+          {/* Named, not merely counted. This used to say "fix the steps marked in the rail"
+              while the rail marked nothing until a save was attempted — so the button sat
+              disabled next to four green ticks, and "nothing happens" was the honest report. */}
           {blocked && (
             <Notice tone="warn">
-              Fix the steps marked in the rail first. Running a half-written tool reports the
-              wrong problem &mdash; a missing readback comes back as a refusal, and you go
-              looking at your endpoint.
+              <span>
+                Before it can run, {blockers.length === 1 ? "one thing" : `${blockers.length} things`} still{" "}
+                {blockers.length === 1 ? "needs" : "need"} filling in. Running a half-written tool reports
+                the wrong problem &mdash; a missing readback comes back as a refusal, and you go looking at your endpoint.
+              </span>
+              <ul className="mt-1.5 list-disc pl-4">
+                {blockers.map((blocker, index) => (
+                  <li key={index}>
+                    <span className="font-medium">{blocker.step}</span> &mdash; {blocker.message}
+                  </li>
+                ))}
+              </ul>
             </Notice>
           )}
 
@@ -961,7 +990,15 @@ const ToolTest = ({
           </Notice>
 
           <div>
-            <Button pending={pending} type="submit" disabled={pending || blocked}>
+            {/* Never disabled for being blocked: a dead button explains nothing. Pressing it
+                marks every step and field that is in the way, which is what the person
+                needs in order to go and fix them. */}
+            <Button
+              pending={pending}
+              type={blocked ? "button" : "submit"}
+              disabled={pending}
+              onClick={blocked ? onBlocked : undefined}
+            >
               Run test
             </Button>
           </div>

@@ -6153,6 +6153,19 @@ rather than landed as inventory — the wave that needs them adds them wired.
       so. A `form` modal width sits between default and wide. Seen live through all three
       screens on the OneHealth agent's Tools tab; not saved, so no test tool lands in the
       real registry.
+- [x] **Run test explains itself** (2026-09-12)
+      "Nothing happens when I click Run test." Two causes, both silence. The button was
+      disabled whenever the draft had any problem, and the note beside it said "fix the
+      steps marked in the rail" — but the rail only marks steps after a save attempt, so a
+      person on the Test step saw four green ticks, a dead button, and no way to learn that
+      the two speech sentences were empty. The note now lists each blocker by step and
+      message, the button is never disabled for being blocked, and pressing it while
+      blocked marks the rail and the fields so the problems can be found. Second, the Test
+      and Fetch-a-sample forms had no failure reporting at all: a refused run un-spun the
+      button and showed nothing. Both are toasts now. Seen live: the named blockers, the
+      rail marking "What it says — needs a fix" on press, and, with the sentences filled, a
+      real run answering ok in about half a second with the endpoint's record beside the
+      spoken line. Not saved.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.
