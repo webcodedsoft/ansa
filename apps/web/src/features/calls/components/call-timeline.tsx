@@ -6,6 +6,7 @@ import { humanise, offset } from "@/lib/format";
 
 import type { CallEvent } from "../calls.service";
 import { type TimelineLine } from "../call-conversation";
+import { HearAt } from "./recording-context";
 import { TranscriptLine } from "./transcript-line";
 
 export const CallTimeline = ({
@@ -87,7 +88,8 @@ export const CallTimeline = ({
                 line.speaker === "agent" ? "items-end" : "items-start",
               )}
             >
-              <div
+              <HearAt
+                offsetMs={line.at}
                 className={cn(
                   "max-w-[min(40rem,72%)] rounded-[14px] border px-3.5 py-2 shadow-[var(--shadow-s)]",
                   line.speaker === "agent"
@@ -107,7 +109,7 @@ export const CallTimeline = ({
                 ) : (
                   <TranscriptLine callId={callId} transcript={line.transcript} />
                 )}
-              </div>
+              </HearAt>
 
               <div className="mt-0.5 flex items-center gap-2 px-1">
                 <span className="font-mono text-[11px] text-[var(--ink-3)] tabular-nums">

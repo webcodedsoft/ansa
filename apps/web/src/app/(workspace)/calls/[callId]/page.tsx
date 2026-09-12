@@ -3,11 +3,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { WidePage } from "@/components/shell/wide-page";
-import { Card, Tabs, buttonClass } from "@/components/ui";
+import { Card, Tabs, Tag, buttonClass } from "@/components/ui";
 import { findCall } from "@/features/calls/calls.service";
 import { CallDirection } from "@/features/calls/components/call-direction";
 import { CallFlags } from "@/features/calls/components/call-flags";
 import { CallRecording } from "@/features/calls/components/call-recording";
+import { RecordingProvider } from "@/features/calls/components/recording-context";
 import { CallStats, computeCallStats } from "@/features/calls/components/call-stats";
 import { CallSummary } from "@/features/calls/components/call-summary";
 import { linesOf } from "@/features/calls/call-conversation";
@@ -39,6 +40,12 @@ const CallDetailPage = async ({
   /* The circle beside each caller bubble: initials when we know a name, the number's last two
      digits when we do not — the same rule as the directory row, so the face matches. */
   const agentWordsKept = call.transcripts.some((line) => line.speaker === "agent");
+  /* Who was speaking when, for the strip the player draws before any audio is fetched. A
+     turn still open when the call ended has no end; it reaches the end of the call. */
+  const speech = call.turns.map((turn) => ({
+    startMs: turn.startedOffsetMs,
+    endMs: turn.endedOffsetMs ?? (call.durationSeconds ?? 0) * 1000,
+  }));
   const callerInitials = initialsOf({
     displayName: call.contact?.name ?? null,
     phone: counterparty ?? "",
@@ -104,11 +111,19 @@ const CallDetailPage = async ({
             label: "Conversation",
             panel: (
               <div className="grid items-start gap-3.5 lg:grid-cols-[minmax(0,1fr)_20rem]">
+                <RecordingProvider>
                 <Card
-                  title="What was said"
+                  title={
+                    <span className="inline-flex items-center gap-2">
+                      What was said
+                      <Tag tone={agentWordsKept ? "accent" : "neutral"}>
+                        {agentWordsKept ? "both sides" : "caller only"}
+                      </Tag>
+                    </span>
+                  }
                   actions={
                     <span className="text-[12px] text-[var(--ink-3)]">
-                      {lines.length} lines
+                      Click any message to hear it
                       {stats.interruptions === 0
                         ? ""
                         : ` · interrupted ${stats.interruptions} ${
@@ -117,11 +132,15 @@ const CallDetailPage = async ({
                     </span>
                   }
                 >
-                  {/* Above the words, because it is the evidence they are checked against —
-                      and a button rather than a player, because asking for the audio is
-                      logged. */}
+                  {/* Above the words, because it is the evidence they are checked against.
+                      Nothing is fetched until play or a bubble is pressed, because asking
+                      for the audio is logged. */}
                   <div className="mb-3.5 border-b border-[var(--surface-line)] pb-3.5">
-                    <CallRecording callId={call.id} />
+                    <CallRecording
+                      callId={call.id}
+                      durationSeconds={call.durationSeconds}
+                      speech={speech}
+                    />
                     {!agentWordsKept && (
                       <p className="mt-2 mb-0 text-[11.5px] text-[var(--ink-3)]">
                         Only the caller&apos;s words are here. This call was recorded before the
@@ -136,6 +155,7 @@ const CallDetailPage = async ({
                     agentWordsKept={agentWordsKept}
                   />
                 </Card>
+                </RecordingProvider>
 
                 <div className="flex flex-col gap-3.5">
                   {/* First in the rail: it is the answer, and the conversation beside it is

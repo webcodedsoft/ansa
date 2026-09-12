@@ -5785,6 +5785,25 @@ rather than landed as inventory — the wave that needs them adds them wired.
       Not built: the waveform player, "Export" and "Flag for review". The recording stays a
       button that mints a logged link on click, which is the design; a waveform needs the
       audio decoded in the browser before it is asked for.
+- [x] **The player the prototype drew, without inventing a waveform** (2026-09-12)
+      The header is the prototype's: title with a "both sides" / "caller only" badge, "Click
+      any message to hear it" on the right, then a play button, a strip and `0:20 / 0:48`.
+      The strip is honest twice over. Before any audio it is drawn from the call's own turns —
+      who was speaking when — so it is true of this call rather than decorative. After the
+      audio is fetched it is the real amplitude, decoded in the browser from the same bytes
+      the `<audio>` element plays, so the single-use link is spent exactly once for both.
+
+      "Click any message to hear it" is now a kept promise. `RecordingProvider` is the seam:
+      the player registers a seek, each bubble is a `HearAt` that asks for one. A bubble
+      clicked before any audio exists *is* the ask — it mints the link, loads, then jumps —
+      one ticket, one access-log line, the same as pressing play. Keyboard-reachable, because
+      a bubble that only answers a mouse is a promise kept for some readers.
+
+      Also this pass: a caller's backchannel ("yeah", "okay", "o") is written down before the
+      orchestrator decides not to answer it — the transcript is the conversation now, and a
+      caller shown saying nothing where they said "yes please" is a record that lies by
+      omission. And a call that stored no agent words says so, rather than "spoke, too
+      briefly to transcribe" forty times as if the transcriber had failed.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.
