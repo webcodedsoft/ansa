@@ -75,12 +75,12 @@ export const offset = (ms: number | null): string => {
  *
  * The stored values stay `inbound` and `outbound` — they are the carrier's vocabulary, the
  * column's check constraint and what every comparison in this app tests against. This is the
- * label only. "Incoming" and "outgoing" are what somebody running a phone line says, and the
- * mapping lives here so the four places that show it cannot drift into three spellings.
+ * label only. "Incoming Call" and "Outgoing Call" are what somebody running a phone line says,
+ * and the mapping lives here so the four places that show it cannot drift into three spellings.
  */
 export const directionLabel = (direction: string): string => {
-  if (direction === "inbound") return "incoming";
-  if (direction === "outbound") return "outgoing";
+  if (direction === "inbound") return "Incoming Call";
+  if (direction === "outbound") return "Outgoing Call";
   return direction;
 };
 

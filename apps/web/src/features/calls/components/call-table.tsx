@@ -1,10 +1,11 @@
 import Link from "next/link";
 
 import { Blip, GroupRow, Table, Tag, Td, Th } from "@/components/ui";
-import { dayLabel, directionLabel, duration, millis, phone, timeOfDay } from "@/lib/format";
+import { dayLabel, duration, millis, phone, timeOfDay } from "@/lib/format";
 
 import type { CallSummary } from "../calls.service";
 import { outcomeOf } from "../outcome";
+import { CallDirection } from "./call-direction";
 
 /** The far end of a call, whichever end that is. Our own number is never the useful one. */
 const counterparty = (call: CallSummary): string =>
@@ -86,7 +87,9 @@ export const CallTable = ({ calls }: { readonly calls: readonly CallSummary[] })
                       sources for one number. */}
                   <Td className="whitespace-nowrap tabular-nums">{timeOfDay(call.createdAt)}</Td>
                   <Td>
-                    <Tag>{directionLabel(call.direction)}</Tag>
+                    <Tag>
+                      <CallDirection direction={call.direction} />
+                    </Tag>
                   </Td>
                   <Td className="font-mono text-[13px] font-medium">
                     {/* The number is the link, and there is no separate "Read"

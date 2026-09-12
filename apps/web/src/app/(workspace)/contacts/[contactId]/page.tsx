@@ -11,7 +11,8 @@ import { readContactDetail } from "@/features/contacts/contacts.service";
 import { refusedWith } from "@/lib/api/server";
 import { readPaging } from "@/lib/paging";
 import { cn } from "@/lib/cn";
-import { dayLabel, directionLabel, duration, humanise, phone, timeOfDay, when } from "@/lib/format";
+import { dayLabel, duration, humanise, phone, timeOfDay, when } from "@/lib/format";
+import { CallDirection } from "@/features/calls/components/call-direction";
 import { outcomeOf } from "@/features/calls/outcome";
 
 export const metadata: Metadata = { title: "Contact · Ansa" };
@@ -165,13 +166,17 @@ const ContactPage = async ({
                           <Moment at={entry.call.calledAt} />
                         </span>
                         <span className="min-w-0 flex-1">
-                          <span className="block text-[13px]">
-                            <b className="font-medium">{directionLabel(entry.call.direction)} call</b>
-                            <span className="text-[var(--ink-3)]">
-                              {entry.call.durationSeconds === null
-                                ? ""
-                                : ` · ${duration(entry.call.durationSeconds)}`}
-                            </span>
+                          {/* A flex row, not inline text: the label carries an icon and sits in
+                              a flex box, and a plain "·" beside one lands below the baseline. */}
+                          <span className="flex items-center gap-1.5 text-[13px]">
+                            <b className="font-medium">
+                              <CallDirection direction={entry.call.direction} />
+                            </b>
+                            {entry.call.durationSeconds !== null && (
+                              <span className="text-[var(--ink-3)]">
+                                · {duration(entry.call.durationSeconds)}
+                              </span>
+                            )}
                           </span>
                           {/* What it was about — the line somebody actually reads. The grounded
                               summary, clamped, rather than its first sentence: a sentence

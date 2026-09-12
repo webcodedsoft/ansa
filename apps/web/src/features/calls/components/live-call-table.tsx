@@ -1,9 +1,10 @@
 import Link from "next/link";
 
 import { Blip, EmptyState, Table, Tag, Td, Th, Tr } from "@/components/ui";
-import { directionLabel, duration, when } from "@/lib/format";
+import { duration, when } from "@/lib/format";
 
 import type { LiveCall } from "../calls.service";
+import { CallDirection } from "./call-direction";
 
 /** The far end of a call, whichever end that is. Our own number is never the useful one. */
 const counterparty = (call: LiveCall): string =>
@@ -50,7 +51,9 @@ export const LiveCallTable = ({ calls }: { readonly calls: readonly LiveCall[] }
               </span>
             </Td>
             <Td>
-              <Tag>{directionLabel(call.direction)}</Tag>
+              <Tag>
+                <CallDirection direction={call.direction} />
+              </Tag>
             </Td>
             <Td className="font-mono text-[13px]">{counterparty(call)}</Td>
             <Td className="tabular-nums">{when(call.createdAt)}</Td>
