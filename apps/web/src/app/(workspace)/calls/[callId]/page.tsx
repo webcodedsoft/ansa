@@ -1,4 +1,5 @@
 import { ArrowLeft } from "lucide-react";
+import type React from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -113,12 +114,14 @@ const CallDetailPage = async ({
             label: "Conversation",
             panel: (
               <div className="grid items-start gap-3.5 lg:grid-cols-[minmax(0,1fr)_20rem]">
-                <RecordingProvider>
+                {/* The provider only when there is audio: without it a bubble is a plain
+                    bubble rather than a button that promises a sound it cannot make. */}
+                <MaybeRecording enabled={call.recorded}>
                 <Card
                   title="What was said"
                   actions={
                     <span className="text-[12px] text-[var(--ink-3)]">
-                      Click any message to hear it
+                      {call.recorded ? "Click any message to hear it" : `${lines.length} lines`}
                       {stats.interruptions === 0
                         ? ""
                         : ` · interrupted ${stats.interruptions} ${
@@ -130,13 +133,18 @@ const CallDetailPage = async ({
                   {/* Above the words, because it is the evidence they are checked against.
                       Nothing is fetched until play or a bubble is pressed, because asking
                       for the audio is logged. */}
-                  <div className="mb-3.5 border-b border-[var(--surface-line)] pb-3.5">
-                    <CallRecording
-                      callId={call.id}
-                      durationSeconds={call.durationSeconds}
-                      speech={speech}
-                    />
-                  </div>
+                  {/* Only where it would work. A player over a call with no audio — the
+                      organisation was not recording, or the file has passed retention — is a
+                      control whose every press is a 404. */}
+                  {call.recorded && (
+                    <div className="mb-3.5 border-b border-[var(--surface-line)] pb-3.5">
+                      <CallRecording
+                        callId={call.id}
+                        durationSeconds={call.durationSeconds}
+                        speech={speech}
+                      />
+                    </div>
+                  )}
                   <CallTimeline
                     callId={call.id}
                     lines={lines}
@@ -144,7 +152,7 @@ const CallDetailPage = async ({
                     agentWordsKept={agentWordsKept}
                   />
                 </Card>
-                </RecordingProvider>
+                </MaybeRecording>
 
                 <div className="flex flex-col gap-3.5">
                   {/* First in the rail: it is the answer, and the conversation beside it is
@@ -196,5 +204,14 @@ const CallDetailPage = async ({
     </>
   );
 };
+
+/** `RecordingProvider` when there is audio to seek in; otherwise the children as they are. */
+const MaybeRecording = ({
+  enabled,
+  children,
+}: {
+  readonly enabled: boolean;
+  readonly children: React.ReactNode;
+}) => (enabled ? <RecordingProvider>{children}</RecordingProvider> : <>{children}</>);
 
 export default CallDetailPage;

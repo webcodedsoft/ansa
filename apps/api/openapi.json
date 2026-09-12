@@ -11511,6 +11511,9 @@
                       ],
                       "additionalProperties": false
                     },
+                    "recorded": {
+                      "type": "boolean"
+                    },
                     "captured": {
                       "type": "array",
                       "items": {
@@ -11863,6 +11866,7 @@
                   "required": [
                     "id",
                     "contact",
+                    "recorded",
                     "captured",
                     "carrierCallId",
                     "direction",

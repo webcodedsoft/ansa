@@ -1165,6 +1165,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly id: string;
         readonly name: string | null;
       } | null;
+        readonly recorded: boolean;
         readonly captured: readonly ({
         readonly fieldKey: string;
         readonly fieldType: string;

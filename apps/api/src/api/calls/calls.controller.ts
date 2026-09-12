@@ -289,6 +289,12 @@ const callContact = object({
 const callDetail = object({
   id: uuid(),
   contact: nullable(callContact),
+  /**
+   * Whether there is audio to ask for. The same file check `POST :callId/recording` makes,
+   * without the ticket or the access-log row: knowing a recording exists is not being given
+   * the ability to listen to it. Lets the console draw a player only where one would work.
+   */
+  recorded: flag(),
   /** What the caller told the agent and agreed to. Empty when the agent has no form. */
   captured: list(capturedValue),
   carrierCallId: text({ maxLength: 128 }),
@@ -950,9 +956,15 @@ export class CallsController {
     // "not yours" and "not there" are one query result, and answering differently would
     // confirm the id exists.
     if (detail === null) throw new NotFoundException();
+    const dir = this.config.recordAudioDir;
+    const recorded =
+      dir !== undefined &&
+      this.config.publicBaseUrl !== null &&
+      existsSync(join(dir, `${detail.carrierCallId}.ulaw`));
     return {
       ...detail,
       contact,
+      recorded,
       captured: captured.map((c) => ({ ...c, confirmedAt: c.confirmedAt.toISOString() })),
       summary:
         summary === null
