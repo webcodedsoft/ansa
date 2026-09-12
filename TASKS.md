@@ -6296,6 +6296,17 @@ rather than landed as inventory — the wave that needs them adds them wired.
       parser already takes "F for Fish". Three normalizer tests, three capture tests. API
       restarted. Still not heard on a phone: the next call to Tolu that reaches the
       registration should read it back with words and, on a no, ask for a word per letter.
+- [x] **The prompt knows how Nigerian English breaks on the line** (2026-09-13)
+      The locale layer already said the line is 8kHz and a word that makes no sense was
+      misheard. Four sections added, each from a real call and none a word list (a list
+      gets reached for and swallows a surname; a rule about sounds does not): the sound
+      rules — th to t/d, v/f and s/z swapping, vowel merger, h dropping or appearing,
+      endings dropping, and a run of small wrong words being one sentence to rebuild; the
+      letter pairs that merge when spelling (F/S; B D E G P T V; M/N), try the swap before
+      asking, ask about the one letter; a confirmed value beats a fresh transcript that
+      contradicts it; and a question with a shape is read against the shape, nearest
+      listed answer, reading that fits, ask only on a tie. Pinned in the compose test so
+      none can be dropped quietly; the shared-layer test still finds no business word.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

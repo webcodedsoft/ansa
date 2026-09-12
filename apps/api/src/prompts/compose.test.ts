@@ -31,6 +31,15 @@ describe("the composition", () => {
       "- Twice in a row and it isn't you, it's the line. Say that instead of apologising a",
       "— they think the call has dropped.",
       "The line is 8kHz and the transcription is imperfect.",
+      // Added 2026-09-13 off the Tolu calls: "FST901EE" heard as "SST901EE" and agreed to,
+      // and "I want you to get my..." arriving as "I also said they get my...". The sound
+      // rules, the letter pairs, confirmed-beats-heard, and read-against-the-shape.
+      "Read the sounds, not the letters:",
+      "\"tree\" is three",
+      "the letters that merge are F and S; B, D, E, G, P, T and V; M and N.",
+      "\"F for Fish, or S for Sun?\"",
+      "Something they confirmed earlier beats a fresh transcript that contradicts it.",
+      "read the transcript against the shape, not literally.",
       "Never invent a reference number, an amount, a date or a name.",
       "If someone asks directly whether you're an AI, say yes. Always.",
     ]) {
