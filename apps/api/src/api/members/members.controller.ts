@@ -1,4 +1,6 @@
-import { listMembers, removeMember, restoreMember, setMemberRole, suspendMember } from "@ansa/db";
+import { displayNameOf, listMembers, removeMember, restoreMember, setMemberRole, suspendMember } from "@ansa/db";
+
+import { audit } from "../audit/audit";
 import {
   ConflictException,
   Controller,
@@ -92,7 +94,20 @@ export class MembersController {
     @FromBody() body: Infer<typeof roleChange>,
   ): Promise<Infer<typeof roleChanged>> {
     const changed = await this.db
-      .tx((scope) => setMemberRole(scope, path.userId, body.role))
+      .tx(async (scope) => {
+        const name = await displayNameOf(scope, path.userId);
+        const done = await setMemberRole(scope, path.userId, body.role);
+        if (done) {
+          await audit(scope, this.db.caller, {
+            action: "member_role_changed",
+            subjectKind: "member",
+            subjectId: path.userId,
+            subjectLabel: name ?? undefined,
+            detail: { role: body.role },
+          });
+        }
+        return done;
+      })
       .catch(asConflict);
     // Not a member here — which, under RLS, is also what a member of another organisation
     // looks like. Answering 404 to both is the point: a 403 would confirm the id exists.
@@ -109,7 +124,20 @@ export class MembersController {
   })
   async remove(@FromPath() path: Infer<typeof memberPath>): Promise<void> {
     const removed = await this.db
-      .tx((scope) => removeMember(scope, path.userId))
+      .tx(async (scope) => {
+        /* Read before the removal: once the membership is gone the users policy hides them. */
+        const name = await displayNameOf(scope, path.userId);
+        const done = await removeMember(scope, path.userId);
+        if (done) {
+          await audit(scope, this.db.caller, {
+            action: "member_removed",
+            subjectKind: "member",
+            subjectId: path.userId,
+            subjectLabel: name ?? undefined,
+          });
+        }
+        return done;
+      })
       .catch(asConflict);
     if (!removed) throw new NotFoundException();
   }
@@ -131,7 +159,18 @@ export class MembersController {
       throw new ConflictException("you cannot revoke your own access");
     }
     const suspended = await this.db
-      .tx((scope) => suspendMember(scope, path.userId))
+      .tx(async (scope) => {
+        const done = await suspendMember(scope, path.userId);
+        if (done) {
+          await audit(scope, caller, {
+            action: "access_revoked",
+            subjectKind: "member",
+            subjectId: path.userId,
+            subjectLabel: (await displayNameOf(scope, path.userId)) ?? undefined,
+          });
+        }
+        return done;
+      })
       .catch(asConflict);
     if (!suspended) throw new NotFoundException();
   }
@@ -145,7 +184,18 @@ export class MembersController {
     status: 204,
   })
   async restore(@FromPath() path: Infer<typeof memberPath>): Promise<void> {
-    const restored = await this.db.tx((scope) => restoreMember(scope, path.userId));
+    const restored = await this.db.tx(async (scope) => {
+      const done = await restoreMember(scope, path.userId);
+      if (done) {
+        await audit(scope, this.db.caller, {
+          action: "access_restored",
+          subjectKind: "member",
+          subjectId: path.userId,
+          subjectLabel: (await displayNameOf(scope, path.userId)) ?? undefined,
+        });
+      }
+      return done;
+    });
     if (!restored) throw new NotFoundException();
   }
 }

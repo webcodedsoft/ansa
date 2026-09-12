@@ -28,6 +28,7 @@ import { Controller, Delete, Get, Inject, NotFoundException, Post, Put } from "@
 
 import { LIMITS } from "../../prompts/organization-layer";
 import { BASE_KEYTERMS, MAX_KEYTERMS } from "../../tenancy/defaults";
+import { audit } from "../audit/audit";
 import { Endpoint } from "../http/endpoint";
 import { pageQuery, pageResponse, toPageBody, toPageRequest } from "../http/pagination";
 import { ValidationFailed } from "../http/problem";
@@ -681,6 +682,13 @@ export class ConfigController {
       }
 
       const version = await publishAgentConfig(scope, path.agentId, fields, note);
+      await audit(scope, this.db.caller, {
+        action: "agent_published",
+        subjectKind: "agent",
+        subjectId: path.agentId,
+        subjectLabel: fields.name ?? undefined,
+        detail: { version: String(version), note: note ?? null },
+      });
 
       if (agentId !== null && staged?.tools != null) {
         await setAgentTools(scope, agentId, staged.tools);
@@ -796,6 +804,12 @@ export class ConfigController {
         restoredFlow === null ? { authoringMode: "form" } : { flow: restoredFlow, authoringMode: "flow" },
         null,
       );
+      await audit(scope, this.db.caller, {
+        action: "agent_rolled_back",
+        subjectKind: "agent",
+        subjectId: agentId,
+        detail: { version: String(path.version) },
+      });
       // Read back inside the same transaction, as the publish endpoint does: the response is
       // the row the database wrote rather than an echo of the row it was copied from.
       return loadAgentDraft(scope, agentId);

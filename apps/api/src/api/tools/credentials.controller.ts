@@ -11,6 +11,7 @@ import {
   UnprocessableEntityException,
 } from "@nestjs/common";
 
+import { audit } from "../audit/audit";
 import { Endpoint } from "../http/endpoint";
 import { apiRoute, FromBody, FromPath } from "../http/request";
 import { choice, flag, list, object, optional, text, type Infer } from "../http/schema";
@@ -190,6 +191,13 @@ export class CredentialsController {
       // — it says what is wrong with the shape. `orRefuse` turns it into a 422.
       const sealed = orRefuse(() => sealCredential(key, scope.organizationId, path.ref, material));
       const written = await putCredential(scope, path.ref, sealed);
+      await audit(scope, this.db.caller, {
+        action: "credential_saved",
+        subjectKind: "credential",
+        subjectId: path.ref,
+        subjectLabel: path.ref,
+        detail: { kind: body.kind },
+      });
       return {
         ref: written.ref,
         createdAt: written.createdAt.toISOString(),
@@ -224,6 +232,12 @@ export class CredentialsController {
       // Not stored here — which, under RLS, is also what another organisation's credential
       // looks like. Answering 404 to both is the point.
       if (!removed) throw new NotFoundException();
+      await audit(scope, this.db.caller, {
+        action: "credential_removed",
+        subjectKind: "credential",
+        subjectId: path.ref,
+        subjectLabel: path.ref,
+      });
     });
   }
 }

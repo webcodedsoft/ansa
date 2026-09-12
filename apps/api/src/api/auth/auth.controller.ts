@@ -20,6 +20,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 
+import { audit } from "../audit/audit";
 import { Endpoint } from "../http/endpoint";
 import { ValidationFailed } from "../http/problem";
 import { apiRoute, FromBody } from "../http/request";
@@ -155,6 +156,13 @@ const accountClosure = object({ password: offeredPassword() });
  */
 const PASSWORD_CHANGE_LIMIT = { limit: 10, windowMs: 5 * 60_000, by: "ip" } as const;
 
+/** Thrown inside the closure transaction so the audit row rolls back with the refusal. */
+class SoleOwner extends Error {
+  constructor(readonly organisations: readonly string[]) {
+    super("sole owner");
+  }
+}
+
 @Controller(apiRoute("auth"))
 export class AuthController {
   constructor(
@@ -257,7 +265,10 @@ export class AuthController {
     capability: "authenticated",
   })
   async signOut(@Caller() caller: Principal): Promise<void> {
-    await this.db.tx((scope) => revokeSession(scope, caller.sessionId, new Date()));
+    await this.db.tx(async (scope) => {
+      await revokeSession(scope, caller.sessionId, new Date());
+      await audit(scope, caller, { action: "signed_out", subjectKind: "account", subjectId: caller.userId });
+    });
   }
 
   @Get("me")
@@ -324,7 +335,13 @@ export class AuthController {
     await this.db.tx(async (scope) => {
       const changed = await setPasswordHash(scope, caller.userId, replacement);
       if (!changed) throw new NotFoundException();
-      await endOtherSessions(scope, caller.userId, caller.sessionId);
+      const ended = await endOtherSessions(scope, caller.userId, caller.sessionId);
+      await audit(scope, caller, {
+        action: "password_changed",
+        subjectKind: "account",
+        subjectId: caller.userId,
+        detail: { otherSessionsEnded: String(ended) },
+      });
     });
   }
 
@@ -355,7 +372,19 @@ export class AuthController {
     @FromBody() body: Infer<typeof accountClosure>,
   ): Promise<void> {
     await this.requirePassword(caller, body.password, "body.password");
-    const soleOwnerOf = await this.db.tx((scope) => closeAccount(scope, caller.userId, caller.sessionId));
+    const soleOwnerOf = await this.db
+      .tx(async (scope) => {
+        /* Written before the closure: afterwards the membership is gone and the row could not
+           be inserted as this person. Rolled back with the refusal, via `SoleOwner`. */
+        await audit(scope, caller, { action: "account_closed", subjectKind: "account", subjectId: caller.userId });
+        const refused = await closeAccount(scope, caller.userId, caller.sessionId);
+        if (refused.length > 0) throw new SoleOwner(refused);
+        return refused;
+      })
+      .catch((error: unknown) => {
+        if (error instanceof SoleOwner) return error.organisations;
+        throw error;
+      });
     if (soleOwnerOf.length > 0) {
       throw new ConflictException(
         `You are the only owner of ${soleOwnerOf.join(", ")}. Make somebody else an owner, or close the organisation, first.`,

@@ -10,6 +10,7 @@ import {
   type PageSlice,
   type WithTotal,
 } from "./paging";
+import { recordAuditEvent } from "./audit";
 import type { OrganizationScope } from "./organization-scope";
 
 /**
@@ -137,7 +138,33 @@ export const createSession = async (scope: OrganizationScope, session: NewSessio
   // The insert either returns a row or raises; a silent undefined here would mean the
   // caller hands out a token for a session nobody can revoke.
   if (id === undefined) throw new Error("session insert returned no row");
+  /* Recorded here rather than in a controller: every sign-in path — password, invitation,
+     sign-up — makes its session through this one function, so this is the one place that
+     cannot be skipped. */
+  await recordAuditEvent(scope, {
+    actorUserId: session.userId,
+    actorName: await displayNameOf(scope, session.userId),
+    action: "signed_in",
+    subjectKind: "account",
+    subjectId: session.userId,
+    detail: { userAgent: session.userAgent },
+  });
   return id;
+};
+
+/** A member's name as it is now, for writing on an audit row before they are gone from the join. */
+export const displayNameOf = async (scope: OrganizationScope, userId: string): Promise<string | null> => {
+  const rows = await scope.query<{ display_name: string }>(
+    `select display_name from users where id = $1`,
+    [userId],
+  );
+  return rows[0]?.display_name ?? null;
+};
+
+/** An invitation's address, for the audit row of its revocation. */
+export const invitationEmailOf = async (scope: OrganizationScope, invitationId: string): Promise<string | null> => {
+  const rows = await scope.query<{ email: string }>(`select email from invitations where id = $1`, [invitationId]);
+  return rows[0]?.email ?? null;
 };
 
 /** Idempotent: signing out twice is not an error, and neither is a session already expired. */

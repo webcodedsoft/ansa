@@ -31,6 +31,7 @@ import { scoreCalls, stagePercentiles } from "../../viewer/metrics";
 // work out that a bare call inside a method resolves to the module import and not to `this`.
 import { reviewQueue as rankForReview } from "../../viewer/review";
 import { trendByConfigVersion } from "../../viewer/trends";
+import { audit } from "../audit/audit";
 import { Endpoint } from "../http/endpoint";
 import { PAGE_PROPS, pageResponse, toPageBody, toPageRequest } from "../http/pagination";
 import { apiRoute, FromBody, FromPath, FromQuery } from "../http/request";
@@ -1026,6 +1027,12 @@ export class CallsController {
          member of staff behind it; the fetch carries only the ticket. "Was given the ability
          to listen" is the honest claim and the only attributable one. */
       await recordAudioAccess(scope, path.callId, this.db.caller.userId);
+      await audit(scope, this.db.caller, {
+        action: "recording_listened",
+        subjectKind: "call",
+        subjectId: path.callId,
+        subjectLabel: call.caller ?? undefined,
+      });
       return call;
     });
     /* No base URL means no absolute link, and a relative one would resolve against the

@@ -25,6 +25,7 @@ import {
   UnprocessableEntityException,
 } from "@nestjs/common";
 
+import { audit } from "../audit/audit";
 import { Endpoint } from "../http/endpoint";
 import { ValidationFailed } from "../http/problem";
 import { apiRoute, FromBody, FromPath } from "../http/request";
@@ -334,7 +335,18 @@ export class AgentsController {
     response: agent,
   })
   async create(@FromBody() body: Infer<typeof newAgent>): Promise<Infer<typeof agent>> {
-    const created = await this.db.tx((scope) => createAgent(scope, body)).catch(asConflict);
+    const created = await this.db
+      .tx(async (scope) => {
+        const made = await createAgent(scope, body);
+        await audit(scope, this.db.caller, {
+          action: "agent_created",
+          subjectKind: "agent",
+          subjectId: made.agentId,
+          subjectLabel: made.name,
+        });
+        return made;
+      })
+      .catch(asConflict);
     return toResponse(created);
   }
 
@@ -396,7 +408,19 @@ export class AgentsController {
     params: agentPath,
   })
   async archive(@FromPath() path: Infer<typeof agentPath>): Promise<void> {
-    const archived = await this.db.tx((scope) => archiveAgent(scope, path.agentId));
+    const archived = await this.db.tx(async (scope) => {
+      const name = (await findAgent(scope, path.agentId))?.name;
+      const done = await archiveAgent(scope, path.agentId);
+      if (done) {
+        await audit(scope, this.db.caller, {
+          action: "agent_retired",
+          subjectKind: "agent",
+          subjectId: path.agentId,
+          subjectLabel: name,
+        });
+      }
+      return done;
+    });
     if (!archived) throw new NotFoundException();
   }
 

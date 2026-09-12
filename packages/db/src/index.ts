@@ -2,6 +2,7 @@ export * from "./data-source";
 export * from "./organization-scope";
 export * from "./paging";
 export * from "./accounts";
+export * from "./audit";
 export * from "./call-page";
 export * from "./agents";
 export * from "./call-config";

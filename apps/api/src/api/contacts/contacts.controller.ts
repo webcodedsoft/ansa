@@ -23,6 +23,7 @@ import { Controller, Get, Inject, NotFoundException, Patch, Post, Put, Unprocess
 import { toE164 } from "@ansa/shared";
 
 import { asConsentPolicy, mayCall } from "../../outbound/consent";
+import { audit } from "../audit/audit";
 import { Endpoint } from "../http/endpoint";
 import {
   PAGE_PROPS,
@@ -530,6 +531,13 @@ export class ContactsController {
       const person = await readContact(scope, path.contactId);
       if (person === null) return null;
       await writeDoNotCall(scope, person.phone, body.reason);
+      await audit(scope, this.db.caller, {
+        action: "do_not_call_added",
+        subjectKind: "contact",
+        subjectId: path.contactId,
+        subjectLabel: person.displayName ?? person.phone,
+        detail: { phone: person.phone, reason: body.reason ?? null },
+      });
       /* Re-read rather than assuming the write took: the suppression goes through a SECURITY
          DEFINER function, and returning a hand-built "suppressed: true" would report success
          for a row nobody has confirmed exists. */

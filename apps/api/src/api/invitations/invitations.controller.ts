@@ -1,4 +1,9 @@
-import { createInvitation, listInvitations, revokeInvitation } from "@ansa/db";
+import {
+  createInvitation,
+  invitationEmailOf,
+  listInvitations,
+  revokeInvitation,
+} from "@ansa/db";
 import {
   Controller,
   Delete,
@@ -15,6 +20,7 @@ import { Caller, type Principal } from "../auth/principal";
 import { mintInvitationToken } from "../auth/tokens";
 import { MAILER, type Mailer } from "../../mail/mailer";
 import { loadApiConfig } from "../api-config";
+import { audit } from "../audit/audit";
 import { Endpoint } from "../http/endpoint";
 import { pageQuery, pageResponse, toPageBody, toPageRequest } from "../http/pagination";
 import { apiRoute, FromBody, FromPath, FromQuery } from "../http/request";
@@ -131,8 +137,8 @@ export class InvitationsController {
   ): Promise<Infer<typeof issued>> {
     const minted = mintInvitationToken();
     const now = new Date();
-    const created = await this.db.tx((scope) =>
-      createInvitation(
+    const created = await this.db.tx(async (scope) => {
+      const invitation = await createInvitation(
         scope,
         {
           // Lowercased here as well as constrained in the schema, so the partial unique
@@ -144,8 +150,16 @@ export class InvitationsController {
           expiresAt: new Date(now.getTime() + INVITATION_TTL_MS),
         },
         now,
-      ),
-    );
+      );
+      await audit(scope, caller, {
+        action: "member_invited",
+        subjectKind: "invitation",
+        subjectId: invitation.id,
+        subjectLabel: invitation.email,
+        detail: { role: invitation.role },
+      });
+      return invitation;
+    });
     /* Sent, and not awaited into the response. An invitation exists the moment the row does;
        whether a vendor accepted the message is a separate fact, and a caller who watched the
        API hang on Mailjet — or fail because of it — would be worse off than one who has the
@@ -193,7 +207,19 @@ export class InvitationsController {
     params: invitationPath,
   })
   async revoke(@FromPath() path: Infer<typeof invitationPath>): Promise<void> {
-    const revoked = await this.db.tx((scope) => revokeInvitation(scope, path.id, new Date()));
+    const revoked = await this.db.tx(async (scope) => {
+      const email = await invitationEmailOf(scope, path.id);
+      const done = await revokeInvitation(scope, path.id, new Date());
+      if (done) {
+        await audit(scope, this.db.caller, {
+          action: "invitation_revoked",
+          subjectKind: "invitation",
+          subjectId: path.id,
+          subjectLabel: email ?? undefined,
+        });
+      }
+      return done;
+    });
     if (!revoked) throw new NotFoundException();
   }
 }

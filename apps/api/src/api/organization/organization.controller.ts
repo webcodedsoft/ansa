@@ -16,6 +16,7 @@ import {
   Put,
 } from "@nestjs/common";
 
+import { audit } from "../audit/audit";
 import { Endpoint } from "../http/endpoint";
 import { apiRoute, FromBody } from "../http/request";
 import { flag, integer, list, nullable, object, text, type Infer } from "../http/schema";
@@ -166,7 +167,19 @@ export class OrganizationController {
     response: organization,
   })
   async update(@FromBody() body: Infer<typeof details>): Promise<Infer<typeof organization>> {
-    const saved = await this.db.tx((scope) => renameOrganization(scope, body));
+    const saved = await this.db.tx(async (scope) => {
+      const before = await readOrganization(scope);
+      const after = await renameOrganization(scope, body);
+      if (after !== null && before !== null && before.name !== after.name) {
+        await audit(scope, this.db.caller, {
+          action: "organisation_renamed",
+          subjectKind: "organisation",
+          subjectLabel: after.name,
+          detail: { from: before.name, to: after.name },
+        });
+      }
+      return after;
+    });
     if (saved === null) throw new NotFoundException();
     return saved;
   }
@@ -210,6 +223,12 @@ export class OrganizationController {
   ): Promise<Infer<typeof organization>> {
     const saved = await this.db.tx(async (scope) => {
       const changed = await setRecordCalls(scope, body.recordCalls);
+      if (changed) {
+        await audit(scope, this.db.caller, {
+          action: body.recordCalls ? "recording_turned_on" : "recording_turned_off",
+          subjectKind: "organisation",
+        });
+      }
       return changed ? readOrganization(scope) : null;
     });
     if (saved === null) throw new NotFoundException();
@@ -241,6 +260,21 @@ export class OrganizationController {
        mechanism protecting nothing. */
     const saved = await this.db.tx(async (scope) => {
       const changed = await setOrganizationHours(scope, body.businessHours);
+      if (changed) {
+        const hours = body.businessHours;
+        await audit(scope, this.db.caller, {
+          action: "hours_changed",
+          subjectKind: "organisation",
+          detail:
+            hours === null
+              ? { hours: "always open" }
+              : {
+                  hours: `${hours.opensAtHour}:00–${hours.closesAtHour}:00`,
+                  days: hours.openDays.join(","),
+                  closedDates: String(hours.closedDates.length),
+                },
+        });
+      }
       return changed ? readOrganization(scope) : null;
     });
     if (saved === null) throw new NotFoundException();

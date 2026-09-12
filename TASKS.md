@@ -5971,6 +5971,23 @@ rather than landed as inventory — the wave that needs them adds them wired.
       open elsewhere cannot do it, and is rate-limited like sign-in. The form reads the
       password off the input when the dialog confirms rather than holding it in state.
       Not exercised end to end: nobody's account was closed to prove it.
+- [x] **The audit log is real** (2026-09-12)
+      The page had said "not available through the API yet" since the sidebar was drawn.
+      Migration 0086 adds `audit_events` — one row per act of a person on the organisation,
+      insert-only for the application role, actor name and subject label written at the
+      time so the people and things a log is about survive their own removal — and
+      backfills it from what the other tables already knew: sign-ins from `sessions`,
+      listens from `audio_access_log`, invitations sent, accepted and revoked, removals and
+      suspensions from `memberships`, publishes from `agent_prompt_versions` (author unknown:
+      that table's `published_by` is the database role). The API writes a row inside the
+      transaction that did the thing in twenty-three places — sign-in and sign-out,
+      password change, account closure, invite and revoke, role change, remove, revoke and
+      restore access, agent create, retire, publish and rollback, recording listened,
+      do-not-call, rename, recording on and off, hours, credential save and remove, webhook
+      settings. `GET /audit` pages it with a `kind` filter, owners and admins only, because
+      it says who listened to which recording. The page renders each row as a sentence.
+      Known gap: accepting an invitation writes no row today (the acceptance runs outside a
+      scope), so a join shows only as the sign-in that follows it.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

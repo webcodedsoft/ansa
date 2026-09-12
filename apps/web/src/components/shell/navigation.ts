@@ -44,7 +44,7 @@ export const DESTINATIONS: readonly Destination[] = [
   { href: "/credentials", label: "Credentials", group: "Connect", capability: "config:write" },
 
   { href: "/organisation", label: "Organisation", group: "Organisation", capability: "config:read" },
-  { href: "/audit", label: "Audit log", group: "Organisation", capability: "calls:read" },
+  { href: "/audit", label: "Audit log", group: "Organisation", capability: "config:write" },
   /* Yours, not the organisation's. No capability, because being signed in is the only
      qualification. Also reachable from your name in the footer. */
   { href: "/account", label: "Settings", group: "Organisation" },

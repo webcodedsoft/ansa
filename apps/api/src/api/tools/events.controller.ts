@@ -13,6 +13,7 @@ import {
   Put,
 } from "@nestjs/common";
 
+import { audit } from "../audit/audit";
 import { Endpoint } from "../http/endpoint";
 import { apiRoute, FromBody } from "../http/request";
 import { choice, flag, integer, list, object, optional, text, type Infer } from "../http/schema";
@@ -208,6 +209,11 @@ export class EventSubscriptionsController {
         toolConfig: current.toolConfig,
         eventConfig: document,
         note: body.note ?? DEFAULT_NOTE,
+      });
+      await audit(scope, this.db.caller, {
+        action: "webhooks_saved",
+        subjectKind: "organisation",
+        detail: { version: String(version), receivers: String(body.subscriptions.length) },
       });
       return { configVersion: version };
     });

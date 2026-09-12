@@ -7,6 +7,7 @@ import { createMailer, MAILER, type Mailer } from "../mail/mailer";
 import { ApiGuard } from "./auth/api.guard";
 import { AgentsController } from "./agents/agents.controller";
 import { AppointmentsController } from "./appointments/appointments.controller";
+import { AuditController } from "./audit/audit.controller";
 import { AuthController } from "./auth/auth.controller";
 import { AuthService } from "./auth/auth.service";
 import { CallsController } from "./calls/calls.controller";
@@ -47,6 +48,7 @@ import { VoicesController } from "./voices/voices.controller";
 export const API_CONTROLLERS = [
   AgentsController,
   AppointmentsController,
+  AuditController,
   AuthController,
   CallsController,
   CampaignsController,

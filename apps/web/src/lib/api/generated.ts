@@ -1025,6 +1025,37 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       send<void>(options, "DELETE", `/api/v1/appointments/holidays/${encodeURIComponent(input.path.holidayId)}`, input),
   },
 
+  audit: {
+    /**
+     * The audit log, newest first
+     * Every act of a person on this organisation: sign-ins, invitations, role changes and removals, publishes and rollbacks, recordings listened to, settings changed. Filter with `kind`. Rows written before the log existed carry no actor where the source table recorded none.
+     */
+    list: (input: {
+        readonly query?: {
+          readonly page?: number;
+          readonly perPage?: number;
+          readonly kind?: "people" | "agents" | "calls" | "organisation" | "security";
+        };
+      }) =>
+      send<{
+        readonly items: readonly ({
+        readonly id: string;
+        readonly occurredAt: string;
+        readonly actorUserId: string | null;
+        readonly actorName: string | null;
+        readonly action: "signed_in" | "signed_out" | "password_changed" | "account_closed" | "member_invited" | "invitation_accepted" | "invitation_revoked" | "member_role_changed" | "member_removed" | "access_revoked" | "access_restored" | "agent_created" | "agent_retired" | "agent_published" | "agent_rolled_back" | "recording_listened" | "do_not_call_added" | "organisation_renamed" | "recording_turned_on" | "recording_turned_off" | "hours_changed" | "credential_saved" | "credential_removed" | "webhooks_saved";
+        readonly subjectKind: "account" | "member" | "invitation" | "agent" | "call" | "contact" | "organisation" | "credential" | null;
+        readonly subjectId: string | null;
+        readonly subjectLabel: string | null;
+        readonly detail: Readonly<Record<string, string | null>>;
+      })[];
+        readonly page: number;
+        readonly perPage: number;
+        readonly total: number;
+        readonly totalPages: number;
+      }>(options, "GET", `/api/v1/audit`, input),
+  },
+
   auth: {
     /**
      * The signed-in user, their organisation, and what they may do in it
