@@ -54,7 +54,7 @@ export const changeRole = async (
 
   try {
     const result = await setMemberRole(parsed.data);
-    revalidatePath("/members");
+    revalidatePath("/organisation");
     return succeededForm({ userId: result.userId, role: result.role }, "Role updated.");
   } catch (error) {
     return failedForm(failureMessage(error));
@@ -73,7 +73,7 @@ export const removeMemberAction = async (
 
   try {
     await removeMember(parsed.data);
-    revalidatePath("/members");
+    revalidatePath("/organisation");
     return succeededForm({ userId: parsed.data.userId }, "Removed.");
   } catch (error) {
     return failedForm(failureMessage(error));
@@ -108,7 +108,7 @@ export const invite = async (_previous: InviteState, form: FormData): Promise<In
 
   try {
     const result = await inviteMember(parsed.data);
-    revalidatePath("/members");
+    revalidatePath("/organisation");
     return succeededForm({
       id: result.invitation.id,
       email: result.invitation.email,
@@ -132,7 +132,7 @@ export const revokeInvitationAction = async (
 
   try {
     await revokeInvitation(parsed.data);
-    revalidatePath("/members");
+    revalidatePath("/organisation");
     return succeededForm({ id: parsed.data.id }, "Revoked.");
   } catch (error) {
     return failedForm(failureMessage(error));

@@ -7,7 +7,6 @@ import { signOut } from "@/features/auth/auth.actions";
 import { currentPrincipal } from "@/features/auth/auth.service";
 import { liveAgents } from "@/features/agents/agents.service";
 import { listNumbers } from "@/features/connect/connect.service";
-import { listMembers } from "@/features/org/org.service";
 import { withSession } from "@/lib/api/server";
 
 /**
@@ -27,15 +26,10 @@ import { withSession } from "@/lib/api/server";
 const WorkspaceLayout = async ({ children }: { readonly children: ReactNode }) => {
   const me = await withSession(currentPrincipal);
 
-  const [members, numbers, agents] = await Promise.allSettled([
-    listMembers(),
-    listNumbers(),
-    liveAgents(),
-  ]);
+  const [numbers, agents] = await Promise.allSettled([listNumbers(), liveAgents()]);
 
   const counts: Record<string, number> = {};
   if (agents.status === "fulfilled") counts["/agents"] = agents.value.length;
-  if (members.status === "fulfilled") counts["/members"] = members.value.items.length;
   if (numbers.status === "fulfilled") counts["/numbers"] = numbers.value.items.length;
 
   return (

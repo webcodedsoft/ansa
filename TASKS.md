@@ -5918,6 +5918,13 @@ rather than landed as inventory — the wave that needs them adds them wired.
       One catch on the way: `has-[:read-only]` on the frame matched the icon's span —
       anything that is not editable is `:read-only` — so every framed field lost its focus
       ring until it was narrowed to `input:read-only`.
+- [x] **Members is a section of the organisation page** (2026-09-12)
+      Design A's People pane, finished: the members and invitations cards, their four counts
+      and their pagination render under `/organisation?s=people`, the rail's Members entry
+      is a section like the others, and the sidebar's Members item and its count are gone.
+      `/members`, `/invitations` and `/consent` redirect permanently to their sections so a
+      bookmark lands on the thing rather than a 404. Inviting stays the page header's one
+      action, so the section does not repeat it.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

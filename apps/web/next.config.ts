@@ -37,6 +37,17 @@ const config: NextConfig = {
     serverActions: { bodySizeLimit: "10mb" },
   },
 
+  /**
+   * Routes that moved. Members and Invitations were pages of their own and are now sections
+   * of the organisation page; a bookmark or a link in somebody's notes should land on the
+   * section, not on a 404. Permanent, so a browser stops asking.
+   */
+  redirects: async () => [
+    { source: "/members", destination: "/organisation?s=people", permanent: true },
+    { source: "/invitations", destination: "/organisation?s=people", permanent: true },
+    { source: "/consent", destination: "/organisation?s=consent", permanent: true },
+  ],
+
   // `typedRoutes` is deliberately off. It writes its route union into `.next/types` during a
   // build, so `pnpm typecheck` on a clean checkout fails until something has been built —
   // a typecheck that depends on a build is a typecheck that gets skipped.

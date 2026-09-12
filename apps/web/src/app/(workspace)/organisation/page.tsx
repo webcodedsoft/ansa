@@ -19,6 +19,7 @@ import { currentPrincipal } from "@/features/auth/auth.service";
 import { DetailsForm } from "@/features/org/components/details-form";
 import { HoursForm } from "@/features/org/components/hours-form";
 import { InviteMember } from "@/features/org/components/invite-form";
+import { PeopleSection } from "@/features/org/components/people-section";
 import { RecordingForm } from "@/features/org/components/recording-form";
 import { closedDaysLabel, daysLabel, hourLabel, nowInWat, openNow } from "@/features/org/org.display";
 import { listMembers, organisation } from "@/features/org/org.service";
@@ -42,7 +43,7 @@ export const dynamic = "force-dynamic";
  * fact about the organisation, and it belongs beside the hours and the recording switch
  * rather than on a page of its own that said nothing could be changed.
  */
-const SECTIONS = ["overview", "general", "hours", "consent", "recording", "retention"] as const;
+const SECTIONS = ["overview", "general", "hours", "consent", "recording", "retention", "people"] as const;
 type Section = (typeof SECTIONS)[number];
 
 const RAIL: readonly { readonly id: Section; readonly label: string; readonly Icon: LucideIcon }[] = [
@@ -63,9 +64,9 @@ const sinceLabel = (iso: string): string =>
 const OrganisationPage = async ({
   searchParams,
 }: {
-  readonly searchParams: Promise<{ readonly s?: string }>;
+  readonly searchParams: Promise<{ readonly s?: string; readonly page?: string; readonly perPage?: string }>;
 }) => {
-  const { s } = await searchParams;
+  const { s, ...paging } = await searchParams;
   const section: Section = SECTIONS.includes(s as Section) ? (s as Section) : "overview";
 
   const [org, principal, members] = await Promise.all([
@@ -140,7 +141,14 @@ const OrganisationPage = async ({
           <span className="px-2.5 pt-4 pb-1.5 font-mono text-[10px] font-semibold tracking-[0.12em] text-[var(--ink-3)] uppercase">
             People
           </span>
-          <Link href="/members" className="flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13.5px] text-[var(--ink-2)] hover:bg-[var(--surface-2)]">
+          <Link
+            href="/organisation?s=people"
+            aria-current={section === "people" ? "page" : undefined}
+            className={cn(
+              "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13.5px] text-[var(--ink-2)] hover:bg-[var(--surface-2)]",
+              section === "people" && "bg-[var(--surface-2)] font-medium text-[var(--ink)] shadow-[inset_2px_0_0_var(--accent)]",
+            )}
+          >
             <Users aria-hidden className="size-4 text-[var(--ink-3)]" />
             Members
             <span className="ml-auto font-mono text-[11px] text-[var(--ink-3)]">{members.total}</span>
@@ -208,10 +216,12 @@ const OrganisationPage = async ({
                   href="/organisation?s=retention"
                   action="View"
                 />
-                <Fact Icon={Users} label="People" value={people} href="/members" action="Manage" />
+                <Fact Icon={Users} label="People" value={people} href="/organisation?s=people" action="Manage" />
               </dl>
             </Card>
           )}
+
+          {section === "people" && <PeopleSection paging={paging} />}
 
           {section === "general" && <DetailsForm organisation={org} />}
 
