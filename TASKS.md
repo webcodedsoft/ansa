@@ -5925,6 +5925,23 @@ rather than landed as inventory — the wave that needs them adds them wired.
       `/members`, `/invitations` and `/consent` redirect permanently to their sections so a
       bookmark lands on the thing rather than a 404. Inviting stays the page header's one
       action, so the section does not repeat it.
+- [x] **Revoke access without removing** (2026-09-12)
+      Remove was the only way to stop somebody, and it is the wrong shape for a person who
+      may be back: it loses their role and joined date and asks them to accept a new link.
+      Migration 0083 adds `memberships.suspended_at`. A suspended membership still stands —
+      listed, role kept — but authenticates nothing: `findSessionByToken` requires it null
+      so an open session dies on its next request, `organisations_for_user` skips it so
+      sign-in does not offer the organisation, and the last-owner trigger counts a suspended
+      owner as absent. Both suspension and removal now also revoke the person's sessions in
+      the table, so "when did their access end" is a row rather than a join that stopped
+      matching.
+
+      `POST /members/:userId/suspension` revokes, `DELETE` restores; refusing yourself is a
+      409 because the request would end the session making it. On the row: Revoke access
+      (confirmed, says they are signed out everywhere and can be restored without an
+      invitation), an "access revoked" tag, and Restore access. Pinned in `rls.test.ts`:
+      suspended not offered at sign-in and offered again once restored; the last owner
+      cannot be suspended.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

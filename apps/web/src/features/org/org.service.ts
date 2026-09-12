@@ -23,6 +23,13 @@ export const setMemberRole = async (input: SetRoleInput) =>
 export const removeMember = async (input: RemoveMemberInput) =>
   (await api()).members.remove({ path: { userId: input.userId } });
 
+/** Revoke access without removing: sessions end now, the membership stands. */
+export const suspendMember = async (input: RemoveMemberInput) =>
+  (await api()).members.suspend({ path: { userId: input.userId } });
+
+export const restoreMember = async (input: RemoveMemberInput) =>
+  (await api()).members.restore({ path: { userId: input.userId } });
+
 /** One page of invitations, newest first, including spent and revoked ones. */
 export const listInvitations = async (page?: number, perPage = DEFAULT_PAGE_SIZE) =>
   (await api()).invitations.list({

@@ -286,7 +286,7 @@ describe("soft delete", () => {
     await operator.query(
       `insert into memberships (organization_id, user_id, role)
        values ($1, $2, 'owner'), ($1, $3, 'admin')
-       on conflict (organization_id, user_id) do update set deleted_at = null`,
+       on conflict (organization_id, user_id) do update set deleted_at = null, suspended_at = null`,
       [ORGANIZATION_A, OWNER, USER],
     );
     await operator.query("update organizations set deleted_at = null where id = $1", [ORGANIZATION_A]);
@@ -308,6 +308,30 @@ describe("soft delete", () => {
        they belong. */
     expect(before).toBe(1);
     expect(after).toBe(0);
+  });
+
+  it("does not offer an organisation to somebody whose access is revoked, and offers it again once restored", async () => {
+    await reset();
+    const offered = () =>
+      asOrganization(ORGANIZATION_A, async (c) =>
+        (await c.query("select * from app.organisations_for_user($1)", [USER])).rowCount,
+      );
+    expect(await offered()).toBe(1);
+
+    await operator.query("update memberships set suspended_at = now() where user_id = $1", [USER]);
+    expect(await offered()).toBe(0);
+
+    await operator.query("update memberships set suspended_at = null where user_id = $1", [USER]);
+    expect(await offered()).toBe(1);
+  });
+
+  it("refuses to revoke the last owner's access", async () => {
+    await reset();
+    /* The only owner. The rule counts a suspended owner as absent, because an organisation
+       whose one owner cannot sign in has nobody left who can administer it. */
+    await expect(
+      operator.query("update memberships set suspended_at = now() where user_id = $1", [OWNER]),
+    ).rejects.toThrow(/must keep at least one owner/);
   });
 
   it("does not offer a deleted organisation back to the user who was in it", async () => {

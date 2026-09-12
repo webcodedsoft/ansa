@@ -1,4 +1,4 @@
-import { listMembers, removeMember, setMemberRole } from "@ansa/db";
+import { listMembers, removeMember, restoreMember, setMemberRole, suspendMember } from "@ansa/db";
 import {
   ConflictException,
   Controller,
@@ -7,14 +7,16 @@ import {
   Inject,
   NotFoundException,
   Patch,
+  Post,
 } from "@nestjs/common";
 
 import { Endpoint } from "../http/endpoint";
 import { pageQuery, pageResponse, toPageBody, toPageRequest } from "../http/pagination";
 import { apiRoute, FromBody, FromPath, FromQuery } from "../http/request";
-import { object, text, type Infer } from "../http/schema";
+import { nullable, object, text, type Infer } from "../http/schema";
 import { email, role, timestamp, uuid } from "../schemas";
 import { OrganizationContext } from "../tenancy/organization-context";
+import { Caller, type Principal } from "../auth/principal";
 
 /**
  * Who is in the organisation, and what they may do.
@@ -30,6 +32,8 @@ const member = object({
   displayName: text({ maxLength: 200 }),
   role: role(),
   createdAt: timestamp(),
+  /** Set while their access is revoked. They stay listed with their role; nothing authenticates. */
+  suspendedAt: nullable(timestamp()),
 });
 
 const memberPage = pageResponse(member);
@@ -108,5 +112,40 @@ export class MembersController {
       .tx((scope) => removeMember(scope, path.userId))
       .catch(asConflict);
     if (!removed) throw new NotFoundException();
+  }
+
+  @Post(":userId/suspension")
+  @Endpoint({
+    summary: "Revoke someone's access without removing them",
+    description:
+      "Their sessions end now and signing in no longer offers this organisation, but the membership stands — role and joined date kept, still listed — so restoring them is one call rather than an invitation. Refuses to suspend the last owner, or yourself. 404 if they are not a member or are already suspended.",
+    capability: "members:write",
+    params: memberPath,
+    status: 204,
+  })
+  async suspend(@FromPath() path: Infer<typeof memberPath>, @Caller() caller: Principal): Promise<void> {
+    /* Refused here rather than left to the last-owner rule, which would only catch it when
+       you are the last owner. Revoking your own access ends the session making the request,
+       and the natural next question — "why am I signed out?" — has no good answer. */
+    if (caller.userId === path.userId) {
+      throw new ConflictException("you cannot revoke your own access");
+    }
+    const suspended = await this.db
+      .tx((scope) => suspendMember(scope, path.userId))
+      .catch(asConflict);
+    if (!suspended) throw new NotFoundException();
+  }
+
+  @Delete(":userId/suspension")
+  @Endpoint({
+    summary: "Restore someone's access",
+    description: "Undoes a suspension. They sign in as before, with the role they held. 404 if they are not suspended.",
+    capability: "members:write",
+    params: memberPath,
+    status: 204,
+  })
+  async restore(@FromPath() path: Infer<typeof memberPath>): Promise<void> {
+    const restored = await this.db.tx((scope) => restoreMember(scope, path.userId));
+    if (!restored) throw new NotFoundException();
   }
 }

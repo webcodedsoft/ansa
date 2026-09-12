@@ -3291,6 +3291,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly displayName: string;
         readonly role: "owner" | "admin" | "member";
         readonly createdAt: string;
+        readonly suspendedAt: string | null;
       })[];
         readonly page: number;
         readonly perPage: number;
@@ -3325,6 +3326,28 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         };
       }) =>
       send<void>(options, "DELETE", `/api/v1/members/${encodeURIComponent(input.path.userId)}`, input),
+
+    /**
+     * Revoke someone's access without removing them
+     * Their sessions end now and signing in no longer offers this organisation, but the membership stands — role and joined date kept, still listed — so restoring them is one call rather than an invitation. Refuses to suspend the last owner, or yourself. 404 if they are not a member or are already suspended.
+     */
+    suspend: (input: {
+        readonly path: {
+          readonly userId: string;
+        };
+      }) =>
+      send<void>(options, "POST", `/api/v1/members/${encodeURIComponent(input.path.userId)}/suspension`, input),
+
+    /**
+     * Restore someone's access
+     * Undoes a suspension. They sign in as before, with the role they held. 404 if they are not suspended.
+     */
+    restore: (input: {
+        readonly path: {
+          readonly userId: string;
+        };
+      }) =>
+      send<void>(options, "DELETE", `/api/v1/members/${encodeURIComponent(input.path.userId)}/suspension`, input),
   },
 
   numbers: {

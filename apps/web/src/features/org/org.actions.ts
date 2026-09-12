@@ -16,6 +16,8 @@ import {
 import {
   inviteMember,
   removeMember,
+  restoreMember,
+  suspendMember,
   updateOrganisation,
   revokeInvitation,
   setMemberRole,
@@ -75,6 +77,45 @@ export const removeMemberAction = async (
     await removeMember(parsed.data);
     revalidatePath("/organisation");
     return succeededForm({ userId: parsed.data.userId }, "Removed.");
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+};
+
+export type AccessState = FormState<{ readonly userId: string; readonly suspended: boolean }>;
+
+/**
+ * Revoke someone's access, keeping their membership. Their open sessions end on the next
+ * request and signing in no longer offers this organisation; their role and joined date
+ * wait for `restoreAccessAction`. Not removal, which is for somebody who has left.
+ */
+export const revokeAccessAction = async (
+  _previous: AccessState,
+  form: FormData,
+): Promise<AccessState> => {
+  const parsed = removeMemberSchema.safeParse({ userId: form.get("userId") ?? "" });
+  if (!parsed.success) return invalidForm(parsed.error);
+
+  try {
+    await suspendMember(parsed.data);
+    revalidatePath("/organisation");
+    return succeededForm({ userId: parsed.data.userId, suspended: true }, "Access revoked.");
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+};
+
+export const restoreAccessAction = async (
+  _previous: AccessState,
+  form: FormData,
+): Promise<AccessState> => {
+  const parsed = removeMemberSchema.safeParse({ userId: form.get("userId") ?? "" });
+  if (!parsed.success) return invalidForm(parsed.error);
+
+  try {
+    await restoreMember(parsed.data);
+    revalidatePath("/organisation");
+    return succeededForm({ userId: parsed.data.userId, suspended: false }, "Access restored.");
   } catch (error) {
     return failedForm(failureMessage(error));
   }

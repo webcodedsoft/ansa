@@ -12,7 +12,7 @@ const COLUMNS: readonly Column<MemberSummary>[] = [
   { key: "person", header: "Person", cell: () => null },
   { key: "role", header: "Role", cell: () => null },
   { key: "joined", header: "Joined", cell: () => null },
-  { key: "actions", header: "Remove", headerHidden: true, cell: () => null },
+  { key: "actions", header: "Actions", headerHidden: true, cell: () => null },
 ];
 
 export const MemberTable = ({

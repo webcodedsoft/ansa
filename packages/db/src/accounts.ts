@@ -79,6 +79,9 @@ export const findSessionByToken = async (
         -- end their access here rather than only hiding them from a list.
         and u.deleted_at is null
         and m.deleted_at is null
+        -- Revoked access is the same answer as no membership: the row stands, the session
+        -- does not. See migration 0083.
+        and m.suspended_at is null
       limit 1`,
     [tokenHash, now],
   );
@@ -159,6 +162,8 @@ export interface Member {
   readonly displayName: string;
   readonly role: MemberRole;
   readonly createdAt: string;
+  /** Set while their access is revoked (migration 0083). Null is the ordinary state. */
+  readonly suspendedAt: string | null;
 }
 
 interface MemberRow {
@@ -167,6 +172,7 @@ interface MemberRow {
   readonly display_name: string;
   readonly role: MemberRole;
   readonly created_at: Date;
+  readonly suspended_at: Date | null;
 }
 
 export const listMembers = async (
@@ -174,7 +180,7 @@ export const listMembers = async (
   page: PageRequest,
 ): Promise<PageSlice<Member>> => {
   const rows = await scope.query<MemberRow & WithTotal>(
-    `select m.user_id, u.email, u.display_name, m.role, m.created_at, ${TOTAL_COLUMN}
+    `select m.user_id, u.email, u.display_name, m.role, m.created_at, m.suspended_at, ${TOTAL_COLUMN}
        from memberships m
        join users u on u.id = m.user_id
       where m.deleted_at is null and u.deleted_at is null
@@ -190,6 +196,7 @@ export const listMembers = async (
       displayName: row.display_name,
       role: row.role,
       createdAt: row.created_at.toISOString(),
+      suspendedAt: row.suspended_at?.toISOString() ?? null,
     }),
   );
 };
@@ -229,6 +236,55 @@ export const removeMember = async (scope: OrganizationScope, userId: string): Pr
   const rows = await scope.mutate<{ user_id: string }>(
     `update memberships set deleted_at = now()
       where user_id = $1 and deleted_at is null
+      returning user_id`,
+    [userId],
+  );
+  if (rows.length === 0) return false;
+  await endSessionsOf(scope, userId);
+  return true;
+};
+
+/**
+ * Every session this person holds in this organisation, ended.
+ *
+ * The membership checks in `findSessionByToken` already make those sessions inert, so this is
+ * hygiene rather than the gate: a revoked row says plainly in the sessions table that access
+ * ended, and when, rather than leaving a live-looking row that happens not to join.
+ */
+const endSessionsOf = async (scope: OrganizationScope, userId: string): Promise<void> => {
+  await scope.mutate(
+    `update sessions set revoked_at = now()
+      where user_id = $1 and organization_id = app.current_organization() and revoked_at is null`,
+    [userId],
+  );
+};
+
+/**
+ * Revoke somebody's access without removing them.
+ *
+ * The membership stands — role and joined date kept, still listed — but nothing
+ * authenticates through it: their open sessions end here, and `organisations_for_user`
+ * stops offering this organisation at sign-in. For a person who may be back; removal is for
+ * a person who has left. Suspending the last owner raises from the constraint trigger, the
+ * same way demoting them does. Already suspended returns false.
+ */
+export const suspendMember = async (scope: OrganizationScope, userId: string): Promise<boolean> => {
+  const rows = await scope.mutate<{ user_id: string }>(
+    `update memberships set suspended_at = now()
+      where user_id = $1 and deleted_at is null and suspended_at is null
+      returning user_id`,
+    [userId],
+  );
+  if (rows.length === 0) return false;
+  await endSessionsOf(scope, userId);
+  return true;
+};
+
+/** The reverse. They sign in as before, with the role they had. Not suspended returns false. */
+export const restoreMember = async (scope: OrganizationScope, userId: string): Promise<boolean> => {
+  const rows = await scope.mutate<{ user_id: string }>(
+    `update memberships set suspended_at = null
+      where user_id = $1 and deleted_at is null and suspended_at is not null
       returning user_id`,
     [userId],
   );
