@@ -6132,6 +6132,13 @@ rather than landed as inventory — the wave that needs them adds them wired.
       The Modal scrolls now, for content taller than the screen. Seen live: the builder
       over the Tools tab, and the credential dialog over the builder. Not exercised: a real
       credential save from the dialog, which needs a secret typed.
+- [x] **The allowlist notice is gone** (2026-09-12)
+      Under the URL field: "<host> will be added to the egress allowlist when you save.
+      Without it the tool registers and every call answers…". It described plumbing the
+      person could do nothing about — the host is allowlisted on save, always — and it
+      dated from when an operator added hosts by hand. Removed. The one sentence in it that
+      was a person's decision, plain http crossing the network unencrypted, stands alone
+      now and appears only when the URL is http.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

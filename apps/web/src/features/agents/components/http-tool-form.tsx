@@ -331,18 +331,13 @@ export const HttpToolForm = ({
                 />
               </div>
 
-              {host !== null && problem("url") === undefined && (
+              {/* The host is allowlisted automatically on save; there is nothing for a person
+                  to do about it, so nothing is said. Plain http is different: that is a
+                  choice with a consequence, and it is said only when it applies. */}
+              {host !== null && problem("url") === undefined && isPlaintext(draft.url) && allowPlaintextHttp && (
                 <Notice tone="warn">
-                  <span className="font-mono text-[12.5px]">{host}</span> will be added to the
-                  egress allowlist when you save. Without it the tool registers and every call
-                  answers &ldquo;sorry, I couldn&rsquo;t get that just now&rdquo;.
-                  {isPlaintext(draft.url) && allowPlaintextHttp && (
-                    <>
-                      {" "}
-                      This is plain http, so the request and its credential cross the network
-                      unencrypted.
-                    </>
-                  )}
+                  This is plain http, so the request and its credential cross the network
+                  unencrypted. Use https if the system offers it.
                 </Notice>
               )}
 
