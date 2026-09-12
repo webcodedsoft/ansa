@@ -3,9 +3,9 @@
 import { Plus, Webhook } from "lucide-react";
 import { useState } from "react";
 
-import { Button, Card, Notice, PageHeader, Tag } from "@/components/ui";
+import { Button, Notice, PageHeader } from "@/components/ui";
 
-import type { ClaimWebhook, NumberCountries, NumberProvisioning, NumberSummary } from "../connect.service";
+import type { ClaimWebhook, NumberCountries, NumberSummary } from "../connect.service";
 import { GetNumberModal } from "./get-number-modal";
 import { BringYourOwnModal } from "./bring-your-own-modal";
 import { NumberCard, type RoutableAgent } from "./number-card";
@@ -17,21 +17,21 @@ import { NumberCard, type RoutableAgent } from "./number-card";
  * Each number is a card; a dashed card at the end adds one. "Bring your own" opens a dialog
  * with the import URL and its three steps; "Get a number" opens a dialog with the carrier's
  * catalogue. Both are reachable from the header and from the add card, so the page never
- * navigates away from what it already holds. Under it all, what this deployment can do,
- * straight from the API.
+ * navigates away from what it already holds. What the deployment can do is not a card of
+ * its own: the country list and the Nigeria note live in the Get-a-number dialog, the
+ * webhook URL in the Bring-your-own dialog, and a carrier refusal appears where somebody
+ * is trying to act on it.
  */
 export const NumbersBoard = ({
   numbers,
   agents,
   webhook,
-  provisioning,
   catalogue,
   organisationName,
 }: {
   readonly numbers: readonly NumberSummary[];
   readonly agents: readonly RoutableAgent[];
   readonly webhook: ClaimWebhook | null;
-  readonly provisioning: NumberProvisioning;
   /** Null when this deployment cannot offer numbers; a refusal when the carrier turned the request down. */
   readonly catalogue: { readonly countries: NumberCountries | null; readonly refusal: string | null } | null;
   readonly organisationName: string;
@@ -39,8 +39,6 @@ export const NumbersBoard = ({
   const [bringing, setBringing] = useState(false);
   const [getting, setGetting] = useState(false);
   const fromPlan = numbers.filter((one) => one.managedBy === "platform").length;
-  const canGet = catalogue?.countries !== null && catalogue !== null && catalogue !== undefined;
-  const moreCountries = catalogue?.countries === null || catalogue == null ? null : Math.max(0, catalogue.countries.items.length - 4);
 
   return (
     <>
@@ -107,40 +105,6 @@ export const NumbersBoard = ({
         </Notice>
       )}
 
-      <Card title="What this deployment can do" className="mt-[26px]">
-        <dl className="m-0 grid grid-cols-[11rem_minmax(0,1fr)] gap-x-3.5 gap-y-2.5 text-[13.5px]">
-          <dt className="text-[var(--ink-3)]">Numbers from Ansa</dt>
-          <dd className="m-0 flex flex-wrap items-center gap-2">
-            {canGet ? <Tag tone="ok">in your plan</Tag> : <Tag tone={catalogue === null ? "neutral" : "bad"}>{catalogue === null ? "not available" : "unavailable"}</Tag>}
-            <span>
-              {canGet
-                ? `US, GB, CA, ZA${moreCountries !== null && moreCountries > 0 ? ` and ${moreCountries} more` : ""}. Not Nigeria.`
-                : (catalogue?.refusal ?? provisioning.claim.detail)}
-            </span>
-          </dd>
-          <dt className="text-[var(--ink-3)]">Bringing your own</dt>
-          <dd className="m-0 flex flex-wrap items-center gap-2">
-            <Tag tone={provisioning.attach.selfService ? "ok" : "neutral"}>
-              {provisioning.attach.selfService ? "self-service" : "operator only"}
-            </Tag>
-            <span>Proved by webhook — no operator needed.</span>
-          </dd>
-          {provisioning.carrier !== null && (
-            <>
-              <dt className="text-[var(--ink-3)]">Carrier</dt>
-              <dd className="m-0 font-mono text-[13px]">{provisioning.carrier}</dd>
-            </>
-          )}
-          <dt className="text-[var(--ink-3)]">Voice webhook</dt>
-          <dd className="m-0 font-mono text-[12px]">
-            {provisioning.voiceWebhook.url === null ? (
-              <span className="font-sans text-[13px] text-[var(--ink-3)]">not available</span>
-            ) : (
-              `${provisioning.voiceWebhook.method} ${provisioning.voiceWebhook.url}`
-            )}
-          </dd>
-        </dl>
-      </Card>
     </>
   );
 };

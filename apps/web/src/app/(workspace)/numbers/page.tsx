@@ -53,7 +53,6 @@ const NumbersPage = async () => {
       numbers={items}
       agents={agents.map((agent) => ({ agentId: agent.agentId, name: agent.name, dialledNumber: agent.dialledNumber }))}
       webhook={webhook}
-      provisioning={provisioning}
       catalogue={catalogue}
       organisationName={org.name}
     />
