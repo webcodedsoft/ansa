@@ -7,6 +7,7 @@ import { createMailer, MAILER, type Mailer } from "../mail/mailer";
 import { ApiGuard } from "./auth/api.guard";
 import { AgentsController } from "./agents/agents.controller";
 import { AppointmentsController } from "./appointments/appointments.controller";
+import { EnvModule } from "../config/env.module";
 import { AuditController } from "./audit/audit.controller";
 import { AuthController } from "./auth/auth.controller";
 import { AuthService } from "./auth/auth.service";
@@ -70,7 +71,7 @@ export const API_CONTROLLERS = [
 @Module({
   /* The recording pair lives in its own module: its fetch route is unauthenticated by
      design and must share one ticket registry with the mint endpoint here. */
-  imports: [RecordingModule],
+  imports: [EnvModule, RecordingModule],
   controllers: API_CONTROLLERS,
   providers: [
     {

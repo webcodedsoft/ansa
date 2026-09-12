@@ -1,4 +1,17 @@
+import { resolve } from "node:path";
+
+import { config as loadDotEnv } from "dotenv";
 import type { NextConfig } from "next";
+
+/**
+ * The repo-root `.env`, loaded before Next reads anything.
+ *
+ * Next loads `.env` from the app's own directory, and this monorepo keeps one file at the
+ * root for every process. The real environment wins — dotenv never overrides a key that is
+ * already set — so a deployment's own variables are untouched and a missing file is not an
+ * error. Server-side only: nothing here is `NEXT_PUBLIC_`, by design (see below).
+ */
+loadDotEnv({ path: resolve(__dirname, "../../.env"), quiet: true });
 
 /**
  * The API base URL is read at request time from the environment, never baked in here and

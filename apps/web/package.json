@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "generate": "pnpm --filter @ansa/api openapi -- --client ../web/src/lib/api/generated.ts",
-    "dev": "node ../../scripts/with-env.mjs next dev --port 3100",
+    "dev": "next dev --port 3100",
     "build": "next build",
     "start": "next start --port 3100",
     "lint": "eslint .",
@@ -15,6 +15,7 @@
     "@ansa/shared": "workspace:*",
     "@tailwindcss/postcss": "4.3.3",
     "clsx": "2.1.1",
+    "dotenv": "^17.4.2",
     "lucide-react": "1.31.0",
     "next": "16.3.1",
     "react": "19.2.8",

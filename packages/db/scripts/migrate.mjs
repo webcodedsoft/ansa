@@ -32,9 +32,14 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { config as loadDotEnv } from "dotenv";
 import pg from "pg";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+// The repo-root .env, so `pnpm --filter @ansa/db migrate` works from a clean shell. The
+// real environment wins; a missing file is not an error.
+loadDotEnv({ path: resolve(HERE, "../../../.env"), quiet: true });
 const MIGRATIONS = resolve(HERE, "..", "migrations");
 
 /** Only what the repo tracks, in the order the filenames impose. */

@@ -6010,6 +6010,15 @@ rather than landed as inventory — the wave that needs them adds them wired.
       every call, which the page now shows in the carrier's words under Buy a number. That
       also means no call can be placed or answered until the account is reactivated.
       Nigeria stays bring-your-own — Twilio sells no Nigerian numbers — and the card says so.
+- [x] **The environment loads the way Nest loads it** (2026-09-12)
+      `scripts/with-env.mjs` is gone. The API imports `EnvModule` — `ConfigModule.forRoot`
+      pointed at the repo-root `.env`, global, imported by both `AppModule` and `ApiModule`
+      because the API boots alone in tests — so `loadConfig` sees the file's values without
+      knowing a file exists. The console loads the same file through `dotenv` at the top of
+      `next.config.ts`, and the migrate script does the same, so `pnpm --filter @ansa/db
+      migrate` works from a clean shell. In all three the real environment wins and a
+      missing file is not an error, which is what a deployment wants. Both dev servers were
+      started without the wrapper and came up on the file's values.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.
