@@ -93,7 +93,24 @@ const toBusinessHours = (row: OrganizationRow): BusinessHours | null => {
   const closes = wholeNumberOrNull(row["business_close_hour"]);
   const days = row["business_days"];
   if (opens === null || closes === null || !Array.isArray(days)) return null;
-  return { opensAtHour: opens, closesAtHour: closes, openDays: days.map(Number) };
+  const closed = row["business_closed_dates"];
+  return {
+    opensAtHour: opens,
+    closesAtHour: closes,
+    openDays: days.map(Number),
+    closedDates: Array.isArray(closed) ? closed.map(isoDate) : [],
+  };
+};
+
+/**
+ * `select *` hands a `date[]` back as JavaScript Dates at the server's local midnight. The
+ * local getters, not `toISOString`, or a UTC+1 server reports every holiday a day early.
+ */
+const isoDate = (value: unknown): string => {
+  if (value instanceof Date) {
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+  }
+  return String(value);
 };
 
 const toIsoOrNull = (value: unknown): string | null => {

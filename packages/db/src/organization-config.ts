@@ -1,3 +1,5 @@
+import type { BusinessHours } from "@ansa/shared";
+
 import {
   TOTAL_COLUMN,
   pageOrder,
@@ -252,19 +254,22 @@ export const publishConfiguration = async (
  */
 export const setOrganizationHours = async (
   scope: OrganizationScope,
-  hours: { readonly opensAtHour: number; readonly closesAtHour: number; readonly openDays: readonly number[] } | null,
+  hours: BusinessHours | null,
 ): Promise<boolean> => {
+  /* Closed dates travel with the hours: always-open has no holes, so null clears them too. */
   const changed = await scope.mutate<{ id: string }>(
     `update organizations
-        set business_open_hour  = $1,
-            business_close_hour = $2,
-            business_days       = $3
+        set business_open_hour    = $1,
+            business_close_hour   = $2,
+            business_days         = $3,
+            business_closed_dates = $4::date[]
       where deleted_at is null
       returning id`,
     [
       hours?.opensAtHour ?? null,
       hours?.closesAtHour ?? null,
       hours === null ? null : [...hours.openDays],
+      hours === null ? [] : [...hours.closedDates],
     ],
   );
   /* `mutate`, not `query`: an update with `returning` comes back as `[rows, count]`, so a

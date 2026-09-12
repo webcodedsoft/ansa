@@ -57,9 +57,12 @@ export const revokeInvitation = async (input: RevokeInvitationInput) =>
  */
 export const organisation = async () => (await api()).organization.read();
 
-/** Cosmetic, and only here: an agent's name is what it says on a call, and this is not that. */
-export const renameOrganisation = async (name: string) =>
-  (await api()).organization.rename({ body: { name } });
+/** What the organisation says about itself. Cosmetic: no agent reads any of it out. */
+export const updateOrganisation = async (details: {
+  readonly name: string;
+  readonly supportEmail: string | null;
+  readonly website: string | null;
+}) => (await api()).organization.update({ body: details });
 
 /**
  * Turn recording on or off. Applied immediately; the disclosure travels with it, so from the
@@ -72,10 +75,24 @@ export type Organisation = Awaited<ReturnType<typeof organisation>>;
 
 /** When this organisation counts as open. Null is always open — a setting, not an absence. */
 export const setOrganizationHours = async (
-  businessHours: { readonly opensAtHour: number; readonly closesAtHour: number; readonly openDays: readonly number[] } | null,
+  businessHours: {
+    readonly opensAtHour: number;
+    readonly closesAtHour: number;
+    readonly openDays: readonly number[];
+    readonly closedDates: readonly string[];
+  } | null,
 ) =>
   (await api()).organization.setHours({
-    body: { businessHours: businessHours === null ? null : { ...businessHours, openDays: [...businessHours.openDays] } },
+    body: {
+      businessHours:
+        businessHours === null
+          ? null
+          : {
+              ...businessHours,
+              openDays: [...businessHours.openDays],
+              closedDates: [...businessHours.closedDates],
+            },
+    },
   });
 
 export type MemberPage = Awaited<ReturnType<typeof listMembers>>;

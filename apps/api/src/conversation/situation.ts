@@ -1,5 +1,5 @@
 import type { CallerHistory } from "@ansa/db";
-import { watMoment, type BusinessHours } from "@ansa/shared";
+import { watDate, watMoment, type BusinessHours } from "@ansa/shared";
 
 /**
  * Where the call is, as opposed to what the caller has said.
@@ -125,7 +125,12 @@ export const describeSituation = (input: SituationInput): Situation => {
 
   /* `closesAtHour` is exclusive — a line that shuts at five holds 17 — so "open" is
      `hour < closesAtHour`, and the minutes remaining count to the top of that hour. */
-  const openToday = hours !== null && hours.openDays.includes(moment.weekday);
+  /* A closed date is a hole in the weekly pattern, and the hole wins: a public holiday on a
+     Tuesday is closed however many Tuesdays the organisation is normally open. */
+  const openToday =
+    hours !== null &&
+    hours.openDays.includes(moment.weekday) &&
+    !hours.closedDates.includes(watDate(moment));
   const openNow =
     hours === null
       ? null

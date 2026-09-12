@@ -23558,14 +23558,39 @@
                             "maximum": 7
                           },
                           "maxItems": 7
+                        },
+                        "closedDates": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 10,
+                            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                          },
+                          "maxItems": 366
                         }
                       },
                       "required": [
                         "opensAtHour",
                         "closesAtHour",
-                        "openDays"
+                        "openDays",
+                        "closedDates"
                       ],
                       "additionalProperties": false
+                    },
+                    "supportEmail": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 254,
+                      "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"
+                    },
+                    "website": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 200
                     },
                     "recordCalls": {
                       "type": "boolean"
@@ -23599,13 +23624,23 @@
                           ],
                           "minimum": 0,
                           "maximum": 24
+                        },
+                        "doNotCallNumbers": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "suppressedThisMonth": {
+                          "type": "integer",
+                          "minimum": 0
                         }
                       },
                       "required": [
                         "policy",
                         "basis",
                         "callingEarliestHour",
-                        "callingLatestHour"
+                        "callingLatestHour",
+                        "doNotCallNumbers",
+                        "suppressedThisMonth"
                       ],
                       "additionalProperties": false
                     }
@@ -23617,6 +23652,8 @@
                     "audioRetentionDays",
                     "transcriptRetentionDays",
                     "businessHours",
+                    "supportEmail",
+                    "website",
                     "recordCalls",
                     "consent"
                   ],
@@ -23668,12 +23705,12 @@
         }
       },
       "patch": {
-        "operationId": "organization.rename",
+        "operationId": "organization.update",
         "tags": [
           "organization"
         ],
-        "summary": "Rename this organisation",
-        "description": "Cosmetic, and only here: an agent's name is what it says on a call, and this is not that. Renaming the organisation leaves every agent saying exactly what it said before.",
+        "summary": "What this organisation says about itself",
+        "description": "Its name, and where it can be written to. Cosmetic, and only here: an agent's name is what it says on a call, and this is not that, so renaming the organisation leaves every agent saying exactly what it said before. The email and website are kept for the people who run the company; no call reads them out.",
         "x-ansa-capability": "config:write",
         "requestBody": {
           "required": true,
@@ -23685,10 +23722,27 @@
                   "name": {
                     "type": "string",
                     "maxLength": 200
+                  },
+                  "supportEmail": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 254,
+                    "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"
+                  },
+                  "website": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 200
                   }
                 },
                 "required": [
-                  "name"
+                  "name",
+                  "supportEmail",
+                  "website"
                 ],
                 "additionalProperties": false
               }
@@ -23748,14 +23802,39 @@
                             "maximum": 7
                           },
                           "maxItems": 7
+                        },
+                        "closedDates": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 10,
+                            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                          },
+                          "maxItems": 366
                         }
                       },
                       "required": [
                         "opensAtHour",
                         "closesAtHour",
-                        "openDays"
+                        "openDays",
+                        "closedDates"
                       ],
                       "additionalProperties": false
+                    },
+                    "supportEmail": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 254,
+                      "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"
+                    },
+                    "website": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 200
                     },
                     "recordCalls": {
                       "type": "boolean"
@@ -23789,13 +23868,23 @@
                           ],
                           "minimum": 0,
                           "maximum": 24
+                        },
+                        "doNotCallNumbers": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "suppressedThisMonth": {
+                          "type": "integer",
+                          "minimum": 0
                         }
                       },
                       "required": [
                         "policy",
                         "basis",
                         "callingEarliestHour",
-                        "callingLatestHour"
+                        "callingLatestHour",
+                        "doNotCallNumbers",
+                        "suppressedThisMonth"
                       ],
                       "additionalProperties": false
                     }
@@ -23807,6 +23896,8 @@
                     "audioRetentionDays",
                     "transcriptRetentionDays",
                     "businessHours",
+                    "supportEmail",
+                    "website",
                     "recordCalls",
                     "consent"
                   ],
@@ -23929,7 +24020,7 @@
           "organization"
         ],
         "summary": "When this organisation counts as open",
-        "description": "Shared by every agent this organisation runs, and applied immediately — there is no version to publish because hours have never been part of one. Send `businessHours: null` for a line that is always open; the three fields travel together or not at all, because two thirds of a window cannot be reasoned about. A window that wraps past midnight is refused by the database, not tolerated: `22 to 2` is either a night shift or a typo and the row cannot tell which.",
+        "description": "Shared by every agent this organisation runs, and applied immediately — there is no version to publish because hours have never been part of one. Send `businessHours: null` for a line that is always open; the fields travel together or not at all, because two thirds of a window cannot be reasoned about. A window that wraps past midnight is refused by the database, not tolerated: `22 to 2` is either a night shift or a typo and the row cannot tell which.",
         "x-ansa-capability": "config:write",
         "requestBody": {
           "required": true,
@@ -23962,12 +24053,22 @@
                           "maximum": 7
                         },
                         "maxItems": 7
+                      },
+                      "closedDates": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "maxLength": 10,
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                        },
+                        "maxItems": 366
                       }
                     },
                     "required": [
                       "opensAtHour",
                       "closesAtHour",
-                      "openDays"
+                      "openDays",
+                      "closedDates"
                     ],
                     "additionalProperties": false
                   }
@@ -24033,14 +24134,39 @@
                             "maximum": 7
                           },
                           "maxItems": 7
+                        },
+                        "closedDates": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 10,
+                            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                          },
+                          "maxItems": 366
                         }
                       },
                       "required": [
                         "opensAtHour",
                         "closesAtHour",
-                        "openDays"
+                        "openDays",
+                        "closedDates"
                       ],
                       "additionalProperties": false
+                    },
+                    "supportEmail": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 254,
+                      "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"
+                    },
+                    "website": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 200
                     },
                     "recordCalls": {
                       "type": "boolean"
@@ -24074,13 +24200,23 @@
                           ],
                           "minimum": 0,
                           "maximum": 24
+                        },
+                        "doNotCallNumbers": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "suppressedThisMonth": {
+                          "type": "integer",
+                          "minimum": 0
                         }
                       },
                       "required": [
                         "policy",
                         "basis",
                         "callingEarliestHour",
-                        "callingLatestHour"
+                        "callingLatestHour",
+                        "doNotCallNumbers",
+                        "suppressedThisMonth"
                       ],
                       "additionalProperties": false
                     }
@@ -24092,6 +24228,8 @@
                     "audioRetentionDays",
                     "transcriptRetentionDays",
                     "businessHours",
+                    "supportEmail",
+                    "website",
                     "recordCalls",
                     "consent"
                   ],
@@ -24234,14 +24372,39 @@
                             "maximum": 7
                           },
                           "maxItems": 7
+                        },
+                        "closedDates": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 10,
+                            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                          },
+                          "maxItems": 366
                         }
                       },
                       "required": [
                         "opensAtHour",
                         "closesAtHour",
-                        "openDays"
+                        "openDays",
+                        "closedDates"
                       ],
                       "additionalProperties": false
+                    },
+                    "supportEmail": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 254,
+                      "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"
+                    },
+                    "website": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 200
                     },
                     "recordCalls": {
                       "type": "boolean"
@@ -24275,13 +24438,23 @@
                           ],
                           "minimum": 0,
                           "maximum": 24
+                        },
+                        "doNotCallNumbers": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "suppressedThisMonth": {
+                          "type": "integer",
+                          "minimum": 0
                         }
                       },
                       "required": [
                         "policy",
                         "basis",
                         "callingEarliestHour",
-                        "callingLatestHour"
+                        "callingLatestHour",
+                        "doNotCallNumbers",
+                        "suppressedThisMonth"
                       ],
                       "additionalProperties": false
                     }
@@ -24293,6 +24466,8 @@
                     "audioRetentionDays",
                     "transcriptRetentionDays",
                     "businessHours",
+                    "supportEmail",
+                    "website",
                     "recordCalls",
                     "consent"
                   ],

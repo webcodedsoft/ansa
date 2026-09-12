@@ -16,7 +16,7 @@ import {
 import {
   inviteMember,
   removeMember,
-  renameOrganisation,
+  updateOrganisation,
   revokeInvitation,
   setMemberRole,
   setOrganizationHours,
@@ -161,8 +161,21 @@ const hoursSchema = z
     opensAtHour: z.coerce.number().int().min(0).max(23),
     closesAtHour: z.coerce.number().int().min(1).max(24),
     openDays: z.array(z.coerce.number().int().min(1).max(7)),
+    /* Empty rows are a date input somebody added and never filled; they are dropped, not
+       refused. Duplicates collapse — the same holiday twice closes nothing twice. */
+    closedDates: z
+      .array(z.string())
+      .transform((dates) => [...new Set(dates.filter((d) => d !== ""))].sort()),
   })
   .superRefine((value, context) => {
+    const notADate = value.closedDates.find((d) => !/^\d{4}-\d{2}-\d{2}$/.test(d));
+    if (notADate !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["closedDates"],
+        message: `${notADate} is not a date.`,
+      });
+    }
     if (!value.hoursEnabled) return;
     if (value.openDays.length === 0) {
       context.addIssue({
@@ -192,15 +205,16 @@ export const saveHours = async (_previous: HoursState, form: FormData): Promise<
     opensAtHour: form.get("opensAtHour") ?? 9,
     closesAtHour: form.get("closesAtHour") ?? 17,
     openDays: form.getAll("openDays"),
+    closedDates: form.getAll("closedDates"),
   });
   if (!parsed.success) return invalidForm(parsed.error);
 
-  const { hoursEnabled, opensAtHour, closesAtHour, openDays } = parsed.data;
+  const { hoursEnabled, opensAtHour, closesAtHour, openDays, closedDates } = parsed.data;
 
   try {
-    // Null for all three is "always open", which is a setting rather than an absence.
+    // Null is "always open", which is a setting rather than an absence.
     await setOrganizationHours(
-      hoursEnabled ? { opensAtHour, closesAtHour, openDays } : null,
+      hoursEnabled ? { opensAtHour, closesAtHour, openDays, closedDates } : null,
     );
     /* The whole workspace tree, not this page. The point of the move is that these hours are
        one organisation's and are read in more than one place — every agent runs on them. */
@@ -212,20 +226,38 @@ export const saveHours = async (_previous: HoursState, form: FormData): Promise<
 };
 
 /**
- * The organisation's name, saved.
+ * What the organisation says about itself: its name, and where it can be written to.
  *
  * Revalidates the whole tree: the name is in the sidebar, the breadcrumb and every page
  * header, so a narrower revalidation would leave the old name in the chrome around the new.
  */
-export type NameState = FormState<{ readonly name: string }>;
+export type DetailsState = FormState<{ readonly name: string }>;
 
-export const saveName = async (_previous: NameState, form: FormData): Promise<NameState> => {
-  const name = String(form.get("name") ?? "").trim();
-  if (name === "") return failedForm("The organisation needs a name.");
+const detailsSchema = z.object({
+  name: z.string().trim().min(1, "The organisation needs a name."),
+  /* Empty is "none", and none is allowed. A value has to look like an address. */
+  supportEmail: z
+    .string()
+    .trim()
+    .transform((v) => (v === "" ? null : v))
+    .refine((v) => v === null || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), "That is not an email address."),
+  website: z
+    .string()
+    .trim()
+    .transform((v) => (v === "" ? null : v)),
+});
+
+export const saveDetails = async (_previous: DetailsState, form: FormData): Promise<DetailsState> => {
+  const parsed = detailsSchema.safeParse({
+    name: form.get("name") ?? "",
+    supportEmail: form.get("supportEmail") ?? "",
+    website: form.get("website") ?? "",
+  });
+  if (!parsed.success) return invalidForm(parsed.error);
   try {
-    const saved = await renameOrganisation(name);
+    const saved = await updateOrganisation(parsed.data);
     revalidatePath("/", "layout");
-    return succeededForm({ name: saved.name }, `Renamed to ${saved.name}.`);
+    return succeededForm({ name: saved.name }, "Saved.");
   } catch (error) {
     return failedForm(failureMessage(error));
   }
@@ -235,7 +267,7 @@ export const saveName = async (_previous: NameState, form: FormData): Promise<Na
  * Recording, switched.
  *
  * `on` arrives as the string a checkbox sends, so absence is off — which is also what a
- * person who unticked the box meant. Revalidates the layout for the same reason `saveName`
+ * person who unticked the box meant. Revalidates the layout for the same reason `saveDetails`
  * does: the state is shown on the organisation page and on every call page's player.
  */
 export type RecordingState = FormState<{ readonly recordCalls: boolean }>;

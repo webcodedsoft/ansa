@@ -3,7 +3,6 @@ import type React from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { WidePage } from "@/components/shell/wide-page";
 import { Card, Tabs, buttonClass } from "@/components/ui";
 import { findCall } from "@/features/calls/calls.service";
 import { CallDirection } from "@/features/calls/components/call-direction";
@@ -57,7 +56,6 @@ const CallDetailPage = async ({
 
   return (
     <>
-      <WidePage />
 
       {/* The way back goes to the person when there is one. A call is opened from a contact
           more often than from the list, and "← Amaka Obi" says where you are in a way that

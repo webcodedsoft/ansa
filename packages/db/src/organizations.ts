@@ -42,6 +42,12 @@ export interface Organization {
    */
   readonly businessHours: BusinessHours | null;
   /**
+   * Where a caller can be pointed in writing, and the company's website. Kept and shown;
+   * the agent does not read either out (migration 0082 says why). Null until written.
+   */
+  readonly supportEmail: string | null;
+  readonly website: string | null;
+  /**
    * Whether calls are kept as audio (migration 0077). Off by default. When on, the agent
    * discloses it in its opening line — the disclosure is not a separate switch.
    */
@@ -52,6 +58,10 @@ export interface Organization {
     readonly basis: string | null;
     readonly callingEarliestHour: number | null;
     readonly callingLatestHour: number | null;
+    /** Numbers on the do-not-call list this organisation's calls are checked against — its own and the global ones. */
+    readonly doNotCallNumbers: number;
+    /** Calls the consent gate refused to place this calendar month (WAT). */
+    readonly suppressedThisMonth: number;
   };
 }
 
@@ -64,6 +74,9 @@ interface OrganizationRow {
   business_open_hour: number | null;
   business_close_hour: number | null;
   business_days: number[] | null;
+  business_closed_dates: string[] | null;
+  support_email: string | null;
+  website: string | null;
   record_calls: boolean;
   consent_policy: string;
   consent_basis: string | null;
@@ -81,10 +94,21 @@ const toBusinessHours = (row: OrganizationRow): BusinessHours | null => {
   const closes = row.business_close_hour;
   const days = row.business_days;
   if (opens == null || closes == null || days == null) return null;
-  return { opensAtHour: opens, closesAtHour: closes, openDays: days };
+  return {
+    opensAtHour: opens,
+    closesAtHour: closes,
+    openDays: days,
+    closedDates: row.business_closed_dates ?? [],
+  };
 };
 
-const toOrganization = (row: OrganizationRow): Organization => ({
+/** The two consent counts are the organisation's, not one number's — hence here and not in `readConsentFacts`. */
+interface ConsentCounts {
+  readonly doNotCallNumbers: number;
+  readonly suppressedThisMonth: number;
+}
+
+const toOrganization = (row: OrganizationRow, counts: ConsentCounts): Organization => ({
   organizationId: asOrganizationId(row.id),
   name: row.name,
   createdAt: iso(row.created_at),
@@ -92,13 +116,38 @@ const toOrganization = (row: OrganizationRow): Organization => ({
   transcriptRetentionDays: row.transcript_retention_days,
   recordCalls: row.record_calls === true,
   businessHours: toBusinessHours(row),
+  supportEmail: row.support_email,
+  website: row.website,
   consent: {
     policy: row.consent_policy,
     basis: row.consent_basis,
     callingEarliestHour: row.calling_earliest_hour,
     callingLatestHour: row.calling_latest_hour,
+    doNotCallNumbers: counts.doNotCallNumbers,
+    suppressedThisMonth: counts.suppressedThisMonth,
   },
 });
+
+/**
+ * How many numbers the consent gate would refuse, and how many it has refused this month.
+ *
+ * Global do-not-call rows are counted alongside the organisation's own, as `readConsentFacts`
+ * counts them: somebody who said "stop calling me" did not say it to one company. The month is
+ * a WAT month, because that is the calendar the people reading the number are on.
+ */
+const readConsentCounts = async (scope: OrganizationScope): Promise<ConsentCounts> => {
+  const rows = await scope.query<{ dnc: string; suppressed: string }>(
+    `select (select count(*) from do_not_call
+              where organization_id = app.current_organization() or organization_id is null) as dnc,
+            (select count(*) from scheduled_calls
+              where status = 'suppressed'
+                and created_at >= date_trunc('month', now() at time zone 'Africa/Lagos') at time zone 'Africa/Lagos') as suppressed`,
+  );
+  return {
+    doNotCallNumbers: Number(rows[0]?.dnc ?? 0),
+    suppressedThisMonth: Number(rows[0]?.suppressed ?? 0),
+  };
+};
 
 /**
  * The caller's own organisation.
@@ -115,32 +164,44 @@ export const readOrganization = async (
 ): Promise<Organization | null> => {
   const rows = await scope.query<OrganizationRow>(
     `select id, name, created_at, audio_retention_days, transcript_retention_days,
-            business_open_hour, business_close_hour, business_days, record_calls,
+            business_open_hour, business_close_hour, business_days,
+            business_closed_dates::text[] as business_closed_dates,
+            support_email, website, record_calls,
             consent_policy, consent_basis, calling_earliest_hour, calling_latest_hour
        from organizations`,
   );
   const row = rows[0];
-  return row === undefined ? null : toOrganization(row);
+  if (row === undefined) return null;
+  return toOrganization(row, await readConsentCounts(scope));
 };
 
+/** What an organisation may say about itself: its name, and where to write to it. */
+export interface OrganizationDetails {
+  readonly name: string;
+  readonly supportEmail: string | null;
+  readonly website: string | null;
+}
+
 /**
- * Rename it. The one thing an organisation may change about itself today.
+ * Rename it, and set where it can be written to.
  *
  * Cosmetic here and nowhere else: an agent's name is what it calls itself on a call, and
  * this is not that. They were the same string before migration 0018 and are not now, so
- * renaming the organisation leaves every agent saying exactly what it said before.
+ * renaming the organisation leaves every agent saying exactly what it said before. The
+ * email and website are kept for the people who run the company; no call reads them.
  */
 export const renameOrganization = async (
   scope: OrganizationScope,
-  name: string,
+  details: OrganizationDetails,
 ): Promise<Organization | null> => {
   /* `mutate`, not `query`: an update with `returning` comes back as `[rows, affectedCount]`,
      so the check below was always false and a rename of a deleted organisation — where RLS
      and the soft-delete filter match nothing — reported success. The third instance of this
      exact mistake in this package, which is why there is now a test that refuses it. */
   const updated = await scope.mutate<{ id: string }>(
-    `update organizations set name = $1 where deleted_at is null returning id`,
-    [name],
+    `update organizations set name = $1, support_email = $2, website = $3
+      where deleted_at is null returning id`,
+    [details.name, details.supportEmail, details.website],
   );
   if (updated.length === 0) return null;
   return readOrganization(scope);

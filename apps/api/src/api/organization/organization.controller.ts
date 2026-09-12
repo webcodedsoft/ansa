@@ -5,7 +5,16 @@ import {
   setOrganizationHours,
   setRecordCalls,
 } from "@ansa/db";
-import { Controller, Delete, Get, Inject, NotFoundException, Patch, Put } from "@nestjs/common";
+import {
+  BadRequestException,
+  Controller,
+  Delete,
+  Get,
+  Inject,
+  NotFoundException,
+  Patch,
+  Put,
+} from "@nestjs/common";
 
 import { Endpoint } from "../http/endpoint";
 import { apiRoute, FromBody } from "../http/request";
@@ -45,7 +54,19 @@ const businessHours = object({
   closesAtHour: integer({ minimum: 1, maximum: 24 }),
   /** ISO weekdays: 1 is Monday, 7 is Sunday. */
   openDays: list(integer({ minimum: 1, maximum: 7 }), { maxItems: 7 }),
+  /**
+   * Dates the line is shut whatever the weekday says — public holidays — as `YYYY-MM-DD` in
+   * WAT. A hole in the weekly pattern, and the hole wins.
+   */
+  closedDates: list(text({ maxLength: 10, pattern: /^\d{4}-\d{2}-\d{2}$/ }), { maxItems: 366 }),
 });
+
+/** `2026-02-30` matches the pattern and is not a day; the database would refuse it with a 500. */
+const isRealDate = (iso: string): boolean =>
+  new Date(`${iso}T00:00:00Z`).toISOString().slice(0, 10) === iso;
+
+/** RFC 5322 is not the point; "something at somewhere with a dot" is what a typo fails. */
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const hoursBody = object({ businessHours: nullable(businessHours) });
 
@@ -80,6 +101,9 @@ const organization = object({
    * rendered — so with two agents, publishing one moved the other's opening times.
    */
   businessHours: nullable(businessHours),
+  /** Kept for the people who run the company; the agent does not read either out. */
+  supportEmail: nullable(text({ maxLength: 254, pattern: EMAIL })),
+  website: nullable(text({ maxLength: 200 })),
   /**
    * Whether calls are kept as audio. Off by default; the organisation turns it on here. When
    * on, every caller is told in the agent's first sentence — the disclosure is not a
@@ -92,17 +116,23 @@ const organization = object({
     basis: nullable(text({ maxLength: 500 })),
     callingEarliestHour: nullable(integer({ minimum: 0, maximum: 23 })),
     callingLatestHour: nullable(integer({ minimum: 0, maximum: 24 })),
+    /** Numbers the gate would refuse: this organisation's own do-not-call rows plus the global ones. */
+    doNotCallNumbers: integer({ minimum: 0 }),
+    /** Calls the gate has refused to place this calendar month, WAT. */
+    suppressedThisMonth: integer({ minimum: 0 }),
   }),
 });
 
 /**
- * One field, because one field is what an organisation may change about itself today.
- *
- * A body of `{ name }` rather than a general patch: the other values on this document are
- * operator-set, and an endpoint that accepted them and ignored them would be worse than
- * one that does not accept them.
+ * The three things an organisation may say about itself. Not a general patch: the other
+ * values on this document are operator-set, and an endpoint that accepted them and ignored
+ * them would be worse than one that does not accept them. Null clears an address.
  */
-const rename = object({ name: text({ maxLength: NAME_LIMIT }) });
+const details = object({
+  name: text({ maxLength: NAME_LIMIT }),
+  supportEmail: nullable(text({ maxLength: 254, pattern: EMAIL })),
+  website: nullable(text({ maxLength: 200 })),
+});
 
 const recordingBody = object({ recordCalls: flag() });
 
@@ -128,15 +158,15 @@ export class OrganizationController {
 
   @Patch()
   @Endpoint({
-    summary: "Rename this organisation",
+    summary: "What this organisation says about itself",
     description:
-      "Cosmetic, and only here: an agent's name is what it says on a call, and this is not that. Renaming the organisation leaves every agent saying exactly what it said before.",
+      "Its name, and where it can be written to. Cosmetic, and only here: an agent's name is what it says on a call, and this is not that, so renaming the organisation leaves every agent saying exactly what it said before. The email and website are kept for the people who run the company; no call reads them out.",
     capability: "config:write",
-    body: rename,
+    body: details,
     response: organization,
   })
-  async rename(@FromBody() body: Infer<typeof rename>): Promise<Infer<typeof organization>> {
-    const saved = await this.db.tx((scope) => renameOrganization(scope, body.name));
+  async update(@FromBody() body: Infer<typeof details>): Promise<Infer<typeof organization>> {
+    const saved = await this.db.tx((scope) => renameOrganization(scope, body));
     if (saved === null) throw new NotFoundException();
     return saved;
   }
@@ -192,7 +222,7 @@ export class OrganizationController {
     description:
       "Shared by every agent this organisation runs, and applied immediately — there is no " +
       "version to publish because hours have never been part of one. Send `businessHours: " +
-      "null` for a line that is always open; the three fields travel together or not at all, " +
+      "null` for a line that is always open; the fields travel together or not at all, " +
       "because two thirds of a window cannot be reasoned about. A window that wraps past " +
       "midnight is refused by the database, not tolerated: `22 to 2` is either a night shift " +
       "or a typo and the row cannot tell which.",
@@ -201,6 +231,10 @@ export class OrganizationController {
     response: organization,
   })
   async setHours(@FromBody() body: Infer<typeof hoursBody>): Promise<Infer<typeof organization>> {
+    const notADay = body.businessHours?.closedDates.find((d) => !isRealDate(d));
+    if (notADay !== undefined) {
+      throw new BadRequestException(`${notADay} is not a date on the calendar.`);
+    }
     /* Applied rather than staged, unlike everything on `/config`. A draft exists so somebody
        can change what an agent *says* without a caller hearing it half-written; opening hours
        have no half-written state and no version to sit in, so staging them would be a second

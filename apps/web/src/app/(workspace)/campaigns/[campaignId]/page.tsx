@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { WidePage } from "@/components/shell/wide-page";
 import { buttonClass, Card, PageHeader, Pagination, Tabs } from "@/components/ui";
 import { currentPrincipal } from "@/features/auth/auth.service";
 import { listAgents, readTools } from "@/features/agents/agents.service";
@@ -442,7 +441,6 @@ const CampaignPage = async ({
     <>
       {/* The same 1600px the agent workspace takes: the conversation canvas is a drawing
           surface, and a drawing inside 1080 pixels is a drawing nobody can see. */}
-      <WidePage />
 
       {/* A page somebody is watching has to move. `router.refresh()` re-runs this component
           in place, so the strip, the breakdown and the feed all advance together without a

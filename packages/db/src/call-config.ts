@@ -185,6 +185,8 @@ interface ConfigRow {
   business_open_hour: number | null;
   business_close_hour: number | null;
   business_days: number[] | null;
+  /** Absent before migration 0082, which is every deployment that has not applied it. */
+  business_closed_dates?: string[] | null;
   tool_config: unknown;
   enabled_tools?: string[] | null;
   /** Absent before migration 0020 — both default to the pipeline's existing behaviour. */
@@ -235,7 +237,12 @@ const toBusinessHours = (row: ConfigRow): BusinessHours | null => {
   const closes = row.business_close_hour;
   const days = row.business_days;
   if (opens == null || closes == null || days == null) return null;
-  return { opensAtHour: opens, closesAtHour: closes, openDays: days };
+  return {
+    opensAtHour: opens,
+    closesAtHour: closes,
+    openDays: days,
+    closedDates: row.business_closed_dates ?? [],
+  };
 };
 
 /**

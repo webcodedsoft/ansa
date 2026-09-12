@@ -12,7 +12,7 @@ import { describeSituation, renderSituation, type SituationInput } from "./situa
 /** Nigeria is UTC+1 with no daylight saving, so WAT is UTC plus one hour, always. */
 const wat = (iso: string): Date => new Date(`${iso}+01:00`);
 
-const OFFICE = { opensAtHour: 9, closesAtHour: 17, openDays: [1, 2, 3, 4, 5] };
+const OFFICE = { opensAtHour: 9, closesAtHour: 17, openDays: [1, 2, 3, 4, 5], closedDates: [] };
 
 /**
  * A call that started the instant it is being described, unless a test says otherwise.
@@ -68,6 +68,18 @@ describe("whether the line is open", () => {
   it("is closed on a day the organisation is not open", () => {
     // A Sunday, inside the hours but not on an open day.
     expect(describeSituation(at({ now: wat("2026-03-15T11:00:00") })).openNow).toBe(false);
+  });
+
+  it("is closed on a closed date, even on an open weekday inside the hours", () => {
+    // Tuesday 10 March, 11:00 WAT — open by the weekly pattern, shut by the calendar.
+    const holiday = { ...OFFICE, closedDates: ["2026-03-10"] };
+    expect(
+      describeSituation(at({ now: wat("2026-03-10T11:00:00"), businessHours: holiday })).openNow,
+    ).toBe(false);
+    // The day after is an ordinary Wednesday.
+    expect(
+      describeSituation(at({ now: wat("2026-03-11T11:00:00"), businessHours: holiday })).openNow,
+    ).toBe(true);
   });
 
   it("counts the minutes to closing from the top of the closing hour", () => {

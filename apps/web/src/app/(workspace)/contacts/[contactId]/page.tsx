@@ -4,7 +4,6 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 
 import { Card, Pagination, Stack, Tag, buttonClass } from "@/components/ui";
-import { WidePage } from "@/components/shell/wide-page";
 import { ContactConsent } from "@/features/contacts/components/contact-consent";
 import { initialsOf, nameOf } from "@/features/contacts/contacts.display";
 import { callsThisWeek, daysSince, timelineOf } from "@/features/contacts/contact-timeline";
@@ -84,7 +83,6 @@ const ContactPage = async ({
 
   return (
     <>
-      <WidePage />
 
       {/* Not `PageHeader`: this one carries a face and a verdict, and the way back sits above
           the name rather than opposite it. A person is not a section of the console — the

@@ -400,7 +400,7 @@ describe("opening hours belong to the organisation", () => {
 
   it("is set through its own writer", async () => {
     await withOrganization(ds, A, (scope) =>
-      setOrganizationHours(scope, { opensAtHour: 8, closesAtHour: 18, openDays: [1, 2, 3] }),
+      setOrganizationHours(scope, { opensAtHour: 8, closesAtHour: 18, openDays: [1, 2, 3], closedDates: [] }),
     );
     expect(await readHours()).toMatchObject({
       business_open_hour: 8,
@@ -409,11 +409,40 @@ describe("opening hours belong to the organisation", () => {
     });
   });
 
+  it("keeps the closed dates with the hours, and clears them with the hours", async () => {
+    await withOrganization(ds, A, (scope) =>
+      setOrganizationHours(scope, {
+        opensAtHour: 8,
+        closesAtHour: 18,
+        openDays: [1, 2, 3],
+        closedDates: ["2026-10-01", "2026-12-25"],
+      }),
+    );
+    const closed = await withOrganization(ds, A, async (scope) => {
+      const rows = await scope.query<{ closed: string[] }>(
+        "select business_closed_dates::text[] as closed from organizations",
+      );
+      return rows[0]?.closed;
+    });
+    expect(closed).toEqual(["2026-10-01", "2026-12-25"]);
+
+    /* Always open has no holes: null hours take the dates with them, so a later restriction
+       does not resurrect a holiday from a year nobody remembers setting. */
+    await withOrganization(ds, A, (scope) => setOrganizationHours(scope, null));
+    const cleared = await withOrganization(ds, A, async (scope) => {
+      const rows = await scope.query<{ closed: string[] }>(
+        "select business_closed_dates::text[] as closed from organizations",
+      );
+      return rows[0]?.closed;
+    });
+    expect(cleared).toEqual([]);
+  });
+
   it("is not touched by publishing an agent", async () => {
     /* The assertion that would have failed before 0053, and the whole reason for the change:
        a publish carrying no hours must leave the ones somebody set. */
     await withOrganization(ds, A, (scope) =>
-      setOrganizationHours(scope, { opensAtHour: 8, closesAtHour: 18, openDays: [1, 2, 3] }),
+      setOrganizationHours(scope, { opensAtHour: 8, closesAtHour: 18, openDays: [1, 2, 3], closedDates: [] }),
     );
     await withOrganization(ds, A, async (scope) =>
       publishAgentConfig(scope, await theAgent(scope), fields({ greeting: "Unrelated." }), "a publish"),

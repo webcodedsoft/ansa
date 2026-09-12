@@ -47,7 +47,6 @@ import { branchCount } from "../flow-questions";
 import { readFlow } from "../flow.schema";
 import { validateFlow } from "@ansa/shared/flow-validate";
 
-import { useWidePage } from "@/stores/layout.store";
 import { ConversationTab } from "./conversation-tab";
 import { DataCapturedTab } from "./data-captured-tab";
 import { FlowCanvas } from "./flow-canvas";
@@ -336,7 +335,6 @@ export const AgentWorkspace = ({
      to the step being edited. Replaced a boolean for a drawer: settings are no longer a
      place you go, they are a thing the pane shows. */
   const [openSetting, setOpenSetting] = useState<string | null>(null);
-  useWidePage(stagedMode === "flow");
   /* What the canvas reports each edit: how many of its problems would refuse a publish. The
      API refuses them anyway; this is so the button says so first, and says where, instead of
      letting somebody write a publish note for a publish that cannot happen. Only a flow's

@@ -50,6 +50,10 @@ export const watMoment = (now: Date): WatMoment => {
 /** The hour a Nigerian caller's clock is showing. */
 export const hourInWat = (now: Date): number => watMoment(now).hour;
 
+/** The date a Nigerian caller's calendar is showing, as `YYYY-MM-DD` — the form closed dates are stored in. */
+export const watDate = (moment: WatMoment): string =>
+  `${moment.year}-${String(moment.month).padStart(2, "0")}-${String(moment.day).padStart(2, "0")}`;
+
 /**
  * When an organisation's own line is staffed, in WAT.
  *
@@ -68,4 +72,10 @@ export interface BusinessHours {
   readonly closesAtHour: number;
   /** ISO weekdays the organisation is open: 1 is Monday, 7 is Sunday. */
   readonly openDays: readonly number[];
+  /**
+   * Dates the line is shut regardless of the weekly pattern — public holidays, in WAT, as
+   * `YYYY-MM-DD`. Empty for most organisations. A weekday in `openDays` that is also in
+   * here is closed; the hole wins over the pattern.
+   */
+  readonly closedDates: readonly string[];
 }

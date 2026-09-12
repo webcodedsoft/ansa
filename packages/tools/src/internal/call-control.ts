@@ -1,4 +1,4 @@
-import { watMoment, type BusinessHours } from "@ansa/shared";
+import { watDate, watMoment, type WatMoment, type BusinessHours } from "@ansa/shared";
 
 import type { ToolArgs, ToolDefinition } from "../types";
 import type { InternalHandler, InternalTool } from "./adapter";
@@ -104,7 +104,23 @@ const usableHours = (hours: BusinessHours | null): BusinessHours | null => {
   const days = [...new Set(hours.openDays)].filter((d) => whole(d) && d >= 1 && d <= DAYS_IN_WEEK);
   if (days.length === 0) return null;
 
-  return { opensAtHour: opens, closesAtHour: closes, openDays: days.sort((a, b) => a - b) };
+  /* A malformed date cannot close anything, so it is dropped rather than refusing the lot:
+     the weekly pattern is still usable without it. */
+  const closedDates = hours.closedDates.filter((d) => ISO_DATE.test(d));
+  return { opensAtHour: opens, closesAtHour: closes, openDays: days.sort((a, b) => a - b), closedDates };
+};
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** The WAT date `ahead` days on from a moment, in the form closed dates are written. */
+const dateAhead = (from: WatMoment, ahead: number): string => {
+  const shifted = new Date(Date.UTC(from.year, from.month - 1, from.day + ahead));
+  return watDate({
+    ...from,
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+  });
 };
 
 /**
@@ -144,18 +160,21 @@ export type HoursAnswer =
     };
 
 /**
- * The next moment the line is open, searched forward a week from now.
+ * The next moment the line is open, searched forward from now.
  *
- * A week is exhaustive: `openDays` is a set of weekdays, so if none of the next seven
- * days is open, none ever is.
+ * A week is exhaustive for the weekly pattern: `openDays` is a set of weekdays, so if none
+ * of the next seven days is open, none ever is. Each closed date can swallow at most one
+ * more day, so a week plus the number of closed dates is exhaustive for both.
  */
 const nextOpening = (
   hours: BusinessHours,
-  from: { readonly hour: number; readonly weekday: number },
+  from: WatMoment,
 ): { readonly hour: number; readonly weekday: number; readonly ahead: number } | null => {
-  for (let ahead = 0; ahead <= DAYS_IN_WEEK; ahead += 1) {
+  const horizon = DAYS_IN_WEEK + hours.closedDates.length;
+  for (let ahead = 0; ahead <= horizon; ahead += 1) {
     const weekday = ((from.weekday - 1 + ahead) % DAYS_IN_WEEK) + 1;
     if (!hours.openDays.includes(weekday)) continue;
+    if (hours.closedDates.includes(dateAhead(from, ahead))) continue;
     // Today only counts if opening is still to come; otherwise the line has closed for
     // the day and the caller wants the next one.
     if (ahead === 0 && from.hour >= hours.opensAtHour) continue;
@@ -169,7 +188,8 @@ export const answerHours = (hours: BusinessHours | null, now: Date): HoursAnswer
   if (usable === null) return { known: false };
 
   const moment = watMoment(now);
-  const openToday = usable.openDays.includes(moment.weekday);
+  const openToday =
+    usable.openDays.includes(moment.weekday) && !usable.closedDates.includes(watDate(moment));
   if (openToday && moment.hour >= usable.opensAtHour && moment.hour < usable.closesAtHour) {
     return { known: true, open: true, closesAtHour: usable.closesAtHour };
   }

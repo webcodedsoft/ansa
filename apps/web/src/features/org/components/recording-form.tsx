@@ -1,6 +1,7 @@
 "use client";
 
 import { Mic } from "lucide-react";
+import Link from "next/link";
 import { useActionState, useState } from "react";
 
 import { Card, Notice, SubmitButton, Tag } from "@/components/ui";
@@ -22,9 +23,11 @@ const START: RecordingState = idleForm();
 export const RecordingForm = ({
   organisationName,
   recordCalls,
+  audioRetentionDays,
 }: {
   readonly organisationName: string;
   readonly recordCalls: boolean;
+  readonly audioRetentionDays: number;
 }) => {
   const [state, action, pending] = useActionState(saveRecording, START);
   const [on, setOn] = useState(recordCalls);
@@ -81,7 +84,13 @@ export const RecordingForm = ({
           <dt className="text-[var(--ink-3)]">Who has listened</dt>
           <dd className="m-0">Every play of a recording is logged against a name.</dd>
           <dt className="text-[var(--ink-3)]">Kept for</dt>
-          <dd className="m-0">As long as the audio retention window, then deleted.</dd>
+          <dd className="m-0">
+            {audioRetentionDays} days, then deleted —{" "}
+            <Link href="/organisation?s=retention" className="text-[var(--accent)] hover:underline">
+              see Retention
+            </Link>
+            .
+          </dd>
         </dl>
 
         <div>

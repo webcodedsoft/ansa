@@ -40,7 +40,35 @@ export const openNow = (hours: Hours | null, now = new Date()): boolean => {
   const wat = new Date(now.getTime() + WAT_OFFSET_HOURS * 3_600_000);
   const isoDay = ((wat.getUTCDay() + 6) % 7) + 1;
   const hour = wat.getUTCHours();
+  /* A closed date is a hole in the weekly pattern, and the hole wins — the same reading
+     `describeSituation` makes on the call. */
+  if (hours.closedDates.includes(wat.toISOString().slice(0, 10))) return false;
   return hours.openDays.includes(isoDay) && hour >= hours.opensAtHour && hour < hours.closesAtHour;
+};
+
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+
+/** `2026-10-01` as a person says it: "1 Oct". */
+export const shortDate = (iso: string): string => {
+  const [, month, day] = iso.split("-");
+  return `${Number(day)} ${MONTH_NAMES[Number(month) - 1] ?? ""}`;
+};
+
+/**
+ * The closed dates still to come this year, as a phrase: "2 this year · 1 Oct, 25 Dec".
+ *
+ * Past dates are not counted — a holiday that has been and gone closes nothing — and the
+ * list stops at three, because a wall of dates is a calendar and belongs in the form.
+ */
+export const closedDaysLabel = (closedDates: readonly string[], now = new Date()): string => {
+  const wat = new Date(now.getTime() + WAT_OFFSET_HOURS * 3_600_000);
+  const today = wat.toISOString().slice(0, 10);
+  const year = today.slice(0, 4);
+  const ahead = [...closedDates].filter((d) => d >= today && d.startsWith(year)).sort();
+  if (ahead.length === 0) return "none this year";
+  const shown = ahead.slice(0, 3).map(shortDate).join(", ");
+  const more = ahead.length > 3 ? ` +${ahead.length - 3}` : "";
+  return `${ahead.length} this year · ${shown}${more}`;
 };
 
 /** The current time in WAT as `HH:MM`, for a badge that says when "now" was. */

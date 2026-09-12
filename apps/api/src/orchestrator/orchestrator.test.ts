@@ -1628,7 +1628,7 @@ describe("the prompt the call was configured with", () => {
        first version used ordinary office hours and asserted "one of closed, closing or
        quiet", which every possible output satisfies — it would have passed with the block
        unwired. */
-    const h = setup({ businessHours: { opensAtHour: 9, closesAtHour: 17, openDays: [] } });
+    const h = setup({ businessHours: { opensAtHour: 9, closesAtHour: 17, openDays: [], closedDates: [] } });
 
     h.listen.final("What are your opening hours?");
 
@@ -2194,7 +2194,7 @@ describe("the prompt the call was configured with", () => {
     vi.setSystemTime(new Date("2026-09-03T12:00:00+01:00"));
     try {
       const h = setup({
-        businessHours: { opensAtHour: 0, closesAtHour: 24, openDays: [1, 2, 3, 4, 5, 6, 7] },
+        businessHours: { opensAtHour: 0, closesAtHour: 24, openDays: [1, 2, 3, 4, 5, 6, 7], closedDates: [] },
       });
 
       h.listen.final("What are your opening hours?");
@@ -2215,7 +2215,7 @@ describe("the prompt the call was configured with", () => {
        softer half: an agent that can see two failures can offer a person itself, which
        lands better than a transfer arriving mid-sentence on the third. */
     const h = setup({
-      businessHours: { opensAtHour: 0, closesAtHour: 24, openDays: [1, 2, 3, 4, 5, 6, 7] },
+      businessHours: { opensAtHour: 0, closesAtHour: 24, openDays: [1, 2, 3, 4, 5, 6, 7], closedDates: [] },
     });
 
     // A turn that produced nothing to say is one that went nowhere.
@@ -3727,7 +3727,7 @@ describe("the platform tools on a call", () => {
 
   it("answers the opening hours from organization configuration", async () => {
     const h = setup({
-      makeTools: platform({ opensAtHour: 9, closesAtHour: 17, openDays: [1, 2, 3, 4, 5] }),
+      makeTools: platform({ opensAtHour: 9, closesAtHour: 17, openDays: [1, 2, 3, 4, 5], closedDates: [] }),
     });
     started(h);
     h.listen.final("Are you open?");

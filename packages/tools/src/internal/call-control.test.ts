@@ -266,6 +266,7 @@ describe("business_hours", () => {
     opensAtHour: 9,
     closesAtHour: 17,
     openDays: [1, 2, 3, 4, 5],
+    closedDates: [],
   };
 
   it("says it does not know when nobody has configured any", async () => {
@@ -288,6 +289,14 @@ describe("business_hours", () => {
     const answer = answerHours(NINE_TO_FIVE, at(`${MONDAY}T07:30:00Z`));
 
     expect(answer.known && answer.open).toBe(false);
+  });
+
+  it("is closed on a closed date, and opens again on the next day that is neither closed nor off", () => {
+    // Monday 3 August is a holiday; so is the Tuesday. The line opens again on Wednesday.
+    const holidays: BusinessHours = { ...NINE_TO_FIVE, closedDates: [MONDAY, "2026-08-04"] };
+    const answer = answerHours(holidays, at(`${MONDAY}T10:00:00Z`));
+
+    expect(answer).toEqual({ known: true, open: false, next: { hour: 9, weekday: 3, ahead: 2 } });
   });
 
   it("closes on the exclusive hour", () => {
@@ -340,37 +349,37 @@ describe("business_hours", () => {
   }[] = [
     {
       label: "a seven-day support line, mid-morning",
-      hours: { opensAtHour: 8, closesAtHour: 20, openDays: [1, 2, 3, 4, 5, 6, 7] },
+      hours: { opensAtHour: 8, closesAtHour: 20, openDays: [1, 2, 3, 4, 5, 6, 7], closedDates: [] },
       nowUtc: `${SUNDAY}T09:00:00Z`,
       open: true,
     },
     {
       label: "a seven-day support line, after close",
-      hours: { opensAtHour: 8, closesAtHour: 20, openDays: [1, 2, 3, 4, 5, 6, 7] },
+      hours: { opensAtHour: 8, closesAtHour: 20, openDays: [1, 2, 3, 4, 5, 6, 7], closedDates: [] },
       nowUtc: `${SUNDAY}T19:30:00Z`,
       open: false,
     },
     {
       label: "a weekend-only line, on a Saturday",
-      hours: { opensAtHour: 10, closesAtHour: 14, openDays: [6, 7] },
+      hours: { opensAtHour: 10, closesAtHour: 14, openDays: [6, 7], closedDates: [] },
       nowUtc: `${SATURDAY}T10:00:00Z`,
       open: true,
     },
     {
       label: "a weekend-only line, on a Monday",
-      hours: { opensAtHour: 10, closesAtHour: 14, openDays: [6, 7] },
+      hours: { opensAtHour: 10, closesAtHour: 14, openDays: [6, 7], closedDates: [] },
       nowUtc: `${MONDAY}T10:00:00Z`,
       open: false,
     },
     {
       label: "a single-hour clinic slot, inside it",
-      hours: { opensAtHour: 13, closesAtHour: 14, openDays: [3] },
+      hours: { opensAtHour: 13, closesAtHour: 14, openDays: [3], closedDates: [] },
       nowUtc: "2026-08-05T12:30:00Z",
       open: true,
     },
     {
       label: "a round-the-clock line at 3am",
-      hours: { opensAtHour: 0, closesAtHour: 24, openDays: [1, 2, 3, 4, 5, 6, 7] },
+      hours: { opensAtHour: 0, closesAtHour: 24, openDays: [1, 2, 3, 4, 5, 6, 7], closedDates: [] },
       nowUtc: `${MONDAY}T02:00:00Z`,
       open: true,
     },
@@ -385,13 +394,13 @@ describe("business_hours", () => {
   }
 
   const BAD: readonly { readonly label: string; readonly hours: BusinessHours }[] = [
-    { label: "no open days", hours: { opensAtHour: 9, closesAtHour: 17, openDays: [] } },
-    { label: "closing before opening", hours: { opensAtHour: 17, closesAtHour: 9, openDays: [1] } },
-    { label: "an overnight window", hours: { opensAtHour: 22, closesAtHour: 2, openDays: [1] } },
-    { label: "a zero-length window", hours: { opensAtHour: 9, closesAtHour: 9, openDays: [1] } },
-    { label: "an hour off the clock", hours: { opensAtHour: 9, closesAtHour: 25, openDays: [1] } },
-    { label: "a weekday off the week", hours: { opensAtHour: 9, closesAtHour: 17, openDays: [9] } },
-    { label: "a fractional hour", hours: { opensAtHour: 9.5, closesAtHour: 17, openDays: [1] } },
+    { label: "no open days", hours: { opensAtHour: 9, closesAtHour: 17, openDays: [], closedDates: [] } },
+    { label: "closing before opening", hours: { opensAtHour: 17, closesAtHour: 9, openDays: [1], closedDates: [] } },
+    { label: "an overnight window", hours: { opensAtHour: 22, closesAtHour: 2, openDays: [1], closedDates: [] } },
+    { label: "a zero-length window", hours: { opensAtHour: 9, closesAtHour: 9, openDays: [1], closedDates: [] } },
+    { label: "an hour off the clock", hours: { opensAtHour: 9, closesAtHour: 25, openDays: [1], closedDates: [] } },
+    { label: "a weekday off the week", hours: { opensAtHour: 9, closesAtHour: 17, openDays: [9], closedDates: [] } },
+    { label: "a fractional hour", hours: { opensAtHour: 9.5, closesAtHour: 17, openDays: [1], closedDates: [] } },
   ];
 
   for (const bad of BAD) {
@@ -418,7 +427,7 @@ describe("business_hours", () => {
 
   it("names midnight and noon rather than saying twelve", async () => {
     const { call } = setup({
-      businessHours: { opensAtHour: 12, closesAtHour: 24, openDays: [1, 2, 3, 4, 5, 6, 7] },
+      businessHours: { opensAtHour: 12, closesAtHour: 24, openDays: [1, 2, 3, 4, 5, 6, 7], closedDates: [] },
       now: () => at(`${MONDAY}T05:00:00Z`),
     });
 

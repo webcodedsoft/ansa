@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { daysLabel, hourLabel, nowInWat, openNow } from "./org.display";
+import { closedDaysLabel, daysLabel, hourLabel, nowInWat, openNow } from "./org.display";
 
-const HOURS = { opensAtHour: 8, closesAtHour: 19, openDays: [1, 2, 3, 4, 5, 6] };
+const HOURS = { opensAtHour: 8, closesAtHour: 19, openDays: [1, 2, 3, 4, 5, 6], closedDates: [] };
 
 describe("whether the organisation is open right now", () => {
   it("reads the clock in WAT, not in UTC", () => {
@@ -22,6 +22,12 @@ describe("whether the organisation is open right now", () => {
     expect(openNow(HOURS, new Date("2026-09-13T11:00:00.000Z"))).toBe(false);
   });
 
+  it("is closed on a closed date, even on an open weekday inside the hours", () => {
+    // Saturday 12 September 2026, 11:00 WAT — open by the pattern, shut by the calendar.
+    const holiday = { ...HOURS, closedDates: ["2026-09-12"] };
+    expect(openNow(holiday, new Date("2026-09-12T10:00:00.000Z"))).toBe(false);
+  });
+
   it("is always open when no hours are set, which is what the API means by null", () => {
     expect(openNow(null, new Date("2026-09-13T02:00:00.000Z"))).toBe(true);
   });
@@ -38,6 +44,15 @@ describe("how hours and days are said", () => {
     expect(daysLabel([1, 3, 5])).toBe("Mon, Wed, Fri");
     expect(daysLabel([1, 2, 3, 4, 5, 6, 7])).toBe("every day");
     expect(daysLabel([])).toBe("no days");
+  });
+
+  it("counts only the closed dates still to come this year, and lists at most three", () => {
+    const now = new Date("2026-09-12T13:02:00.000Z");
+    expect(closedDaysLabel([], now)).toBe("none this year");
+    expect(closedDaysLabel(["2026-10-01", "2026-12-25", "2026-06-12"], now)).toBe("2 this year · 1 Oct, 25 Dec");
+    expect(closedDaysLabel(["2026-10-01", "2026-12-25", "2026-12-26", "2026-11-01", "2027-01-01"], now)).toBe(
+      "4 this year · 1 Oct, 1 Nov, 25 Dec +1",
+    );
   });
 
   it("stamps now in WAT", () => {

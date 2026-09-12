@@ -21,7 +21,7 @@ const FACTS: OnboardingFacts = {
   dialledNumber: "+2348000000000",
   greeting: "Good afternoon.",
   voiceId: "a-voice",
-  businessHours: { opensAtHour: 8, closesAtHour: 17, openDays: [1, 2, 3, 4, 5] },
+  businessHours: { opensAtHour: 8, closesAtHour: 17, openDays: [1, 2, 3, 4, 5], closedDates: [] },
   consentPolicy: "per_number",
   consentBasis: null,
   escalationConfigured: true,

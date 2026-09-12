@@ -5866,6 +5866,34 @@ rather than landed as inventory — the wave that needs them adds them wired.
       Seen on screen: overview, general, consent and recording sections. Not yet proven by a
       call: a recorded call opening with "This call is recorded" after the switch is turned
       on here.
+- [x] **The details the design drew and the page could not hold** (2026-09-12)
+      Three fields were marked "proposed" in the artifact because nothing stored them, and
+      the user asked for them. Migration 0082 holds them: `business_closed_dates date[]`,
+      `support_email`, `website`.
+
+      Closed dates are the one that changes a call. `BusinessHours` gained `closedDates`
+      (ISO, WAT), the four `agent_config_for_*` functions return it as `text[]` — a `date[]`
+      would come back as JavaScript Dates at the server's local midnight, off by one on a
+      UTC+1 box — and both readers honour it: `describeSituation` says the line is closed on
+      a holiday that falls on an open weekday, and the `business_hours` tool skips closed
+      dates when it works out when the line opens again, searching a week plus one day per
+      closed date because each can swallow at most one. Pinned in `situation.test.ts`,
+      `call-control.test.ts` and `organization-config.test.ts` (written with the hours,
+      cleared with them). Support email and website are kept and shown; no call reads them
+      out, and the hints say so.
+
+      The rest of the design's small print now reads real data: "since" date and Invite in
+      the header; the greeting preview under General; the open-now tag, closed-days editor
+      and outside-hours note on Hours; on Consent the platform's outer bound, the do-not-call
+      count (own rows plus global, as the gate counts them) and calls the gate refused this
+      WAT month, both on the organisation read; Recording says how many days audio is kept
+      and links to Retention; Retention has the three counts and the "ask the operator" note.
+
+      Also this pass: every page is 1600 wide. The contact and call detail pages had claimed
+      it through a layout store while the rest sat at 1080; the user asked for one width, so
+      the store, `WidePage` and `useWidePage` went and the number stayed in the chrome.
+
+      Not proven by a call: a caller on a closed date being told the line is shut.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

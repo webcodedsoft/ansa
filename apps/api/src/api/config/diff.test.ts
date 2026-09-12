@@ -64,7 +64,7 @@ describe("two versions of a configuration", () => {
       persona: "Brisk.",
       instructions: "Transfer billing questions.",
       policyBlocks: [{ name: "Refunds", applies: "money back", canDo: [], cannotDo: [], escalateWhen: [] }],
-      businessHours: { opensAtHour: 8, closesAtHour: 18, openDays: [1, 2] },
+      businessHours: { opensAtHour: 8, closesAtHour: 18, openDays: [1, 2], closedDates: [] },
       escalation: { toNumber: "+2348000000000", fromNumber: "+2348000000001", ringSeconds: 20 },
     };
 

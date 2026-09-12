@@ -244,6 +244,7 @@ describe("a call that never passed through ingress", () => {
       opensAtHour: 8,
       closesAtHour: 18,
       openDays: [1, 2, 3, 4, 5, 6],
+      closedDates: [],
     });
   });
 

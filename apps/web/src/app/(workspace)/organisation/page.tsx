@@ -1,8 +1,10 @@
 import {
+  AtSign,
   Building2,
   Clock,
   Database,
   Mic,
+  PhoneOff,
   ScrollText,
   ShieldCheck,
   Users,
@@ -13,10 +15,11 @@ import Link from "next/link";
 
 import { Card, PageHeader, Tag } from "@/components/ui";
 import { currentPrincipal } from "@/features/auth/auth.service";
+import { DetailsForm } from "@/features/org/components/details-form";
 import { HoursForm } from "@/features/org/components/hours-form";
-import { NameForm } from "@/features/org/components/name-form";
+import { InviteMember } from "@/features/org/components/invite-form";
 import { RecordingForm } from "@/features/org/components/recording-form";
-import { daysLabel, hourLabel, nowInWat, openNow } from "@/features/org/org.display";
+import { closedDaysLabel, daysLabel, hourLabel, nowInWat, openNow } from "@/features/org/org.display";
 import { listMembers, organisation } from "@/features/org/org.service";
 import { cn } from "@/lib/cn";
 import { humanise } from "@/lib/format";
@@ -50,6 +53,12 @@ const RAIL: readonly { readonly id: Section; readonly label: string; readonly Ic
   { id: "retention", label: "Retention", Icon: Database },
 ];
 
+/** The consent gate's own outer window, `apps/api/src/outbound/consent.ts`. An organisation may narrow it, never widen it. */
+const PLATFORM_WINDOW = { earliest: 8, latest: 20 } as const;
+
+const sinceLabel = (iso: string): string =>
+  new Date(iso).toLocaleDateString("en-NG", { day: "numeric", month: "long", year: "numeric" });
+
 const OrganisationPage = async ({
   searchParams,
 }: {
@@ -64,22 +73,45 @@ const OrganisationPage = async ({
     listMembers(1, 1),
   ]);
   const canWrite = principal.capabilities.includes("config:write");
+  const canInvite = principal.capabilities.includes("members:write");
   const now = new Date();
   const open = openNow(org.businessHours, now);
+  const nowLabel = nowInWat(now);
+  const people = `${members.total} ${members.total === 1 ? "person" : "people"}`;
+  const hours = org.businessHours;
+  const closedAhead = hours === null ? "none this year" : closedDaysLabel(hours.closedDates, now);
+  const hoursValue =
+    hours === null
+      ? "Always open"
+      : `${hourLabel(hours.opensAtHour)} – ${hourLabel(hours.closesAtHour)} · ${daysLabel(hours.openDays)}` +
+        (closedAhead === "none this year" ? "" : ` · closed ${closedAhead.replace(/^\d+ this year · /, "")}`);
 
   return (
     <>
       <PageHeader
         eyebrow="Organisation"
-        title={org.name}
+        title={
+          <span className="inline-flex items-center gap-3">
+            <span
+              aria-hidden
+              className="grid size-9 place-items-center rounded-lg bg-[var(--accent)] text-[15px] font-bold text-[var(--accent-on)]"
+            >
+              {org.name.slice(0, 1).toUpperCase()}
+            </span>
+            {org.name}
+          </span>
+        }
         meta={
           <span className="inline-flex flex-wrap items-center gap-x-2.5 gap-y-1">
             <Tag tone={open ? "ok" : "neutral"}>
-              {open ? `open now · ${nowInWat(now)} WAT` : `closed now · ${nowInWat(now)} WAT`}
+              {open ? "open now" : "closed now"} · {nowLabel} WAT
             </Tag>
-            <span>Everything that belongs to the company rather than to any one agent.</span>
+            <span>{people}</span>
+            <span aria-hidden>·</span>
+            <span>since {sinceLabel(org.createdAt)}</span>
           </span>
         }
+        actions={canInvite ? <InviteMember /> : undefined}
       />
 
       <div className="grid items-start gap-6 lg:grid-cols-[13rem_minmax(0,1fr)]">
@@ -128,20 +160,34 @@ const OrganisationPage = async ({
                 <Fact
                   Icon={Clock}
                   label="Hours"
-                  value={
-                    org.businessHours === null
-                      ? "Always open"
-                      : `${hourLabel(org.businessHours.opensAtHour)} – ${hourLabel(org.businessHours.closesAtHour)} · ${daysLabel(org.businessHours.openDays)}`
-                  }
+                  value={hoursValue}
                   state={<Tag tone={open ? "ok" : "neutral"}>{open ? "open now" : "closed now"}</Tag>}
                   href="/organisation?s=hours"
                   action={canWrite ? "Change" : "View"}
                 />
                 <Fact
+                  Icon={AtSign}
+                  label="Contact"
+                  value={
+                    org.supportEmail === null && org.website === null
+                      ? "No support email or website set"
+                      : [org.supportEmail, org.website].filter((v) => v !== null).join(" · ")
+                  }
+                  href="/organisation?s=general"
+                  action={canWrite ? (org.supportEmail === null ? "Add" : "Change") : "View"}
+                />
+                <Fact
                   Icon={ShieldCheck}
                   label="May call because"
                   value={`${humanise(org.consent.policy)} · ${hourLabel(org.consent.callingEarliestHour)} – ${hourLabel(org.consent.callingLatestHour)} WAT`}
-                  state={<Tag>operator-set</Tag>}
+                  state={
+                    <>
+                      <Tag>operator-set</Tag>
+                      {org.consent.doNotCallNumbers > 0 && (
+                        <Tag tone="warn">{org.consent.doNotCallNumbers} do-not-call</Tag>
+                      )}
+                    </>
+                  }
                   href="/organisation?s=consent"
                   action="View"
                 />
@@ -161,20 +207,14 @@ const OrganisationPage = async ({
                   href="/organisation?s=retention"
                   action="View"
                 />
-                <Fact
-                  Icon={Users}
-                  label="People"
-                  value={`${members.total} ${members.total === 1 ? "person" : "people"}`}
-                  href="/members"
-                  action="Manage"
-                />
+                <Fact Icon={Users} label="People" value={people} href="/members" action="Manage" />
               </dl>
             </Card>
           )}
 
-          {section === "general" && <NameForm name={org.name} />}
+          {section === "general" && <DetailsForm organisation={org} />}
 
-          {section === "hours" && <HoursForm organisation={org} />}
+          {section === "hours" && <HoursForm organisation={org} open={open} nowLabel={nowLabel} />}
 
           {section === "consent" && (
             <Card
@@ -185,38 +225,76 @@ const OrganisationPage = async ({
                 </span>
               }
               description="How this organisation is permitted to ring somebody, and when. Set by the platform operator and enforced in code before a number is dialled — nothing on this dashboard can loosen it."
-              actions={<Tag>operator-set</Tag>}
+              actions={
+                <span className="inline-flex items-center gap-1.5">
+                  <Tag tone="ok">may call</Tag>
+                  <Tag>operator-set</Tag>
+                </span>
+              }
             >
-              <dl className="m-0 grid gap-x-6 gap-y-4 sm:grid-cols-2">
-                <div>
-                  <dt className="text-[12px] text-[var(--ink-3)]">Legal basis</dt>
-                  <dd className="m-0 mt-0.5 text-[15px] font-medium">{humanise(org.consent.policy)}</dd>
-                  <dd className="m-0 mt-1 text-[12.5px] text-[var(--ink-3)]">
-                    An existing relationship is your own customers about their own business with you. A bought list needs consent per number.
-                  </dd>
+              <div className="flex flex-col gap-5">
+                <dl className="m-0 grid gap-x-6 gap-y-4 sm:grid-cols-2">
+                  <div>
+                    <dt className="text-[12px] text-[var(--ink-3)]">Legal basis</dt>
+                    <dd className="m-0 mt-0.5 text-[15px] font-medium">{humanise(org.consent.policy)}</dd>
+                    <dd className="m-0 mt-1 text-[12.5px] text-[var(--ink-3)]">
+                      An existing relationship is your own customers about their own business with you. A bought list needs consent per number.
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[12px] text-[var(--ink-3)]">Recorded basis</dt>
+                    <dd className="m-0 mt-0.5 text-[13.5px] leading-relaxed">{org.consent.basis ?? "None recorded"}</dd>
+                  </div>
+                </dl>
+
+                <dl className="m-0 grid gap-x-6 gap-y-4 sm:grid-cols-3">
+                  <div>
+                    <dt className="text-[12px] text-[var(--ink-3)]">May call from</dt>
+                    <dd className="m-0 mt-0.5 font-mono text-[15px] font-medium">{hourLabel(org.consent.callingEarliestHour)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[12px] text-[var(--ink-3)]">Until</dt>
+                    <dd className="m-0 mt-0.5 font-mono text-[15px] font-medium">{hourLabel(org.consent.callingLatestHour)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[12px] text-[var(--ink-3)]">Platform&apos;s outer bound</dt>
+                    <dd className="m-0 mt-0.5 font-mono text-[15px] font-medium text-[var(--ink-3)]">
+                      {hourLabel(PLATFORM_WINDOW.earliest)} – {hourLabel(PLATFORM_WINDOW.latest)}
+                    </dd>
+                    <dd className="m-0 mt-1 text-[12.5px] text-[var(--ink-3)]">You may narrow it, never widen it.</dd>
+                  </div>
+                </dl>
+
+                <div className="grid gap-3.5 sm:grid-cols-2">
+                  <Tile
+                    Icon={PhoneOff}
+                    label="Do-not-call"
+                    value={org.consent.doNotCallNumbers}
+                    unit="numbers"
+                    note="Global and permanent once added. A number here cannot be rung whatever the basis."
+                  />
+                  <Tile
+                    Icon={ShieldCheck}
+                    label="Refused this month"
+                    value={org.consent.suppressedThisMonth}
+                    unit="calls"
+                    note="Stopped by the gate before dialling — outside the window, or on the list."
+                  />
                 </div>
-                <div>
-                  <dt className="text-[12px] text-[var(--ink-3)]">Recorded basis</dt>
-                  <dd className="m-0 mt-0.5 text-[13.5px] leading-relaxed">{org.consent.basis ?? "None recorded"}</dd>
-                </div>
-                <div>
-                  <dt className="text-[12px] text-[var(--ink-3)]">May call from</dt>
-                  <dd className="m-0 mt-0.5 font-mono text-[15px] font-medium">{hourLabel(org.consent.callingEarliestHour)}</dd>
-                </div>
-                <div>
-                  <dt className="text-[12px] text-[var(--ink-3)]">Until</dt>
-                  <dd className="m-0 mt-0.5 font-mono text-[15px] font-medium">{hourLabel(org.consent.callingLatestHour)}</dd>
-                  <dd className="m-0 mt-1 text-[12.5px] text-[var(--ink-3)]">The platform's outer bound is 08:00–20:00 WAT. An organisation may narrow it, never widen it.</dd>
-                </div>
-              </dl>
-              <p className="mt-4 mb-0 border-t border-[var(--surface-line)] pt-3.5 text-[12.5px] leading-relaxed text-[var(--ink-3)]">
-                Do-not-call outranks everything above: a number on the list cannot be rung whatever the basis. Numbers are added from a contact&apos;s record, and the check runs on every outbound call.
-              </p>
+
+                <p className="m-0 border-t border-[var(--surface-line)] pt-3.5 text-[12.5px] leading-relaxed text-[var(--ink-3)]">
+                  Numbers are added to the do-not-call list from a contact&apos;s record, and the check runs on every outbound call.
+                </p>
+              </div>
             </Card>
           )}
 
           {section === "recording" && (
-            <RecordingForm organisationName={org.name} recordCalls={org.recordCalls} />
+            <RecordingForm
+              organisationName={org.name}
+              recordCalls={org.recordCalls}
+              audioRetentionDays={org.audioRetentionDays}
+            />
           )}
 
           {section === "retention" && (
@@ -230,25 +308,17 @@ const OrganisationPage = async ({
               description="How long a call is kept. Set by the platform operator: shortening it deletes evidence you may be asked for, lengthening it holds a caller's data past the basis it was collected on."
               actions={<Tag>operator-set</Tag>}
             >
-              <div className="grid gap-3.5 sm:grid-cols-2">
-                <div className="rounded-lg border border-[var(--hairline)] bg-[var(--surface-2)] px-4 py-3.5">
-                  <div className="text-[12px] text-[var(--ink-3)]">The caller&apos;s voice</div>
-                  <div className="mt-1 text-[28px] leading-none font-[680] tracking-[-0.03em] tabular-nums">
-                    {org.audioRetentionDays}
-                    <span className="ml-1 text-[13px] font-medium text-[var(--ink-3)]">days</span>
-                  </div>
-                  <div className="mt-2 text-[12.5px] text-[var(--ink-3)]">Then the recording is deleted.</div>
-                </div>
-                <div className="rounded-lg border border-[var(--hairline)] bg-[var(--surface-2)] px-4 py-3.5">
-                  <div className="text-[12px] text-[var(--ink-3)]">What was said</div>
-                  <div className="mt-1 text-[28px] leading-none font-[680] tracking-[-0.03em] tabular-nums">
-                    {org.transcriptRetentionDays}
-                    <span className="ml-1 text-[13px] font-medium text-[var(--ink-3)]">days</span>
-                  </div>
+              <div className="flex flex-col gap-4">
+                <div className="grid gap-3.5 sm:grid-cols-3">
+                  <Tile label="Audio" value={org.audioRetentionDays} unit="days" note="Then the recording is deleted." />
+                  <Tile label="Transcripts" value={org.transcriptRetentionDays} unit="days" note="Words, confidence, corrections, events and tool arguments." />
                   {/* The words outlive the audio on purpose: the review loop corrects transcripts
-                      and the eval corpus is built from those corrections. */}
-                  <div className="mt-2 text-[12.5px] text-[var(--ink-3)]">Transcripts, events, tool arguments and summaries.</div>
+                      and the eval corpus is built from those corrections. Summaries go with them. */}
+                  <Tile label="Summaries" value={org.transcriptRetentionDays} unit="days" note="Swept with the transcripts." />
                 </div>
+                <p className="m-0 rounded-lg border border-[var(--hairline)] bg-[var(--surface-2)] px-3.5 py-3 text-[12.5px] text-[var(--ink-2)]">
+                  To change them, ask whoever runs the platform. The request and its reason are recorded.
+                </p>
               </div>
             </Card>
           )}
@@ -289,6 +359,33 @@ const Fact = ({
     >
       {action}
     </Link>
+  </div>
+);
+
+/** A number with its unit and one line under it — the shape the design draws for every count. */
+const Tile = ({
+  Icon,
+  label,
+  value,
+  unit,
+  note,
+}: {
+  readonly Icon?: LucideIcon;
+  readonly label: string;
+  readonly value: number;
+  readonly unit: string;
+  readonly note: string;
+}) => (
+  <div className="rounded-lg border border-[var(--hairline)] bg-[var(--surface-2)] px-4 py-3.5">
+    <div className="flex items-center gap-1.5 text-[12px] text-[var(--ink-3)]">
+      {Icon !== undefined && <Icon aria-hidden className="size-3.5" />}
+      {label}
+    </div>
+    <div className="mt-1 text-[28px] leading-none font-[680] tracking-[-0.03em] tabular-nums">
+      {value}
+      <span className="ml-1 text-[13px] font-medium text-[var(--ink-3)]">{unit}</span>
+    </div>
+    <div className="mt-2 text-[12.5px] text-[var(--ink-3)]">{note}</div>
   </div>
 );
 

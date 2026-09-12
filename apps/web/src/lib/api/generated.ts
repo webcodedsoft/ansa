@@ -3414,23 +3414,30 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly opensAtHour: number;
         readonly closesAtHour: number;
         readonly openDays: readonly (number)[];
+        readonly closedDates: readonly (string)[];
       } | null;
+        readonly supportEmail: string | null;
+        readonly website: string | null;
         readonly recordCalls: boolean;
         readonly consent: {
         readonly policy: string;
         readonly basis: string | null;
         readonly callingEarliestHour: number | null;
         readonly callingLatestHour: number | null;
+        readonly doNotCallNumbers: number;
+        readonly suppressedThisMonth: number;
       };
       }>(options, "GET", `/api/v1/organization`, {}),
 
     /**
-     * Rename this organisation
-     * Cosmetic, and only here: an agent's name is what it says on a call, and this is not that. Renaming the organisation leaves every agent saying exactly what it said before.
+     * What this organisation says about itself
+     * Its name, and where it can be written to. Cosmetic, and only here: an agent's name is what it says on a call, and this is not that, so renaming the organisation leaves every agent saying exactly what it said before. The email and website are kept for the people who run the company; no call reads them out.
      */
-    rename: (input: {
+    update: (input: {
         readonly body: {
           readonly name: string;
+          readonly supportEmail: string | null;
+          readonly website: string | null;
         };
       }) =>
       send<{
@@ -3443,13 +3450,18 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly opensAtHour: number;
         readonly closesAtHour: number;
         readonly openDays: readonly (number)[];
+        readonly closedDates: readonly (string)[];
       } | null;
+        readonly supportEmail: string | null;
+        readonly website: string | null;
         readonly recordCalls: boolean;
         readonly consent: {
         readonly policy: string;
         readonly basis: string | null;
         readonly callingEarliestHour: number | null;
         readonly callingLatestHour: number | null;
+        readonly doNotCallNumbers: number;
+        readonly suppressedThisMonth: number;
       };
       }>(options, "PATCH", `/api/v1/organization`, input),
 
@@ -3462,7 +3474,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
 
     /**
      * When this organisation counts as open
-     * Shared by every agent this organisation runs, and applied immediately — there is no version to publish because hours have never been part of one. Send `businessHours: null` for a line that is always open; the three fields travel together or not at all, because two thirds of a window cannot be reasoned about. A window that wraps past midnight is refused by the database, not tolerated: `22 to 2` is either a night shift or a typo and the row cannot tell which.
+     * Shared by every agent this organisation runs, and applied immediately — there is no version to publish because hours have never been part of one. Send `businessHours: null` for a line that is always open; the fields travel together or not at all, because two thirds of a window cannot be reasoned about. A window that wraps past midnight is refused by the database, not tolerated: `22 to 2` is either a night shift or a typo and the row cannot tell which.
      */
     setHours: (input: {
         readonly body: {
@@ -3470,6 +3482,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
           readonly opensAtHour: number;
           readonly closesAtHour: number;
           readonly openDays: readonly (number)[];
+          readonly closedDates: readonly (string)[];
         } | null;
         };
       }) =>
@@ -3483,13 +3496,18 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly opensAtHour: number;
         readonly closesAtHour: number;
         readonly openDays: readonly (number)[];
+        readonly closedDates: readonly (string)[];
       } | null;
+        readonly supportEmail: string | null;
+        readonly website: string | null;
         readonly recordCalls: boolean;
         readonly consent: {
         readonly policy: string;
         readonly basis: string | null;
         readonly callingEarliestHour: number | null;
         readonly callingLatestHour: number | null;
+        readonly doNotCallNumbers: number;
+        readonly suppressedThisMonth: number;
       };
       }>(options, "PUT", `/api/v1/organization/hours`, input),
 
@@ -3512,13 +3530,18 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly opensAtHour: number;
         readonly closesAtHour: number;
         readonly openDays: readonly (number)[];
+        readonly closedDates: readonly (string)[];
       } | null;
+        readonly supportEmail: string | null;
+        readonly website: string | null;
         readonly recordCalls: boolean;
         readonly consent: {
         readonly policy: string;
         readonly basis: string | null;
         readonly callingEarliestHour: number | null;
         readonly callingLatestHour: number | null;
+        readonly doNotCallNumbers: number;
+        readonly suppressedThisMonth: number;
       };
       }>(options, "PUT", `/api/v1/organization/recording`, input),
   },
