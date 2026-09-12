@@ -35,7 +35,7 @@ export const CallTimeline = ({
 }) => {
   if (lines.length === 0) {
     return (
-      <div className="grid min-h-[26rem] place-items-center">
+      <div className="grid min-h-0 flex-1 place-items-center">
         <EmptyState title="Nothing was recorded">
           This call may have been answered and dropped before anybody spoke.
         </EmptyState>
@@ -54,13 +54,13 @@ export const CallTimeline = ({
    * side "me" sits on in any messaging app, and the console is read by the organisation.
    */
   return (
-    /* A floor and a ceiling. The floor: a three-line call beside a rail of three cards left
-       the main column shorter than its sidebar, and the empty space read as the call being
-       cut off. The ceiling: a forty-line call made the page itself the scroll, so the summary
-       and its citations were a screen away from the words they cite. The conversation scrolls
-       inside its card; the rail stays where it is. `scrollIntoView` from a citation finds the
-       nearest scrolling ancestor, so a click still lands on its line. */
-    <div className="flex max-h-[calc(100vh-22rem)] min-h-[26rem] flex-col gap-2.5 overflow-y-auto pr-1">
+    /* The conversation takes whatever height its card has and scrolls inside it. The card's
+       height is the rail's: the page stretches the two columns to one row, so a three-line
+       call and a forty-line call both bottom out level with the summary beside them. Fixed
+       numbers were tried — three of them in an hour — and each was right for one call.
+       `scrollIntoView` from a citation finds the nearest scrolling ancestor, so a click still
+       lands on its line. */
+    <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto pr-1">
       {lines.map((line) =>
         line.speaker === "tool" ? (
           <div key={line.key} className="flex justify-center">

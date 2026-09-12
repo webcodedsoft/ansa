@@ -112,13 +112,21 @@ const CallDetailPage = async ({
           {
             id: "conversation",
             label: "Conversation",
+            // One row, both columns stretched to it. The rail sets the height — it is
+            // content-sized — and the conversation fills that height and scrolls inside.
             panel: (
-              <div className="grid items-start gap-3.5 lg:grid-cols-[minmax(0,1fr)_20rem]">
+              <div className="grid items-start gap-3.5 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-stretch">
                 {/* The provider only when there is audio: without it a bubble is a plain
                     bubble rather than a button that promises a sound it cannot make. */}
                 <MaybeRecording enabled={call.recorded}>
                 <Card
                   title="What was said"
+                  /* `h-0 min-h-full`, not `h-full`: a stretched grid item still offers its content
+                     height to the row, so with `h-full` the row grew to fit the whole conversation
+                     and nothing scrolled. Zero height offers nothing; min-height then fills the row
+                     the rail set. */
+                  className="flex min-h-0 flex-col lg:h-0 lg:min-h-full"
+                  bodyClassName="flex min-h-0 flex-1 flex-col"
                   actions={
                     <span className="text-[12px] text-[var(--ink-3)]">
                       {call.recorded ? "Click any message to hear it" : `${lines.length} lines`}

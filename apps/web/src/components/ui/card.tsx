@@ -48,12 +48,15 @@ export const Card = ({
   description,
   actions,
   className,
+  bodyClassName,
   children,
 }: {
   readonly title?: ReactNode;
   readonly description?: ReactNode;
   readonly actions?: ReactNode;
   readonly className?: string;
+  /** For a body that has to flex — a panel whose content scrolls inside a fixed height. */
+  readonly bodyClassName?: string;
   readonly children: ReactNode;
 }) => (
   <Panel className={className}>
@@ -76,7 +79,7 @@ export const Card = ({
         {actions !== undefined && <div className="flex flex-none items-center gap-2">{actions}</div>}
       </div>
     )}
-    <div className="p-4">{children}</div>
+    <div className={cn("p-4", bodyClassName)}>{children}</div>
   </Panel>
 );
 
