@@ -35,7 +35,11 @@ export const CallTimeline = ({
 }) => {
   if (lines.length === 0) {
     return (
-      <EmptyState title="Nothing was recorded">This call may have been answered and dropped before anybody spoke.</EmptyState>
+      <div className="grid min-h-[34rem] place-items-center">
+        <EmptyState title="Nothing was recorded">
+          This call may have been answered and dropped before anybody spoke.
+        </EmptyState>
+      </div>
     );
   }
 
@@ -50,7 +54,11 @@ export const CallTimeline = ({
    * side "me" sits on in any messaging app, and the console is read by the organisation.
    */
   return (
-    <div className="flex flex-col gap-2.5">
+    /* A floor under the conversation. A three-line call beside a rail of three cards left the
+       page's main column shorter than its sidebar, and the eye read the empty space as the
+       call being cut off. The floor is roughly the rail's height, so the two columns bottom
+       out together; a long call simply grows past it. */
+    <div className="flex min-h-[34rem] flex-col gap-2.5">
       {lines.map((line) =>
         line.speaker === "tool" ? (
           <div key={line.key} className="flex justify-center">
