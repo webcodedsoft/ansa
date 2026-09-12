@@ -46,7 +46,7 @@ export const BuyNumber = ({
       title={
         <span className="inline-flex items-center gap-2">
           <ShoppingCart aria-hidden className="size-4 text-[var(--ink-3)]" />
-          Buy a number
+          Get a number
         </span>
       }
       description="Bought from the carrier on your behalf, pointed at Ansa and attached to this organisation in one step. Part of your Ansa plan — there is nothing to pay the carrier."
@@ -54,9 +54,9 @@ export const BuyNumber = ({
       <Stack>
         {!countries.nigeria && (
           <Notice tone="warn">
-            The carrier sells no Nigerian numbers. For a Nigerian line, bring one you already hold
-            using the card above; buy here for a line abroad — a London or New York number for
-            customers outside the country.
+            The carrier sells no Nigerian numbers. For a Nigerian line, bring one you already hold;
+            get one here for a line abroad — a London or New York number for customers outside the
+            country.
           </Notice>
         )}
 
@@ -95,7 +95,7 @@ export const BuyNumber = ({
                 <span className="text-[12.5px] text-[var(--ink-3)]">{one.locality ?? one.country}</span>
                 <span className="ml-auto">
                   <Button size="sm" variant="primary" onClick={() => setChosen(one)} disabled={buying}>
-                    Buy
+                    Add
                   </Button>
                 </span>
               </li>
@@ -114,8 +114,8 @@ export const BuyNumber = ({
             setChosen(null);
             startTransition(() => buyAction(form));
           }}
-          title={`Buy ${chosen?.number ?? "this number"}?`}
-          confirmLabel="Buy and attach"
+          title={`Add ${chosen?.number ?? "this number"}?`}
+          confirmLabel="Add and attach"
           pending={buying}
         >
           Part of your Ansa plan — nothing to pay the carrier. It is attached to {organisationName}{" "}
