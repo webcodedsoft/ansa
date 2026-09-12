@@ -64,7 +64,7 @@ export const CallSummary = ({ summary }: { readonly summary: CallDetail["summary
       <p className="mt-3 border-t border-[var(--surface-line)] pt-2.5 text-[11.5px] leading-relaxed text-[var(--ink-3)]">
         {summary.model === null
           ? "Written without a model — these are the caller's own first and last words, quoted. No model was reachable when this call ended."
-          : `Written once when the call ended, by ${summary.model}. Click a number to see the line a sentence came from; nothing is written that cannot be pointed at.`}
+          : "Written once when the call ended. Click a number to see the line a sentence came from; nothing is written that cannot be pointed at."}
       </p>
     </Card>
   );
