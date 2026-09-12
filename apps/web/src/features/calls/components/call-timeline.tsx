@@ -35,7 +35,7 @@ export const CallTimeline = ({
 }) => {
   if (lines.length === 0) {
     return (
-      <div className="grid min-h-[34rem] place-items-center">
+      <div className="grid min-h-[26rem] place-items-center">
         <EmptyState title="Nothing was recorded">
           This call may have been answered and dropped before anybody spoke.
         </EmptyState>
@@ -60,7 +60,7 @@ export const CallTimeline = ({
        and its citations were a screen away from the words they cite. The conversation scrolls
        inside its card; the rail stays where it is. `scrollIntoView` from a citation finds the
        nearest scrolling ancestor, so a click still lands on its line. */
-    <div className="flex max-h-[calc(100vh-18rem)] min-h-[34rem] flex-col gap-2.5 overflow-y-auto pr-1">
+    <div className="flex max-h-[calc(100vh-22rem)] min-h-[26rem] flex-col gap-2.5 overflow-y-auto pr-1">
       {lines.map((line) =>
         line.speaker === "tool" ? (
           <div key={line.key} className="flex justify-center">
