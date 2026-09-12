@@ -20,11 +20,12 @@ const BUY_START: BuyNumberState = idleForm();
 /**
  * Buy a number from the platform's carrier.
  *
- * Country, an optional digit filter, a list of what is for sale with the monthly price, and
- * one confirmation per number that repeats the price — because the click that follows it
- * spends money every month until the number is released. The catalogue is the carrier's;
- * Nigeria is not in it, and the card says so above the country list rather than letting
- * somebody scroll for it.
+ * Country, an optional digit filter, a list of what is for sale, and one confirmation per
+ * number. The carrier's price is deliberately not shown: the organisation does not pay the
+ * carrier, the number is part of what they buy from Ansa, and a figure they are not charged
+ * would read as a bill. The API still records it for the platform's own accounting. The
+ * catalogue is the carrier's; Nigeria is not in it, and the card says so above the country
+ * list rather than letting somebody scroll for it.
  */
 export const BuyNumber = ({
   countries,
@@ -48,7 +49,7 @@ export const BuyNumber = ({
           Buy a number
         </span>
       }
-      description="Bought in the platform's carrier account, pointed at this deployment and attached to this organisation in one step. Billed to the platform monthly at the carrier's price until you release it."
+      description="Bought from the carrier on your behalf, pointed at Ansa and attached to this organisation in one step. Part of your Ansa plan — there is nothing to pay the carrier."
     >
       <Stack>
         {!countries.nigeria && (
@@ -91,10 +92,7 @@ export const BuyNumber = ({
             {results.items.map((one) => (
               <li key={one.number} className="flex flex-wrap items-center gap-3 px-3.5 py-2.5">
                 <span className="font-mono text-[14px]">{one.number}</span>
-                <span className="text-[12.5px] text-[var(--ink-3)]">
-                  {one.locality ?? one.country}
-                  {one.monthlyPrice !== null && ` · ${one.monthlyPrice} ${one.currency ?? ""} a month`}
-                </span>
+                <span className="text-[12.5px] text-[var(--ink-3)]">{one.locality ?? one.country}</span>
                 <span className="ml-auto">
                   <Button size="sm" variant="primary" onClick={() => setChosen(one)} disabled={buying}>
                     Buy
@@ -120,11 +118,8 @@ export const BuyNumber = ({
           confirmLabel="Buy and attach"
           pending={buying}
         >
-          {chosen?.monthlyPrice !== null && chosen?.monthlyPrice !== undefined
-            ? `${chosen.monthlyPrice} ${chosen.currency ?? ""} a month, billed to the platform's carrier account, until it is released. `
-            : "Billed to the platform's carrier account monthly, at the carrier's price, until it is released. "}
-          It is attached to {organisationName} and rings here the moment this completes; route an
-          agent to it afterwards.
+          Part of your Ansa plan — nothing to pay the carrier. It is attached to {organisationName}{" "}
+          and rings here the moment this completes; route an agent to it afterwards.
         </ConfirmDialog>
       </Stack>
     </Card>

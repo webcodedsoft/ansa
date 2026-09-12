@@ -6005,11 +6005,15 @@ rather than landed as inventory — the wave that needs them adds them wired.
       Proven end to end in `purchase.test.ts` against a fake Twilio answering on
       `TWILIO_API_BASE_URL`: countries, search with price, buy (the carrier saw the right
       VoiceUrl), the row and the audit rows, release here then at the carrier, and a second
-      release refused. Not proven against the real carrier, and it cannot be today: the
-      platform's Twilio account answers "authentication failed … status 4 is not active" to
-      every call, which the page now shows in the carrier's words under Buy a number. That
-      also means no call can be placed or answered until the account is reactivated.
-      Nigeria stays bring-your-own — Twilio sells no Nigerian numbers — and the card says so.
+      release refused. Then proven against the real carrier once the Twilio account was
+      reactivated: `+1 706 551 7550` bought from the console, Twilio's own record pointed at
+      this deployment's voice webhook, the row and the audit row written, the webhook check
+      reading "matches", and the number routed to the Property enquiries agent so the call
+      path resolves it. Not yet rung — the handset is the user's. The organisation does not
+      pay the carrier: the number is part of what they buy from Ansa, so the console shows
+      "part of your plan" and never the carrier's price; the API keeps the price for the
+      platform's own accounting. Nigeria stays bring-your-own — Twilio sells no Nigerian
+      numbers — and the card says so.
 - [x] **The environment loads the way Nest loads it** (2026-09-12)
       `scripts/with-env.mjs` is gone. The API imports `EnvModule` — `ConfigModule.forRoot`
       pointed at the repo-root `.env`, global, imported by both `AppModule` and `ApiModule`

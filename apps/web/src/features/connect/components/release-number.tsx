@@ -9,7 +9,7 @@ import { releaseNumberAction, type ReleaseNumberState } from "../connect.actions
 
 const START: ReleaseNumberState = idleForm();
 
-/** Release a platform-bought number. The row is gone and the charge stops; there is no undo. */
+/** Release a number bought here. It goes back to the carrier and stops counting against the plan; there is no undo. */
 export const ReleaseNumber = ({ number, agentName }: { readonly number: string; readonly agentName: string | null }) => {
   const [state, action, pending] = useActionState(releaseNumberAction, START);
   const [confirming, setConfirming] = useState(false);
@@ -32,8 +32,8 @@ export const ReleaseNumber = ({ number, agentName }: { readonly number: string; 
         confirmLabel="Release it"
         pending={pending}
       >
-        The number goes back to the carrier and the monthly charge stops. Callers who ring it
-        after this reach nobody, and the carrier may sell it to somebody else.
+        The number goes back to the carrier and stops counting against your plan. Callers who
+        ring it after this reach nobody, and the carrier may sell it to somebody else.
         {agentName !== null && ` ${agentName} stops answering it and is left with no number.`}
       </ConfirmDialog>
       {state.status === "failed" && (

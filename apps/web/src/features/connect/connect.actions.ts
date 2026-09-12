@@ -227,7 +227,7 @@ export const releaseNumberAction = async (_previous: ReleaseNumberState, form: F
   try {
     await releaseNumber(number);
     revalidatePath("/numbers");
-    return succeededForm({ number }, `${number} is released. The monthly charge stops.`);
+    return succeededForm({ number }, `${number} is released.`);
   } catch (error) {
     return failedForm(failureMessage(error));
   }

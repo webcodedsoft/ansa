@@ -58,9 +58,7 @@ const COLUMNS: readonly Column<NumberSummary>[] = [
       number.managedBy === "platform" ? (
         <span className="flex flex-col gap-0.5">
           <Tag tone="accent">bought here</Tag>
-          {number.monthlyPrice !== null && (
-            <span className="text-[11.5px] text-[var(--ink-3)]">{number.monthlyPrice} a month</span>
-          )}
+          <span className="text-[11.5px] text-[var(--ink-3)]">part of your plan</span>
         </span>
       ) : (
         <Tag>your own</Tag>

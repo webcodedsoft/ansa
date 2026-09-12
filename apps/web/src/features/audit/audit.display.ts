@@ -84,10 +84,7 @@ export const describeAudit = (row: Row): AuditLine => {
     case "credential_removed":
       return { text: `removed the credential ${what(row, "")}`.trim(), tone: "bad" };
     case "number_bought":
-      return {
-        text: `bought the number ${what(row, "")}${d["country"] ? ` (${d["country"]}${d["monthlyPrice"] ? `, ${d["monthlyPrice"]} a month` : ""})` : ""}`.trim(),
-        tone: "accent",
-      };
+      return { text: `bought the number ${what(row, "")}${d["country"] ? ` (${d["country"]})` : ""}`.trim(), tone: "accent" };
     case "number_released":
       return { text: `released the number ${what(row, "")}`.trim(), tone: "warn" };
     case "webhooks_saved":
