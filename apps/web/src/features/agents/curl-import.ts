@@ -61,6 +61,22 @@ const SECRET_HEADERS: ReadonlySet<string> = new Set([
  * backslashes. It does not handle variable expansion or subshells: a command containing
  * `$(...)` is not something to guess at, and it survives as a literal token the caller reports.
  */
+/**
+ * Where a line continuation ends: the index of the newline that follows a backslash with
+ * nothing but spaces, tabs or a carriage return in between. Null when the backslash escapes
+ * something real.
+ */
+const continuationEnd = (command: string, from: number): number | null => {
+  let at = from;
+  while (at < command.length) {
+    const character = command[at] ?? "";
+    if (character === "\n") return at;
+    if (character !== " " && character !== "\t" && character !== "\r") return null;
+    at += 1;
+  }
+  return null;
+};
+
 const tokenise = (command: string): readonly string[] => {
   const tokens: string[] = [];
   let current = "";
@@ -88,9 +104,15 @@ const tokenise = (command: string): readonly string[] => {
     }
     if (character === "\\") {
       const next = command[at + 1] ?? "";
-      // A backslash before a newline is a line continuation and disappears with it.
-      if (next === "\n") {
-        at += 1;
+      /* A backslash before a newline is a line continuation and disappears with it. "Before
+         a newline" is read the way a person sees it, not the way a shell does: a command
+         copied out of Postman or a Windows document carries a trailing space or a carriage
+         return between the backslash and the line break, invisible in the box. A shell would
+         choke on it; here it used to yield a token of pure whitespace, which then won the
+         "last token is the URL" rule and emptied the URL field with no explanation. */
+      const lineBreak = continuationEnd(command, at + 1);
+      if (lineBreak !== null) {
+        at = lineBreak;
         continue;
       }
       if (quote !== "'") {
@@ -162,7 +184,10 @@ const IGNORED_ALONE: ReadonlySet<string> = new Set([
 ]);
 
 export const parseCurl = (command: string): CurlImport => {
-  const tokens = tokenise(command);
+  /* A command pasted with the shell's own terminator on the end — `…'application/json';` —
+     would otherwise carry the semicolon into the last header's value. It is not part of
+     the command. */
+  const tokens = tokenise(command.trim().replace(/;$/, ""));
   const unsupported: string[] = [];
 
   let url = "";
@@ -231,8 +256,9 @@ export const parseCurl = (command: string): CurlImport => {
       continue;
     }
 
-    // Anything left that is not a flag is the URL. The last one wins, matching curl.
-    if (token !== "") url = token;
+    // Anything left that is not a flag is the URL. The last one wins, matching curl. Never
+    // whitespace: a token of nothing must not replace a URL that was already read.
+    if (token.trim() !== "") url = token.trim();
   }
 
   if (droppedSecret) {

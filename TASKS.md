@@ -6093,6 +6093,15 @@ rather than landed as inventory — the wave that needs them adds them wired.
       Mailjet key and no `PUBLIC_BASE_URL`, so locally the request creates the row and the
       mailer declines out loud. The reset mail has never been received by a real inbox; the
       first deployment with a mail key and a public address should ask for one and open it.
+- [x] **A pasted curl command fills the URL again** (2026-09-12)
+      Postman's "copy as curl" puts a space between the continuation backslash and the line
+      break. The tokeniser read that as an escaped space, emitted a token of nothing, and the
+      "last non-flag token is the URL" rule let it overwrite the URL that had just been read
+      — so the headers filled and the URL box stayed empty, with the notice saying it had
+      filled in what it could. Backslash-then-whitespace-then-newline (and the Windows
+      `\r\n` case) is now a continuation, whitespace can never become the URL, and a
+      trailing `;` on the command no longer lands in the last header's value. Two tests that
+      fail on the old parser. Seen live with the same paste shape.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

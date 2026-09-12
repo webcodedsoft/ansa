@@ -37,6 +37,31 @@ describe("importing a curl command", () => {
     expect(draft.headers).toEqual([{ name: "Accept", value: "application/json" }]);
   });
 
+  /**
+   * The shape Postman's "copy as curl" and a Windows clipboard produce: a space or a carriage
+   * return between the backslash and the line break. Invisible in the box, and it used to
+   * empty the URL field while the headers filled — the first thing a person tried, and it
+   * looked as though the paste had done nothing.
+   */
+  it("survives a trailing space or a carriage return after the continuation backslash", () => {
+    const withSpace = parseCurl(
+      `curl --location 'https://api.example.test/quotation?regNo=FST901EE' \\ \n--header 'Content-Type: application/json'`,
+    );
+    expect(withSpace.draft.url).toBe("https://api.example.test/quotation?regNo=FST901EE");
+    expect(withSpace.draft.headers).toEqual([{ name: "Content-Type", value: "application/json" }]);
+
+    const windows = parseCurl(
+      `curl --location 'https://api.example.test/quotation?regNo=FST901EE' \\\r\n--header 'Accept: application/json'`,
+    );
+    expect(windows.draft.url).toBe("https://api.example.test/quotation?regNo=FST901EE");
+    expect(windows.draft.headers).toEqual([{ name: "Accept", value: "application/json" }]);
+  });
+
+  it("drops the shell's own terminator from the end of a pasted command", () => {
+    const { draft } = parseCurl(`curl https://api.example.test/lookup --header 'Content-Type: application/json';`);
+    expect(draft.headers).toEqual([{ name: "Content-Type", value: "application/json" }]);
+  });
+
   it("treats a body as a POST that sends its arguments in one", () => {
     /* Both halves matter. Defaulting to GET would send a body nobody reads, and leaving `send`
        on "query" would silently drop every argument the tool is given. */
