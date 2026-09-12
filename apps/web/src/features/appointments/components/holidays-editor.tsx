@@ -72,7 +72,7 @@ export const HolidaysEditor = ({
             className="min-w-[180px] flex-1"
             error={addState.fieldErrors["name"]}
           />
-          <SubmitButton pending={adding} idle="Mark shut" busy="Saving…" />
+          <SubmitButton pending={adding} idle="Mark shut" />
         </form>
       )}
 

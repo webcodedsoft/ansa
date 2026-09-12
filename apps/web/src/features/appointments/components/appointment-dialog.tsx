@@ -208,7 +208,6 @@ export const AppointmentDialog = ({
               <SubmitButton
                 pending={cancelling}
                 idle="Cancel appointment"
-                busy="Cancelling…"
                 variant="danger"
               />
             </form>
@@ -217,7 +216,7 @@ export const AppointmentDialog = ({
           {canWrite && booking !== null && booking.status === "held" && (
             <form action={confirm} className="contents">
               <input type="hidden" name="bookingId" value={booking.id} />
-              <SubmitButton pending={confirming} idle="Confirm hold" busy="Confirming…" />
+              <SubmitButton pending={confirming} idle="Confirm hold" />
             </form>
           )}
 
@@ -227,16 +226,9 @@ export const AppointmentDialog = ({
               form={formId}
               type="submit"
               disabled={busy || instants === null || backwards}
+              pending={booking !== null ? editing : creating}
             >
-              {booking !== null
-                ? editing
-                  ? "Saving…"
-                  : "Save"
-                : creating
-                  ? "Saving…"
-                  : mode === "held"
-                    ? "Hold slot"
-                    : "Book it"}
+              {booking !== null ? "Save" : mode === "held" ? "Hold slot" : "Book it"}
             </Button>
           )}
         </>

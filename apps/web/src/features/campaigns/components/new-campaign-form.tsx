@@ -237,7 +237,7 @@ export const NewCampaignForm = ({ agents }: { readonly agents: readonly AgentCho
             </ul>
 
             <div className="mt-1.5 flex flex-wrap gap-2">
-              <SubmitButton pending={pending} idle="Create campaign" busy="Creating…" />
+              <SubmitButton pending={pending} idle="Create campaign" />
               <Link href="/campaigns" className={buttonClass()} aria-disabled={pending}>
                 Cancel
               </Link>

@@ -269,13 +269,13 @@ export const CampaignSchedule = ({
 
       {canWrite && (
         <div className="flex flex-wrap gap-2">
-          <Button
+          <Button pending={pending}
             size="sm"
             variant="primary"
             disabled={locked || backwards || halfStart || halfEnd}
             onClick={save}
           >
-            {pending ? "Saving…" : "Save schedule"}
+            "Save schedule"
           </Button>
         </div>
       )}

@@ -143,8 +143,8 @@ export const AvailabilityEditor = ({
       description="The recurring hours this calendar is open. Set them once; slots are expanded from them in the calendar's timezone. Replacing them replaces the whole week."
       actions={
         canWrite ? (
-          <Button variant="primary" onClick={save} disabled={pending}>
-            {pending ? "Saving…" : "Save hours"}
+          <Button pending={pending} variant="primary" onClick={save} disabled={pending}>
+            "Save hours"
           </Button>
         ) : undefined
       }

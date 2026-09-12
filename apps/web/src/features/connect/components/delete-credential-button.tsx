@@ -38,7 +38,7 @@ export const DeleteCredentialButton = ({
     >
       <input type="hidden" name="ref" value={credentialRef} />
       <div className="flex justify-end">
-        <SubmitButton pending={pending} variant="danger" size="sm" idle="Delete" busy="Deleting…" />
+        <SubmitButton pending={pending} variant="danger" size="sm" idle="Delete" />
       </div>
       {state.status === "failed" && (
         <Notice tone="error" className="mt-1.5 max-w-64 text-xs">

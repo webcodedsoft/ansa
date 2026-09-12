@@ -136,7 +136,6 @@ export const AddContactsButton = ({
                 form="enqueue-contacts"
                 pending={pending}
                 idle={selected.size === 0 ? "Choose contacts" : `Enqueue ${selected.size}`}
-                busy="Enqueuing…"
               />
             </>
           ) : (

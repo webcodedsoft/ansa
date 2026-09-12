@@ -113,7 +113,7 @@ export const HoursForm = ({ organisation }: { readonly organisation: Organisatio
           </div>
 
           <div>
-            <SubmitButton pending={pending} idle="Save hours" busy="Saving…" variant="primary" />
+            <SubmitButton pending={pending} idle="Save hours" variant="primary" />
           </div>
         </Stack>
       </form>

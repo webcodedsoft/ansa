@@ -179,7 +179,6 @@ export const ImportNumber = ({ webhook }: { readonly webhook: ClaimWebhook }) =>
                 variant={url === null ? "primary" : "danger"}
                 size="sm"
                 idle={url === null ? "Create the import URL" : "Rotate URL"}
-                busy={url === null ? "Creating…" : "Rotating…"}
               />
             </div>
           )}

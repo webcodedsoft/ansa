@@ -93,7 +93,7 @@ export const RoutingCard = ({
         </SelectField>
 
         <div>
-          <Button
+          <Button pending={pending}
             variant="primary"
             disabled={pending}
             aria-busy={pending}
@@ -104,7 +104,7 @@ export const RoutingCard = ({
               startTransition(() => action(form));
             }}
           >
-            {pending ? "Saving…" : "Save number"}
+            "Save number"
           </Button>
         </div>
       </Stack>

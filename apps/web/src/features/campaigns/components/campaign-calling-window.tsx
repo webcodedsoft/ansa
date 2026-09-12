@@ -95,8 +95,8 @@ export const CampaignCallingWindow = ({
               onChange={setDraft}
             />
             <div className="flex flex-wrap gap-2">
-              <Button type="submit" size="sm" variant="primary" disabled={pending || empty}>
-                {pending ? "Saving…" : "Save hours"}
+              <Button pending={pending} type="submit" size="sm" variant="primary" disabled={pending || empty}>
+                "Save hours"
               </Button>
               <Button type="button" size="sm" disabled={pending} onClick={cancel}>
                 Cancel

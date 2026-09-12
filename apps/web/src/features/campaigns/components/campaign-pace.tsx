@@ -93,8 +93,8 @@ export const CampaignPace = ({
 
         {canWrite && (
           <div>
-            <Button type="submit" size="sm" variant="primary" disabled={disabled || !dirty}>
-              {pending ? "Saving…" : "Save pace"}
+            <Button pending={pending} type="submit" size="sm" variant="primary" disabled={disabled || !dirty}>
+              "Save pace"
             </Button>
           </div>
         )}

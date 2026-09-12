@@ -78,7 +78,6 @@ export const AcceptInvitationForm = ({ token }: { readonly token: string }) => {
         <SubmitButton
           pending={pending}
           idle="Create account"
-          busy="Creating…"
           className="w-full"
         />
       </Stack>

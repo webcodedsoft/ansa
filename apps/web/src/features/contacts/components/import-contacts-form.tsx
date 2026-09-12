@@ -169,7 +169,6 @@ export const ImportContactsForm = ({ onClose }: { readonly onClose: () => void }
               <SubmitButton
                 pending={pending}
                 idle={`Import ${ready} ${ready === 1 ? "person" : "people"}`}
-                busy="Importing…"
               />
             ) : (
               <Button type="button" variant="primary" disabled>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Pause, Play } from "lucide-react";
+import { Loader2, Pause, Play } from "lucide-react";
 import { startTransition, useActionState, useEffect, useMemo, useRef, useState } from "react";
 
 import { Notice } from "@/components/ui";
@@ -175,7 +175,9 @@ export const CallRecording = ({
           }}
           className="grid size-9 flex-none place-items-center rounded-full bg-[var(--accent)] text-[var(--accent-on)] shadow-[var(--shadow-s)] transition-[transform,filter] hover:brightness-110 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-55"
         >
-          {playing ? (
+          {pending ? (
+            <Loader2 aria-hidden className="size-4 animate-spin" />
+          ) : playing ? (
             <Pause aria-hidden className="size-4 fill-current" />
           ) : (
             <Play aria-hidden className="ml-0.5 size-4 fill-current" />
@@ -246,8 +248,6 @@ export const CallRecording = ({
           in the audit log itself, where the person it protects can read it. */}
       {state.status === "failed" ? (
         <Notice tone="warn">{state.message}</Notice>
-      ) : pending ? (
-        <p className="m-0 text-[11.5px] text-[var(--ink-3)]">Fetching the recording…</p>
       ) : link !== null ? (
         <p className="m-0 text-[11.5px] text-[var(--ink-3)]">
           {link.bothLegs

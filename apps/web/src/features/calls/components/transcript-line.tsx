@@ -98,7 +98,7 @@ export const TranscriptLine = ({
               That is a verdict too.
             </p>
             <Row>
-              <SubmitButton pending={pending} idle="Save" busy="Saving…" />
+              <SubmitButton pending={pending} idle="Save" />
               <Button onClick={() => setEditing(false)} disabled={pending}>
                 Cancel
               </Button>

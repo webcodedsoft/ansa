@@ -60,7 +60,7 @@ export const ToolTester = ({ names }: { readonly names: readonly string[] }) => 
             hint="JSON, matching the tool's parametersJson."
           />
           <div>
-            <SubmitButton pending={pending} idle="Run" busy="Running…" />
+            <SubmitButton pending={pending} idle="Run" />
           </div>
 
           {(state.status === "failed" || state.status === "invalid") && state.message !== null && (

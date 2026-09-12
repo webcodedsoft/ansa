@@ -135,7 +135,7 @@ export const CredentialForm = ({
         )}
 
         <div>
-          <SubmitButton pending={pending} idle={mode === "add" ? "Store credential" : "Rotate"} busy="Saving…" />
+          <SubmitButton pending={pending} idle={mode === "add" ? "Store credential" : "Rotate"} />
         </div>
       </Stack>
     </form>

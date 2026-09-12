@@ -103,8 +103,8 @@ export const ContactConsent = ({
                   This holds everywhere and for good — no screen here lifts it again.
                 </p>
                 <div className="flex items-center gap-2">
-                  <Button type="submit" variant="primary" disabled={pending}>
-                    {pending ? "Adding…" : "Yes, never ring this number"}
+                  <Button pending={pending} type="submit" variant="primary" disabled={pending}>
+                    "Yes, never ring this number"
                   </Button>
                   <Button type="button" variant="secondary" onClick={() => setConfirming(false)}>
                     Cancel

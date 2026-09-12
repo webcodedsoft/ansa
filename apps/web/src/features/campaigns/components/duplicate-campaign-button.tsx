@@ -59,13 +59,13 @@ export const DuplicateCampaignButton = ({
             <Button onClick={() => setOpen(false)} disabled={pending}>
               Cancel
             </Button>
-            <Button
+            <Button pending={pending}
               variant="primary"
               disabled={pending || copyName.trim() === ""}
               aria-busy={pending}
               onClick={create}
             >
-              {pending ? "Copying…" : "Create the copy"}
+              "Create the copy"
             </Button>
           </>
         }

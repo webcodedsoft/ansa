@@ -238,8 +238,8 @@ const Selection = ({
         </Panel>
 
         <div className="flex flex-wrap items-center gap-3">
-          <Button type="button" onClick={save} disabled={pending}>
-            {pending ? "Saving…" : "Save selection"}
+          <Button pending={pending} type="button" onClick={save} disabled={pending}>
+            "Save selection"
           </Button>
           {chosen.size === 0 && (
             <span className="max-w-[58ch] text-[12.5px] text-[var(--ink-3)]">
@@ -266,8 +266,8 @@ const RetireSource = ({ sourceId, name }: { readonly sourceId: string; readonly 
   // Danger rather than secondary: retiring a source stops retrieval for every agent using it,
   // and it read as ordinary as the button beside it.
   return (
-    <Button type="button" variant="danger" onClick={retire} disabled={pending}>
-      {pending ? "Retiring…" : "Retire"}
+    <Button pending={pending} type="button" variant="danger" onClick={retire} disabled={pending}>
+      "Retire"
     </Button>
   );
 };
@@ -348,8 +348,8 @@ const AddSource = ({ onDone }: { readonly onDone: () => void }) => {
             {/* Primary, and in the bar rather than at the bottom. It used to sit under a page
                 that grew as you typed, so the more you pasted the further away the button that
                 kept it got. */}
-            <Button type="button" size="sm" variant="primary" onClick={store} disabled={pending}>
-              {pending ? "Storing…" : "Store source"}
+            <Button pending={pending} type="button" size="sm" variant="primary" onClick={store} disabled={pending}>
+              "Store source"
             </Button>
           </div>
 
@@ -528,8 +528,8 @@ const Upload = ({
         )}
       >
         <p className="text-[12.5px] font-medium">Drop a document here</p>
-        <Button type="button" size="sm" onClick={() => input.current?.click()} disabled={reading}>
-          {reading ? "Reading…" : "Choose a file"}
+        <Button pending={reading} type="button" size="sm" onClick={() => input.current?.click()} disabled={reading}>
+          "Choose a file"
         </Button>
         <p className="font-mono text-[10px] tracking-[0.12em] text-[var(--ink-3)] uppercase">
           {ACCEPTED_EXTENSIONS.join(" · ")}
@@ -742,8 +742,8 @@ const EditSource = ({
               Back
             </Button>
             {/* Primary, because it is the one thing on this screen that keeps the work. */}
-            <Button type="button" size="sm" variant="primary" onClick={save} disabled={pending || empty}>
-              {pending ? "Saving…" : "Save changes"}
+            <Button pending={pending} type="button" size="sm" variant="primary" onClick={save} disabled={pending || empty}>
+              "Save changes"
             </Button>
           </div>
 

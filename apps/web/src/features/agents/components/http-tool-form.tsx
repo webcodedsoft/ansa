@@ -536,7 +536,7 @@ export const HttpToolForm = ({
                   >
                     Add parameter
                   </Button>
-                  <Button
+                  <Button pending={pending}
                     type="button"
                     variant="secondary"
                     onClick={() =>
@@ -714,15 +714,15 @@ export const HttpToolForm = ({
 
       <Stepper
         steps={steps}
-        finishLabel={pending ? "Saving…" : initial === undefined ? "Add tool" : "Save changes"}
+        finishLabel={initial === undefined ? "Add tool" : "Save changes"}
         onFinish={save}
       />
 
       {/* Saving from any step, not only the last. Somebody who came back to change a timeout
           should not have to walk to the end to keep it. */}
       <div className="flex flex-wrap items-center gap-3">
-        <Button type="button" onClick={save} disabled={pending}>
-          {pending ? "Saving…" : initial === undefined ? "Add tool" : "Save changes"}
+        <Button pending={pending} type="button" onClick={save} disabled={pending}>
+          {initial === undefined ? "Add tool" : "Save changes"}
         </Button>
         <span className="text-[12.5px] text-[var(--ink-3)]">
           Saves from wherever you are in the steps.
@@ -806,8 +806,8 @@ const SampleStep = ({
               </Notice>
             )}
             <div>
-              <Button type="submit" disabled={pending || draft.url === ""}>
-                {pending ? "Fetching…" : "Fetch a sample"}
+              <Button pending={pending} type="submit" disabled={pending || draft.url === ""}>
+                "Fetch a sample"
               </Button>
             </div>
           </Stack>
@@ -939,8 +939,8 @@ const ToolTest = ({
           </Notice>
 
           <div>
-            <Button type="submit" disabled={pending || blocked}>
-              {pending ? "Running…" : "Run test"}
+            <Button pending={pending} type="submit" disabled={pending || blocked}>
+              "Run test"
             </Button>
           </div>
 

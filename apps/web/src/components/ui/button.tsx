@@ -66,12 +66,51 @@ export const buttonClass = (
 export interface ButtonProps extends ComponentPropsWithoutRef<"button"> {
   readonly variant?: ButtonVariant;
   readonly size?: keyof typeof SIZES;
+  /**
+   * Something this button started is still running.
+   *
+   * The label stays in the layout but invisible, and a spinner sits over it, so the button
+   * keeps its width while it waits — a button that shrinks to a dot and grows back is a
+   * layout that jumps twice per click. Disabled and `aria-busy` for the duration.
+   */
+  readonly pending?: boolean;
 }
 
-export const Button = ({ variant = "secondary", size = "md", className, type, ...rest }: ButtonProps) => (
+/**
+ * A spinner in place of a label, with the label still holding the space.
+ *
+ * Every waiting state in the app draws this and nothing else: no "Saving…", no "Fetching…".
+ * A spinner says "wait" in every language and reads faster than a verb with an ellipsis, and
+ * the verb was always the same one the idle label already said.
+ */
+const Waiting = ({ pending, children }: { readonly pending: boolean; readonly children: ReactNode }) => (
+  <>
+    <span className={cn("inline-flex items-center gap-2", pending && "invisible")}>{children}</span>
+    {pending && <Loader2 aria-hidden className="absolute inset-0 m-auto size-4 animate-spin" />}
+  </>
+);
+
+export const Button = ({
+  variant = "secondary",
+  size = "md",
+  className,
+  type,
+  pending = false,
+  disabled,
+  children,
+  ...rest
+}: ButtonProps) => (
   // `type` defaults to "submit" inside a form, which has submitted more forms
   // by accident than any other default in HTML.
-  <button type={type ?? "button"} className={cn(BASE, SIZES[size], VARIANTS[variant], className)} {...rest} />
+  <button
+    type={type ?? "button"}
+    disabled={disabled === true || pending}
+    aria-busy={pending || undefined}
+    className={cn(BASE, SIZES[size], VARIANTS[variant], "relative", className)}
+    {...rest}
+  >
+    <Waiting pending={pending}>{children}</Waiting>
+  </button>
 );
 
 /**
@@ -85,7 +124,6 @@ export const Button = ({ variant = "secondary", size = "md", className, type, ..
 export const SubmitButton = ({
   pending,
   idle,
-  busy,
   variant = "primary",
   size = "md",
   className,
@@ -94,7 +132,6 @@ export const SubmitButton = ({
 }: {
   readonly pending: boolean;
   readonly idle: ReactNode;
-  readonly busy: ReactNode;
   readonly variant?: ButtonVariant;
   readonly size?: keyof typeof SIZES;
   readonly className?: string;
@@ -121,15 +158,14 @@ export const SubmitButton = ({
     formAction={formAction}
     disabled={pending}
     aria-busy={pending}
-    className={cn(BASE, SIZES[size], VARIANTS[variant], className)}
+    className={cn(BASE, SIZES[size], VARIANTS[variant], "relative", className)}
   >
     {/* Every form in the app submits through one of these, so this is the whole of "data is
         saving" in one place — no per-form wiring, and a form added next week is covered
         without knowing the bar exists. Renders nothing; see `pending-progress.tsx` for why
         it is a child rather than a hook. */}
     <PendingProgress pending={pending} />
-    {pending && <Loader2 aria-hidden className="size-4 animate-spin" />}
-    {pending ? busy : idle}
+    <Waiting pending={pending}>{idle}</Waiting>
   </button>
 );
 

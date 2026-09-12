@@ -66,7 +66,6 @@ export const SignUpForm = () => {
         <SubmitButton
           pending={pending}
           idle="Create organisation"
-          busy="Creating…"
           className="w-full"
         />
       </Stack>

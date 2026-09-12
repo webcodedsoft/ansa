@@ -48,10 +48,7 @@ export const TestCallForm = ({ configVersion }: { readonly configVersion?: numbe
           className={cn(CONTROL, "w-[190px]", numberError !== undefined && "border-[var(--bad)]")}
         />
         {pending ? (
-          <span className="flex items-center gap-2 text-[12.5px] text-[var(--ink-2)]">
-            <Loader2 aria-hidden className="size-3.5 animate-spin" />
-            Ringing…
-          </span>
+          <Loader2 aria-hidden className="size-4 animate-spin text-[var(--ink-2)]" />
         ) : (
           configVersion !== undefined && (
             <span className="text-[12.5px] text-[var(--ink-3)]">on version {configVersion}</span>

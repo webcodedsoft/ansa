@@ -131,8 +131,8 @@ const SwitchEditor = ({
               on what the caller says. {AUTHORING_ASYMMETRY}
             </p>
           </div>
-          <Button size="sm" variant="secondary" disabled={switching} onClick={go}>
-            {switching ? "Rebuilding…" : "Rebuild as a flow"}
+          <Button pending={switching} size="sm" variant="secondary" disabled={switching} onClick={go}>
+            "Rebuild as a flow"
           </Button>
         </div>
       </Panel>
@@ -158,13 +158,13 @@ const SwitchEditor = ({
               Keep the flow
             </Button>
           )}
-          <Button
+          <Button pending={switching}
             size="sm"
             variant={armed ? "danger" : "secondary"}
             disabled={switching}
             onClick={() => (armed ? go() : setArmed(true))}
           >
-            {switching ? "Rebuilding…" : armed ? "Yes, make it a form" : "Turn into a form"}
+            {armed ? "Yes, make it a form" : "Turn into a form"}
           </Button>
         </span>
       </div>

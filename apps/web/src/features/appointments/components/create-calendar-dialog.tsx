@@ -74,7 +74,6 @@ export const CreateCalendarDialog = ({
               form={formId}
               pending={pending}
               idle="Create calendar"
-              busy="Creating…"
             />
           </>
         }

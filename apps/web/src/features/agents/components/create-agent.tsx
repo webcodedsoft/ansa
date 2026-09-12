@@ -159,8 +159,8 @@ export const CreateAgent = ({ mode }: { readonly mode: AuthoringMode }) => {
         {failure !== null && <Notice tone="error">{failure}</Notice>}
 
         <div className="flex items-center gap-2.5">
-          <Button variant="primary" onClick={create} disabled={creating || name.trim() === ""}>
-            {creating ? "Creating…" : "Create agent"}
+          <Button pending={creating} variant="primary" onClick={create} disabled={creating || name.trim() === ""}>
+            "Create agent"
           </Button>
           <span className="text-[12.5px] text-[var(--ink-3)]">
             It starts unrouted — no caller reaches it until an operator points a number at

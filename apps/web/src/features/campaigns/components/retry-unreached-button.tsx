@@ -38,17 +38,14 @@ export const RetryUnreachedButton = ({
       {unreached > 0 && (
         <Button
           size="sm"
-          disabled={pending}
-          aria-busy={pending}
+          pending={pending}
           onClick={() => {
             const form = new FormData();
             form.set("campaignId", campaignId);
             startTransition(() => action(form));
           }}
         >
-          {pending
-            ? "Queueing…"
-            : `Try the ${unreached === 1 ? "one" : unreached} that did not connect again`}
+          {`Try the ${unreached === 1 ? "one" : unreached} that did not connect again`}
         </Button>
       )}
       {state.status === "succeeded" && state.data !== null && (

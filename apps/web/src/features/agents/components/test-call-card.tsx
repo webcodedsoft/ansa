@@ -41,8 +41,8 @@ export const TestCallCard = () => {
           error={state.fieldErrors["to"]}
         />
         <div className="pt-[22px]">
-          <Button variant="primary" onClick={ring} disabled={pending}>
-            {pending ? "Ringing…" : "Ring me now"}
+          <Button pending={pending} variant="primary" onClick={ring} disabled={pending}>
+            "Ring me now"
           </Button>
         </div>
       </Row>

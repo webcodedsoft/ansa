@@ -45,7 +45,7 @@ export const InvitationRow = ({
         {revocable && (
           <form action={action}>
             <input type="hidden" name="id" value={invitation.id} />
-            <SubmitButton pending={pending} idle="Revoke" busy="Revoking…" variant="danger" size="sm" />
+            <SubmitButton pending={pending} idle="Revoke" variant="danger" size="sm" />
             {state.status === "failed" && (
               <Notice tone="error" className="mt-2">
                 {state.message}

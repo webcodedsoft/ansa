@@ -67,7 +67,7 @@ export const AddContactForm = ({ onClose }: { readonly onClose: () => void }) =>
           <Notice tone="error">{state.message}</Notice>
         )}
         <div className="flex justify-end">
-          <SubmitButton pending={pending} idle="Add contact" busy="Adding…" />
+          <SubmitButton pending={pending} idle="Add contact" />
         </div>
       </Stack>
     </form>

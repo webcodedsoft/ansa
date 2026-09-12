@@ -44,7 +44,7 @@ export const InviteForm = () => {
               </SelectField>
             </Row>
             <div>
-              <SubmitButton pending={pending} idle="Send invitation" busy="Sending…" />
+              <SubmitButton pending={pending} idle="Send invitation" />
             </div>
             {(state.status === "failed" || state.status === "invalid") && (
               <Notice tone="error">{state.message}</Notice>

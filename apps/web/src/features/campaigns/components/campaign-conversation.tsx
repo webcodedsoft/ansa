@@ -114,7 +114,7 @@ export const CampaignConversation = ({
         /* Hidden rather than disabled until something changes: a button that does nothing
            invites the press that finds that out. */
         <div>
-          <SubmitButton form={FORM} pending={pending} idle="Save conversation" busy="Saving…" />
+          <SubmitButton form={FORM} pending={pending} idle="Save conversation" />
         </div>
       )}
     </div>

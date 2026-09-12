@@ -81,7 +81,7 @@ export const DiaryCard = ({
         </SelectField>
 
         <div>
-          <Button
+          <Button pending={pending}
             variant="primary"
             disabled={pending}
             aria-busy={pending}
@@ -92,7 +92,7 @@ export const DiaryCard = ({
               startTransition(() => action(form));
             }}
           >
-            {pending ? "Saving…" : "Save diary"}
+            "Save diary"
           </Button>
         </div>
       </Stack>

@@ -255,7 +255,7 @@ export const WebhooksForm = ({ document }: { readonly document: SubscriptionDocu
               hint="Recorded on the configuration version. Optional."
             />
             <div>
-              <SubmitButton pending={pending} idle="Save" busy="Saving…" />
+              <SubmitButton pending={pending} idle="Save" />
             </div>
           </Stack>
         </Card>

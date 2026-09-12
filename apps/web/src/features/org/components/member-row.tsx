@@ -70,7 +70,7 @@ export const MemberRow = ({
                 <option value="admin">Admin</option>
                 <option value="member">Member</option>
               </SelectField>
-              <SubmitButton pending={rolePending} idle="Save" busy="Saving…" size="sm" />
+              <SubmitButton pending={rolePending} idle="Save" size="sm" />
             </Row>
             {(roleState.status === "failed" || roleState.status === "invalid") && (
               <Notice tone="error" className="mt-2">
@@ -101,7 +101,6 @@ export const MemberRow = ({
                 <SubmitButton
                   pending={removePending}
                   idle="Confirm remove"
-                  busy="Removing…"
                   variant="danger"
                   size="sm"
                 />

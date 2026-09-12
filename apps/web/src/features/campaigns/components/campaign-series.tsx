@@ -301,8 +301,8 @@ export const CampaignSeries = ({
 
       {canWrite && (
         <div>
-          <Button size="sm" variant="primary" disabled={locked || anchorAt === null || !hasPurpose} onClick={submit}>
-            {pending ? "Setting up…" : `Run ${campaignName} again`}
+          <Button pending={pending} size="sm" variant="primary" disabled={locked || anchorAt === null || !hasPurpose} onClick={submit}>
+            {`Run ${campaignName} again`}
           </Button>
         </div>
       )}

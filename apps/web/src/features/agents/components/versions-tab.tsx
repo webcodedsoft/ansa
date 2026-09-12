@@ -135,8 +135,8 @@ export const VersionsTab = ({
                     </Button>
                   )}
                   {v.version !== liveVersion && !crossesTheLine(v) && (
-                    <Button size="sm" onClick={() => restore(v.version)} disabled={pending && busyVersion === v.version}>
-                      {pending && busyVersion === v.version ? "Restoring…" : "Restore"}
+                    <Button size="sm" onClick={() => restore(v.version)} pending={pending && busyVersion === v.version}>
+                      Restore
                     </Button>
                   )}
                   {v.version !== liveVersion && crossesTheLine(v) && crossing !== v.version && (
@@ -153,9 +153,9 @@ export const VersionsTab = ({
                         size="sm"
                         variant={v.shape === "form" ? "danger" : "secondary"}
                         onClick={() => restore(v.version)}
-                        disabled={pending && busyVersion === v.version}
+                        pending={pending && busyVersion === v.version}
                       >
-                        {pending && busyVersion === v.version ? "Restoring…" : v.shape === "form" ? "Yes, back to a form" : "Yes, as a flow"}
+                        {v.shape === "form" ? "Yes, back to a form" : "Yes, as a flow"}
                       </Button>
                     </span>
                   )}

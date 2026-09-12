@@ -27,7 +27,6 @@ export const SaveBar = ({
       variant="secondary"
       pending={pending}
       idle="Save changes"
-      busy="Saving…"
       form={form}
     />
     <span className="text-[12.5px] text-[var(--ink-3)]">

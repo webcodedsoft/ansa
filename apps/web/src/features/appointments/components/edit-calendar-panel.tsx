@@ -103,7 +103,7 @@ export const EditCalendarPanel = ({
 
         {canWrite ? (
           <div>
-            <SubmitButton pending={pending} idle="Save settings" busy="Saving…" />
+            <SubmitButton pending={pending} idle="Save settings" />
           </div>
         ) : (
           <Notice tone="info">You can view these settings. Changing them needs the appointments:write permission.</Notice>

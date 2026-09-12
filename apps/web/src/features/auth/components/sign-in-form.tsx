@@ -64,7 +64,6 @@ export const SignInForm = () => {
         <SubmitButton
           pending={pending}
           idle={choosing ? "Continue" : "Sign in"}
-          busy="Signing in…"
           className="w-full"
         />
       </Stack>

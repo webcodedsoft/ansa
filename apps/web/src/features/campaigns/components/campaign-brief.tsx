@@ -211,7 +211,7 @@ export const CampaignBrief = ({
 
           {!disabled && (
             <div className="border-t border-[var(--hairline)] pt-4">
-              <SubmitButton pending={pending} idle="Save brief" busy="Saving…" />
+              <SubmitButton pending={pending} idle="Save brief" />
             </div>
           )}
         </Card>

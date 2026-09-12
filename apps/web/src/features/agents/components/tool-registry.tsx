@@ -179,8 +179,8 @@ const RemoveTool = ({
     <form action={action}>
       <input type="hidden" name="name" value={name} />
       <input type="hidden" name="expectedVersion" value={configVersion} />
-      <Button type="submit" variant="secondary" disabled={pending}>
-        {pending ? "Removing…" : "Remove"}
+      <Button pending={pending} type="submit" variant="secondary" disabled={pending}>
+        "Remove"
       </Button>
     </form>
   );

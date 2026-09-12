@@ -501,7 +501,7 @@ export const AgentWorkspace = ({
             {/* What auto-save is doing, in three words. "Unsaved changes" is the state that
                 matters: it means closing the tab now loses something. */}
             <span className="font-mono text-[10.5px] tracking-[0.06em] text-[var(--ink-3)]" aria-live="polite">
-              {saving ? "saving…" : dirty ? "unsaved changes" : saveState.status === "failed" ? "not saved — see the message on the form" : autosavedAt !== null ? "saved" : ""}
+              {dirty ? "unsaved changes" : saveState.status === "failed" ? "not saved — see the message on the form" : autosavedAt !== null ? "saved" : ""}
             </span>
           </div>
         </div>
@@ -529,14 +529,14 @@ export const AgentWorkspace = ({
             <input type="hidden" name="agentId" value={agent.agentId} />
             {/* Danger, not primary. `SubmitButton` defaults to primary, so taking an agent off
                 the phone rendered in the same accent as publishing a new configuration to it. */}
-            <SubmitButton pending={retiring} idle="Retire" busy="Retiring…" variant="danger" />
+            <SubmitButton pending={retiring} idle="Retire" variant="danger" />
           </form>
 
           {/* Discard first, and only when there is something to discard. A button offering to
               throw away work that does not exist is furniture, and one sitting there
               permanently beside Publish invites the click it should not get. */}
           {hasDraft && (
-            <Button
+            <Button pending={discarding}
               onClick={() => {
                 /* The action is called by the button, not by the page, so it has no route to
                    read the agent from. Same reason the publish form carries a hidden field. */
@@ -548,7 +548,7 @@ export const AgentWorkspace = ({
               disabled={discarding || saving || pending}
               aria-busy={discarding}
             >
-              {discarding ? "Discarding…" : "Discard changes"}
+              "Discard changes"
             </Button>
           )}
 
@@ -560,10 +560,9 @@ export const AgentWorkspace = ({
             variant="secondary"
             pending={saving}
             idle="Save"
-            busy="Saving…"
             form={PUBLISH_FORM}
           />
-          <Button
+          <Button pending={pending}
             variant="primary"
             disabled={pending || saving || discarding || cannotPublish}
             aria-busy={pending}
@@ -574,7 +573,7 @@ export const AgentWorkspace = ({
             }
             onClick={() => setAsking(true)}
           >
-            {pending ? "Publishing…" : cannotPublish ? `Fix ${flowBlocking} in the flow` : "Publish"}
+            {cannotPublish ? `Fix ${flowBlocking} in the flow` : "Publish"}
           </Button>
         </div>
       </header>
@@ -674,7 +673,6 @@ export const AgentWorkspace = ({
             <SubmitButton
               pending={pending}
               idle="Publish"
-              busy="Publishing…"
               form={PUBLISH_FORM}
               formAction={action}
             />

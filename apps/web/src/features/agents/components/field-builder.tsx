@@ -163,8 +163,8 @@ export const FieldBuilder = ({
         </div>
         <div className="flex flex-none items-center gap-2">
           {saved && !saving && <Tag tone="ok">Saved</Tag>}
-          <Button type="button" onClick={save} disabled={saving}>
-            {saving ? "Saving…" : "Save form"}
+          <Button pending={saving} type="button" onClick={save} disabled={saving}>
+            "Save form"
           </Button>
         </div>
       </div>
