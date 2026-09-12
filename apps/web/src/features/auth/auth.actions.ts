@@ -10,8 +10,10 @@ import {
   acceptInvitationSchema,
   accountClosureSchema,
   credentialsSchema,
+  forgotPasswordSchema,
   passwordChangeSchema,
   profileSchema,
+  resetPasswordSchema,
   signUpSchema,
 } from "./auth.schema";
 import {
@@ -20,6 +22,8 @@ import {
   closeAccount,
   createOrganisation,
   organisationsFor,
+  requestPasswordReset,
+  resetPassword as resetPasswordOnApi,
   signInTo,
   signOutEverywhere,
   type OrganisationChoice,
@@ -167,6 +171,51 @@ export const acceptInvite = async (
   } catch (error) {
     return failedForm(failureMessage(error));
   }
+};
+
+export type ForgotPasswordState = FormState<null>;
+
+/**
+ * Ask for a reset link. One sentence back, and the same sentence whether the address has
+ * an account or not — the API is built so the two cannot be told apart, and a form that
+ * said "we don't know that address" would undo it.
+ */
+export const forgotPassword = async (
+  _previous: ForgotPasswordState,
+  form: FormData,
+): Promise<ForgotPasswordState> => {
+  const parsed = forgotPasswordSchema.safeParse({ email: form.get("email") ?? "" });
+  if (!parsed.success) return invalidForm(parsed.error);
+  try {
+    await requestPasswordReset(parsed.data.email);
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+  return succeededForm(null, "If that address has an account, a link is on its way. It works for one hour.");
+};
+
+export type ResetPasswordState = FormState<null>;
+
+/**
+ * Choose a new password from the link, then go and sign in with it. Not signed in here:
+ * every session was just revoked, and signing in is the proof that the new password works.
+ */
+export const resetPassword = async (
+  _previous: ResetPasswordState,
+  form: FormData,
+): Promise<ResetPasswordState> => {
+  const parsed = resetPasswordSchema.safeParse({
+    token: form.get("token") ?? "",
+    password: form.get("password") ?? "",
+    confirmPassword: form.get("confirmPassword") ?? "",
+  });
+  if (!parsed.success) return invalidForm(parsed.error);
+  try {
+    await resetPasswordOnApi(parsed.data.token, parsed.data.password);
+  } catch (error) {
+    return failedForm(failureMessage(error, { within: "body" }));
+  }
+  redirect("/sign-in?reset=done");
 };
 
 // ---------------------------------------------------------------------------

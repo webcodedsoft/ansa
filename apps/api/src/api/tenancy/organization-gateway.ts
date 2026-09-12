@@ -1,19 +1,21 @@
 import {
   acceptInvitation,
+  beginPasswordReset,
   createOrganisation,
   createSession,
   credentialsForEmail,
   findSessionByToken,
   organisationsForUser,
+  redeemPasswordReset,
   touchSession,
-  withOrganization,
   type AcceptedInvitation,
   type CreatedOrganisation,
   type Db,
   type NewSession,
-  type StoredCredentials,
   type OrganizationScope,
+  type StoredCredentials,
   type UserOrganisation,
+  withOrganization,
 } from "@ansa/db";
 import type { OrganizationId } from "@ansa/shared";
 import { Inject, Injectable, ServiceUnavailableException } from "@nestjs/common";
@@ -142,5 +144,15 @@ export class OrganizationGateway {
     now: Date,
   ): Promise<CreatedOrganisation> {
     return createOrganisation(this.db, organisation, now);
+  }
+
+  /** See `beginPasswordReset`: null for an unknown address, and the caller must not say so. */
+  async beginPasswordReset(email: string, tokenHash: Buffer, expiresAt: Date) {
+    return beginPasswordReset(this.db, email, tokenHash, expiresAt);
+  }
+
+  /** See `redeemPasswordReset`: null for a link that is unknown, used or expired. */
+  async redeemPasswordReset(tokenHash: Buffer, passwordHash: string, now: Date): Promise<string | null> {
+    return redeemPasswordReset(this.db, tokenHash, passwordHash, now);
   }
 }

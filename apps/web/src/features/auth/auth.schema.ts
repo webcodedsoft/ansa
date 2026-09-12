@@ -72,6 +72,24 @@ export const accountClosureSchema = z.object({
   password: z.string().min(1, "Enter your password to confirm."),
 });
 
+/** Asking for a reset link. The address is all there is to check. */
+export const forgotPasswordSchema = z.object({ email: emailAddress });
+
+/**
+ * Choosing a new password from the link. The token is a hidden field carried from the
+ * query string; the confirmation catches the typo that would lock them out a second time.
+ */
+export const resetPasswordSchema = z
+  .object({
+    token: z.string().trim().min(1, "The reset link is missing its token."),
+    password: newPassword,
+    confirmPassword: z.string(),
+  })
+  .refine((value) => value.password === value.confirmPassword, {
+    path: ["confirmPassword"],
+    message: "These do not match.",
+  });
+
 export const signUpSchema = z
   .object({
     organisationName: z

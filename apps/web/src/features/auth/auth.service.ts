@@ -87,6 +87,19 @@ export const acceptInvitation = async (
   return { organisationId: result.organisationId, createdUser: result.createdUser };
 };
 
+/**
+ * Ask for a reset link. The API answers the same whether or not the address has an account,
+ * and the caller must say the same thing to the person either way.
+ */
+export const requestPasswordReset = async (email: string): Promise<void> => {
+  await anonymousApi().auth.requestPasswordReset({ body: { email } });
+};
+
+/** Choose a new password with a link. A dead link is a 422 on `token`. */
+export const resetPassword = async (token: string, password: string): Promise<void> => {
+  await anonymousApi().auth.completePasswordReset({ body: { token, password } });
+};
+
 /** The signed-in user, their organisation, and what they may do in it. */
 export const currentPrincipal = async () => (await api()).auth.me();
 

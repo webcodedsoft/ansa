@@ -78,6 +78,25 @@ export const mintInvitationToken = (): MintedToken => {
   return { token: `${INVITATION_PREFIX}.${secret}`, hash: hashSecret(secret) };
 };
 
+/**
+ * Password-reset tokens carry nothing but the secret, like invitations: redemption reads
+ * the person off the reset row. One hour rather than seven days — a reset is asked for and
+ * used in the same sitting, and a link that lives longer is a link that can be found later.
+ */
+const RESET_PREFIX = "ansa_rst";
+
+export const mintResetToken = (): MintedToken => {
+  const secret = mintSecret();
+  return { token: `${RESET_PREFIX}.${secret}`, hash: hashSecret(secret) };
+};
+
+export const readResetToken = (raw: string): Buffer | null => {
+  const parts = raw.split(".");
+  if (parts.length !== 2 || parts[0] !== RESET_PREFIX) return null;
+  const secret = parts[1] ?? "";
+  return secret.length === 0 ? null : hashSecret(secret);
+};
+
 export const readInvitationToken = (raw: string): Buffer | null => {
   const parts = raw.split(".");
   if (parts.length !== 2 || parts[0] !== INVITATION_PREFIX) return null;

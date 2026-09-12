@@ -3,7 +3,7 @@ import { Inject, Injectable } from "@nestjs/common";
 
 import { OrganizationGateway } from "../tenancy/organization-gateway";
 import { hashPassword, verifyPassword } from "./password";
-import { mintSessionToken, readInvitationToken } from "./tokens";
+import { mintResetToken, mintSessionToken, readInvitationToken, readResetToken } from "./tokens";
 
 /**
  * Sign-in, sign-out and invitation redemption.
@@ -13,6 +13,9 @@ import { mintSessionToken, readInvitationToken } from "./tokens";
  * inverts what an expiry is for.
  */
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** A reset is asked for and used in one sitting. An hour covers a slow inbox and not much else. */
+const RESET_TTL_MS = 60 * 60 * 1000;
 
 /** Long enough to survive a weekend and a spam folder, short enough to be worth expiring. */
 export const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -176,5 +179,35 @@ export class AuthService {
       role: accepted.role,
       createdUser: accepted.createdUser,
     };
+  }
+
+  /**
+   * Start a password reset. Returns the link's token and who it is for — or null when the
+   * address has no account, in which case the caller says exactly what it would have said
+   * otherwise. The token is minted before the lookup so both paths cost the same.
+   */
+  async requestPasswordReset(
+    email: string,
+    now: Date,
+  ): Promise<{ readonly token: string; readonly displayName: string } | null> {
+    const minted = mintResetToken();
+    const found = await this.gateway.beginPasswordReset(email, minted.hash, new Date(now.getTime() + RESET_TTL_MS));
+    if (found === null) return null;
+    return { token: minted.token, displayName: found.displayName };
+  }
+
+  /**
+   * Finish a password reset. False for a link that is malformed, unknown, used or expired.
+   *
+   * The new password is hashed before the link is checked, so a bad link costs the same as
+   * a good one — the same reasoning as invitations. Every session the person held is
+   * revoked by the database in the same statement that changes the password.
+   */
+  async resetPassword(rawToken: string, password: string, now: Date): Promise<boolean> {
+    const hash = readResetToken(rawToken);
+    const replacement = await hashPassword(password);
+    if (hash === null) return false;
+    const userId = await this.gateway.redeemPasswordReset(hash, replacement, now);
+    return userId !== null;
   }
 }

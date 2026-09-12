@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState } from "react";
 
 import { SelectField, Stack, SubmitButton, TextField } from "@/components/ui";
@@ -41,6 +42,11 @@ export const SignInForm = () => {
           required
           error={state.fieldErrors["password"]}
         />
+        <div className="-mt-1.5 text-right">
+          <Link href="/forgot-password" className="text-[12.5px] text-[var(--ink-3)] hover:text-[var(--ink)] hover:underline">
+            Forgot your password?
+          </Link>
+        </div>
 
         {choosing && (
           <SelectField

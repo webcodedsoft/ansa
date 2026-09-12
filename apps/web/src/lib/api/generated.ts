@@ -1140,6 +1140,29 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       }>(options, "POST", `/api/v1/auth/organisations`, input),
 
     /**
+     * Send yourself a link to choose a new password
+     * Answers 204 whether or not the address has an account, and takes the same time to do it — the form must not be usable to learn who has one. When it does, an email with a one-hour, single-use link goes to that address. Nothing about the account changes until the link is opened and a new password chosen.
+     */
+    requestPasswordReset: (input: {
+        readonly body: {
+          readonly email: string;
+        };
+      }) =>
+      send<void>(options, "POST", `/api/v1/auth/password-resets`, input),
+
+    /**
+     * Choose a new password with the link you were sent
+     * Sets the password and signs the person out everywhere — a reset is the moment to be sure whoever had the old password is gone. A link that is unknown, already used or older than an hour is refused with a 422 on `token`, and the three are not told apart.
+     */
+    completePasswordReset: (input: {
+        readonly body: {
+          readonly token: string;
+          readonly password: string;
+        };
+      }) =>
+      send<void>(options, "PUT", `/api/v1/auth/password-resets`, input),
+
+    /**
      * Sign in to one organisation
      */
     signIn: (input: {

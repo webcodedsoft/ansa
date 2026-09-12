@@ -99,18 +99,22 @@ describe("every dashboard route", () => {
    * The list is written out, so making a route public is a change to this test and shows
    * up in review. Anything that quietly becomes `"public"` fails here.
    */
-  it("requires a session, except for the four routes that cannot", () => {
+  it("requires a session, except for the six routes that cannot", () => {
     const publicRoutes = ALL_ROUTES.filter((route) => route.spec?.capability === "public").map(
       (route) => `${route.method} ${route.path}`,
     );
     expect(publicRoutes.sort()).toEqual([
       "POST /api/v1/auth/organisations",
+      // Asking for a reset link and using it: a person who has forgotten their password has
+      // no session by definition. Both answer the same for a known and an unknown address.
+      "POST /api/v1/auth/password-resets",
       "POST /api/v1/auth/sessions",
       // Creates an organisation and the account that owns it, so by definition there is no
       // session yet. It is the only public route that writes a organization, which is why it
-      // carries the tightest rate limit of the four.
+      // carries the tightest rate limit of the six.
       "POST /api/v1/auth/sign-ups",
       "POST /api/v1/invitations/accept",
+      "PUT /api/v1/auth/password-resets",
     ]);
   });
 

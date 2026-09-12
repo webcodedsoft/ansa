@@ -26,6 +26,8 @@ import { ValidationFailed } from "../http/problem";
 import { apiRoute, FromBody } from "../http/request";
 import { choice, flag, list, object, text, type Infer } from "../http/schema";
 import { email, organisation, role, timestamp, uuid } from "../schemas";
+import { MAILER, type Mailer } from "../../mail/mailer";
+import { loadApiConfig } from "../api-config";
 import { OrganizationContext } from "../tenancy/organization-context";
 import { AuthService } from "./auth.service";
 import { ALL_CAPABILITIES, capabilitiesOf } from "./capability";
@@ -146,6 +148,36 @@ const passwordChange = object({
   newPassword: newPassword(),
 });
 
+const resetRequest = object({ email: email() });
+
+const resetCompletion = object({
+  token: text({ minLength: 1, maxLength: 200 }),
+  password: newPassword(),
+});
+
+/**
+ * Five links an hour per address and five attempts an hour per address: enough for a slow
+ * inbox, not enough to be a nuisance to somebody else's, and the redemption limit caps how
+ * fast a guessed link can be tried.
+ */
+const RESET_REQUEST_LIMIT = { limit: 5, windowMs: 60 * 60_000, by: "ip+email" } as const;
+const RESET_COMPLETE_LIMIT = { limit: 10, windowMs: 60 * 60_000, by: "ip" } as const;
+
+/**
+ * What the reset email says. Plain, short, and it names the person so a message that lands
+ * in the wrong inbox reads as somebody else's rather than as an instruction.
+ */
+const resetMessage = (displayName: string, link: string): string =>
+  [
+    `Hello ${displayName},`,
+    "",
+    "Somebody asked to reset the password on your Ansa account. Open this link to choose a new one:",
+    link,
+    "",
+    "It works once and expires in an hour. If this was not you, ignore it — your password does not",
+    "change unless the link is opened, and nobody else has it.",
+  ].join("\n");
+
 /** Closing an account asks for the password again: a stolen session must not be able to end the account. */
 const accountClosure = object({ password: offeredPassword() });
 
@@ -168,7 +200,52 @@ export class AuthController {
   constructor(
     @Inject(AuthService) private readonly auth: AuthService,
     @Inject(OrganizationContext) private readonly db: OrganizationContext,
+    @Inject(MAILER) private readonly mailer: Mailer,
   ) {}
+
+  @Post("password-resets")
+  @Endpoint({
+    summary: "Send yourself a link to choose a new password",
+    description:
+      "Answers 204 whether or not the address has an account, and takes the same time to do it — the form must not be usable to learn who has one. When it does, an email with a one-hour, single-use link goes to that address. Nothing about the account changes until the link is opened and a new password chosen.",
+    capability: "public",
+    body: resetRequest,
+    rateLimit: RESET_REQUEST_LIMIT,
+    status: 204,
+  })
+  async requestPasswordReset(@FromBody() body: Infer<typeof resetRequest>): Promise<void> {
+    const found = await this.auth.requestPasswordReset(body.email, new Date());
+    if (found === null) return;
+    /* Not awaited into the response and not reported: the answer is the same whether the
+       message was accepted, so a vendor outage cannot be told from an unknown address. The
+       mailer logs its own refusal. Without a public address there is no link worth sending. */
+    const base = loadApiConfig().publicBaseUrl;
+    if (base === null) return;
+    void this.mailer
+      .send({
+        to: body.email,
+        subject: "Choose a new Ansa password",
+        text: resetMessage(found.displayName, `${base}/reset-password?token=${found.token}`),
+      })
+      .catch(() => false);
+  }
+
+  @Put("password-resets")
+  @Endpoint({
+    summary: "Choose a new password with the link you were sent",
+    description:
+      "Sets the password and signs the person out everywhere — a reset is the moment to be sure whoever had the old password is gone. A link that is unknown, already used or older than an hour is refused with a 422 on `token`, and the three are not told apart.",
+    capability: "public",
+    body: resetCompletion,
+    rateLimit: RESET_COMPLETE_LIMIT,
+    status: 204,
+  })
+  async completePasswordReset(@FromBody() body: Infer<typeof resetCompletion>): Promise<void> {
+    const done = await this.auth.resetPassword(body.token, body.password, new Date());
+    if (!done) {
+      throw new ValidationFailed([{ path: "body.token", message: "has expired or was already used. Ask for a new link." }]);
+    }
+  }
 
   @Post("organisations")
   @Endpoint({

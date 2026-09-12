@@ -544,6 +544,44 @@ export interface UserOrganisation {
   readonly role: MemberRole;
 }
 
+/**
+ * Start a password reset for an address (migration 0088).
+ *
+ * Null for an address with no live account — and the caller must answer the person the
+ * same way either way, because the difference is the only thing an outsider could learn.
+ */
+export const beginPasswordReset = async (
+  db: Db,
+  email: string,
+  tokenHash: Buffer,
+  expiresAt: Date,
+): Promise<{ readonly userId: string; readonly displayName: string } | null> => {
+  const rows = (await db.query(
+    "select user_id, display_name from app.begin_password_reset($1, $2, $3)",
+    [email, tokenHash, expiresAt],
+  )) as { user_id: string; display_name: string }[];
+  const row = rows[0];
+  return row === undefined ? null : { userId: row.user_id, displayName: row.display_name };
+};
+
+/**
+ * Finish a password reset. Null when the link is unknown, used or expired — one answer for
+ * all three, so a guessed link learns nothing. Every session the person held is revoked.
+ */
+export const redeemPasswordReset = async (
+  db: Db,
+  tokenHash: Buffer,
+  passwordHash: string,
+  now: Date,
+): Promise<string | null> => {
+  const rows = (await db.query("select app.redeem_password_reset($1, $2, $3) as user_id", [
+    tokenHash,
+    passwordHash,
+    now,
+  ])) as { user_id: string | null }[];
+  return rows[0]?.user_id ?? null;
+};
+
 /** Called only once the password has verified, so it cannot be used to enumerate anything. */
 export const organisationsForUser = async (
   db: Db,

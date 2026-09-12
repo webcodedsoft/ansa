@@ -6062,6 +6062,37 @@ rather than landed as inventory — the wave that needs them adds them wired.
       `<dialog>` in the top layer and a toast raised from inside one was drawn behind its
       backdrop; a popover shown while a dialog is open joins the top layer above it. Seen:
       a refused phone number in the Add-a-contact dialog, toast bottom-right over the dialog.
+- [x] **The toast has a face** (2026-09-12)
+      A toast was a bare notice in the corner. It now says what kind of thing it is before
+      what happened: a glyph and a two-word title in the tone's colour (Done / Something went
+      wrong / Heads up / Note), the sentence under it, a dismiss cross, and a bar draining
+      over the time it stays so a person can see whether to read it now. Solid surface, not
+      glass — it sits over anything. Slides in; still under reduced motion. The stack moved
+      from the workspace layout to the root layout, so sign-in, sign-up and the reset pages
+      have it too. Seen live over the Add-a-contact dialog.
+- [x] **Forgetting a password** (2026-09-12)
+      A forgotten password was a support ticket: nothing but the signed-in person could write
+      `users.password_hash`. Migration 0088 adds `password_resets` — one row per link sent,
+      the SHA-256 of the secret and nothing else, an hour's expiry, a used-at — locked away
+      from `ansa_app` entirely, and two definer functions: `begin_password_reset` (retires
+      earlier links, answers nothing for an unknown address) and `redeem_password_reset`
+      (one live link → new hash, link spent, every session the person held revoked). Tokens
+      are `ansa_rst.<secret>`, shaped like invitations. `POST /auth/password-resets` is public,
+      five an hour per address, always 204 in the same time whether the address exists, and
+      mails a one-hour link through the mailer when a public base URL is set; `PUT` takes the
+      token and a new password and refuses a dead link with a 422 on `token` that does not say
+      which of unknown, used or expired it was. Console: a "Forgot your password?" link under
+      the sign-in password, `/forgot-password` with one field and one sentence back (the same
+      sentence for every address), `/reset-password?token=` with the password twice, and the
+      sign-in page says so after. Eight database tests as `ansa_app`; the routes test now
+      names six public routes. Probed end to end against the live API with a throwaway
+      person: request 204 and a row, short password refused on its field, redeem 204 and both
+      sessions revoked, second redeem refused, the new password lists the organisation and a
+      wrong one lists nothing; every probe row removed after.
+      **Not proven: an email arriving.** This machine has `MAIL_PROVIDER=mailjet` with no
+      Mailjet key and no `PUBLIC_BASE_URL`, so locally the request creates the row and the
+      mailer declines out loud. The reset mail has never been received by a real inbox; the
+      first deployment with a mail key and a public address should ask for one and open it.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.
