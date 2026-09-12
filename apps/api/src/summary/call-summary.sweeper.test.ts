@@ -32,8 +32,7 @@ describe("summarising without a model", () => {
   });
 
   it("skips a pleasantry to find the first real thing said", () => {
-    /* "Yes" and "Hello" are answers to the greeting, not the reason for the call. Three words
-       is the same bar the handoff summary has always used. */
+    /* "Yes" and "Hello" are answers to the greeting, not the reason for the call. */
     const summary = withoutAModel([
       line("1", "agent", "Good day."),
       line("2", "caller", "Yes."),
@@ -41,6 +40,26 @@ describe("summarising without a model", () => {
     ]);
     expect(summary.summary).toContain("I want to renew my lease please.");
     expect(summary.cites[0]).toEqual(["3"]);
+  });
+
+  it("skips a greeting even when it is three words long", () => {
+    /* "Hi, good afternoon." is three words and the reason for nothing. Nine of the first
+       thirty-two fallback rows led with one of these, so the bar is now `subjectOf` — the
+       same clause-by-clause rule the caller-history read uses — rather than a word count. */
+    const summary = withoutAModel([
+      line("1", "caller", "Hi, good afternoon."),
+      line("2", "caller", "Yeah. I want to check my policy."),
+    ]);
+    expect(summary.summary.startsWith("They rang about: I want to check my policy")).toBe(true);
+    expect(summary.cites[0]).toEqual(["2"]);
+  });
+
+  it("finds the reason inside a turn that opened with a greeting", () => {
+    // The whole opening arrives as one transcript; the reason is at the end of it.
+    const summary = withoutAModel([
+      line("1", "caller", "Hi. Good evening. My name is Sikiru. I want to book a viewing."),
+    ]);
+    expect(summary.summary).toContain("They rang about: I want to book a viewing.");
   });
 
   it("never quotes the agent back as though the caller said it", () => {

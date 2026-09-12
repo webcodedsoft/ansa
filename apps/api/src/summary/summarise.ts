@@ -50,6 +50,7 @@ export const buildSummaryPrompt = (lines: readonly SummaryLine[]): string =>
     `- At most ${MAX_SENTENCES} sentences, in the order things happened.`,
     "- Every sentence must cite the line ids it comes from. A sentence you cannot cite is a",
     "  sentence you must not write.",
+    '- Put line ids only in "cites". Never write "(line 12)" inside the text itself.',
     "- Say what the caller wanted and what came of it. Do not give advice, do not guess at",
     "  what anybody felt, and do not repeat the whole conversation.",
     "- Use the caller's own words for anything they confirmed — a name, a time, an amount.",
@@ -88,6 +89,16 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
  * - more than four sentences means the model ignored the brief, and the tail is where it
  *   starts inventing.
  */
+/**
+ * A citation the model wrote into the prose — "(line 1138)" — rather than into `cites`.
+ *
+ * One reply in sixty did this even though the prompt shows the JSON shape. It is stripped
+ * rather than rejected: the sentence is still grounded, its `cites` still resolve, and the
+ * marker is a formatting slip a reader should never see. The prompt now says not to; this is
+ * the guard for the reply that ignores it.
+ */
+const INLINE_MARKER = /\s*\((?:lines?)\s+[\d\s,]+\)/gi;
+
 export const parseSummary = (reply: string, lines: readonly SummaryLine[]): Summary => {
   const known = new Set(lines.map((line) => line.id));
   const parsed = firstObject(reply);
@@ -98,7 +109,8 @@ export const parseSummary = (reply: string, lines: readonly SummaryLine[]): Summ
 
   for (const raw of parsed["sentences"].slice(0, MAX_SENTENCES)) {
     if (!isRecord(raw)) continue;
-    const sentence = typeof raw["text"] === "string" ? raw["text"].trim() : "";
+    const sentence =
+      typeof raw["text"] === "string" ? raw["text"].replace(INLINE_MARKER, "").trim() : "";
     if (sentence === "") continue;
 
     const claimed = Array.isArray(raw["cites"]) ? raw["cites"].map(String) : [];

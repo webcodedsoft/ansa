@@ -5734,6 +5734,15 @@ rather than landed as inventory — the wave that needs them adds them wired.
       rather than how it ended, because that is what the call came to. Dates on the spine are
       "Today 14:12" / "23 August 22:40" — the year was noise in a narrow column.
 
+      **Two defects the detail line exposed, both fixed the same hour.** One model reply in
+      sixty wrote "(line 1138)" into the prose as well as into `cites`; `parseSummary` now
+      strips the marker and the prompt says not to write one. And nine of the first thirty-two
+      no-model rows read "They rang about: Hi." — the fallback took the first caller line with
+      three words, and a greeting is three words as often as not. It now uses `subjectOf`, the
+      clause-by-clause rule the caller-history read has always used, so the two agree on what a
+      call was about. The ten defective rows were deleted and the sweeper rewrote them: zero
+      markers, zero greetings, and four of the ten got a model sentence on the retry.
+
       **Still absent, deliberately:** "Call now", "Export everything", and the merge banner —
       each a feature, argued on 2026-09-08. Latency p50 stays on the calls list: CLAUDE.md
       says latency is a correctness property, and that column is how somebody sees it.

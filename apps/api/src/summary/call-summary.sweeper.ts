@@ -1,10 +1,11 @@
 import {
+  type Db,
+  type SummarisableLine,
   readCallsNeedingSummary,
   readSummarisableLines,
   saveCallSummary,
+  subjectOf,
   withOrganization,
-  type Db,
-  type SummarisableLine,
 } from "@ansa/db";
 import type { Logger } from "@ansa/shared";
 import type { LlmProvider } from "@ansa/llm";
@@ -55,13 +56,19 @@ const MODEL_TIMEOUT_MS = 20_000;
  * Stored with `model: null`, which is how a reader and a re-run both tell the two apart.
  */
 export const withoutAModel = (lines: readonly SummarisableLine[]): Summary => {
-  const first = lines.find(
-    (line) => line.speaker === "caller" && line.text.trim().split(/\s+/).length >= 3,
-  );
+  /* `subjectOf`, not "the first line with three words". Nine of the first thirty-two
+     fallback rows read "They rang about: Hi." or "…: Yeah." — a greeting is three words as
+     often as not, and quoting it says nothing. The caller-history read has skipped openings
+     clause by clause since it was written; this is the same rule, so the two agree on what a
+     call was about. */
+  const first = lines
+    .filter((line) => line.speaker === "caller")
+    .map((line) => ({ id: line.id, about: subjectOf([line.text]) }))
+    .find((line): line is { id: string; about: string } => line.about !== null);
   const last = [...lines].reverse().find((line) => line.speaker === "caller");
   if (first === undefined) return { summary: "", cites: [] };
 
-  const sentences: string[] = [`They rang about: ${first.text.trim()}`];
+  const sentences: string[] = [`They rang about: ${first.about}`];
   const cites: string[][] = [[first.id]];
 
   if (last !== undefined && last.id !== first.id) {

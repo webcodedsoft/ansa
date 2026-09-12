@@ -173,12 +173,14 @@ const ContactPage = async ({
                                 : ` · ${duration(entry.call.durationSeconds)}`}
                             </span>
                           </span>
-                          {/* What it was about — the line somebody actually reads. The first
-                              sentence of the grounded summary, so it is something the call
-                              can be held to rather than a paraphrase of a paraphrase. */}
-                          {firstSentence(entry.call.summary) !== null && (
-                            <span className="mt-0.5 block text-[12px] leading-snug text-[var(--ink-3)]">
-                              {firstSentence(entry.call.summary)}
+                          {/* What it was about — the line somebody actually reads. The grounded
+                              summary, clamped, rather than its first sentence: a sentence
+                              splitter cuts inside a quoted line ("They rang about: Yeah. I
+                              want…") and hands the reader the wrong half. Two lines of the real
+                              thing is more honest than one line of the wrong thing. */}
+                          {entry.call.summary !== null && entry.call.summary.trim() !== "" && (
+                            <span className="mt-0.5 line-clamp-2 block text-[12px] leading-snug text-[var(--ink-3)]">
+                              {entry.call.summary}
                             </span>
                           )}
                         </span>
@@ -334,13 +336,6 @@ const Moment = ({ at }: { readonly at: string }) => (
     {dayLabel(at)} {timeOfDay(at)}
   </>
 );
-
-/** The first sentence of a summary, or null when there is no summary to take one from. */
-const firstSentence = (summary: string | null): string | null => {
-  if (summary === null) return null;
-  const sentence = summary.split(/(?<=[.!?])\s+/)[0]?.trim() ?? "";
-  return sentence === "" ? null : sentence;
-};
 
 /**
  * What a call on the spine came to.

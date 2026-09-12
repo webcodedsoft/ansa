@@ -46,6 +46,17 @@ describe("what survives grounding", () => {
     expect(summary.cites).toEqual([["12"]]);
   });
 
+  it("keeps a sentence the model cited twice — in cites and in the prose — and drops the prose copy", () => {
+    /* One reply in sixty wrote "(line 12)" into the text as well as into cites. The sentence
+       is grounded; the marker is a slip a reader should never see. */
+    const summary = parseSummary(
+      reply([{ text: "They asked about the flat on Adeola Odeku (line 12).", cites: ["12"] }]),
+      LINES,
+    );
+    expect(summary.summary).toBe("They asked about the flat on Adeola Odeku.");
+    expect(summary.cites).toEqual([["12"]]);
+  });
+
   it("drops a sentence citing a line this call does not have", () => {
     /* The shape a hallucination takes. The invented id is the tell, and the sentence around it
        cannot be trusted either — so the whole sentence goes, not just the citation. */
