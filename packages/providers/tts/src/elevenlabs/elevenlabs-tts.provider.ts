@@ -62,6 +62,18 @@ const DEFAULT_BASE_URL = "https://api.elevenlabs.io";
  */
 const DEFAULT_MODEL_ID = "eleven_flash_v2_5";
 
+/**
+ * The models that honour an SSML `<phoneme>` tag, per the vendor: Flash v2, Turbo v2 and
+ * English v1. Every other model — v2.5 and the multilingual ones among them — reads the
+ * tag out as text, so on those the word is respelled instead. Named explicitly rather than
+ * by pattern, because "v2_5" contains "v2" and a substring match would send tags to a
+ * model that speaks them aloud.
+ */
+const PHONEME_TAG_MODELS: ReadonlySet<string> = new Set(["eleven_flash_v2", "eleven_turbo_v2", "eleven_monolingual_v1"]);
+
+export const pronunciationFor = (modelId: string): "phoneme-tags" | "respelling" =>
+  PHONEME_TAG_MODELS.has(modelId) ? "phoneme-tags" : "respelling";
+
 /* No `optimize_streaming_latency`. It is deprecated on the streaming endpoint, with no
    replacement parameter — model choice and transport are what replaced it. The brief asks
    for `optimize_streaming_latency=3`; sending a deprecated parameter buys nothing and
@@ -116,6 +128,7 @@ export const createElevenLabsTts = (options: ElevenLabsOptions): TtsProvider => 
 
   return {
     name: "elevenlabs",
+    pronunciation: pronunciationFor(modelId),
 
     synthesize(request: SynthesisRequest): SynthesisStream {
       const stream = new VendorSynthesisStream();

@@ -1043,7 +1043,7 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly occurredAt: string;
         readonly actorUserId: string | null;
         readonly actorName: string | null;
-        readonly action: "signed_in" | "signed_out" | "password_changed" | "account_closed" | "member_invited" | "invitation_accepted" | "invitation_revoked" | "member_role_changed" | "member_removed" | "access_revoked" | "access_restored" | "agent_created" | "agent_retired" | "agent_published" | "agent_rolled_back" | "recording_listened" | "do_not_call_added" | "organisation_renamed" | "recording_turned_on" | "recording_turned_off" | "hours_changed" | "credential_saved" | "credential_removed" | "webhooks_saved" | "number_bought" | "number_released";
+        readonly action: "signed_in" | "signed_out" | "password_changed" | "account_closed" | "member_invited" | "invitation_accepted" | "invitation_revoked" | "member_role_changed" | "member_removed" | "access_revoked" | "access_restored" | "agent_created" | "agent_retired" | "agent_published" | "agent_rolled_back" | "recording_listened" | "do_not_call_added" | "organisation_renamed" | "recording_turned_on" | "recording_turned_off" | "hours_changed" | "credential_saved" | "credential_removed" | "webhooks_saved" | "pronunciations_saved" | "number_bought" | "number_released";
         readonly subjectKind: "account" | "member" | "invitation" | "agent" | "call" | "contact" | "organisation" | "credential" | "number" | null;
         readonly subjectId: string | null;
         readonly subjectLabel: string | null;
@@ -3619,6 +3619,11 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       } | null;
         readonly supportEmail: string | null;
         readonly website: string | null;
+        readonly pronunciations: readonly ({
+        readonly term: string;
+        readonly sayAs: string;
+        readonly ipa?: string;
+      })[];
         readonly recordCalls: boolean;
         readonly consent: {
         readonly policy: string;
@@ -3655,6 +3660,11 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       } | null;
         readonly supportEmail: string | null;
         readonly website: string | null;
+        readonly pronunciations: readonly ({
+        readonly term: string;
+        readonly sayAs: string;
+        readonly ipa?: string;
+      })[];
         readonly recordCalls: boolean;
         readonly consent: {
         readonly policy: string;
@@ -3701,6 +3711,11 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       } | null;
         readonly supportEmail: string | null;
         readonly website: string | null;
+        readonly pronunciations: readonly ({
+        readonly term: string;
+        readonly sayAs: string;
+        readonly ipa?: string;
+      })[];
         readonly recordCalls: boolean;
         readonly consent: {
         readonly policy: string;
@@ -3711,6 +3726,49 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
         readonly suppressedThisMonth: number;
       };
       }>(options, "PUT", `/api/v1/organization/hours`, input),
+
+    /**
+     * How this organisation's own words are said
+     * Its name, its branches, its products, the people it transfers to — anything the voice would otherwise mangle. The whole list, never a patch. Each entry is a term, a plain-syllable respelling every voice can read, and optionally the IPA for voices that take phoneme tags. Merged over the platform's built-in Nigerian lexicon on every call, with the organisation's entry winning for the same term; applied immediately, and never shown to the language model.
+     */
+    setPronunciations: (input: {
+        readonly body: {
+          readonly pronunciations: readonly ({
+          readonly term: string;
+          readonly sayAs: string;
+          readonly ipa?: string;
+        })[];
+        };
+      }) =>
+      send<{
+        readonly organizationId: string;
+        readonly name: string;
+        readonly createdAt: string;
+        readonly audioRetentionDays: number;
+        readonly transcriptRetentionDays: number;
+        readonly businessHours: {
+        readonly opensAtHour: number;
+        readonly closesAtHour: number;
+        readonly openDays: readonly (number)[];
+        readonly closedDates: readonly (string)[];
+      } | null;
+        readonly supportEmail: string | null;
+        readonly website: string | null;
+        readonly pronunciations: readonly ({
+        readonly term: string;
+        readonly sayAs: string;
+        readonly ipa?: string;
+      })[];
+        readonly recordCalls: boolean;
+        readonly consent: {
+        readonly policy: string;
+        readonly basis: string | null;
+        readonly callingEarliestHour: number | null;
+        readonly callingLatestHour: number | null;
+        readonly doNotCallNumbers: number;
+        readonly suppressedThisMonth: number;
+      };
+      }>(options, "PUT", `/api/v1/organization/pronunciations`, input),
 
     /**
      * Whether this organisation records its calls
@@ -3735,6 +3793,11 @@ export const createAnsaClient = (options: AnsaClientOptions) => ({
       } | null;
         readonly supportEmail: string | null;
         readonly website: string | null;
+        readonly pronunciations: readonly ({
+        readonly term: string;
+        readonly sayAs: string;
+        readonly ipa?: string;
+      })[];
         readonly recordCalls: boolean;
         readonly consent: {
         readonly policy: string;

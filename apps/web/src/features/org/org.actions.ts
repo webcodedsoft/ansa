@@ -22,6 +22,7 @@ import {
   revokeInvitation,
   setMemberRole,
   setOrganizationHours,
+  setPronunciations,
   setRecording,
 } from "./org.service";
 
@@ -326,6 +327,75 @@ export const saveRecording = async (
       saved.recordCalls
         ? "Recording is on. From the next call, every caller is told in the first sentence."
         : "Recording is off. Nothing is kept as audio from the next call.",
+    );
+  } catch (error) {
+    return failedForm(failureMessage(error));
+  }
+};
+
+/**
+ * The pronunciation list, saved whole.
+ *
+ * The form sends three parallel columns — `term`, `sayAs`, `ipa` — one value per row, in row
+ * order; that is what a list of inputs sharing a name posts. A row with nothing in it is a
+ * row somebody added and never filled, and is dropped rather than refused. A row with a term
+ * and no respelling is a mistake and is named by its row. Revalidates the layout: the list is
+ * on the overview and the voice reads it on every agent's calls.
+ */
+export type PronunciationsState = FormState<{ readonly entries: number }>;
+
+const PRONUNCIATIONS_LIMIT = 1000;
+
+const pronunciationRow = z.object({
+  term: z.string().trim().min(1, "Which word is this?").max(80, "Keep the word under 80 characters."),
+  sayAs: z.string().trim().min(1, "Write how it is said.").max(120, "Keep the respelling under 120 characters."),
+  ipa: z.string().trim().max(120, "Keep the IPA under 120 characters."),
+});
+
+const pronunciationsSchema = z
+  .object({ pronunciations: z.array(pronunciationRow).max(PRONUNCIATIONS_LIMIT, `At most ${PRONUNCIATIONS_LIMIT} entries.`) })
+  .superRefine((value, context) => {
+    const seen = new Map<string, number>();
+    value.pronunciations.forEach((row, index) => {
+      const key = row.term.toLowerCase();
+      const first = seen.get(key);
+      if (first === undefined) seen.set(key, index);
+      else {
+        context.addIssue({
+          code: "custom",
+          path: ["pronunciations", index, "term"],
+          message: `Already listed on row ${first + 1}. One word, one way of saying it.`,
+        });
+      }
+    });
+  });
+
+const column = (form: FormData, name: string): readonly string[] =>
+  form.getAll(name).map((value) => (typeof value === "string" ? value : ""));
+
+export const savePronunciations = async (
+  _previous: PronunciationsState,
+  form: FormData,
+): Promise<PronunciationsState> => {
+  const terms = column(form, "term");
+  const sayAs = column(form, "sayAs");
+  const ipa = column(form, "ipa");
+  const rows = terms
+    .map((term, index) => ({ term, sayAs: sayAs[index] ?? "", ipa: ipa[index] ?? "" }))
+    .filter((row) => row.term.trim() !== "" || row.sayAs.trim() !== "" || row.ipa.trim() !== "");
+  const parsed = pronunciationsSchema.safeParse({ pronunciations: rows });
+  if (!parsed.success) return invalidForm(parsed.error);
+  try {
+    const saved = await setPronunciations(
+      parsed.data.pronunciations.map(({ term, sayAs: said, ipa: sound }) =>
+        sound === "" ? { term, sayAs: said } : { term, sayAs: said, ipa: sound },
+      ),
+    );
+    revalidatePath("/", "layout");
+    const count = saved.pronunciations.length;
+    return succeededForm(
+      { entries: count },
+      count === 0 ? "Saved. The voice uses the built-in list alone." : `Saved. ${count} ${count === 1 ? "word" : "words"} said your way from the next call.`,
     );
   } catch (error) {
     return failedForm(failureMessage(error));

@@ -34,6 +34,7 @@ export const AUDIT_ACTIONS = [
   "credential_saved",
   "credential_removed",
   "webhooks_saved",
+  "pronunciations_saved",
   "number_bought",
   "number_released",
 ] as const;
@@ -50,7 +51,7 @@ const ACTIONS_OF_KIND: Readonly<Record<AuditKind, readonly AuditAction[]>> = {
   people: ["member_invited", "invitation_accepted", "invitation_revoked", "member_role_changed", "member_removed", "access_revoked", "access_restored"],
   agents: ["agent_created", "agent_retired", "agent_published", "agent_rolled_back"],
   calls: ["recording_listened", "do_not_call_added"],
-  organisation: ["organisation_renamed", "recording_turned_on", "recording_turned_off", "hours_changed", "credential_saved", "credential_removed", "webhooks_saved", "number_bought", "number_released"],
+  organisation: ["organisation_renamed", "recording_turned_on", "recording_turned_off", "hours_changed", "credential_saved", "credential_removed", "webhooks_saved", "pronunciations_saved", "number_bought", "number_released"],
   security: ["signed_in", "signed_out", "password_changed", "account_closed"],
 };
 

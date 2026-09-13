@@ -52,6 +52,7 @@ import { ALL_GREETING_LEADS, chooseGreetingLead } from "./greeting-lead";
 /* The same clock the situation block reads. Asking it here rather than deriving the hour
    again keeps one definition of what "morning" means on a call. */
 import { describeSituation } from "../conversation/situation";
+import { NIGERIAN_LEXICON, compilePronunciations, mergePronunciations, type Pronunciation } from "@ansa/normalizer";
 import {
   campaignCallCannotOpen,
   forSpeech,
@@ -60,6 +61,13 @@ import {
   withRecordingNotice,
 } from "./greeting";
 import { cacheKey, createAudioCache, type AudioCache } from "./prerender";
+
+/**
+ * The built-in lexicon, compiled once for the process. An organisation's own entries are
+ * merged over it per call in `speakFor`; the pre-rendered phrases — the greeting, the
+ * fillers — are cached by voice and text and take the built-in list alone.
+ */
+const sayBuiltIn = compilePronunciations(NIGERIAN_LEXICON);
 import { createWarmScheduler } from "./warm-scheduler";
 import { openIntronSession, type IntronLanguage } from "@ansa/intron-listen";
 
@@ -303,6 +311,17 @@ export class MediaGateway implements OnApplicationShutdown {
    * it per call is pure latency — a measured 959ms cold at the moment the caller is
    * listening hardest.
    */
+  /**
+   * What a sentence becomes on its way to the voice: normalised, then every listed name
+   * and place said the way its entry says, in the form this voice can take — a phoneme tag
+   * where the model honours one, a plain-syllable respelling everywhere else.
+   */
+  private speakFor(entries: readonly Pronunciation[]): (text: string) => string {
+    const say = entries.length === 0 ? sayBuiltIn : compilePronunciations(mergePronunciations(NIGERIAN_LEXICON, entries));
+    const mode = this.tts.pronunciation ?? "respelling";
+    return (text) => say(forSpeech(text), mode);
+  }
+
   private async render(
     voiceId: string,
     greeting: string,
@@ -312,7 +331,7 @@ export class MediaGateway implements OnApplicationShutdown {
     const cache = (this.audio ??= createAudioCache({
       tts: this.tts,
       format: TELEPHONY_AUDIO,
-      forSpeech,
+      forSpeech: this.speakFor([]),
       log: this.log,
       maxConcurrent: this.config.ttsMaxConcurrent,
     }));
@@ -1563,7 +1582,10 @@ export class MediaGateway implements OnApplicationShutdown {
            nothing a person can hear. */
         void this.saveOutcome(organizationId as OrganizationId, scheduledCallId, outcome, note);
       },
-      forSpeech,
+      /* Everything the agent says passes here one step before the voice: the normalizer's
+         own rewriting, then the pronunciation lexicon with this organisation's entries over
+         the built-in one, in the form this voice can take. */
+      forSpeech: this.speakFor(settings.pronunciations),
       // Rendered for this call's voice and this call's greeting, or null and synthesised
       // live. Never another voice's.
       greetingAudio: opener.audio,

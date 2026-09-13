@@ -31,6 +31,14 @@ export interface SynthesisStream {
 
 export interface TtsProvider {
   readonly name: string;
+  /**
+   * Which form of pronunciation this voice can take for a name it would otherwise mangle.
+   *
+   * `phoneme-tags`: the text may carry `<phoneme alphabet="ipa" ph="…">` and the voice says
+   * exactly that. `respelling`: it cannot, and the word is replaced by a plain-syllable
+   * respelling instead. Absent means respelling — the form every voice reads.
+   */
+  readonly pronunciation?: "phoneme-tags" | "respelling";
   /** Must stream. Non-streaming synthesis is disqualifying, not merely slow (R4.2.3). */
   synthesize(request: SynthesisRequest): SynthesisStream;
 }

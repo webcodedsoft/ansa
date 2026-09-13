@@ -89,6 +89,8 @@ export const describeAudit = (row: Row): AuditLine => {
       return { text: `released the number ${what(row, "")}`.trim(), tone: "warn" };
     case "webhooks_saved":
       return { text: `saved the webhook settings${d["receivers"] ? ` (${d["receivers"]} receiver${d["receivers"] === "1" ? "" : "s"})` : ""}`, tone: "accent" };
+    case "pronunciations_saved":
+      return { text: `saved the pronunciation list${d["entries"] ? ` (${d["entries"]} ${d["entries"] === "1" ? "entry" : "entries"})` : ""}`, tone: "accent" };
     default:
       return { text: row.action.replace(/_/g, " "), tone: "neutral" };
   }
@@ -127,7 +129,7 @@ const KIND_OF_ACTION: Readonly<Record<string, string>> = {
   agent_created: "agents", agent_retired: "agents", agent_published: "agents", agent_rolled_back: "agents",
   recording_listened: "calls", do_not_call_added: "calls",
   organisation_renamed: "organisation", recording_turned_on: "organisation", recording_turned_off: "organisation",
-  hours_changed: "organisation", credential_saved: "organisation", credential_removed: "organisation", webhooks_saved: "organisation",
+  hours_changed: "organisation", credential_saved: "organisation", credential_removed: "organisation", webhooks_saved: "organisation", pronunciations_saved: "organisation",
   number_bought: "organisation", number_released: "organisation",
 };
 

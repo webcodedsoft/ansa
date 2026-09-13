@@ -1,4 +1,5 @@
 import type { AgentId, BusinessHours, HandoffDestination, OrganizationId } from "@ansa/shared";
+import type { Pronunciation } from "@ansa/normalizer";
 import type { PreparedConnectors, PreparedEvents } from "@ansa/tools";
 
 import type { CollectedField } from "./captured-fields";
@@ -57,6 +58,8 @@ export interface CallSettings {
   readonly appointmentCalendarId: string | null;
   /** Whether this organisation records, and therefore whether the agent says so (0077). */
   readonly recordCalls: boolean;
+  /** Their own pronunciation entries, merged over the built-in lexicon before the voice. */
+  readonly pronunciations: readonly Pronunciation[];
   /**
    * What this agent's drawing names, or null when it is conducted by the list.
    *
@@ -131,6 +134,7 @@ export const callSettings = (
     flow: resolved.flow,
     appointmentCalendarId: resolved.appointmentCalendarId,
     recordCalls: resolved.recordCalls,
+    pronunciations: resolved.pronunciations,
     namedTools: resolved.namedTools,
     hasKnowledgeSources: resolved.hasKnowledgeSources,
     answeringMachineDetection: resolved.answeringMachineDetection,

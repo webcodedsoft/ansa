@@ -3,7 +3,7 @@ import { Buffer } from "node:buffer";
 import { TELEPHONY_AUDIO, type AudioChunk } from "@ansa/shared";
 import { describe, expect, it, vi } from "vitest";
 
-import { createElevenLabsTts, toOutputFormat } from "./elevenlabs-tts.provider";
+import { createElevenLabsTts, pronunciationFor, toOutputFormat } from "./elevenlabs-tts.provider";
 
 const streamingResponse = (chunks: readonly Uint8Array[], holdOpen = false): Response => {
   const body = new ReadableStream<Uint8Array>({
@@ -35,6 +35,21 @@ describe("toOutputFormat", () => {
     expect(() => toOutputFormat({ encoding: "mulaw", sampleRate: 16000 })).toThrow(
       /no native output/,
     );
+  });
+});
+
+describe("pronunciationFor", () => {
+  it("offers phoneme tags only on the models that speak them, never on v2.5", () => {
+    expect(pronunciationFor("eleven_flash_v2")).toBe("phoneme-tags");
+    expect(pronunciationFor("eleven_turbo_v2")).toBe("phoneme-tags");
+    expect(pronunciationFor("eleven_flash_v2_5")).toBe("respelling");
+    expect(pronunciationFor("eleven_multilingual_v2")).toBe("respelling");
+    expect(pronunciationFor("eleven_v3")).toBe("respelling");
+  });
+
+  it("is what the provider reports for its model", () => {
+    expect(createElevenLabsTts({ apiKey: "k" }).pronunciation).toBe("respelling");
+    expect(createElevenLabsTts({ apiKey: "k", modelId: "eleven_flash_v2" }).pronunciation).toBe("phoneme-tags");
   });
 });
 

@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Users,
+  Volume2,
   type LucideIcon,
 } from "lucide-react";
 import type { Metadata } from "next";
@@ -21,6 +22,7 @@ import { DetailsForm } from "@/features/org/components/details-form";
 import { HoursForm } from "@/features/org/components/hours-form";
 import { InviteMember } from "@/features/org/components/invite-form";
 import { PeopleSection } from "@/features/org/components/people-section";
+import { PronunciationForm } from "@/features/org/components/pronunciation-form";
 import { RecordingForm } from "@/features/org/components/recording-form";
 import { closedDaysLabel, daysLabel, hourLabel, nowInWat, openNow } from "@/features/org/org.display";
 import { listMembers, organisation } from "@/features/org/org.service";
@@ -43,13 +45,14 @@ export const dynamic = "force-dynamic";
  * fact about the organisation, and it belongs beside the hours and the recording switch
  * rather than on a page of its own that said nothing could be changed.
  */
-const SECTIONS = ["overview", "general", "hours", "consent", "recording", "retention", "people"] as const;
+const SECTIONS = ["overview", "general", "hours", "pronunciation", "consent", "recording", "retention", "people"] as const;
 type Section = (typeof SECTIONS)[number];
 
 const RAIL: readonly { readonly id: Section; readonly label: string; readonly Icon: LucideIcon }[] = [
   { id: "overview", label: "Overview", Icon: Building2 },
   { id: "general", label: "General", Icon: SlidersHorizontal },
   { id: "hours", label: "Hours", Icon: Clock },
+  { id: "pronunciation", label: "Pronunciation", Icon: Volume2 },
   { id: "consent", label: "Consent & calling", Icon: ShieldCheck },
   { id: "recording", label: "Recording", Icon: Mic },
   { id: "retention", label: "Retention", Icon: Database },
@@ -175,6 +178,17 @@ const OrganisationPage = async ({
                   action={canWrite ? (org.supportEmail === null ? "Add" : "Change") : "View"}
                 />
                 <Fact
+                  Icon={Volume2}
+                  label="Pronunciation"
+                  value={
+                    org.pronunciations.length === 0
+                      ? "Built-in Nigerian list only"
+                      : `${org.pronunciations.length} of your own ${org.pronunciations.length === 1 ? "word" : "words"} over the built-in list`
+                  }
+                  href="/organisation?s=pronunciation"
+                  action={canWrite ? (org.pronunciations.length === 0 ? "Add" : "Change") : "View"}
+                />
+                <Fact
                   Icon={ShieldCheck}
                   label="May call because"
                   value={`${humanise(org.consent.policy)} · ${hourLabel(org.consent.callingEarliestHour)} – ${hourLabel(org.consent.callingLatestHour)} WAT`}
@@ -215,6 +229,8 @@ const OrganisationPage = async ({
           {section === "general" && <DetailsForm organisation={org} />}
 
           {section === "hours" && <HoursForm organisation={org} open={open} nowLabel={nowLabel} />}
+
+          {section === "pronunciation" && <PronunciationForm pronunciations={org.pronunciations} canWrite={canWrite} />}
 
           {section === "consent" && (
             <Card

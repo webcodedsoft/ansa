@@ -10690,6 +10690,7 @@
                               "credential_saved",
                               "credential_removed",
                               "webhooks_saved",
+                              "pronunciations_saved",
                               "number_bought",
                               "number_released"
                             ]
@@ -25121,6 +25122,34 @@
                       ],
                       "maxLength": 200
                     },
+                    "pronunciations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "term": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80
+                          },
+                          "sayAs": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          },
+                          "ipa": {
+                            "type": "string",
+                            "maxLength": 120
+                          }
+                        },
+                        "required": [
+                          "term",
+                          "sayAs"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
                     "recordCalls": {
                       "type": "boolean"
                     },
@@ -25183,6 +25212,7 @@
                     "businessHours",
                     "supportEmail",
                     "website",
+                    "pronunciations",
                     "recordCalls",
                     "consent"
                   ],
@@ -25365,6 +25395,34 @@
                       ],
                       "maxLength": 200
                     },
+                    "pronunciations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "term": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80
+                          },
+                          "sayAs": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          },
+                          "ipa": {
+                            "type": "string",
+                            "maxLength": 120
+                          }
+                        },
+                        "required": [
+                          "term",
+                          "sayAs"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
                     "recordCalls": {
                       "type": "boolean"
                     },
@@ -25427,6 +25485,7 @@
                     "businessHours",
                     "supportEmail",
                     "website",
+                    "pronunciations",
                     "recordCalls",
                     "consent"
                   ],
@@ -25697,6 +25756,34 @@
                       ],
                       "maxLength": 200
                     },
+                    "pronunciations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "term": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80
+                          },
+                          "sayAs": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          },
+                          "ipa": {
+                            "type": "string",
+                            "maxLength": 120
+                          }
+                        },
+                        "required": [
+                          "term",
+                          "sayAs"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
                     "recordCalls": {
                       "type": "boolean"
                     },
@@ -25759,6 +25846,299 @@
                     "businessHours",
                     "supportEmail",
                     "website",
+                    "pronunciations",
+                    "recordCalls",
+                    "consent"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or a session that is no longer valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller's role does not hold config:write",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request did not match this endpoint's schema",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/organization/pronunciations": {
+      "put": {
+        "operationId": "organization.setPronunciations",
+        "tags": [
+          "organization"
+        ],
+        "summary": "How this organisation's own words are said",
+        "description": "Its name, its branches, its products, the people it transfers to — anything the voice would otherwise mangle. The whole list, never a patch. Each entry is a term, a plain-syllable respelling every voice can read, and optionally the IPA for voices that take phoneme tags. Merged over the platform's built-in Nigerian lexicon on every call, with the organisation's entry winning for the same term; applied immediately, and never shown to the language model.",
+        "x-ansa-capability": "config:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "pronunciations": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "term": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80
+                        },
+                        "sayAs": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120
+                        },
+                        "ipa": {
+                          "type": "string",
+                          "maxLength": 120
+                        }
+                      },
+                      "required": [
+                        "term",
+                        "sayAs"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 1000
+                  }
+                },
+                "required": [
+                  "pronunciations"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "organizationId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "audioRetentionDays": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "transcriptRetentionDays": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "businessHours": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "opensAtHour": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 23
+                        },
+                        "closesAtHour": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 24
+                        },
+                        "openDays": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 7
+                          },
+                          "maxItems": 7
+                        },
+                        "closedDates": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 10,
+                            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                          },
+                          "maxItems": 366
+                        }
+                      },
+                      "required": [
+                        "opensAtHour",
+                        "closesAtHour",
+                        "openDays",
+                        "closedDates"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "supportEmail": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 254,
+                      "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"
+                    },
+                    "website": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 200
+                    },
+                    "pronunciations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "term": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80
+                          },
+                          "sayAs": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          },
+                          "ipa": {
+                            "type": "string",
+                            "maxLength": 120
+                          }
+                        },
+                        "required": [
+                          "term",
+                          "sayAs"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "recordCalls": {
+                      "type": "boolean"
+                    },
+                    "consent": {
+                      "type": "object",
+                      "properties": {
+                        "policy": {
+                          "type": "string",
+                          "maxLength": 64
+                        },
+                        "basis": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 500
+                        },
+                        "callingEarliestHour": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 23
+                        },
+                        "callingLatestHour": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 24
+                        },
+                        "doNotCallNumbers": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "suppressedThisMonth": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "policy",
+                        "basis",
+                        "callingEarliestHour",
+                        "callingLatestHour",
+                        "doNotCallNumbers",
+                        "suppressedThisMonth"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "organizationId",
+                    "name",
+                    "createdAt",
+                    "audioRetentionDays",
+                    "transcriptRetentionDays",
+                    "businessHours",
+                    "supportEmail",
+                    "website",
+                    "pronunciations",
                     "recordCalls",
                     "consent"
                   ],
@@ -25935,6 +26315,34 @@
                       ],
                       "maxLength": 200
                     },
+                    "pronunciations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "term": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80
+                          },
+                          "sayAs": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          },
+                          "ipa": {
+                            "type": "string",
+                            "maxLength": 120
+                          }
+                        },
+                        "required": [
+                          "term",
+                          "sayAs"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
                     "recordCalls": {
                       "type": "boolean"
                     },
@@ -25997,6 +26405,7 @@
                     "businessHours",
                     "supportEmail",
                     "website",
+                    "pronunciations",
                     "recordCalls",
                     "consent"
                   ],

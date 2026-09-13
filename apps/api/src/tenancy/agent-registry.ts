@@ -1,3 +1,4 @@
+import { parsePronunciations, type Pronunciation } from "@ansa/normalizer";
 import {
   type AgentId,
   type BusinessHours,
@@ -128,6 +129,8 @@ export interface CallAgent {
    * they rang.
    */
   readonly recordCalls: boolean;
+  /** Their own pronunciation entries, parsed at config load and merged over the built-in lexicon per call. */
+  readonly pronunciations: readonly Pronunciation[];
   /**
    * The internal tools this agent's drawing names, or null when it is not a drawing.
    *
@@ -192,6 +195,7 @@ export const UNKNOWN_AGENT: CallAgent = {
   appointmentCalendarId: null,
   // Nobody's organisation answered, so nobody has consented to being recorded.
   recordCalls: false,
+  pronunciations: [],
   // No agent means no drawing, and tool dispatch is off entirely on this call anyway.
   namedTools: null,
   configVersion: 0,
@@ -387,6 +391,7 @@ const toCallAgent = async (
     namedTools: named,
     appointmentCalendarId: config.appointmentCalendarId,
     recordCalls: config.recordCalls,
+    pronunciations: parsePronunciations(config.pronunciations),
     answeringMachineDetection: config.answeringMachineDetection,
     configVersion: config.configVersion,
   };

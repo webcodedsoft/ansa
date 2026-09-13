@@ -108,6 +108,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@ansa/normalizer':
+        specifier: workspace:*
+        version: link:../../packages/normalizer
       '@ansa/shared':
         specifier: workspace:*
         version: link:../../packages/shared

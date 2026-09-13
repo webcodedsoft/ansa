@@ -80,6 +80,14 @@ export const setRecording = async (recordCalls: boolean) =>
 
 export type Organisation = Awaited<ReturnType<typeof organisation>>;
 
+/**
+ * How this organisation's own words are said. The whole list, never a patch; applied from the
+ * next call, merged over the platform's built-in Nigerian lexicon with these entries winning.
+ */
+export const setPronunciations = async (
+  pronunciations: readonly { readonly term: string; readonly sayAs: string; readonly ipa?: string }[],
+) => (await api()).organization.setPronunciations({ body: { pronunciations: [...pronunciations] } });
+
 /** When this organisation counts as open. Null is always open — a setting, not an absence. */
 export const setOrganizationHours = async (
   businessHours: {

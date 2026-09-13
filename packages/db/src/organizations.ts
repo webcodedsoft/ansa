@@ -47,6 +47,8 @@ export interface Organization {
    */
   readonly supportEmail: string | null;
   readonly website: string | null;
+  /** Their own additions to the built-in pronunciation lexicon (0090). Unparsed here. */
+  readonly pronunciations: unknown;
   /**
    * Whether calls are kept as audio (migration 0077). Off by default. When on, the agent
    * discloses it in its opening line — the disclosure is not a separate switch.
@@ -77,6 +79,7 @@ interface OrganizationRow {
   business_closed_dates: string[] | null;
   support_email: string | null;
   website: string | null;
+  pronunciations?: unknown;
   record_calls: boolean;
   consent_policy: string;
   consent_basis: string | null;
@@ -118,6 +121,7 @@ const toOrganization = (row: OrganizationRow, counts: ConsentCounts): Organizati
   businessHours: toBusinessHours(row),
   supportEmail: row.support_email,
   website: row.website,
+  pronunciations: row.pronunciations ?? [],
   consent: {
     policy: row.consent_policy,
     basis: row.consent_basis,
@@ -166,7 +170,7 @@ export const readOrganization = async (
     `select id, name, created_at, audio_retention_days, transcript_retention_days,
             business_open_hour, business_close_hour, business_days,
             business_closed_dates::text[] as business_closed_dates,
-            support_email, website, record_calls,
+            support_email, website, record_calls, pronunciations,
             consent_policy, consent_basis, calling_earliest_hour, calling_latest_hour
        from organizations`,
   );
@@ -378,4 +382,21 @@ export const readClaimToken = async (scope: OrganizationScope): Promise<string |
     "select number_claim_token from organizations where deleted_at is null limit 1",
   );
   return rows[0]?.number_claim_token ?? null;
+};
+
+/**
+ * Replace this organisation's pronunciation entries (migration 0090).
+ *
+ * Whole list, never a patch, like every other document on the row. A plain update under
+ * RLS, for the reason `setOrganizationHours` is. False when the organisation is gone.
+ */
+export const setOrganizationPronunciations = async (
+  scope: OrganizationScope,
+  entries: readonly { readonly term: string; readonly sayAs: string; readonly ipa?: string }[],
+): Promise<boolean> => {
+  const rows = await scope.mutate<{ id: string }>(
+    "update organizations set pronunciations = $1::jsonb returning id",
+    [JSON.stringify(entries)],
+  );
+  return rows.length > 0;
 };

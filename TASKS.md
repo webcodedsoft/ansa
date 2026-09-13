@@ -6308,6 +6308,34 @@ rather than landed as inventory — the wave that needs them adds them wired.
       contradicts it; and a question with a shape is read against the shape, nearest
       listed answer, reading that fits, ask only on a tie. Pinned in the compose test so
       none can be dropped quietly; the shared-layer test still finds no business word.
+- [x] **The voice is told how our names are said** (2026-09-13)
+      The listening side got its rules; this is the speaking side. A voice trained on
+      American and British English says "Ikeja" as eye-KEE-ja and "Sikiru" as SICK-uh-roo,
+      and no prompt reaches it, because the model never speaks — the normalizer's output does.
+      So the lexicon lives there: `packages/normalizer/src/pronunciation.ts`, about 370
+      entries — every state and capital, the Lagos districts, the towns a call names, Yoruba,
+      Igbo, Hausa/Fulani/Kanuri and Niger Delta given names and surnames, and the everyday
+      words and institutions (NIN, BVN, LASTMA, NEPA, danfo, okada, suya) — each respelled in
+      plain syllables every voice reads as English, most with IPA. Ordinary English words are
+      deliberately absent and a test refuses them. `compilePronunciations` matches whole
+      words and phrases, longest first, case-insensitively, skips text already in a phoneme
+      tag, and emits either the respelling or an IPA `<phoneme>` tag. Which one is the voice's
+      to say: `TtsProvider.pronunciation` is `"phoneme-tags"` only on the ElevenLabs models
+      that honour them (flash v2, turbo v2, monolingual v1) and `"respelling"` on the default
+      flash v2.5, where a tag would be read aloud. Applied at the `forSpeech` seam in the
+      media gateway, after the normalizer and before `tts.synthesize`, so every sentence of
+      every call passes it, including the cached greeting.
+      The part that is per business: `organizations.pronunciations` (migration 0090, jsonb
+      array, carried through all four `agent_config_for_*` functions), `PUT
+      /organization/pronunciations` with the whole list, audited as `pronunciations_saved`,
+      merged over the built-in list per call with the organisation's entry winning. The
+      console has a Pronunciation section on the Organisation page: rows of word / said as /
+      IPA, a live "try a sentence" that runs the real normalizer in the browser against the
+      list as it stands on the form, and the built-in list, searchable, with a Change link
+      that copies an entry into your own rows. Thirteen normalizer tests, one TTS test.
+      Not heard on a phone. The next call to any agent should say "Ikeja" and "Sikiru" the
+      Nigerian way; the ElevenLabs pronunciation-dictionary API is the later, stronger form
+      of the same thing once a model that takes it is the default.
 **Still not done, and it is the part that matters.** No handset has rung — for either slice.
 The road is now proven all the way to the carrier; the remaining gap is a phone answered
 inside calling hours.

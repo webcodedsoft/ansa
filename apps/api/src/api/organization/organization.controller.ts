@@ -3,6 +3,7 @@ import {
   readOrganization,
   renameOrganization,
   setOrganizationHours,
+  setOrganizationPronunciations,
   setRecordCalls,
 } from "@ansa/db";
 import {
@@ -16,10 +17,12 @@ import {
   Put,
 } from "@nestjs/common";
 
+import { parsePronunciations } from "@ansa/normalizer";
+
 import { audit } from "../audit/audit";
 import { Endpoint } from "../http/endpoint";
 import { apiRoute, FromBody } from "../http/request";
-import { flag, integer, list, nullable, object, text, type Infer } from "../http/schema";
+import { flag, integer, list, nullable, object, optional, text, type Infer } from "../http/schema";
 import { timestamp, uuid } from "../schemas";
 import { OrganizationContext } from "../tenancy/organization-context";
 
@@ -71,6 +74,31 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const hoursBody = object({ businessHours: nullable(businessHours) });
 
+const PRONUNCIATIONS_LIMIT = 1000;
+
+/**
+ * One way of saying one word. `sayAs` is a plain-syllable respelling every voice reads;
+ * `ipa` is exact, for the voices that take a phoneme tag. Both are the organisation's own
+ * words about its own words, and nothing here is validated against a dictionary.
+ */
+const pronunciationEntry = object({
+  term: text({ minLength: 1, maxLength: 80 }),
+  sayAs: text({ minLength: 1, maxLength: 120 }),
+  ipa: optional(text({ maxLength: 120 })),
+});
+
+const pronunciationsBody = object({
+  pronunciations: list(pronunciationEntry, { maxItems: PRONUNCIATIONS_LIMIT }),
+});
+
+/** The stored document as the API presents it: the jsonb column parsed into entries. */
+const present = <T extends { readonly pronunciations: unknown }>(
+  found: T,
+): Omit<T, "pronunciations"> & { readonly pronunciations: readonly { term: string; sayAs: string; ipa?: string }[] } => ({
+  ...found,
+  pronunciations: parsePronunciations(found.pronunciations),
+});
+
 const organization = object({
   organizationId: uuid(),
   name: text({ maxLength: NAME_LIMIT }),
@@ -105,6 +133,13 @@ const organization = object({
   /** Kept for the people who run the company; the agent does not read either out. */
   supportEmail: nullable(text({ maxLength: 254, pattern: EMAIL })),
   website: nullable(text({ maxLength: 200 })),
+  /**
+   * How this organisation's own words are said by the voice — its name, its branches, its
+   * products, the surnames it transfers to. Merged over the platform's built-in Nigerian
+   * lexicon before any sentence reaches the voice; an entry here wins for the same term.
+   * The language model never sees it.
+   */
+  pronunciations: list(pronunciationEntry, { maxItems: PRONUNCIATIONS_LIMIT }),
   /**
    * Whether calls are kept as audio. Off by default; the organisation turns it on here. When
    * on, every caller is told in the agent's first sentence — the disclosure is not a
@@ -154,7 +189,7 @@ export class OrganizationController {
     // Only reachable if the organisation was deleted under a live session. The session
     // would outlive its own organisation, which is worth a 404 rather than a 500.
     if (found === null) throw new NotFoundException();
-    return found;
+    return present(found);
   }
 
   @Patch()
@@ -181,7 +216,7 @@ export class OrganizationController {
       return after;
     });
     if (saved === null) throw new NotFoundException();
-    return saved;
+    return present(saved);
   }
 
   @Delete()
@@ -209,6 +244,37 @@ export class OrganizationController {
     if (!closed) throw new NotFoundException();
   }
 
+  @Put("pronunciations")
+  @Endpoint({
+    summary: "How this organisation's own words are said",
+    description:
+      "Its name, its branches, its products, the people it transfers to — anything the voice " +
+      "would otherwise mangle. The whole list, never a patch. Each entry is a term, a " +
+      "plain-syllable respelling every voice can read, and optionally the IPA for voices " +
+      "that take phoneme tags. Merged over the platform's built-in Nigerian lexicon on every " +
+      "call, with the organisation's entry winning for the same term; applied immediately, " +
+      "and never shown to the language model.",
+    capability: "config:write",
+    body: pronunciationsBody,
+    response: organization,
+  })
+  async setPronunciations(
+    @FromBody() body: Infer<typeof pronunciationsBody>,
+  ): Promise<Infer<typeof organization>> {
+    const saved = await this.db.tx(async (scope) => {
+      const changed = await setOrganizationPronunciations(scope, body.pronunciations);
+      if (!changed) return null;
+      await audit(scope, this.db.caller, {
+        action: "pronunciations_saved",
+        subjectKind: "organisation",
+        detail: { entries: String(body.pronunciations.length) },
+      });
+      return readOrganization(scope);
+    });
+    if (saved === null) throw new NotFoundException();
+    return present(saved);
+  }
+
   @Put("recording")
   @Endpoint({
     summary: "Whether this organisation records its calls",
@@ -232,7 +298,7 @@ export class OrganizationController {
       return changed ? readOrganization(scope) : null;
     });
     if (saved === null) throw new NotFoundException();
-    return saved;
+    return present(saved);
   }
 
   @Put("hours")
@@ -278,6 +344,6 @@ export class OrganizationController {
       return changed ? readOrganization(scope) : null;
     });
     if (saved === null) throw new NotFoundException();
-    return saved;
+    return present(saved);
   }
 }
